@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  base: "/sutrapad/",
   plugins: [
     VitePWA({
       registerType: "autoUpdate",
@@ -13,14 +14,14 @@ export default defineConfig({
         name: "SutraPad",
         short_name: "SutraPad",
         description: "PWA note-taking app synchronized with Google Drive.",
-        start_url: "/",
+        start_url: "/sutrapad/",
         display: "standalone",
         background_color: "#f5f0e8",
         theme_color: "#e7dfcf",
         lang: "en",
         icons: [
           {
-            src: "/icon.svg",
+            src: "./icon.svg",
             sizes: "any",
             type: "image/svg+xml",
             purpose: "any maskable",
@@ -29,7 +30,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
-        navigateFallback: "/index.html",
+        navigateFallback: "/sutrapad/index.html",
       },
     }),
   ],
