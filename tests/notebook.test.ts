@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
+  createTextNoteWorkspace,
   createWorkspace,
   sortNotes,
   upsertNote,
@@ -91,6 +92,29 @@ describe("notebook helpers", () => {
     expect(updated.activeNoteId).toBe(updated.notes[0].id);
     expect(updated.notes[0].title).toBe("Example page");
     expect(updated.notes[0].body).toBe("https://example.com/post");
+
+    vi.useRealTimers();
+  });
+
+  it("creates a text note from captured text and makes it active", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-13T15:00:00.000Z"));
+
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
+      ],
+    };
+
+    const updated = createTextNoteWorkspace(workspace, {
+      title: "14/4/2026 · midnight",
+      body: "A quick note",
+    });
+
+    expect(updated.activeNoteId).toBe(updated.notes[0].id);
+    expect(updated.notes[0].title).toBe("14/4/2026 · midnight");
+    expect(updated.notes[0].body).toBe("A quick note");
 
     vi.useRealTimers();
   });

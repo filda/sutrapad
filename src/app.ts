@@ -3,13 +3,19 @@ import { GoogleDriveStore } from "./services/drive-store";
 import {
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
+  createTextNoteWorkspace,
   createWorkspace,
   upsertNote,
 } from "./lib/notebook";
 import {
-  clearUrlCaptureFromLocation,
+  buildNoteCaptureTitle,
+  clearCaptureParamsFromLocation,
+  formatCoordinates,
   deriveTitleFromUrl,
+  reverseGeocodeCoordinates,
+  readNoteCapture,
   readUrlCapture,
+  resolveCurrentCoordinates,
   resolveTitleFromUrl,
 } from "./lib/url-capture";
 import { buildBookmarklet } from "./lib/bookmarklet";
@@ -342,7 +348,7 @@ export function createApp(root: HTMLElement): void {
     const footer = document.createElement("footer");
     footer.className = "footer";
     footer.innerHTML = `
-      <p>Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together.</p>
+      <p>Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by <a href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OpenStreetMap</a> and <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noreferrer">Nominatim</a>.</p>
     `;
     page.append(footer);
 
@@ -391,23 +397,41 @@ export function createApp(root: HTMLElement): void {
   };
 
   const captureIncomingUrl = async (): Promise<void> => {
-    const payload = readUrlCapture(window.location.href);
-    if (!payload) {
+    const notePayload = readNoteCapture(window.location.href);
+    if (notePayload) {
+      const now = new Date();
+      const coordinates = await resolveCurrentCoordinates();
+      const place = coordinates
+        ? (await reverseGeocodeCoordinates(coordinates)) ?? formatCoordinates(coordinates)
+        : undefined;
+      const title = buildNoteCaptureTitle(now, place);
+
+      workspace = createTextNoteWorkspace(workspace, {
+        title,
+        body: notePayload.note,
+      });
+      persistLocalWorkspace(workspace);
+      window.history.replaceState({}, "", clearCaptureParamsFromLocation(window.location.href));
+      return;
+    }
+
+    const urlPayload = readUrlCapture(window.location.href);
+    if (!urlPayload) {
       return;
     }
 
     const resolvedTitle =
-      payload.title ??
-      (await resolveTitleFromUrl(payload.url)) ??
-      deriveTitleFromUrl(payload.url);
+      urlPayload.title ??
+      (await resolveTitleFromUrl(urlPayload.url)) ??
+      deriveTitleFromUrl(urlPayload.url);
 
     workspace = createCapturedNoteWorkspace(workspace, {
       title: resolvedTitle,
-      url: payload.url,
+      url: urlPayload.url,
     });
     persistLocalWorkspace(workspace);
 
-    window.history.replaceState({}, "", clearUrlCaptureFromLocation(window.location.href));
+    window.history.replaceState({}, "", clearCaptureParamsFromLocation(window.location.href));
   };
 
   void (async () => {
