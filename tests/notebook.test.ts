@@ -1,0 +1,73 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  createNewNoteWorkspace,
+  createWorkspace,
+  sortNotes,
+  upsertNote,
+} from "../src/lib/notebook";
+import type { SutraPadDocument } from "../src/types";
+
+describe("notebook helpers", () => {
+  it("creates a workspace with one active note", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-13T10:00:00.000Z"));
+
+    const workspace = createWorkspace();
+
+    expect(workspace.notes).toHaveLength(1);
+    expect(workspace.activeNoteId).toBe(workspace.notes[0].id);
+    expect(workspace.notes[0].title).toBe("Untitled note");
+
+    vi.useRealTimers();
+  });
+
+  it("sorts notes by updatedAt descending", () => {
+    const notes: SutraPadDocument[] = [
+      { id: "1", title: "Older", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
+      { id: "2", title: "Newest", body: "", updatedAt: "2026-04-13T12:00:00.000Z" },
+      { id: "3", title: "Middle", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
+    ];
+
+    expect(sortNotes(notes).map((note) => note.id)).toEqual(["2", "3", "1"]);
+  });
+
+  it("updates a note and keeps it active", () => {
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
+        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
+      ],
+    };
+
+    const updated = upsertNote(workspace, "1", (note) => ({
+      ...note,
+      title: "Alpha revised",
+      updatedAt: "2026-04-13T12:00:00.000Z",
+    }));
+
+    expect(updated.activeNoteId).toBe("1");
+    expect(updated.notes[0].id).toBe("1");
+    expect(updated.notes[0].title).toBe("Alpha revised");
+  });
+
+  it("creates a new note and makes it active", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-13T13:00:00.000Z"));
+
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
+      ],
+    };
+
+    const updated = createNewNoteWorkspace(workspace);
+
+    expect(updated.notes).toHaveLength(2);
+    expect(updated.activeNoteId).toBe(updated.notes[0].id);
+    expect(updated.notes[0].title).toBe("Untitled note");
+
+    vi.useRealTimers();
+  });
+});

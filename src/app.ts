@@ -1,26 +1,14 @@
 import { GoogleAuthService } from "./services/google-auth";
 import { GoogleDriveStore } from "./services/drive-store";
+import {
+  createNewNoteWorkspace,
+  createWorkspace,
+  upsertNote,
+} from "./lib/notebook";
 import type { SutraPadDocument, SutraPadWorkspace, UserProfile } from "./types";
 
 type SyncState = "idle" | "loading" | "saving" | "error";
 const LOCAL_WORKSPACE_KEY = "sutrapad-local-workspace";
-
-function createNote(title = "Untitled note"): SutraPadDocument {
-  return {
-    id: crypto.randomUUID(),
-    title,
-    body: "",
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function createLocalWorkspace(): SutraPadWorkspace {
-  const note = createNote();
-  return {
-    notes: [note],
-    activeNoteId: note.id,
-  };
-}
 
 function formatDate(isoDate: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -32,13 +20,13 @@ function formatDate(isoDate: string): string {
 function loadLocalWorkspace(): SutraPadWorkspace {
   const saved = window.localStorage.getItem(LOCAL_WORKSPACE_KEY);
   if (!saved) {
-    return createLocalWorkspace();
+    return createWorkspace();
   }
 
   try {
     const parsed = JSON.parse(saved) as SutraPadWorkspace;
     if (!parsed.notes.length) {
-      return createLocalWorkspace();
+      return createWorkspace();
     }
 
     return {
@@ -46,16 +34,12 @@ function loadLocalWorkspace(): SutraPadWorkspace {
       activeNoteId: parsed.activeNoteId ?? parsed.notes[0].id,
     };
   } catch {
-    return createLocalWorkspace();
+    return createWorkspace();
   }
 }
 
 function persistLocalWorkspace(workspace: SutraPadWorkspace): void {
   window.localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify(workspace));
-}
-
-function sortNotes(notes: SutraPadDocument[]): SutraPadDocument[] {
-  return [...notes].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export function createApp(root: HTMLElement): void {
@@ -73,15 +57,7 @@ export function createApp(root: HTMLElement): void {
 
   const replaceCurrentNote = (updater: (note: SutraPadDocument) => SutraPadDocument): void => {
     const current = getCurrentNote();
-    const next = updater(current);
-
-    workspace = {
-      ...workspace,
-      notes: sortNotes(
-        workspace.notes.map((note) => (note.id === current.id ? next : note)),
-      ),
-      activeNoteId: next.id,
-    };
+    workspace = upsertNote(workspace, current.id, updater);
 
     persistLocalWorkspace(workspace);
   };
@@ -191,11 +167,7 @@ export function createApp(root: HTMLElement): void {
     newNoteButton.className = "button";
     newNoteButton.textContent = "New note";
     newNoteButton.onclick = () => {
-      const note = createNote();
-      workspace = {
-        notes: sortNotes([note, ...workspace.notes]),
-        activeNoteId: note.id,
-      };
+      workspace = createNewNoteWorkspace(workspace);
       persistLocalWorkspace(workspace);
       syncState = "idle";
       render();
