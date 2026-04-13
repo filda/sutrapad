@@ -118,6 +118,21 @@ To preview the production bundle locally:
 npm run preview
 ```
 
+## Deployment
+
+Production site:
+
+- [https://filda.github.io/sutrapad/](https://filda.github.io/sutrapad/)
+
+GitHub Pages is configured through GitHub Actions and uses the repository subpath `/sutrapad/`.
+
+Manual deployment flow:
+
+1. Push the desired commit to GitHub.
+2. Open the repository `Actions` tab.
+3. Run the `Deploy to GitHub Pages` workflow manually.
+4. Wait for the workflow to finish and then open the production URL above.
+
 ## Current Scope
 
 - client-only application with no backend
