@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createWorkspace,
   sortNotes,
@@ -67,6 +68,29 @@ describe("notebook helpers", () => {
     expect(updated.notes).toHaveLength(2);
     expect(updated.activeNoteId).toBe(updated.notes[0].id);
     expect(updated.notes[0].title).toBe("Untitled note");
+
+    vi.useRealTimers();
+  });
+
+  it("creates a captured link note and makes it active", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-13T14:00:00.000Z"));
+
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
+      ],
+    };
+
+    const updated = createCapturedNoteWorkspace(workspace, {
+      title: "Example page",
+      url: "https://example.com/post",
+    });
+
+    expect(updated.activeNoteId).toBe(updated.notes[0].id);
+    expect(updated.notes[0].title).toBe("Example page");
+    expect(updated.notes[0].body).toBe("https://example.com/post");
 
     vi.useRealTimers();
   });

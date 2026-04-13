@@ -1,14 +1,23 @@
 import { GoogleAuthService } from "./services/google-auth";
 import { GoogleDriveStore } from "./services/drive-store";
 import {
+  createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createWorkspace,
   upsertNote,
 } from "./lib/notebook";
+import {
+  clearUrlCaptureFromLocation,
+  deriveTitleFromUrl,
+  readUrlCapture,
+  resolveTitleFromUrl,
+} from "./lib/url-capture";
+import { buildBookmarklet } from "./lib/bookmarklet";
 import type { SutraPadDocument, SutraPadWorkspace, UserProfile } from "./types";
 
 type SyncState = "idle" | "loading" | "saving" | "error";
 const LOCAL_WORKSPACE_KEY = "sutrapad-local-workspace";
+const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 
 function formatDate(isoDate: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -49,6 +58,9 @@ export function createApp(root: HTMLElement): void {
   let workspace: SutraPadWorkspace = loadLocalWorkspace();
   let syncState: SyncState = "idle";
   let lastError = "";
+  let bookmarkletMessage = "";
+  let bookmarkletHelperExpanded =
+    window.localStorage.getItem(BOOKMARKLET_HELPER_KEY) !== "collapsed";
 
   const getCurrentNote = (): SutraPadDocument => {
     const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
@@ -147,6 +159,86 @@ export function createApp(root: HTMLElement): void {
 
     hero.append(heroCard);
     page.append(hero);
+
+    const bookmarkletSection = document.createElement("section");
+    bookmarkletSection.className = "bookmarklet-card";
+    const bookmarkletHeader = document.createElement("div");
+    bookmarkletHeader.className = "bookmarklet-header";
+    bookmarkletHeader.innerHTML = `
+      <div>
+        <p class="panel-eyebrow">Capture</p>
+        <h2>Bookmark any page into SutraPad.</h2>
+        <p>Drag the bookmarklet to your bookmarks bar. It sends the current page URL and title into a fresh note.</p>
+      </div>
+    `;
+
+    const toggleBookmarkletHelper = document.createElement("button");
+    toggleBookmarkletHelper.className = "button button-ghost bookmarklet-toggle";
+    toggleBookmarkletHelper.type = "button";
+    toggleBookmarkletHelper.textContent = bookmarkletHelperExpanded ? "Hide helper" : "Show helper";
+    toggleBookmarkletHelper.onclick = () => {
+      bookmarkletHelperExpanded = !bookmarkletHelperExpanded;
+      window.localStorage.setItem(
+        BOOKMARKLET_HELPER_KEY,
+        bookmarkletHelperExpanded ? "expanded" : "collapsed",
+      );
+      render();
+    };
+    bookmarkletHeader.append(toggleBookmarkletHelper);
+    bookmarkletSection.append(bookmarkletHeader);
+
+    const bookmarkletActions = document.createElement("div");
+    bookmarkletActions.className = "bookmarklet-actions";
+
+    const bookmarkletLink = document.createElement("a");
+    bookmarkletLink.className = "button button-primary bookmarklet-link";
+    bookmarkletLink.href = buildBookmarklet(window.location.origin + window.location.pathname);
+    bookmarkletLink.textContent = "Save to SutraPad";
+    bookmarkletLink.setAttribute("draggable", "true");
+
+    const copyBookmarkletButton = document.createElement("button");
+    copyBookmarkletButton.className = "button button-ghost";
+    copyBookmarkletButton.textContent = "Copy bookmarklet code";
+    copyBookmarkletButton.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(bookmarkletLink.href);
+        bookmarkletMessage =
+          "Bookmarklet copied. In Safari, create any bookmark, edit it, and paste this code into its URL field.";
+      } catch {
+        bookmarkletMessage =
+          "Copy failed. In Safari, you can still drag the bookmarklet or manually copy the link target.";
+      }
+      render();
+    };
+
+    const bookmarkletHint = document.createElement("p");
+    bookmarkletHint.className = "bookmarklet-hint";
+    bookmarkletHint.innerHTML =
+      "We cannot detect whether a browser already has this bookmarklet saved. Browsers do not expose bookmark contents to normal web pages, so this helper stays manual by design. Desktop Safari usually works best if you create a normal bookmark first and then replace its URL with the copied bookmarklet code.";
+
+    const bookmarkletSteps = document.createElement("ol");
+    bookmarkletSteps.className = "bookmarklet-steps";
+    bookmarkletSteps.innerHTML = `
+      <li>Drag <strong>Save to SutraPad</strong> to your bookmarks bar in Chrome, Brave, or Opera.</li>
+      <li>In Safari, create a regular bookmark, choose <strong>Edit Address</strong>, and paste the copied bookmarklet code.</li>
+      <li>While browsing any page, click the bookmarklet to open SutraPad with a new captured note.</li>
+    `;
+
+    bookmarkletActions.append(bookmarkletLink, copyBookmarkletButton);
+
+    if (bookmarkletMessage) {
+      const bookmarkletStatus = document.createElement("p");
+      bookmarkletStatus.className = "bookmarklet-status";
+      bookmarkletStatus.textContent = bookmarkletMessage;
+      bookmarkletActions.append(bookmarkletStatus);
+    }
+
+    if (bookmarkletHelperExpanded) {
+      bookmarkletActions.append(bookmarkletHint, bookmarkletSteps);
+      bookmarkletSection.append(bookmarkletActions);
+    }
+
+    page.append(bookmarkletSection);
 
     const workspaceSection = document.createElement("section");
     workspaceSection.className = "workspace";
@@ -298,8 +390,29 @@ export function createApp(root: HTMLElement): void {
     }
   };
 
+  const captureIncomingUrl = async (): Promise<void> => {
+    const payload = readUrlCapture(window.location.href);
+    if (!payload) {
+      return;
+    }
+
+    const resolvedTitle =
+      payload.title ??
+      (await resolveTitleFromUrl(payload.url)) ??
+      deriveTitleFromUrl(payload.url);
+
+    workspace = createCapturedNoteWorkspace(workspace, {
+      title: resolvedTitle,
+      url: payload.url,
+    });
+    persistLocalWorkspace(workspace);
+
+    window.history.replaceState({}, "", clearUrlCaptureFromLocation(window.location.href));
+  };
+
   void (async () => {
     try {
+      await captureIncomingUrl();
       await auth.initialize();
     } catch (error) {
       syncState = "error";

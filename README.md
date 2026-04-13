@@ -106,7 +106,21 @@ Use this quick test flow:
 7. Reload the page and click `Load from Drive`.
 8. Confirm the saved content is restored.
 
-### 6. Build for Production
+### 6. Test URL Capture
+
+You can pass a captured URL directly into the app:
+
+- local development: [http://localhost:5173/?url=https%3A%2F%2Fexample.com](http://localhost:5173/?url=https%3A%2F%2Fexample.com)
+- production: [https://filda.github.io/sutrapad/?url=https%3A%2F%2Fexample.com](https://filda.github.io/sutrapad/?url=https%3A%2F%2Fexample.com)
+
+Optional query parameters:
+
+- `url` - the captured page URL
+- `title` - optional page title passed by a bookmarklet
+
+The app creates a new note, inserts the URL into the note body, and tries to use the provided page title as the note title. If no title is provided, it falls back to a best-effort title derived in the browser.
+
+### 7. Build for Production
 
 ```bash
 npm run build
@@ -138,6 +152,16 @@ GitHub Pages build configuration:
 - Add repository variable `VITE_GOOGLE_CLIENT_ID` in `Settings > Secrets and variables > Actions > Variables`.
 - The deploy workflow reads this variable during the production build.
 - A separate `.env` file is not created in CI; the value is injected directly into the build environment.
+
+## Bookmarklet
+
+The app exposes a bookmarklet link in the UI. Drag `Save to SutraPad` to your bookmarks bar and then click it from any page you want to capture.
+
+Compatibility notes:
+
+- Desktop Chrome, Brave, and Opera generally work well with drag-to-bookmarks-bar bookmarklets.
+- Desktop Safari supports bookmarklets too, but adding them is often easier by creating a normal bookmark first and then replacing its URL with the bookmarklet code copied from the app.
+- Mobile browsers are much less consistent, so treat the bookmarklet as a desktop-first feature.
 
 ## Current Scope
 

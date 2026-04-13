@@ -43,3 +43,16 @@ export function createNewNoteWorkspace(workspace: SutraPadWorkspace): SutraPadWo
     activeNoteId: note.id,
   };
 }
+
+export function createCapturedNoteWorkspace(
+  workspace: SutraPadWorkspace,
+  capture: { title: string; url: string },
+): SutraPadWorkspace {
+  const note = createNote(capture.title);
+  note.body = capture.url;
+
+  return {
+    notes: sortNotes([note, ...workspace.notes]),
+    activeNoteId: note.id,
+  };
+}
