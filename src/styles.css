@@ -1,0 +1,250 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #1f2937;
+  background:
+    radial-gradient(circle at top left, rgba(192, 132, 87, 0.16), transparent 35%),
+    linear-gradient(180deg, #f8f3ec 0%, #efe6da 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  --bg: rgba(255, 255, 255, 0.72);
+  --line: rgba(31, 41, 55, 0.12);
+  --primary: #1f2937;
+  --accent: #c08457;
+  --muted: #6b7280;
+  --success: #0f766e;
+  --danger: #b91c1c;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-width: 320px;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+#app {
+  width: 100%;
+}
+
+.page {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0 48px;
+}
+
+.hero {
+  display: grid;
+  gap: 24px;
+  align-items: start;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+h1 {
+  margin: 0;
+  max-width: 11ch;
+  font-size: clamp(2.5rem, 6vw, 4.75rem);
+  line-height: 0.95;
+}
+
+.lede {
+  max-width: 56ch;
+  color: var(--muted);
+  font-size: 1.08rem;
+}
+
+a {
+  color: inherit;
+}
+
+.lede a,
+.footer a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(192, 132, 87, 0.55);
+  box-shadow: inset 0 -0.28em 0 rgba(192, 132, 87, 0.18);
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.lede a:hover,
+.footer a:hover {
+  color: var(--accent);
+  border-bottom-color: rgba(192, 132, 87, 0.9);
+  box-shadow: inset 0 -0.45em 0 rgba(192, 132, 87, 0.24);
+}
+
+.lede a:focus-visible,
+.footer a:focus-visible {
+  outline: 2px solid rgba(192, 132, 87, 0.65);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.hero-card,
+.editor-card {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--bg);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 22px 50px rgba(31, 41, 55, 0.08);
+}
+
+.hero-card {
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+}
+
+.editor-card {
+  padding: 24px;
+}
+
+.profile {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.profile img,
+.avatar-fallback {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1f2937, #c08457);
+}
+
+.profile span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.button {
+  border: 1px solid rgba(31, 41, 55, 0.16);
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--primary);
+  border-radius: 999px;
+  padding: 0.85rem 1.15rem;
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(31, 41, 55, 0.08);
+}
+
+.button-primary {
+  background: var(--primary);
+  color: #fff8ef;
+}
+
+.button-ghost {
+  background: transparent;
+}
+
+.status {
+  margin: 0 0 16px;
+  font-size: 0.95rem;
+}
+
+.status-idle {
+  color: var(--muted);
+}
+
+.status-loading,
+.status-saving {
+  color: var(--success);
+}
+
+.status-error {
+  color: var(--danger);
+}
+
+.title-input,
+.body-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 249, 0.88);
+  border-radius: 18px;
+  color: var(--primary);
+}
+
+.title-input {
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  font-size: 1.1rem;
+}
+
+.body-input {
+  min-height: 52vh;
+  resize: vertical;
+  padding: 18px;
+}
+
+.footer {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 860px) {
+  .page {
+    width: min(100% - 20px, 760px);
+    padding-top: 20px;
+  }
+
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  h1 {
+    max-width: none;
+  }
+
+  .body-input {
+    min-height: 42vh;
+  }
+}
