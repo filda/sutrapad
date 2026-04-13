@@ -115,6 +115,7 @@ a {
 }
 
 .hero-card,
+.notes-panel,
 .editor-card {
   border: 1px solid var(--line);
   border-radius: 28px;
@@ -131,6 +132,95 @@ a {
 
 .editor-card {
   padding: 24px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 18px;
+}
+
+.notes-panel {
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+  align-self: start;
+}
+
+.notes-panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.panel-eyebrow {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.74rem;
+  color: var(--accent);
+}
+
+.notes-panel-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.notes-list {
+  display: grid;
+  gap: 10px;
+}
+
+.note-list-item {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(31, 41, 55, 0.1);
+  background: rgba(255, 252, 247, 0.85);
+  border-radius: 20px;
+  padding: 14px 15px;
+  color: var(--primary);
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.note-list-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(192, 132, 87, 0.45);
+  box-shadow: 0 10px 24px rgba(31, 41, 55, 0.06);
+}
+
+.note-list-item.is-active {
+  border-color: rgba(192, 132, 87, 0.58);
+  background: rgba(245, 232, 219, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(192, 132, 87, 0.18);
+}
+
+.note-list-item strong,
+.note-list-item span,
+.note-list-item p {
+  display: block;
+}
+
+.note-list-item strong {
+  margin-bottom: 6px;
+  font-size: 0.98rem;
+}
+
+.note-list-item span {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.note-list-item p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
 }
 
 .profile {
@@ -237,6 +327,10 @@ a {
   }
 
   .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace {
     grid-template-columns: 1fr;
   }
 

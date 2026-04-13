@@ -5,6 +5,25 @@ export interface SutraPadDocument {
   updatedAt: string;
 }
 
+export interface SutraPadNoteSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+  fileId?: string;
+}
+
+export interface SutraPadIndex {
+  version: 1;
+  updatedAt: string;
+  activeNoteId: string | null;
+  notes: SutraPadNoteSummary[];
+}
+
+export interface SutraPadWorkspace {
+  notes: SutraPadDocument[];
+  activeNoteId: string | null;
+}
+
 export interface UserProfile {
   name: string;
   email: string;
@@ -14,4 +33,5 @@ export interface UserProfile {
 export interface DriveFileRecord {
   id: string;
   name: string;
+  appProperties?: Record<string, string>;
 }
