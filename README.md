@@ -133,6 +133,12 @@ Manual deployment flow:
 3. Run the `Deploy to GitHub Pages` workflow manually.
 4. Wait for the workflow to finish and then open the production URL above.
 
+GitHub Pages build configuration:
+
+- Add repository variable `VITE_GOOGLE_CLIENT_ID` in `Settings > Secrets and variables > Actions > Variables`.
+- The deploy workflow reads this variable during the production build.
+- A separate `.env` file is not created in CI; the value is injected directly into the build environment.
+
 ## Current Scope
 
 - client-only application with no backend

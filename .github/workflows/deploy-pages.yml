@@ -16,6 +16,8 @@ jobs:
   deploy:
     name: Build and Deploy
     runs-on: ubuntu-latest
+    env:
+      VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -35,6 +37,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate deployment environment
+        run: |
+          if [ -z "$VITE_GOOGLE_CLIENT_ID" ]; then
+            echo "Missing repository variable VITE_GOOGLE_CLIENT_ID"
+            exit 1
+          fi
 
       - name: Run checks
         run: npm run check
