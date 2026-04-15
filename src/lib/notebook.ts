@@ -118,8 +118,11 @@ export function upsertNote(
   };
 }
 
-export function createNewNoteWorkspace(workspace: SutraPadWorkspace): SutraPadWorkspace {
-  const note = createNote();
+export function createNewNoteWorkspace(
+  workspace: SutraPadWorkspace,
+  title = DEFAULT_NOTE_TITLE,
+): SutraPadWorkspace {
+  const note = createNote(title);
   return {
     notes: sortNotes([note, ...workspace.notes]),
     activeNoteId: note.id,

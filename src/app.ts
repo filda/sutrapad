@@ -83,6 +83,16 @@ export function createApp(root: HTMLElement): void {
     persistLocalWorkspace(workspace);
   };
 
+  const generateFreshNoteTitle = async (): Promise<string> => {
+    const now = new Date();
+    const coordinates = await resolveCurrentCoordinates();
+    const place = coordinates
+      ? (await reverseGeocodeCoordinates(coordinates)) ?? formatCoordinates(coordinates)
+      : undefined;
+
+    return buildNoteCaptureTitle(now, place);
+  };
+
   const render = (): void => {
     root.innerHTML = "";
 
@@ -273,11 +283,23 @@ export function createApp(root: HTMLElement): void {
     const newNoteButton = document.createElement("button");
     newNoteButton.className = "button";
     newNoteButton.textContent = "New note";
-    newNoteButton.onclick = () => {
-      workspace = createNewNoteWorkspace(workspace);
-      persistLocalWorkspace(workspace);
-      syncState = "idle";
-      render();
+    newNoteButton.onclick = async () => {
+      try {
+        syncState = "loading";
+        lastError = "";
+        render();
+
+        const title = await generateFreshNoteTitle();
+        workspace = createNewNoteWorkspace(workspace, title);
+        persistLocalWorkspace(workspace);
+        syncState = "idle";
+        render();
+      } catch {
+        workspace = createNewNoteWorkspace(workspace);
+        persistLocalWorkspace(workspace);
+        syncState = "idle";
+        render();
+      }
     };
     notesHeader.append(newNoteButton);
 
@@ -437,12 +459,7 @@ export function createApp(root: HTMLElement): void {
   const captureIncomingUrl = async (): Promise<void> => {
     const notePayload = readNoteCapture(window.location.href);
     if (notePayload) {
-      const now = new Date();
-      const coordinates = await resolveCurrentCoordinates();
-      const place = coordinates
-        ? (await reverseGeocodeCoordinates(coordinates)) ?? formatCoordinates(coordinates)
-        : undefined;
-      const title = buildNoteCaptureTitle(now, place);
+      const title = await generateFreshNoteTitle();
 
       workspace = createTextNoteWorkspace(workspace, {
         title,

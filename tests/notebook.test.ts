@@ -95,6 +95,23 @@ describe("notebook helpers", () => {
     vi.useRealTimers();
   });
 
+  it("creates a new note with a provided generated title", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-13T13:00:00.000Z"));
+
+    const workspace = {
+      activeNoteId: "1",
+      notes: [{ id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
+    };
+
+    const updated = createNewNoteWorkspace(workspace, "14/04/2026 · high noon · Libeň");
+
+    expect(updated.notes[0].title).toBe("14/04/2026 · high noon · Libeň");
+    expect(updated.activeNoteId).toBe(updated.notes[0].id);
+
+    vi.useRealTimers();
+  });
+
   it("creates a captured link note and makes it active", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-13T14:00:00.000Z"));
