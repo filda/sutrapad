@@ -1,5 +1,11 @@
 # SutraPad
 
+[![Live Site](https://img.shields.io/badge/live%20site-GitHub%20Pages-c08457?style=for-the-badge)](https://filda.github.io/sutrapad/)
+[![Validate and Deploy](https://img.shields.io/github/actions/workflow/status/filda/sutrapad/validate-and-deploy.yml?branch=main&style=for-the-badge&label=validate%20%26%20deploy)](https://github.com/filda/sutrapad/actions/workflows/validate-and-deploy.yml)
+[![Daily Mutation Testing](https://img.shields.io/github/actions/workflow/status/filda/sutrapad/mutation-testing.yml?style=for-the-badge&label=mutation%20testing)](https://github.com/filda/sutrapad/actions/workflows/mutation-testing.yml)
+[![Repo Activity](https://img.shields.io/github/commit-activity/m/filda/sutrapad?style=for-the-badge&label=repo%20activity)](https://github.com/filda/sutrapad/commits/main)
+[![License: MIT](https://img.shields.io/github/license/filda/sutrapad?style=for-the-badge)](LICENSE)
+
 Chaotic Google Drive content renderer and Link Capturer filled with TypeScript AI Slop
 
 Production site:
