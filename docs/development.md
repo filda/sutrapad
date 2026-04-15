@@ -54,7 +54,119 @@ VITE_SUTRAPAD_FILE_NAME=sutrapad-data.json
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173).
+The dev server listens on all local interfaces, so you can open it from other devices in your LAN:
+
+- local machine: [http://localhost:5173](http://localhost:5173)
+- another device: `http://YOUR-LAN-IP:5173`
+
+### Test PWA features over HTTPS in local development
+
+For full PWA behavior on another device, use a trusted local certificate because service workers require a secure context outside `localhost`.
+
+Add these optional variables to `.env`:
+
+```env
+VITE_DEV_HTTPS_KEY_PATH=.cert/dev-key.pem
+VITE_DEV_HTTPS_CERT_PATH=.cert/dev-cert.pem
+```
+
+Then start the app with the usual command:
+
+```bash
+npm run dev
+```
+
+If both files exist, Vite serves the app over HTTPS and you can open:
+
+- local machine: `https://localhost:5173`
+- another device: `https://YOUR-LAN-IP:5173`
+
+Recommended workflow:
+
+- create a local certificate with `mkcert` for `localhost` and your LAN IP
+- trust the generated root CA on the devices you want to test with
+
+If the certificate files are configured but missing, the dev server exits with a clear error.
+
+#### Example setup with mkcert on Windows
+
+1. Install `mkcert`.
+
+If you use `winget`:
+
+```powershell
+winget install FiloSottile.mkcert
+```
+
+2. Install and trust the local root CA on your development machine:
+
+```powershell
+mkcert -install
+```
+
+3. Find your LAN IP address.
+
+Example:
+
+```powershell
+ipconfig
+```
+
+Look for your active adapter and copy the IPv4 address, for example `192.168.1.25`.
+
+4. Generate a certificate for `localhost`, loopback, and your LAN IP:
+
+```powershell
+New-Item -ItemType Directory -Force .cert
+mkcert -key-file .cert/dev-key.pem -cert-file .cert/dev-cert.pem localhost 127.0.0.1 ::1 192.168.1.25
+```
+
+You can also use the helper script, which tries to detect your LAN IP automatically:
+
+```powershell
+npm run cert:dev
+```
+
+If auto-detection picks the wrong address or cannot find one, pass the IP manually:
+
+```powershell
+npm run cert:dev -- 192.168.1.25
+```
+
+The script creates `.cert/dev-key.pem` and `.cert/dev-cert.pem` for the selected LAN IP.
+
+5. Add the generated file paths to `.env`:
+
+```env
+VITE_DEV_HTTPS_KEY_PATH=.cert/dev-key.pem
+VITE_DEV_HTTPS_CERT_PATH=.cert/dev-cert.pem
+```
+
+6. Start the dev server:
+
+```bash
+npm run dev
+```
+
+7. Open the app:
+
+- on your computer: `https://localhost:5173`
+- on another device in the same network: `https://192.168.1.25:5173`
+
+#### Trust the certificate on mobile devices
+
+To avoid browser security warnings on phones or tablets, the device must trust the same `mkcert` root CA.
+
+- iPhone/iPad:
+  - export the `mkcert` root CA from your computer
+  - install it as a profile on the device
+  - enable full trust for that certificate in `Settings > General > About > Certificate Trust Settings`
+- Android:
+  - copy the root CA certificate to the device
+  - install it from security certificate settings
+  - note that some browsers or work profiles may still apply extra certificate restrictions
+
+If you only need quick UI checks, plain HTTP over LAN is simpler. Use HTTPS when you need realistic PWA behavior such as service worker registration and installability.
 
 ### Run checks
 
@@ -80,6 +192,7 @@ Set the OAuth client to include:
 
 - `Authorized JavaScript origins`
   - `http://localhost:5173`
+  - `https://localhost:5173`
   - `https://filda.github.io`
 - `Authorized redirect URIs`
   - none is required for the popup token flow used by this app

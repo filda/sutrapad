@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "cert:dev": "node scripts/create-dev-cert.mjs",
     "build": "tsc --noEmit && vite build",
     "check": "npm run test && npm run build",
     "test": "vitest run",
@@ -12,6 +13,7 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/node": "^24.6.1",
     "typescript": "^5.6.3",
     "vite": "^7.1.2",
     "vite-plugin-pwa": "^1.2.0",
