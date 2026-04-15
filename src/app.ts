@@ -83,6 +83,46 @@ export function createApp(root: HTMLElement): void {
     persistLocalWorkspace(workspace);
   };
 
+  const buildNotesList = (currentNoteId: string): HTMLDivElement => {
+    const notesList = document.createElement("div");
+    notesList.className = "notes-list";
+
+    for (const note of workspace.notes) {
+      const button = document.createElement("button");
+      button.className = `note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
+      button.type = "button";
+      button.onclick = () => {
+        workspace = {
+          ...workspace,
+          activeNoteId: note.id,
+        };
+        persistLocalWorkspace(workspace);
+        render();
+      };
+
+      const excerpt = note.body.trim() || "Empty note";
+      button.innerHTML = `
+        <strong>${note.title || "Untitled note"}</strong>
+        <span>${formatDate(note.updatedAt)}</span>
+        <p>${excerpt.slice(0, 72)}</p>
+      `;
+
+      notesList.append(button);
+    }
+
+    return notesList;
+  };
+
+  const refreshNotesList = (): void => {
+    const currentNoteId = getCurrentNote().id;
+    const currentList = root.querySelector(".notes-list");
+    if (!currentList) {
+      return;
+    }
+
+    currentList.replaceWith(buildNotesList(currentNoteId));
+  };
+
   const generateFreshNoteTitle = async (): Promise<string> => {
     const now = new Date();
     const coordinates = await resolveCurrentCoordinates();
@@ -303,33 +343,7 @@ export function createApp(root: HTMLElement): void {
     };
     notesHeader.append(newNoteButton);
 
-    const notesList = document.createElement("div");
-    notesList.className = "notes-list";
-
-    for (const note of workspace.notes) {
-      const button = document.createElement("button");
-      button.className = `note-list-item${note.id === currentNote.id ? " is-active" : ""}`;
-      button.type = "button";
-      button.onclick = () => {
-        workspace = {
-          ...workspace,
-          activeNoteId: note.id,
-        };
-        persistLocalWorkspace(workspace);
-        render();
-      };
-
-      const excerpt = note.body.trim() || "Empty note";
-      button.innerHTML = `
-        <strong>${note.title || "Untitled note"}</strong>
-        <span>${formatDate(note.updatedAt)}</span>
-        <p>${excerpt.slice(0, 72)}</p>
-      `;
-
-      notesList.append(button);
-    }
-
-    notesPanel.append(notesHeader, notesList);
+    notesPanel.append(notesHeader, buildNotesList(currentNote.id));
 
     const editor = document.createElement("section");
     editor.className = "editor-card";
@@ -358,6 +372,7 @@ export function createApp(root: HTMLElement): void {
         updatedAt: new Date().toISOString(),
       }));
       syncState = "idle";
+      refreshNotesList();
     };
 
     const bodyInput = document.createElement("textarea");
@@ -370,6 +385,7 @@ export function createApp(root: HTMLElement): void {
         body: bodyInput.value,
         updatedAt: new Date().toISOString(),
       }));
+      refreshNotesList();
     };
 
     editor.append(status, titleInput, bodyInput);
