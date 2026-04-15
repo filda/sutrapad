@@ -2,9 +2,11 @@ import type {DriveFileRecord, SutraPadDocument, SutraPadIndex, SutraPadNoteSumma
 
 const GOOGLE_DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
+const GOOGLE_DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
 const INDEX_FILE_NAME = import.meta.env.VITE_SUTRAPAD_FILE_NAME || "sutrapad-index.json";
 const LEGACY_FILE_NAME = "sutrapad-data.json";
+const WORKSPACE_FOLDER_NAME = "SutraPad";
 
 function createInitialDocument(): SutraPadDocument {
   return {
@@ -42,16 +44,18 @@ function createIndex(workspace: SutraPadWorkspace, existingIndex?: SutraPadIndex
 
 export class GoogleDriveStore {
   readonly #token: string;
+  #workspaceFolderPromise: Promise<DriveFileRecord> | null = null;
 
   constructor(accessToken: string) {
     this.#token = accessToken;
   }
 
   async loadWorkspace(): Promise<SutraPadWorkspace> {
-    const indexFile = await this.findIndexFile();
+    const workspaceFolder = await this.findWorkspaceFolder();
+    const indexFile = await this.findIndexFile(workspaceFolder?.id);
 
     if (!indexFile) {
-      const legacyDocument = await this.loadLegacyDocument();
+      const legacyDocument = await this.loadLegacyDocument(workspaceFolder?.id);
       if (legacyDocument) {
         return {
           notes: [legacyDocument],
@@ -65,7 +69,7 @@ export class GoogleDriveStore {
     const index = await this.fetchJsonFile<SutraPadIndex>(indexFile.id);
     const notes = await Promise.all(
       index.notes.map(async (entry) => {
-        const fileId = entry.fileId ?? (await this.findNoteFileById(entry.id))?.id;
+        const fileId = entry.fileId ?? (await this.findNoteFileById(entry.id, workspaceFolder?.id))?.id;
         if (!fileId) {
           return null;
         }
@@ -90,7 +94,8 @@ export class GoogleDriveStore {
   }
 
   async saveWorkspace(workspace: SutraPadWorkspace): Promise<void> {
-    const existingIndexFile = await this.findIndexFile();
+    const workspaceFolder = await this.getWorkspaceFolder();
+    const existingIndexFile = await this.findIndexFile(workspaceFolder.id);
     const existingIndex = existingIndexFile
       ? await this.fetchJsonFile<SutraPadIndex>(existingIndexFile.id)
       : null;
@@ -99,20 +104,30 @@ export class GoogleDriveStore {
     const savedNotes = await Promise.all(
       workspace.notes.map(async (note) => {
         const existingSummary = existingIndex?.notes.find((entry) => entry.id === note.id);
-        const existingNoteFile = existingSummary?.fileId
-          ? { id: existingSummary.fileId }
-          : await this.findNoteFileById(note.id);
+        const existingFileId = existingSummary?.fileId;
+        const existingNoteFile: DriveFileRecord | null = existingFileId
+          ? await this.fetchFileMetadata(existingFileId).catch(
+              () =>
+                ({
+                  id: existingFileId,
+                  name: `note-${note.id}.json`,
+                }) as DriveFileRecord,
+            )
+          : await this.findNoteFileById(note.id, workspaceFolder.id);
 
         const file = await this.uploadJsonFile({
           fileId: existingNoteFile?.id,
           fileName: `note-${note.id}.json`,
           data: note,
+          folderId: workspaceFolder.id,
           appProperties: {
             sutrapad: "true",
             kind: "note",
             noteId: note.id,
           },
         });
+
+        await this.ensureFileInFolder(file.id, workspaceFolder.id);
 
         return {
           id: note.id,
@@ -132,15 +147,20 @@ export class GoogleDriveStore {
       fileId: existingIndexFile?.id,
       fileName: INDEX_FILE_NAME,
       data: finalIndex,
+      folderId: workspaceFolder.id,
       appProperties: {
         sutrapad: "true",
         kind: "index",
       },
     });
+
+    if (existingIndexFile) {
+      await this.ensureFileInFolder(existingIndexFile.id, workspaceFolder.id);
+    }
   }
 
-  private async loadLegacyDocument(): Promise<SutraPadDocument | null> {
-    const legacyFile = await this.findLegacyFile();
+  private async loadLegacyDocument(folderId?: string): Promise<SutraPadDocument | null> {
+    const legacyFile = await this.findLegacyFile(folderId);
     if (!legacyFile) {
       return null;
     }
@@ -148,17 +168,87 @@ export class GoogleDriveStore {
     return this.fetchJsonFile<SutraPadDocument>(legacyFile.id);
   }
 
-  private async findIndexFile(): Promise<DriveFileRecord | null> {
-    return this.findSingleFile("trashed = false and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }");
+  private async getWorkspaceFolder(): Promise<DriveFileRecord> {
+    if (!this.#workspaceFolderPromise) {
+      this.#workspaceFolderPromise = (async () => {
+        const existingFolder = await this.findWorkspaceFolder();
+        return existingFolder ?? (await this.createWorkspaceFolder());
+      })();
+    }
+
+    return this.#workspaceFolderPromise;
   }
 
-  private async findNoteFileById(noteId: string): Promise<DriveFileRecord | null> {
+  private async findWorkspaceFolder(): Promise<DriveFileRecord | null> {
     return this.findSingleFile(
-      `trashed = false and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' } and appProperties has { key='noteId' and value='${noteId}' }`,
+      `trashed = false and mimeType = '${GOOGLE_DRIVE_FOLDER_MIME_TYPE}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='folder' } and name = '${WORKSPACE_FOLDER_NAME}'`,
     );
   }
 
-  private async findLegacyFile(): Promise<DriveFileRecord | null> {
+  private async createWorkspaceFolder(): Promise<DriveFileRecord> {
+    const response = await fetch(`${GOOGLE_DRIVE_API}?fields=id,name,mimeType,appProperties,parents`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.#token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: WORKSPACE_FOLDER_NAME,
+        mimeType: GOOGLE_DRIVE_FOLDER_MIME_TYPE,
+        appProperties: {
+          sutrapad: "true",
+          kind: "folder",
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to create the SutraPad folder in Google Drive.");
+    }
+
+    return (await response.json()) as DriveFileRecord;
+  }
+
+  private async findIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
+    const inFolder = folderId
+      ? await this.findSingleFile(
+          `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }`,
+        )
+      : null;
+
+    if (inFolder) {
+      return inFolder;
+    }
+
+    return this.findSingleFile(
+      "trashed = false and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }",
+    );
+  }
+
+  private async findNoteFileById(noteId: string, folderId?: string): Promise<DriveFileRecord | null> {
+    const query = `appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' } and appProperties has { key='noteId' and value='${noteId}' }`;
+    const inFolder = folderId
+      ? await this.findSingleFile(`${this.buildFolderQuery(folderId)} and ${query}`)
+      : null;
+
+    if (inFolder) {
+      return inFolder;
+    }
+
+    return this.findSingleFile(`trashed = false and ${query}`);
+  }
+
+  private async findLegacyFile(folderId?: string): Promise<DriveFileRecord | null> {
+    const folderLegacy = folderId
+      ? await this.findSingleFile(
+          `${this.buildFolderQuery(folderId)} and name = '${LEGACY_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' }`,
+        )
+      : null;
+
+    if (folderLegacy) {
+      return folderLegacy;
+    }
+
     const byLegacyName = await this.findSingleFile(
       `trashed = false and name = '${LEGACY_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' }`,
     );
@@ -169,9 +259,13 @@ export class GoogleDriveStore {
     return this.findSingleFile("trashed = false and appProperties has { key='sutrapad' and value='true' }");
   }
 
+  private buildFolderQuery(folderId: string): string {
+    return `trashed = false and '${folderId}' in parents`;
+  }
+
   private async findSingleFile(query: string): Promise<DriveFileRecord | null> {
     const response = await fetch(
-      `${GOOGLE_DRIVE_API}?q=${encodeURIComponent(query)}&fields=files(id,name,appProperties)&pageSize=1`,
+      `${GOOGLE_DRIVE_API}?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,appProperties,parents)&pageSize=1`,
       {
         headers: {
           Authorization: `Bearer ${this.#token}`,
@@ -201,21 +295,71 @@ export class GoogleDriveStore {
     return (await response.json()) as T;
   }
 
+  private async ensureFileInFolder(fileId: string, folderId: string): Promise<void> {
+    const metadata = await this.fetchFileMetadata(fileId);
+    const currentParents: string[] = metadata.parents ?? [];
+    const otherParents = currentParents.filter((parentId: string) => parentId !== folderId);
+
+    if (currentParents.includes(folderId) && otherParents.length === 0) {
+      return;
+    }
+
+    const params = new URLSearchParams({
+      addParents: folderId,
+      fields: "id,name,mimeType,appProperties,parents",
+    });
+
+    if (otherParents.length > 0) {
+      params.set("removeParents", otherParents.join(","));
+    }
+
+    const response = await fetch(`${GOOGLE_DRIVE_API}/${fileId}?${params.toString()}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${this.#token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to move SutraPad files into the Google Drive folder.");
+    }
+  }
+
+  private async fetchFileMetadata(fileId: string): Promise<DriveFileRecord> {
+    const response = await fetch(
+      `${GOOGLE_DRIVE_API}/${fileId}?fields=id,name,mimeType,appProperties,parents`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.#token}`,
+        },
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to inspect Google Drive file metadata.");
+    }
+
+    return (await response.json()) as DriveFileRecord;
+  }
+
   private async uploadJsonFile<T>({
     fileId,
     fileName,
     data,
+    folderId,
     appProperties,
   }: {
     fileId?: string;
     fileName: string;
     data: T;
+    folderId: string;
     appProperties: Record<string, string>;
   }): Promise<DriveFileRecord> {
     const metadata = {
       name: fileName,
       mimeType: "application/json",
       appProperties,
+      ...(fileId ? {} : { parents: [folderId] }),
     };
 
     const formData = new FormData();

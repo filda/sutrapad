@@ -33,5 +33,7 @@ export interface UserProfile {
 export interface DriveFileRecord {
   id: string;
   name: string;
+  mimeType?: string;
   appProperties?: Record<string, string>;
+  parents?: string[];
 }
