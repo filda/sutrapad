@@ -193,6 +193,8 @@ Set the OAuth client to include:
 - `Authorized JavaScript origins`
   - `http://localhost:5173`
   - `https://localhost:5173`
+  - `http://YOUR-LAN-IP:5173` when testing over LAN without HTTPS
+  - `https://YOUR-LAN-IP:5173` when testing over LAN with HTTPS
   - `https://filda.github.io`
 - `Authorized redirect URIs`
   - none is required for the popup token flow used by this app
