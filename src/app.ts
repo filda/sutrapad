@@ -59,6 +59,7 @@ function persistLocalWorkspace(workspace: SutraPadWorkspace): void {
 
 export function createApp(root: HTMLElement): void {
   const auth = new GoogleAuthService();
+  const iosShortcutUrl = `${import.meta.env.BASE_URL}Send_to_Sutrapad.shortcut`;
 
   let profile: UserProfile | null = null;
   let workspace: SutraPadWorkspace = loadLocalWorkspace();
@@ -222,12 +223,18 @@ export function createApp(root: HTMLElement): void {
     bookmarkletHint.innerHTML =
       "We cannot detect whether a browser already has this bookmarklet saved. Browsers do not expose bookmark contents to normal web pages, so this helper stays manual by design. Desktop Safari usually works best if you create a normal bookmark first and then replace its URL with the copied bookmarklet code.";
 
+    const iosShortcutHint = document.createElement("p");
+    iosShortcutHint.className = "bookmarklet-hint";
+    iosShortcutHint.innerHTML =
+      `On iPhone and iPad, a Shortcut is usually the easiest option. <a href="${iosShortcutUrl}" download>Download the iOS Shortcut</a>, open it in Safari, add it to Shortcuts, and enable it in the Share Sheet.`;
+
     const bookmarkletSteps = document.createElement("ol");
     bookmarkletSteps.className = "bookmarklet-steps";
     bookmarkletSteps.innerHTML = `
       <li>Drag <strong>Save to SutraPad</strong> to your bookmarks bar in Chrome, Brave, or Opera.</li>
       <li>In Safari, create a regular bookmark, choose <strong>Edit Address</strong>, and paste the copied bookmarklet code.</li>
       <li>While browsing any page, click the bookmarklet to open SutraPad with a new captured note.</li>
+      <li>On iOS, download the Shortcut file, add it in Apple Shortcuts, and use it from the Share menu as <strong>Send to SutraPad</strong>.</li>
     `;
 
     bookmarkletActions.append(bookmarkletLink, copyBookmarkletButton);
@@ -240,7 +247,7 @@ export function createApp(root: HTMLElement): void {
     }
 
     if (bookmarkletHelperExpanded) {
-      bookmarkletActions.append(bookmarkletHint, bookmarkletSteps);
+      bookmarkletActions.append(bookmarkletHint, iosShortcutHint, bookmarkletSteps);
       bookmarkletSection.append(bookmarkletActions);
     }
 

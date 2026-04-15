@@ -157,11 +157,19 @@ GitHub Pages build configuration:
 
 The app exposes a bookmarklet link in the UI. Drag `Save to SutraPad` to your bookmarks bar and then click it from any page you want to capture.
 
+For iPhone and iPad, use the Shortcut download:
+
+- [Download `Send_to_Sutrapad.shortcut`](public/Send_to_Sutrapad.shortcut)
+- Open the file in Safari on iOS
+- Add it to the Shortcuts app
+- Enable it in the Share Sheet
+- Use `Share → Send to SutraPad`
+
 Compatibility notes:
 
 - Desktop Chrome, Brave, and Opera generally work well with drag-to-bookmarks-bar bookmarklets.
 - Desktop Safari supports bookmarklets too, but adding them is often easier by creating a normal bookmark first and then replacing its URL with the bookmarklet code copied from the app.
-- Mobile browsers are much less consistent, so treat the bookmarklet as a desktop-first feature.
+- On iPhone and iPad, the Shortcut is the recommended capture flow.
 
 ## Current Scope
 
