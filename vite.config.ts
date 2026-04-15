@@ -43,7 +43,7 @@ export default defineConfig(({ command, mode }) => {
         manifest: {
           name: "SutraPad",
           short_name: "SutraPad",
-          description: "PWA note-taking app synchronized with Google Drive.",
+          description: "Store and manage your Gerümpel on Google Drive — powered entirely by browser magic, questionable decisions, and multiple JSON files.",
           start_url: base,
           display: "standalone",
           background_color: "#f5f0e8",
