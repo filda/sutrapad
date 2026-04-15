@@ -298,6 +298,22 @@ a {
   line-height: 1.35;
 }
 
+.note-list-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.note-list-tag {
+  padding: 1px 8px;
+  background: rgba(192, 132, 87, 0.1);
+  border: 1px solid rgba(192, 132, 87, 0.28);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .profile {
   display: flex;
   gap: 14px;
@@ -366,6 +382,64 @@ a {
 
 .status-error {
   color: var(--danger);
+}
+
+.tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 249, 0.88);
+  border-radius: 18px;
+  min-height: 46px;
+  cursor: text;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 11px;
+  background: rgba(192, 132, 87, 0.13);
+  border: 1px solid rgba(192, 132, 87, 0.32);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--primary);
+  line-height: 1.4;
+}
+
+.tag-chip-remove {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 100ms ease;
+}
+
+.tag-chip-remove:hover {
+  color: var(--danger);
+}
+
+.tag-text-input {
+  border: none;
+  background: transparent;
+  padding: 0;
+  outline: none;
+  font-size: 0.95rem;
+  color: var(--primary);
+  min-width: 80px;
+  flex: 1;
+}
+
+.tag-text-input::placeholder {
+  color: var(--muted);
 }
 
 .title-input,

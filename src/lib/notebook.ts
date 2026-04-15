@@ -8,6 +8,7 @@ export function createNote(title = "Untitled note"): SutraPadDocument {
     title,
     body: "",
     updatedAt: new Date().toISOString(),
+    tags: [],
   };
 }
 
@@ -94,11 +95,15 @@ export function areWorkspacesEqual(
 
   return leftNotes.every((note, index) => {
     const other = rightNotes[index];
+    const tagsEqual =
+      note.tags.length === other.tags.length &&
+      note.tags.every((tag, i) => tag === other.tags[i]);
     return (
       note.id === other.id &&
       note.title === other.title &&
       note.body === other.body &&
-      note.updatedAt === other.updatedAt
+      note.updatedAt === other.updatedAt &&
+      tagsEqual
     );
   });
 }

@@ -3,6 +3,7 @@ export interface SutraPadDocument {
   title: string;
   body: string;
   updatedAt: string;
+  tags: string[];
 }
 
 export interface SutraPadNoteSummary {

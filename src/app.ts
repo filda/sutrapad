@@ -47,7 +47,7 @@ function loadLocalWorkspace(): SutraPadWorkspace {
     }
 
     return {
-      notes: parsed.notes,
+      notes: parsed.notes.map((note) => ({ ...note, tags: note.tags ?? [] })),
       activeNoteId: parsed.activeNoteId ?? parsed.notes[0].id,
     };
   } catch {
@@ -70,10 +70,20 @@ export function createApp(root: HTMLElement): void {
   let bookmarkletMessage = "";
   let bookmarkletHelperExpanded =
     window.localStorage.getItem(BOOKMARKLET_HELPER_KEY) !== "collapsed";
+  let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   const getCurrentNote = (): SutraPadDocument => {
     const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
     return note ?? workspace.notes[0];
+  };
+
+  const scheduleAutoSave = (): void => {
+    if (!profile) return;
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+      autoSaveTimer = null;
+      void saveWorkspace();
+    }, 2000);
   };
 
   const replaceCurrentNote = (updater: (note: SutraPadDocument) => SutraPadDocument): void => {
@@ -81,6 +91,82 @@ export function createApp(root: HTMLElement): void {
     workspace = upsertNote(workspace, current.id, updater);
 
     persistLocalWorkspace(workspace);
+    scheduleAutoSave();
+  };
+
+  const buildTagInput = (): HTMLDivElement => {
+    const row = document.createElement("div");
+    row.className = "tags-row";
+
+    const input = document.createElement("input");
+    input.className = "tag-text-input";
+    input.type = "text";
+    input.setAttribute("aria-label", "Add tag");
+
+    const addTag = (value: string): void => {
+      const tag = value.trim().toLowerCase();
+      if (!tag || getCurrentNote().tags.includes(tag)) return;
+      replaceCurrentNote((n) => ({ ...n, tags: [...n.tags, tag], updatedAt: new Date().toISOString() }));
+      renderChips();
+    };
+
+    input.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === ",") {
+        e.preventDefault();
+        addTag(input.value);
+        input.value = "";
+        input.focus();
+      } else if (e.key === "Backspace" && input.value === "") {
+        const tags = getCurrentNote().tags;
+        if (tags.length === 0) return;
+        replaceCurrentNote((n) => ({ ...n, tags: n.tags.slice(0, -1), updatedAt: new Date().toISOString() }));
+        renderChips();
+        input.focus();
+      }
+    };
+
+    input.onblur = () => {
+      if (input.value.trim()) {
+        addTag(input.value);
+        input.value = "";
+      }
+    };
+
+    row.onclick = (e) => {
+      if (e.target === row) input.focus();
+    };
+
+    const renderChips = (): void => {
+      while (row.firstChild) row.removeChild(row.firstChild);
+
+      for (const tag of getCurrentNote().tags) {
+        const chip = document.createElement("span");
+        chip.className = "tag-chip";
+
+        const label = document.createElement("span");
+        label.textContent = tag;
+
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "tag-chip-remove";
+        removeBtn.setAttribute("aria-label", `Remove tag ${tag}`);
+        removeBtn.textContent = "×";
+        removeBtn.onclick = () => {
+          replaceCurrentNote((n) => ({ ...n, tags: n.tags.filter((t) => t !== tag), updatedAt: new Date().toISOString() }));
+          renderChips();
+          input.focus();
+        };
+
+        chip.append(label, removeBtn);
+        row.append(chip);
+      }
+
+      input.placeholder = getCurrentNote().tags.length === 0 ? "Add tags…" : "";
+      row.append(input);
+    };
+
+    renderChips();
+    return row;
   };
 
   const buildNotesList = (currentNoteId: string): HTMLDivElement => {
@@ -106,6 +192,18 @@ export function createApp(root: HTMLElement): void {
         <span>${formatDate(note.updatedAt)}</span>
         <p>${excerpt.slice(0, 72)}</p>
       `;
+
+      if (note.tags.length > 0) {
+        const tagsRow = document.createElement("div");
+        tagsRow.className = "note-list-tags";
+        for (const tag of note.tags) {
+          const chip = document.createElement("span");
+          chip.className = "note-list-tag";
+          chip.textContent = tag;
+          tagsRow.append(chip);
+        }
+        button.append(tagsRow);
+      }
 
       notesList.append(button);
     }
@@ -388,7 +486,7 @@ export function createApp(root: HTMLElement): void {
       refreshNotesList();
     };
 
-    editor.append(status, titleInput, bodyInput);
+    editor.append(status, titleInput, buildTagInput(), bodyInput);
     workspaceSection.append(notesPanel, editor);
     page.append(workspaceSection);
 

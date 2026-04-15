@@ -14,6 +14,7 @@ function createInitialDocument(): SutraPadDocument {
     title: "My first note",
     body: "Start writing here.",
     updatedAt: new Date().toISOString(),
+    tags: [],
   };
 }
 
@@ -74,7 +75,8 @@ export class GoogleDriveStore {
           return null;
         }
 
-        return await this.fetchJsonFile<SutraPadDocument>(fileId);
+        const doc = await this.fetchJsonFile<SutraPadDocument>(fileId);
+        return { ...doc, tags: doc.tags ?? [] };
       }),
     );
 
@@ -105,6 +107,16 @@ export class GoogleDriveStore {
       workspace.notes.map(async (note) => {
         const existingSummary = existingIndex?.notes.find((entry) => entry.id === note.id);
         const existingFileId = existingSummary?.fileId;
+
+        if (existingFileId && existingSummary?.updatedAt === note.updatedAt) {
+          return {
+            id: note.id,
+            title: note.title,
+            updatedAt: note.updatedAt,
+            fileId: existingFileId,
+          } satisfies SutraPadNoteSummary;
+        }
+
         const existingNoteFile: DriveFileRecord | null = existingFileId
           ? await this.fetchFileMetadata(existingFileId).catch(
               () =>
@@ -165,7 +177,8 @@ export class GoogleDriveStore {
       return null;
     }
 
-    return this.fetchJsonFile<SutraPadDocument>(legacyFile.id);
+    const doc = await this.fetchJsonFile<SutraPadDocument>(legacyFile.id);
+    return { ...doc, tags: doc.tags ?? [] };
   }
 
   private async getWorkspaceFolder(): Promise<DriveFileRecord> {

@@ -12,6 +12,10 @@ import {
 } from "../src/lib/notebook";
 import type { SutraPadDocument } from "../src/types";
 
+function makeNote(overrides: Partial<SutraPadDocument> & Pick<SutraPadDocument, "id" | "updatedAt">): SutraPadDocument {
+  return { title: "Test note", body: "", tags: [], ...overrides };
+}
+
 describe("notebook helpers", () => {
   it("creates a workspace with one active note", () => {
     vi.useFakeTimers();
@@ -23,15 +27,16 @@ describe("notebook helpers", () => {
     expect(workspace.activeNoteId).toBe(workspace.notes[0].id);
     expect(workspace.notes[0].title).toBe("Untitled note");
     expect(workspace.notes[0].body).toBe("");
+    expect(workspace.notes[0].tags).toEqual([]);
 
     vi.useRealTimers();
   });
 
   it("sorts notes by updatedAt descending", () => {
     const notes: SutraPadDocument[] = [
-      { id: "1", title: "Older", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
-      { id: "2", title: "Newest", body: "", updatedAt: "2026-04-13T12:00:00.000Z" },
-      { id: "3", title: "Middle", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
+      makeNote({ id: "1", title: "Older", updatedAt: "2026-04-13T10:00:00.000Z" }),
+      makeNote({ id: "2", title: "Newest", updatedAt: "2026-04-13T12:00:00.000Z" }),
+      makeNote({ id: "3", title: "Middle", updatedAt: "2026-04-13T11:00:00.000Z" }),
     ];
 
     expect(sortNotes(notes).map((note) => note.id)).toEqual(["2", "3", "1"]);
@@ -41,8 +46,8 @@ describe("notebook helpers", () => {
     const workspace = {
       activeNoteId: "1",
       notes: [
-        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
-        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
+        makeNote({ id: "1", title: "Alpha", updatedAt: "2026-04-13T10:00:00.000Z" }),
+        makeNote({ id: "2", title: "Beta", updatedAt: "2026-04-13T11:00:00.000Z" }),
       ],
     };
 
@@ -61,8 +66,8 @@ describe("notebook helpers", () => {
     const workspace = {
       activeNoteId: "2",
       notes: [
-        { id: "1", title: "Alpha", body: "Keep me", updatedAt: "2026-04-13T10:00:00.000Z" },
-        { id: "2", title: "Beta", body: "Change me", updatedAt: "2026-04-13T11:00:00.000Z" },
+        makeNote({ id: "1", title: "Alpha", body: "Keep me", updatedAt: "2026-04-13T10:00:00.000Z" }),
+        makeNote({ id: "2", title: "Beta", body: "Change me", updatedAt: "2026-04-13T11:00:00.000Z" }),
       ],
     };
 
@@ -83,7 +88,7 @@ describe("notebook helpers", () => {
 
     const workspace = {
       activeNoteId: "1",
-      notes: [{ id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
+      notes: [makeNote({ id: "1", title: "Alpha", updatedAt: "2026-04-13T10:00:00.000Z" })],
     };
 
     const updated = createNewNoteWorkspace(workspace);
@@ -101,7 +106,7 @@ describe("notebook helpers", () => {
 
     const workspace = {
       activeNoteId: "1",
-      notes: [{ id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
+      notes: [makeNote({ id: "1", title: "Alpha", updatedAt: "2026-04-13T10:00:00.000Z" })],
     };
 
     const updated = createNewNoteWorkspace(workspace, "14/04/2026 · high noon · Libeň");
@@ -118,7 +123,7 @@ describe("notebook helpers", () => {
 
     const workspace = {
       activeNoteId: "1",
-      notes: [{ id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
+      notes: [makeNote({ id: "1", title: "Alpha", updatedAt: "2026-04-13T10:00:00.000Z" })],
     };
 
     const updated = createCapturedNoteWorkspace(workspace, {
@@ -139,7 +144,7 @@ describe("notebook helpers", () => {
 
     const workspace = {
       activeNoteId: "1",
-      notes: [{ id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
+      notes: [makeNote({ id: "1", title: "Alpha", updatedAt: "2026-04-13T10:00:00.000Z" })],
     };
 
     const updated = createTextNoteWorkspace(workspace, {
@@ -157,7 +162,7 @@ describe("notebook helpers", () => {
   it("treats the default local workspace as pristine", () => {
     const workspace = {
       activeNoteId: "1",
-      notes: [{ id: "1", title: "Untitled note", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
+      notes: [makeNote({ id: "1", title: "Untitled note", updatedAt: "2026-04-13T10:00:00.000Z" })],
     };
 
     expect(isPristineWorkspace(workspace)).toBe(true);
@@ -167,14 +172,14 @@ describe("notebook helpers", () => {
     expect(
       isPristineWorkspace({
         activeNoteId: "1",
-        notes: [{ id: "1", title: "Untitled note", body: "Draft", updatedAt: "2026-04-13T10:00:00.000Z" }],
+        notes: [makeNote({ id: "1", title: "Untitled note", body: "Draft", updatedAt: "2026-04-13T10:00:00.000Z" })],
       }),
     ).toBe(false);
 
     expect(
       isPristineWorkspace({
         activeNoteId: "2",
-        notes: [{ id: "1", title: "Untitled note", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
+        notes: [makeNote({ id: "1", title: "Untitled note", updatedAt: "2026-04-13T10:00:00.000Z" })],
       }),
     ).toBe(false);
 
@@ -182,8 +187,8 @@ describe("notebook helpers", () => {
       isPristineWorkspace({
         activeNoteId: "1",
         notes: [
-          { id: "1", title: "Untitled note", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
-          { id: "2", title: "Second", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
+          makeNote({ id: "1", title: "Untitled note", updatedAt: "2026-04-13T10:00:00.000Z" }),
+          makeNote({ id: "2", title: "Second", updatedAt: "2026-04-13T11:00:00.000Z" }),
         ],
       }),
     ).toBe(false);
@@ -193,23 +198,13 @@ describe("notebook helpers", () => {
     const localWorkspace = {
       activeNoteId: "local-1",
       notes: [
-        {
-          id: "local-1",
-          title: "Draft",
-          body: "Write first, sign in later.",
-          updatedAt: "2026-04-13T10:00:00.000Z",
-        },
+        makeNote({ id: "local-1", title: "Draft", body: "Write first, sign in later.", updatedAt: "2026-04-13T10:00:00.000Z" }),
       ],
     };
     const remoteWorkspace = {
       activeNoteId: "remote-1",
       notes: [
-        {
-          id: "remote-1",
-          title: "Untitled note",
-          body: "",
-          updatedAt: "2026-04-13T09:00:00.000Z",
-        },
+        makeNote({ id: "remote-1", title: "Untitled note", updatedAt: "2026-04-13T09:00:00.000Z" }),
       ],
     };
 
@@ -220,23 +215,13 @@ describe("notebook helpers", () => {
     const localWorkspace = {
       activeNoteId: "local-1",
       notes: [
-        {
-          id: "local-1",
-          title: "Untitled note",
-          body: "",
-          updatedAt: "2026-04-13T09:00:00.000Z",
-        },
+        makeNote({ id: "local-1", title: "Untitled note", updatedAt: "2026-04-13T09:00:00.000Z" }),
       ],
     };
     const remoteWorkspace = {
       activeNoteId: "remote-1",
       notes: [
-        {
-          id: "remote-1",
-          title: "Saved note",
-          body: "Already in Drive.",
-          updatedAt: "2026-04-13T10:00:00.000Z",
-        },
+        makeNote({ id: "remote-1", title: "Saved note", body: "Already in Drive.", updatedAt: "2026-04-13T10:00:00.000Z" }),
       ],
     };
 
@@ -248,23 +233,13 @@ describe("notebook helpers", () => {
       {
         activeNoteId: "shared",
         notes: [
-          {
-            id: "shared",
-            title: "Local draft",
-            body: "Local body",
-            updatedAt: "2026-04-13T12:00:00.000Z",
-          },
+          makeNote({ id: "shared", title: "Local draft", body: "Local body", updatedAt: "2026-04-13T12:00:00.000Z" }),
         ],
       },
       {
         activeNoteId: "shared",
         notes: [
-          {
-            id: "shared",
-            title: "Remote draft",
-            body: "Remote body",
-            updatedAt: "2026-04-13T10:00:00.000Z",
-          },
+          makeNote({ id: "shared", title: "Remote draft", body: "Remote body", updatedAt: "2026-04-13T10:00:00.000Z" }),
         ],
       },
     );
@@ -283,15 +258,15 @@ describe("notebook helpers", () => {
     const leftWorkspace = {
       activeNoteId: "1",
       notes: [
-        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
-        { id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" },
+        makeNote({ id: "2", title: "Beta", updatedAt: "2026-04-13T11:00:00.000Z" }),
+        makeNote({ id: "1", title: "Alpha", body: "Hello", tags: ["draft"], updatedAt: "2026-04-13T10:00:00.000Z" }),
       ],
     };
     const rightWorkspace = {
       activeNoteId: "1",
       notes: [
-        { id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" },
-        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
+        makeNote({ id: "1", title: "Alpha", body: "Hello", tags: ["draft"], updatedAt: "2026-04-13T10:00:00.000Z" }),
+        makeNote({ id: "2", title: "Beta", updatedAt: "2026-04-13T11:00:00.000Z" }),
       ],
     };
 
@@ -301,28 +276,41 @@ describe("notebook helpers", () => {
   it("detects when two workspaces differ", () => {
     expect(
       areWorkspacesEqual(
-        {
-          activeNoteId: "1",
-          notes: [{ id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" }],
-        },
-        {
-          activeNoteId: "2",
-          notes: [{ id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" }],
-        },
+        { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" })] },
+        { activeNoteId: "2", notes: [makeNote({ id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" })] },
       ),
     ).toBe(false);
 
     expect(
       areWorkspacesEqual(
-        {
-          activeNoteId: "1",
-          notes: [{ id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" }],
-        },
-        {
-          activeNoteId: "1",
-          notes: [{ id: "1", title: "Alpha", body: "Changed", updatedAt: "2026-04-13T10:00:00.000Z" }],
-        },
+        { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" })] },
+        { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", body: "Changed", updatedAt: "2026-04-13T10:00:00.000Z" })] },
       ),
     ).toBe(false);
+  });
+
+  it("detects tag differences between otherwise identical workspaces", () => {
+    expect(
+      areWorkspacesEqual(
+        { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", tags: ["work"], updatedAt: "2026-04-13T10:00:00.000Z" })] },
+        { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", tags: [], updatedAt: "2026-04-13T10:00:00.000Z" })] },
+      ),
+    ).toBe(false);
+
+    expect(
+      areWorkspacesEqual(
+        { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", tags: ["work", "personal"], updatedAt: "2026-04-13T10:00:00.000Z" })] },
+        { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", tags: ["personal", "work"], updatedAt: "2026-04-13T10:00:00.000Z" })] },
+      ),
+    ).toBe(false);
+  });
+
+  it("considers workspaces equal when tags match", () => {
+    expect(
+      areWorkspacesEqual(
+        { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", tags: ["work", "draft"], updatedAt: "2026-04-13T10:00:00.000Z" })] },
+        { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", tags: ["work", "draft"], updatedAt: "2026-04-13T10:00:00.000Z" })] },
+      ),
+    ).toBe(true);
   });
 });
