@@ -11,8 +11,10 @@ export function buildBookmarklet(appUrl: string): string {
         target.searchParams.set("title", document.title);
       }
       const finalUrl = target.toString();
-      const opened = window.open(finalUrl, "_blank", "noopener");
-      if (!opened) {
+      const opened = window.open(finalUrl, "_blank");
+      if (opened) {
+        opened.opener = null;
+      } else {
         window.location.href = finalUrl;
       }
     })();
