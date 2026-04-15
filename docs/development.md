@@ -199,6 +199,13 @@ Set the OAuth client to include:
 - `Authorized redirect URIs`
   - none is required for the popup token flow used by this app
 
+Notes:
+
+- The OAuth client type must be `Web application`.
+- The origin must match exactly, including protocol, host, and port.
+- If you switch from `localhost` to a LAN IP such as `192.168.88.40`, that LAN origin must be added explicitly.
+- `redirect_uri_mismatch` in this app usually means the current page origin is missing from `Authorized JavaScript origins`, or the wrong OAuth client ID is being used.
+
 Scopes used by the app:
 
 - `openid`
