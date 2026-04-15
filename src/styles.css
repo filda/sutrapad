@@ -200,6 +200,7 @@ a {
 
 .editor-card {
   padding: 24px;
+  min-width: 0;
 }
 
 .workspace {
@@ -213,6 +214,7 @@ a {
   display: grid;
   gap: 16px;
   align-self: start;
+  min-width: 0;
 }
 
 .notes-panel-header {
@@ -238,10 +240,12 @@ a {
 .notes-list {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .note-list-item {
   width: 100%;
+  min-width: 0;
   text-align: left;
   border: 1px solid rgba(31, 41, 55, 0.1);
   background: rgba(255, 252, 247, 0.85);
@@ -271,6 +275,9 @@ a {
 .note-list-item span,
 .note-list-item p {
   display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .note-list-item strong {
