@@ -80,6 +80,12 @@ export function extractHtmlTitle(html: string): string | null {
   return normalized || null;
 }
 
+export function extractHtmlLang(html: string): string | null {
+  const match = html.match(/<html[^>]*\blang=["']?([^"'\s>]+)["']?[^>]*>/i);
+  const lang = match?.[1]?.trim();
+  return lang || null;
+}
+
 export async function resolveTitleFromUrl(urlString: string): Promise<string | null> {
   try {
     const response = await fetch(urlString);

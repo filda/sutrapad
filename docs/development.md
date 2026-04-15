@@ -179,6 +179,18 @@ This runs:
 - `npm test`
 - `npm run build`
 
+### Run mutation testing
+
+```bash
+npm run test:mutation
+```
+
+This runs StrykerJS mutation testing against the currently unit-tested library modules in `src/lib/**`.
+
+The HTML report is written to:
+
+- `reports/mutation/mutation.html`
+
 ## Google Cloud Setup
 
 In Google Cloud Console:

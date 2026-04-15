@@ -22,6 +22,7 @@ describe("notebook helpers", () => {
     expect(workspace.notes).toHaveLength(1);
     expect(workspace.activeNoteId).toBe(workspace.notes[0].id);
     expect(workspace.notes[0].title).toBe("Untitled note");
+    expect(workspace.notes[0].body).toBe("");
 
     vi.useRealTimers();
   });
@@ -56,15 +57,33 @@ describe("notebook helpers", () => {
     expect(updated.notes[0].title).toBe("Alpha revised");
   });
 
+  it("updates only the targeted note when upserting", () => {
+    const workspace = {
+      activeNoteId: "2",
+      notes: [
+        { id: "1", title: "Alpha", body: "Keep me", updatedAt: "2026-04-13T10:00:00.000Z" },
+        { id: "2", title: "Beta", body: "Change me", updatedAt: "2026-04-13T11:00:00.000Z" },
+      ],
+    };
+
+    const updated = upsertNote(workspace, "2", (note) => ({
+      ...note,
+      body: "Changed",
+      updatedAt: "2026-04-13T12:00:00.000Z",
+    }));
+
+    expect(updated.notes.find((note) => note.id === "1")?.body).toBe("Keep me");
+    expect(updated.notes.find((note) => note.id === "2")?.body).toBe("Changed");
+    expect(updated.notes).toHaveLength(2);
+  });
+
   it("creates a new note and makes it active", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-13T13:00:00.000Z"));
 
     const workspace = {
       activeNoteId: "1",
-      notes: [
-        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
-      ],
+      notes: [{ id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
     };
 
     const updated = createNewNoteWorkspace(workspace);
@@ -82,9 +101,7 @@ describe("notebook helpers", () => {
 
     const workspace = {
       activeNoteId: "1",
-      notes: [
-        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
-      ],
+      notes: [{ id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
     };
 
     const updated = createCapturedNoteWorkspace(workspace, {
@@ -105,18 +122,16 @@ describe("notebook helpers", () => {
 
     const workspace = {
       activeNoteId: "1",
-      notes: [
-        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
-      ],
+      notes: [{ id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
     };
 
     const updated = createTextNoteWorkspace(workspace, {
-      title: "14/4/2026 · midnight",
+      title: "14/4/2026 Â· midnight",
       body: "A quick note",
     });
 
     expect(updated.activeNoteId).toBe(updated.notes[0].id);
-    expect(updated.notes[0].title).toBe("14/4/2026 · midnight");
+    expect(updated.notes[0].title).toBe("14/4/2026 Â· midnight");
     expect(updated.notes[0].body).toBe("A quick note");
 
     vi.useRealTimers();
@@ -129,6 +144,32 @@ describe("notebook helpers", () => {
     };
 
     expect(isPristineWorkspace(workspace)).toBe(true);
+  });
+
+  it("does not treat edited or multi-note workspaces as pristine", () => {
+    expect(
+      isPristineWorkspace({
+        activeNoteId: "1",
+        notes: [{ id: "1", title: "Untitled note", body: "Draft", updatedAt: "2026-04-13T10:00:00.000Z" }],
+      }),
+    ).toBe(false);
+
+    expect(
+      isPristineWorkspace({
+        activeNoteId: "2",
+        notes: [{ id: "1", title: "Untitled note", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
+      }),
+    ).toBe(false);
+
+    expect(
+      isPristineWorkspace({
+        activeNoteId: "1",
+        notes: [
+          { id: "1", title: "Untitled note", body: "", updatedAt: "2026-04-13T10:00:00.000Z" },
+          { id: "2", title: "Second", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
+        ],
+      }),
+    ).toBe(false);
   });
 
   it("merges local notes into an otherwise empty remote workspace", () => {
@@ -185,6 +226,42 @@ describe("notebook helpers", () => {
     expect(mergeWorkspaces(localWorkspace, remoteWorkspace)).toEqual(remoteWorkspace);
   });
 
+  it("prefers the newer version when the same note exists locally and remotely", () => {
+    const merged = mergeWorkspaces(
+      {
+        activeNoteId: "shared",
+        notes: [
+          {
+            id: "shared",
+            title: "Local draft",
+            body: "Local body",
+            updatedAt: "2026-04-13T12:00:00.000Z",
+          },
+        ],
+      },
+      {
+        activeNoteId: "shared",
+        notes: [
+          {
+            id: "shared",
+            title: "Remote draft",
+            body: "Remote body",
+            updatedAt: "2026-04-13T10:00:00.000Z",
+          },
+        ],
+      },
+    );
+
+    expect(merged.notes).toHaveLength(1);
+    expect(merged.notes[0]).toMatchObject({
+      id: "shared",
+      title: "Local draft",
+      body: "Local body",
+      updatedAt: "2026-04-13T12:00:00.000Z",
+    });
+    expect(merged.activeNoteId).toBe("shared");
+  });
+
   it("detects when two workspaces are equivalent", () => {
     const leftWorkspace = {
       activeNoteId: "1",
@@ -202,5 +279,33 @@ describe("notebook helpers", () => {
     };
 
     expect(areWorkspacesEqual(leftWorkspace, rightWorkspace)).toBe(true);
+  });
+
+  it("detects when two workspaces differ", () => {
+    expect(
+      areWorkspacesEqual(
+        {
+          activeNoteId: "1",
+          notes: [{ id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" }],
+        },
+        {
+          activeNoteId: "2",
+          notes: [{ id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" }],
+        },
+      ),
+    ).toBe(false);
+
+    expect(
+      areWorkspacesEqual(
+        {
+          activeNoteId: "1",
+          notes: [{ id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" }],
+        },
+        {
+          activeNoteId: "1",
+          notes: [{ id: "1", title: "Alpha", body: "Changed", updatedAt: "2026-04-13T10:00:00.000Z" }],
+        },
+      ),
+    ).toBe(false);
   });
 });
