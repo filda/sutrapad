@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  areWorkspacesEqual,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
+  isPristineWorkspace,
+  mergeWorkspaces,
   sortNotes,
   upsertNote,
 } from "../src/lib/notebook";
@@ -117,5 +120,87 @@ describe("notebook helpers", () => {
     expect(updated.notes[0].body).toBe("A quick note");
 
     vi.useRealTimers();
+  });
+
+  it("treats the default local workspace as pristine", () => {
+    const workspace = {
+      activeNoteId: "1",
+      notes: [{ id: "1", title: "Untitled note", body: "", updatedAt: "2026-04-13T10:00:00.000Z" }],
+    };
+
+    expect(isPristineWorkspace(workspace)).toBe(true);
+  });
+
+  it("merges local notes into an otherwise empty remote workspace", () => {
+    const localWorkspace = {
+      activeNoteId: "local-1",
+      notes: [
+        {
+          id: "local-1",
+          title: "Draft",
+          body: "Write first, sign in later.",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+        },
+      ],
+    };
+    const remoteWorkspace = {
+      activeNoteId: "remote-1",
+      notes: [
+        {
+          id: "remote-1",
+          title: "Untitled note",
+          body: "",
+          updatedAt: "2026-04-13T09:00:00.000Z",
+        },
+      ],
+    };
+
+    expect(mergeWorkspaces(localWorkspace, remoteWorkspace)).toEqual(localWorkspace);
+  });
+
+  it("keeps the remote notebook when the local workspace is still pristine", () => {
+    const localWorkspace = {
+      activeNoteId: "local-1",
+      notes: [
+        {
+          id: "local-1",
+          title: "Untitled note",
+          body: "",
+          updatedAt: "2026-04-13T09:00:00.000Z",
+        },
+      ],
+    };
+    const remoteWorkspace = {
+      activeNoteId: "remote-1",
+      notes: [
+        {
+          id: "remote-1",
+          title: "Saved note",
+          body: "Already in Drive.",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+        },
+      ],
+    };
+
+    expect(mergeWorkspaces(localWorkspace, remoteWorkspace)).toEqual(remoteWorkspace);
+  });
+
+  it("detects when two workspaces are equivalent", () => {
+    const leftWorkspace = {
+      activeNoteId: "1",
+      notes: [
+        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
+        { id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" },
+      ],
+    };
+    const rightWorkspace = {
+      activeNoteId: "1",
+      notes: [
+        { id: "1", title: "Alpha", body: "Hello", updatedAt: "2026-04-13T10:00:00.000Z" },
+        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z" },
+      ],
+    };
+
+    expect(areWorkspacesEqual(leftWorkspace, rightWorkspace)).toBe(true);
   });
 });

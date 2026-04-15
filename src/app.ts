@@ -1,10 +1,12 @@
 import { GoogleAuthService } from "./services/google-auth";
 import { GoogleDriveStore } from "./services/drive-store";
 import {
+  areWorkspacesEqual,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
+  mergeWorkspaces,
   upsertNote,
 } from "./lib/notebook";
 import {
@@ -116,7 +118,7 @@ export function createApp(root: HTMLElement): void {
           lastError = "";
           render();
           profile = await auth.signIn();
-          await loadWorkspace();
+          await restoreWorkspaceAfterSignIn();
         } catch (error) {
           syncState = "error";
           lastError = error instanceof Error ? error.message : "Sign-in failed.";
@@ -383,6 +385,35 @@ export function createApp(root: HTMLElement): void {
     } catch (error) {
       syncState = "error";
       lastError = error instanceof Error ? error.message : "Loading from Google Drive failed.";
+      render();
+    }
+  };
+
+  const restoreWorkspaceAfterSignIn = async (): Promise<void> => {
+    try {
+      syncState = "loading";
+      lastError = "";
+      render();
+
+      const remoteWorkspace = await getStore().loadWorkspace();
+      const mergedWorkspace = mergeWorkspaces(workspace, remoteWorkspace);
+      const needsRemoteSave = !areWorkspacesEqual(mergedWorkspace, remoteWorkspace);
+
+      workspace = mergedWorkspace;
+      persistLocalWorkspace(workspace);
+
+      if (needsRemoteSave) {
+        syncState = "saving";
+        render();
+        await getStore().saveWorkspace(workspace);
+      }
+
+      syncState = "idle";
+      render();
+    } catch (error) {
+      syncState = "error";
+      lastError =
+        error instanceof Error ? error.message : "Loading from Google Drive failed.";
       render();
     }
   };
