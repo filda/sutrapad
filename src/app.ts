@@ -59,7 +59,7 @@ function persistLocalWorkspace(workspace: SutraPadWorkspace): void {
 
 export function createApp(root: HTMLElement): void {
   const auth = new GoogleAuthService();
-  const iosShortcutUrl = `${import.meta.env.BASE_URL}Send_to_Sutrapad.shortcut`;
+  const iosShortcutUrl = "https://www.icloud.com/shortcuts/969e1b627e4a46deae3c690ef0c9ca84";
 
   let profile: UserProfile | null = null;
   let workspace: SutraPadWorkspace = loadLocalWorkspace();
