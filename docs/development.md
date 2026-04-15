@@ -191,6 +191,8 @@ The HTML report is written to:
 
 - `reports/mutation/mutation.html`
 
+GitHub Actions also runs mutation testing in a separate `Daily Mutation Testing` workflow once per day and on manual dispatch.
+
 ## Google Cloud Setup
 
 In Google Cloud Console:
