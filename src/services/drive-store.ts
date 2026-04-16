@@ -1,12 +1,21 @@
-import type {DriveFileRecord, SutraPadDocument, SutraPadIndex, SutraPadNoteSummary, SutraPadWorkspace,} from "../types";
+import type {
+  DriveFileRecord,
+  SutraPadDocument,
+  SutraPadHead,
+  SutraPadIndex,
+  SutraPadNoteSummary,
+  SutraPadWorkspace,
+} from "../types";
 
 const GOOGLE_DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
 const GOOGLE_DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
-const INDEX_FILE_NAME = import.meta.env.VITE_SUTRAPAD_FILE_NAME || "sutrapad-index.json";
+const LEGACY_INDEX_FILE_NAME = import.meta.env.VITE_SUTRAPAD_FILE_NAME || "sutrapad-index.json";
 const LEGACY_FILE_NAME = "sutrapad-data.json";
+const HEAD_FILE_NAME = "sutrapad-head.json";
 const WORKSPACE_FOLDER_NAME = "SutraPad";
+const MAX_INDEX_SNAPSHOTS = 10;
 
 function createInitialDocument(): SutraPadDocument {
   return {
@@ -26,10 +35,18 @@ function createEmptyWorkspace(): SutraPadWorkspace {
   };
 }
 
-function createIndex(workspace: SutraPadWorkspace, existingIndex?: SutraPadIndex | null): SutraPadIndex {
+function createIndex(
+  workspace: SutraPadWorkspace,
+  existingIndex?: SutraPadIndex | null,
+  previousIndexId?: string,
+): SutraPadIndex {
+  const savedAt = new Date().toISOString();
+
   return {
     version: 1,
-    updatedAt: new Date().toISOString(),
+    updatedAt: savedAt,
+    savedAt,
+    previousIndexId,
     activeNoteId: workspace.activeNoteId,
     notes: workspace.notes.map((note) => {
       const previous = existingIndex?.notes.find((entry) => entry.id === note.id);
@@ -53,7 +70,7 @@ export class GoogleDriveStore {
 
   async loadWorkspace(): Promise<SutraPadWorkspace> {
     const workspaceFolder = await this.findWorkspaceFolder();
-    const indexFile = await this.findIndexFile(workspaceFolder?.id);
+    const indexFile = await this.resolveActiveIndexFile(workspaceFolder?.id);
 
     if (!indexFile) {
       const legacyDocument = await this.loadLegacyDocument(workspaceFolder?.id);
@@ -70,13 +87,14 @@ export class GoogleDriveStore {
     const index = await this.fetchJsonFile<SutraPadIndex>(indexFile.id);
     const notes = await Promise.all(
       index.notes.map(async (entry) => {
-        const fileId = entry.fileId ?? (await this.findNoteFileById(entry.id, workspaceFolder?.id))?.id;
+        const fileId =
+          entry.fileId ?? (await this.findNoteFileById(entry.id, workspaceFolder?.id))?.id;
         if (!fileId) {
           return null;
         }
 
-        const doc = await this.fetchJsonFile<SutraPadDocument>(fileId);
-        return { ...doc, tags: doc.tags ?? [] };
+        const document = await this.fetchJsonFile<SutraPadDocument>(fileId);
+        return { ...document, tags: document.tags ?? [] };
       }),
     );
 
@@ -97,12 +115,12 @@ export class GoogleDriveStore {
 
   async saveWorkspace(workspace: SutraPadWorkspace): Promise<void> {
     const workspaceFolder = await this.getWorkspaceFolder();
-    const existingIndexFile = await this.findIndexFile(workspaceFolder.id);
+    const existingIndexFile = await this.resolveActiveIndexFile(workspaceFolder.id);
     const existingIndex = existingIndexFile
       ? await this.fetchJsonFile<SutraPadIndex>(existingIndexFile.id)
       : null;
 
-    const nextIndex = createIndex(workspace, existingIndex);
+    const nextIndex = createIndex(workspace, existingIndex, existingIndexFile?.id);
     const savedNotes = await Promise.all(
       workspace.notes.map(async (note) => {
         const existingSummary = existingIndex?.notes.find((entry) => entry.id === note.id);
@@ -155,9 +173,8 @@ export class GoogleDriveStore {
       notes: savedNotes,
     };
 
-    await this.uploadJsonFile({
-      fileId: existingIndexFile?.id,
-      fileName: INDEX_FILE_NAME,
+    const indexSnapshotFile = await this.uploadJsonFile({
+      fileName: this.buildIndexSnapshotFileName(finalIndex.savedAt),
       data: finalIndex,
       folderId: workspaceFolder.id,
       appProperties: {
@@ -166,9 +183,36 @@ export class GoogleDriveStore {
       },
     });
 
-    if (existingIndexFile) {
-      await this.ensureFileInFolder(existingIndexFile.id, workspaceFolder.id);
+    await this.ensureFileInFolder(indexSnapshotFile.id, workspaceFolder.id);
+
+    const existingHeadFile = await this.findHeadFile(workspaceFolder.id);
+    const head: SutraPadHead = {
+      version: 1,
+      activeIndexId: indexSnapshotFile.id,
+      savedAt: finalIndex.savedAt,
+    };
+
+    await this.uploadJsonFile({
+      fileId: existingHeadFile?.id,
+      fileName: HEAD_FILE_NAME,
+      data: head,
+      folderId: workspaceFolder.id,
+      appProperties: {
+        sutrapad: "true",
+        kind: "head",
+      },
+    });
+
+    if (existingHeadFile) {
+      await this.ensureFileInFolder(existingHeadFile.id, workspaceFolder.id);
     }
+
+    await this.cleanupOldIndexSnapshots(workspaceFolder.id, indexSnapshotFile.id);
+  }
+
+  private buildIndexSnapshotFileName(savedAt: string): string {
+    const compactTimestamp = savedAt.replace(/[:.]/g, "-");
+    return `index-${compactTimestamp}.json`;
   }
 
   private async loadLegacyDocument(folderId?: string): Promise<SutraPadDocument | null> {
@@ -177,8 +221,8 @@ export class GoogleDriveStore {
       return null;
     }
 
-    const doc = await this.fetchJsonFile<SutraPadDocument>(legacyFile.id);
-    return { ...doc, tags: doc.tags ?? [] };
+    const document = await this.fetchJsonFile<SutraPadDocument>(legacyFile.id);
+    return { ...document, tags: document.tags ?? [] };
   }
 
   private async getWorkspaceFolder(): Promise<DriveFileRecord> {
@@ -199,27 +243,46 @@ export class GoogleDriveStore {
   }
 
   private async createWorkspaceFolder(): Promise<DriveFileRecord> {
-    const response = await fetch(`${GOOGLE_DRIVE_API}?fields=id,name,mimeType,appProperties,parents`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.#token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: WORKSPACE_FOLDER_NAME,
-        mimeType: GOOGLE_DRIVE_FOLDER_MIME_TYPE,
-        appProperties: {
-          sutrapad: "true",
-          kind: "folder",
+    const response = await fetch(
+      `${GOOGLE_DRIVE_API}?fields=id,name,mimeType,appProperties,parents`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.#token}`,
+          "Content-Type": "application/json",
         },
-      }),
-    });
+        body: JSON.stringify({
+          name: WORKSPACE_FOLDER_NAME,
+          mimeType: GOOGLE_DRIVE_FOLDER_MIME_TYPE,
+          appProperties: {
+            sutrapad: "true",
+            kind: "folder",
+          },
+        }),
+      },
+    );
 
     if (!response.ok) {
       throw new Error("Failed to create the SutraPad folder in Google Drive.");
     }
 
     return (await response.json()) as DriveFileRecord;
+  }
+
+  private async findHeadFile(folderId?: string): Promise<DriveFileRecord | null> {
+    const inFolder = folderId
+      ? await this.findSingleFile(
+          `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='head' }`,
+        )
+      : null;
+
+    if (inFolder) {
+      return inFolder;
+    }
+
+    return this.findSingleFile(
+      `trashed = false and name = '${HEAD_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='head' }`,
+    );
   }
 
   private async findIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
@@ -234,8 +297,28 @@ export class GoogleDriveStore {
     }
 
     return this.findSingleFile(
-      "trashed = false and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }",
+      `trashed = false and name = '${LEGACY_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }`,
     );
+  }
+
+  private async findIndexSnapshotFiles(folderId: string): Promise<DriveFileRecord[]> {
+    return this.findFiles(
+      `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }`,
+      MAX_INDEX_SNAPSHOTS + 20,
+    );
+  }
+
+  private async resolveActiveIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
+    const headFile = await this.findHeadFile(folderId);
+    if (headFile) {
+      const head = await this.fetchJsonFile<SutraPadHead>(headFile.id);
+      const activeIndex = await this.fetchFileMetadata(head.activeIndexId).catch(() => null);
+      if (activeIndex) {
+        return activeIndex;
+      }
+    }
+
+    return this.findIndexFile(folderId);
   }
 
   private async findNoteFileById(noteId: string, folderId?: string): Promise<DriveFileRecord | null> {
@@ -269,7 +352,9 @@ export class GoogleDriveStore {
       return byLegacyName;
     }
 
-    return this.findSingleFile("trashed = false and appProperties has { key='sutrapad' and value='true' }");
+    return this.findSingleFile(
+      "trashed = false and appProperties has { key='sutrapad' and value='true' }",
+    );
   }
 
   private buildFolderQuery(folderId: string): string {
@@ -277,8 +362,13 @@ export class GoogleDriveStore {
   }
 
   private async findSingleFile(query: string): Promise<DriveFileRecord | null> {
+    const files = await this.findFiles(query, 1);
+    return files[0] ?? null;
+  }
+
+  private async findFiles(query: string, pageSize: number): Promise<DriveFileRecord[]> {
     const response = await fetch(
-      `${GOOGLE_DRIVE_API}?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,appProperties,parents)&pageSize=1`,
+      `${GOOGLE_DRIVE_API}?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,appProperties,parents)&pageSize=${pageSize}`,
       {
         headers: {
           Authorization: `Bearer ${this.#token}`,
@@ -291,7 +381,7 @@ export class GoogleDriveStore {
     }
 
     const payload = (await response.json()) as { files?: DriveFileRecord[] };
-    return payload.files?.[0] ?? null;
+    return payload.files ?? [];
   }
 
   private async fetchJsonFile<T>(fileId: string): Promise<T> {
@@ -353,6 +443,29 @@ export class GoogleDriveStore {
     }
 
     return (await response.json()) as DriveFileRecord;
+  }
+
+  private async deleteFile(fileId: string): Promise<void> {
+    const response = await fetch(`${GOOGLE_DRIVE_API}/${fileId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${this.#token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to delete an old SutraPad index snapshot from Google Drive.");
+    }
+  }
+
+  private async cleanupOldIndexSnapshots(folderId: string, activeIndexId: string): Promise<void> {
+    const snapshotFiles = await this.findIndexSnapshotFiles(folderId);
+    const staleSnapshots = snapshotFiles
+      .filter((file) => file.id !== activeIndexId)
+      .sort((left, right) => right.name.localeCompare(left.name))
+      .slice(MAX_INDEX_SNAPSHOTS - 1);
+
+    await Promise.all(staleSnapshots.map(async (file) => this.deleteFile(file.id)));
   }
 
   private async uploadJsonFile<T>({

@@ -16,8 +16,16 @@ export interface SutraPadNoteSummary {
 export interface SutraPadIndex {
   version: 1;
   updatedAt: string;
+  savedAt: string;
+  previousIndexId?: string;
   activeNoteId: string | null;
   notes: SutraPadNoteSummary[];
+}
+
+export interface SutraPadHead {
+  version: 1;
+  activeIndexId: string;
+  savedAt: string;
 }
 
 export interface SutraPadWorkspace {

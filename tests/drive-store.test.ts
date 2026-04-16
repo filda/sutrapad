@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GoogleDriveStore } from "../src/services/drive-store";
-import type { SutraPadDocument, SutraPadIndex } from "../src/types";
+import type { SutraPadDocument, SutraPadHead, SutraPadIndex } from "../src/types";
 
-// --- fetch mock helpers ---
-
-function mockFetch(handler: (url: string, options?: RequestInit) => Response): void {
+function mockFetch(handler: (url: string, options?: RequestInit) => Response | Promise<Response>): void {
   vi.stubGlobal("fetch", vi.fn(handler));
 }
 
@@ -23,16 +21,13 @@ function driveFile(id: string, name: string, extra: Record<string, unknown> = {}
   return { id, name, mimeType: "application/json", appProperties: {}, parents: ["root"], ...extra };
 }
 
-// URL patterns – Drive API encodes query params with encodeURIComponent:
-// value='folder' → value%3D%27folder%27, value='index' → value%3D%27index%27
 const isFolderSearch = (url: string): boolean => url.includes("google-apps.folder");
+const isHeadSearch = (url: string): boolean => url.includes("'head'") && url.includes("q=");
 const isIndexSearch = (url: string): boolean => url.includes("'index'") && url.includes("q=");
 const isContent = (url: string, id: string): boolean => url.includes(`/${id}?alt=media`);
 const isMetadata = (url: string, id: string): boolean => url.includes(`/${id}?fields=`);
 const isUpload = (_url: string, options?: RequestInit): boolean =>
   options?.method === "POST" || options?.method === "PATCH";
-
-// --- tests ---
 
 describe("GoogleDriveStore", () => {
   afterEach(() => {
@@ -51,17 +46,22 @@ describe("GoogleDriveStore", () => {
       expect(workspace.notes[0].tags).toEqual([]);
     });
 
-    it("loads notes from Drive into the workspace", async () => {
+    it("loads notes from the active index referenced by the head file", async () => {
       const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
-      const indexFile = driveFile("index-1", "sutrapad-index.json");
-
+      const headFile = driveFile("head-1", "sutrapad-head.json");
+      const indexFile = driveFile("index-1", "index-2026-04-13T10-00-00-000Z.json");
+      const head: SutraPadHead = {
+        version: 1,
+        activeIndexId: "index-1",
+        savedAt: "2026-04-13T10:00:00.000Z",
+      };
       const index: SutraPadIndex = {
         version: 1,
         updatedAt: "2026-04-13T10:00:00.000Z",
+        savedAt: "2026-04-13T10:00:00.000Z",
         activeNoteId: "note-abc",
         notes: [{ id: "note-abc", title: "My note", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
       };
-
       const note: SutraPadDocument = {
         id: "note-abc",
         title: "My note",
@@ -72,7 +72,9 @@ describe("GoogleDriveStore", () => {
 
       mockFetch((url) => {
         if (isFolderSearch(url)) return fileList([folder]);
-        if (isIndexSearch(url)) return fileList([indexFile]);
+        if (isHeadSearch(url)) return fileList([headFile]);
+        if (isContent(url, "head-1")) return json(head);
+        if (isMetadata(url, "index-1")) return json(indexFile);
         if (isContent(url, "index-1")) return json(index);
         if (isContent(url, "note-file-1")) return json(note);
         return fileList([]);
@@ -88,22 +90,26 @@ describe("GoogleDriveStore", () => {
       expect(workspace.activeNoteId).toBe("note-abc");
     });
 
-    it("defaults tags to [] when loading a note saved before tags were introduced", async () => {
+    it("falls back to the legacy index search when the head file is missing", async () => {
       const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
       const indexFile = driveFile("index-1", "sutrapad-index.json");
-
       const index: SutraPadIndex = {
         version: 1,
         updatedAt: "2026-04-13T10:00:00.000Z",
+        savedAt: "2026-04-13T10:00:00.000Z",
         activeNoteId: "old-note",
         notes: [{ id: "old-note", title: "Old", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
       };
-
-      // Note without the tags field – simulates data saved before this feature
-      const legacyNote = { id: "old-note", title: "Old", body: "Legacy", updatedAt: "2026-04-13T10:00:00.000Z" };
+      const legacyNote = {
+        id: "old-note",
+        title: "Old",
+        body: "Legacy",
+        updatedAt: "2026-04-13T10:00:00.000Z",
+      };
 
       mockFetch((url) => {
         if (isFolderSearch(url)) return fileList([folder]);
+        if (isHeadSearch(url)) return fileList([]);
         if (isIndexSearch(url)) return fileList([indexFile]);
         if (isContent(url, "index-1")) return json(index);
         if (isContent(url, "note-file-1")) return json(legacyNote);
@@ -118,28 +124,39 @@ describe("GoogleDriveStore", () => {
   });
 
   describe("saveWorkspace", () => {
-    it("skips uploading a note that has not changed since the last save", async () => {
+    it("creates a new immutable index snapshot and updates the head pointer", async () => {
       const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
-      const indexFile = driveFile("index-1", "sutrapad-index.json");
-
+      const legacyIndexFile = driveFile("index-1", "sutrapad-index.json");
+      const newIndexFile = driveFile("index-2", "index-2026-04-13T12-00-00-000Z.json", { parents: ["folder-1"] });
+      const headFile = driveFile("head-1", "sutrapad-head.json", { parents: ["folder-1"] });
       const existingIndex: SutraPadIndex = {
         version: 1,
         updatedAt: "2026-04-13T10:00:00.000Z",
+        savedAt: "2026-04-13T10:00:00.000Z",
         activeNoteId: "note-abc",
         notes: [{ id: "note-abc", title: "My note", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
       };
+      const uploadBodies: string[] = [];
 
-      const uploadedUrls: string[] = [];
-
-      mockFetch((url, options) => {
+      mockFetch(async (url, options) => {
         if (isUpload(url, options)) {
-          uploadedUrls.push(url);
-          return json(driveFile("new-file", "file.json"));
+          if (options?.body instanceof FormData) {
+            const metadataBlob = options.body.get("metadata");
+            if (metadataBlob instanceof Blob) {
+              uploadBodies.push(await metadataBlob.text());
+            }
+          }
+
+          if (options?.method === "POST") return json(newIndexFile);
+          return json(headFile);
         }
+
         if (isFolderSearch(url)) return fileList([folder]);
-        if (isIndexSearch(url)) return fileList([indexFile]);
+        if (isHeadSearch(url)) return fileList([]);
+        if (isIndexSearch(url)) return fileList([legacyIndexFile]);
         if (isContent(url, "index-1")) return json(existingIndex);
-        if (isMetadata(url, "index-1")) return json(indexFile);
+        if (isMetadata(url, "index-2")) return json(newIndexFile);
+        if (isMetadata(url, "head-1")) return json(headFile);
         return fileList([]);
       });
 
@@ -151,40 +168,47 @@ describe("GoogleDriveStore", () => {
           title: "My note",
           body: "No changes",
           tags: [],
-          updatedAt: "2026-04-13T10:00:00.000Z", // stejné updatedAt jako v indexu → skip
+          updatedAt: "2026-04-13T10:00:00.000Z",
         }],
       });
 
-      // Note nesmí být uploadnutá, jen index
-      const noteUploads = uploadedUrls.filter((url) => url.includes("note-file-1"));
-      expect(noteUploads).toHaveLength(0);
+      expect(uploadBodies).toHaveLength(2);
+      expect(uploadBodies[0]).toContain('"kind":"index"');
+      expect(uploadBodies[1]).toContain('"kind":"head"');
     });
 
-    it("uploads a note that has been modified since the last save", async () => {
+    it("uploads a modified note before writing the new snapshot and head", async () => {
       const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
-      const indexFile = driveFile("index-1", "sutrapad-index.json");
+      const legacyIndexFile = driveFile("index-1", "sutrapad-index.json");
       const noteFile = driveFile("note-file-1", "note-abc.json", { parents: ["folder-1"] });
-
+      const newIndexFile = driveFile("index-2", "index-2026-04-13T12-00-00-000Z.json", { parents: ["folder-1"] });
+      const headFile = driveFile("head-1", "sutrapad-head.json", { parents: ["folder-1"] });
       const existingIndex: SutraPadIndex = {
         version: 1,
         updatedAt: "2026-04-13T10:00:00.000Z",
+        savedAt: "2026-04-13T10:00:00.000Z",
         activeNoteId: "note-abc",
         notes: [{ id: "note-abc", title: "My note", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
       };
-
-      const noteUploadedUrls: string[] = [];
+      const noteUploadUrls: string[] = [];
 
       mockFetch((url, options) => {
         if (isUpload(url, options) && url.includes("note-file-1")) {
-          noteUploadedUrls.push(url);
+          noteUploadUrls.push(url);
           return json(noteFile);
         }
-        if (isUpload(url, options)) return json(driveFile("new-file", "file.json"));
+        if (isUpload(url, options)) {
+          if (options?.method === "POST") return json(newIndexFile);
+          return json(headFile);
+        }
+
         if (isFolderSearch(url)) return fileList([folder]);
-        if (isIndexSearch(url)) return fileList([indexFile]);
+        if (isHeadSearch(url)) return fileList([]);
+        if (isIndexSearch(url)) return fileList([legacyIndexFile]);
         if (isContent(url, "index-1")) return json(existingIndex);
         if (isMetadata(url, "note-file-1")) return json(noteFile);
-        if (isMetadata(url, "index-1")) return json(indexFile);
+        if (isMetadata(url, "index-2")) return json(newIndexFile);
+        if (isMetadata(url, "head-1")) return json(headFile);
         return fileList([]);
       });
 
@@ -196,11 +220,75 @@ describe("GoogleDriveStore", () => {
           title: "My note",
           body: "Updated body",
           tags: ["work"],
-          updatedAt: "2026-04-13T12:00:00.000Z", // novější updatedAt → upload
+          updatedAt: "2026-04-13T12:00:00.000Z",
         }],
       });
 
-      expect(noteUploadedUrls).toHaveLength(1);
+      expect(noteUploadUrls).toHaveLength(1);
+    });
+
+    it("keeps only the 10 newest index snapshots after a successful save", async () => {
+      const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
+      const currentIndexFile = driveFile("index-current", "index-2026-04-13T10-00-00-000Z.json", {
+        parents: ["folder-1"],
+      });
+      const createdIndexFile = driveFile("index-new", "index-2026-04-13T12-00-00-000Z.json", {
+        parents: ["folder-1"],
+      });
+      const headFile = driveFile("head-1", "sutrapad-head.json", { parents: ["folder-1"] });
+      const existingIndex: SutraPadIndex = {
+        version: 1,
+        updatedAt: "2026-04-13T10:00:00.000Z",
+        savedAt: "2026-04-13T10:00:00.000Z",
+        activeNoteId: "note-abc",
+        notes: [{ id: "note-abc", title: "My note", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
+      };
+      const snapshotFiles = Array.from({ length: 12 }, (_, index) =>
+        driveFile(
+          `index-old-${index + 1}`,
+          `index-2026-04-13T${String(index).padStart(2, "0")}-00-00-000Z.json`,
+          { parents: ["folder-1"] },
+        ),
+      );
+      const deletedUrls: string[] = [];
+
+      mockFetch((url, options) => {
+        if (options?.method === "DELETE") {
+          deletedUrls.push(url);
+          return new Response(null, { status: 204 });
+        }
+
+        if (isUpload(url, options)) {
+          if (options?.method === "POST") return json(createdIndexFile);
+          return json(headFile);
+        }
+
+        if (url.includes("pageSize=30") && isIndexSearch(url)) {
+          return fileList([...snapshotFiles, createdIndexFile]);
+        }
+        if (isFolderSearch(url)) return fileList([folder]);
+        if (isHeadSearch(url)) return fileList([]);
+        if (isIndexSearch(url)) return fileList([currentIndexFile]);
+        if (isContent(url, "index-current")) return json(existingIndex);
+        if (isMetadata(url, "index-new")) return json(createdIndexFile);
+        if (isMetadata(url, "head-1")) return json(headFile);
+        return fileList([]);
+      });
+
+      const store = new GoogleDriveStore("test-token");
+      await store.saveWorkspace({
+        activeNoteId: "note-abc",
+        notes: [{
+          id: "note-abc",
+          title: "My note",
+          body: "No changes",
+          tags: [],
+          updatedAt: "2026-04-13T10:00:00.000Z",
+        }],
+      });
+
+      expect(deletedUrls).toHaveLength(3);
+      expect(deletedUrls.some((url) => url.includes("/index-new"))).toBe(false);
     });
   });
 });
