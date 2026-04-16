@@ -237,10 +237,74 @@ a {
   font-size: 1.25rem;
 }
 
+.tag-filter-card {
+  padding: 14px;
+  border: 1px solid rgba(31, 41, 55, 0.09);
+  border-radius: 18px;
+  background: rgba(255, 250, 244, 0.9);
+}
+
+.tag-filter-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.tag-filter-header .panel-eyebrow {
+  margin: 0;
+}
+
+.tag-filter-clear {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tag-filter-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-filter-chip {
+  border: 1px solid rgba(192, 132, 87, 0.25);
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--primary);
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.tag-filter-chip.is-active {
+  background: rgba(192, 132, 87, 0.18);
+  border-color: rgba(192, 132, 87, 0.5);
+}
+
+.tag-filter-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.4;
+}
+
 .notes-list {
   display: grid;
   gap: 10px;
   min-width: 0;
+}
+
+.notes-list-empty {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px dashed rgba(31, 41, 55, 0.14);
+  border-radius: 18px;
+  color: var(--muted);
+  background: rgba(255, 252, 247, 0.72);
 }
 
 .note-list-item {

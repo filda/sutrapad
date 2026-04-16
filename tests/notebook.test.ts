@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildTagIndex,
   areWorkspacesEqual,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
+  filterNotesByAllTags,
   isPristineWorkspace,
   mergeWorkspaces,
   sortNotes,
@@ -40,6 +42,39 @@ describe("notebook helpers", () => {
     ];
 
     expect(sortNotes(notes).map((note) => note.id)).toEqual(["2", "3", "1"]);
+  });
+
+  it("builds a tag index with note links and counts", () => {
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        makeNote({ id: "1", updatedAt: "2026-04-13T12:00:00.000Z", tags: ["work", "idea"] }),
+        makeNote({ id: "2", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea"] }),
+        makeNote({ id: "3", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work"] }),
+      ],
+    };
+
+    expect(buildTagIndex(workspace, "2026-04-13T12:30:00.000Z")).toEqual({
+      version: 1,
+      savedAt: "2026-04-13T12:30:00.000Z",
+      tags: [
+        { tag: "idea", noteIds: ["1", "2"], count: 2 },
+        { tag: "work", noteIds: ["1", "3"], count: 2 },
+      ],
+    });
+  });
+
+  it("filters notes by requiring every selected tag", () => {
+    const notes: SutraPadDocument[] = [
+      makeNote({ id: "1", updatedAt: "2026-04-13T12:00:00.000Z", tags: ["work", "idea"] }),
+      makeNote({ id: "2", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea"] }),
+      makeNote({ id: "3", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work", "draft"] }),
+    ];
+
+    expect(filterNotesByAllTags(notes, ["work"]).map((note) => note.id)).toEqual(["1", "3"]);
+    expect(filterNotesByAllTags(notes, ["work", "idea"]).map((note) => note.id)).toEqual(["1"]);
+    expect(filterNotesByAllTags(notes, ["missing"])).toEqual([]);
+    expect(filterNotesByAllTags(notes, [])).toEqual(notes);
   });
 
   it("updates a note and keeps it active", () => {

@@ -6,6 +6,7 @@ import type {
   SutraPadNoteSummary,
   SutraPadWorkspace,
 } from "../types";
+import { buildTagIndex } from "../lib/notebook";
 
 const GOOGLE_DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
@@ -14,6 +15,7 @@ const GOOGLE_DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const LEGACY_INDEX_FILE_NAME = import.meta.env.VITE_SUTRAPAD_FILE_NAME || "sutrapad-index.json";
 const LEGACY_FILE_NAME = "sutrapad-data.json";
 const HEAD_FILE_NAME = "sutrapad-head.json";
+const TAG_INDEX_FILE_NAME = "sutrapad-tags.json";
 const WORKSPACE_FOLDER_NAME = "SutraPad";
 const MAX_INDEX_SNAPSHOTS = 10;
 
@@ -172,6 +174,7 @@ export class GoogleDriveStore {
       ...nextIndex,
       notes: savedNotes,
     };
+    const tagIndex = buildTagIndex(workspace, finalIndex.savedAt);
 
     const indexSnapshotFile = await this.uploadJsonFile({
       fileName: this.buildIndexSnapshotFileName(finalIndex.savedAt),
@@ -184,6 +187,20 @@ export class GoogleDriveStore {
     });
 
     await this.ensureFileInFolder(indexSnapshotFile.id, workspaceFolder.id);
+
+    const existingTagIndexFile = await this.findTagIndexFile(workspaceFolder.id);
+    const tagIndexFile = await this.uploadJsonFile({
+      fileId: existingTagIndexFile?.id,
+      fileName: TAG_INDEX_FILE_NAME,
+      data: tagIndex,
+      folderId: workspaceFolder.id,
+      appProperties: {
+        sutrapad: "true",
+        kind: "tags",
+      },
+    });
+
+    await this.ensureFileInFolder(tagIndexFile.id, workspaceFolder.id);
 
     const existingHeadFile = await this.findHeadFile(workspaceFolder.id);
     const head: SutraPadHead = {
@@ -298,6 +315,22 @@ export class GoogleDriveStore {
 
     return this.findSingleFile(
       `trashed = false and name = '${LEGACY_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }`,
+    );
+  }
+
+  private async findTagIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
+    const inFolder = folderId
+      ? await this.findSingleFile(
+          `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='tags' }`,
+        )
+      : null;
+
+    if (inFolder) {
+      return inFolder;
+    }
+
+    return this.findSingleFile(
+      `trashed = false and name = '${TAG_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='tags' }`,
     );
   }
 

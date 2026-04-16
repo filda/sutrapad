@@ -28,6 +28,18 @@ export interface SutraPadHead {
   savedAt: string;
 }
 
+export interface SutraPadTagEntry {
+  tag: string;
+  noteIds: string[];
+  count: number;
+}
+
+export interface SutraPadTagIndex {
+  version: 1;
+  savedAt: string;
+  tags: SutraPadTagEntry[];
+}
+
 export interface SutraPadWorkspace {
   notes: SutraPadDocument[];
   activeNoteId: string | null;

@@ -1,4 +1,4 @@
-import type { SutraPadDocument, SutraPadWorkspace } from "../types";
+import type { SutraPadDocument, SutraPadTagIndex, SutraPadWorkspace } from "../types";
 
 const DEFAULT_NOTE_TITLE = "Untitled note";
 
@@ -22,6 +22,43 @@ export function createWorkspace(): SutraPadWorkspace {
 
 export function sortNotes(notes: SutraPadDocument[]): SutraPadDocument[] {
   return [...notes].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export function buildTagIndex(
+  workspace: SutraPadWorkspace,
+  savedAt = new Date().toISOString(),
+): SutraPadTagIndex {
+  const noteIdsByTag = new Map<string, string[]>();
+
+  for (const note of workspace.notes) {
+    for (const tag of note.tags) {
+      const existingNoteIds = noteIdsByTag.get(tag) ?? [];
+      noteIdsByTag.set(tag, [...existingNoteIds, note.id]);
+    }
+  }
+
+  return {
+    version: 1,
+    savedAt,
+    tags: [...noteIdsByTag.entries()]
+      .map(([tag, noteIds]) => ({
+        tag,
+        noteIds,
+        count: noteIds.length,
+      }))
+      .sort((left, right) => right.count - left.count || left.tag.localeCompare(right.tag)),
+  };
+}
+
+export function filterNotesByAllTags(
+  notes: SutraPadDocument[],
+  selectedTags: string[],
+): SutraPadDocument[] {
+  if (selectedTags.length === 0) {
+    return notes;
+  }
+
+  return notes.filter((note) => selectedTags.every((tag) => note.tags.includes(tag)));
 }
 
 export function isPristineWorkspace(workspace: SutraPadWorkspace): boolean {

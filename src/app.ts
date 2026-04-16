@@ -1,11 +1,13 @@
 import { GoogleAuthService } from "./services/google-auth";
 import { GoogleDriveStore } from "./services/drive-store";
 import {
+  buildTagIndex,
   areWorkspacesEqual,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
+  filterNotesByAllTags,
   mergeWorkspaces,
   upsertNote,
 } from "./lib/notebook";
@@ -124,6 +126,7 @@ export function createApp(root: HTMLElement): void {
   let bookmarkletHelperExpanded =
     window.localStorage.getItem(BOOKMARKLET_HELPER_KEY) !== "collapsed";
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let selectedTagFilters: string[] = [];
 
   const getCurrentNote = (): SutraPadDocument => {
     const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
@@ -161,6 +164,7 @@ export function createApp(root: HTMLElement): void {
       if (!tag || getCurrentNote().tags.includes(tag)) return;
       replaceCurrentNote((n) => ({ ...n, tags: [...n.tags, tag], updatedAt: new Date().toISOString() }));
       renderChips();
+      refreshNotesPanel();
     };
 
     input.onkeydown = (e) => {
@@ -174,6 +178,7 @@ export function createApp(root: HTMLElement): void {
         if (tags.length === 0) return;
         replaceCurrentNote((n) => ({ ...n, tags: n.tags.slice(0, -1), updatedAt: new Date().toISOString() }));
         renderChips();
+        refreshNotesPanel();
         input.focus();
       }
     };
@@ -207,6 +212,7 @@ export function createApp(root: HTMLElement): void {
         removeBtn.onclick = () => {
           replaceCurrentNote((n) => ({ ...n, tags: n.tags.filter((t) => t !== tag), updatedAt: new Date().toISOString() }));
           renderChips();
+          refreshNotesPanel();
           input.focus();
         };
 
@@ -222,11 +228,19 @@ export function createApp(root: HTMLElement): void {
     return row;
   };
 
-  const buildNotesList = (currentNoteId: string): HTMLDivElement => {
+  const buildNotesList = (currentNoteId: string, notes: SutraPadDocument[]): HTMLDivElement => {
     const notesList = document.createElement("div");
     notesList.className = "notes-list";
 
-    for (const note of workspace.notes) {
+    if (notes.length === 0) {
+      const emptyState = document.createElement("p");
+      emptyState.className = "notes-list-empty";
+      emptyState.textContent = "No notes match the current tag filter.";
+      notesList.append(emptyState);
+      return notesList;
+    }
+
+    for (const note of notes) {
       const button = document.createElement("button");
       button.className = `note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
       button.type = "button";
@@ -264,14 +278,137 @@ export function createApp(root: HTMLElement): void {
     return notesList;
   };
 
-  const refreshNotesList = (): void => {
-    const currentNoteId = getCurrentNote().id;
-    const currentList = root.querySelector(".notes-list");
-    if (!currentList) {
+  const syncSelectedTagFilters = (): void => {
+    const availableTags = new Set(buildTagIndex(workspace).tags.map((entry) => entry.tag));
+    selectedTagFilters = selectedTagFilters.filter((tag) => availableTags.has(tag));
+  };
+
+  const ensureVisibleActiveNote = (): void => {
+    const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
+    if (
+      filteredNotes.length > 0 &&
+      workspace.activeNoteId &&
+      !filteredNotes.some((note) => note.id === workspace.activeNoteId)
+    ) {
+      workspace = {
+        ...workspace,
+        activeNoteId: filteredNotes[0].id,
+      };
+      persistLocalWorkspace(workspace);
+    }
+  };
+
+  const buildNotesPanel = (currentNoteId: string): HTMLElement => {
+    const notesPanel = document.createElement("aside");
+    notesPanel.className = "notes-panel";
+
+    const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
+    const tagIndex = buildTagIndex(workspace);
+
+    const notesHeader = document.createElement("div");
+    notesHeader.className = "notes-panel-header";
+    notesHeader.innerHTML = `
+      <div>
+        <p class="panel-eyebrow">Notebook</p>
+        <h2>${workspace.notes.length} note${workspace.notes.length === 1 ? "" : "s"}</h2>
+      </div>
+    `;
+
+    const newNoteButton = document.createElement("button");
+    newNoteButton.className = "button";
+    newNoteButton.textContent = "New note";
+    newNoteButton.onclick = async () => {
+      try {
+        syncState = "loading";
+        lastError = "";
+        render();
+
+        const title = await generateFreshNoteTitle();
+        workspace = createNewNoteWorkspace(workspace, title);
+        persistLocalWorkspace(workspace);
+        syncState = "idle";
+        render();
+      } catch {
+        workspace = createNewNoteWorkspace(workspace);
+        persistLocalWorkspace(workspace);
+        syncState = "idle";
+        render();
+      }
+    };
+    notesHeader.append(newNoteButton);
+    notesPanel.append(notesHeader);
+
+    if (tagIndex.tags.length > 0) {
+      const filterSection = document.createElement("section");
+      filterSection.className = "tag-filter-card";
+
+      const filterHeader = document.createElement("div");
+      filterHeader.className = "tag-filter-header";
+
+      const filterTitle = document.createElement("p");
+      filterTitle.className = "panel-eyebrow";
+      filterTitle.textContent =
+        selectedTagFilters.length > 0 ? `Filter (${selectedTagFilters.length})` : "Filter";
+      filterHeader.append(filterTitle);
+
+      if (selectedTagFilters.length > 0) {
+        const clearFiltersButton = document.createElement("button");
+        clearFiltersButton.type = "button";
+        clearFiltersButton.className = "tag-filter-clear";
+        clearFiltersButton.textContent = "Clear";
+        clearFiltersButton.onclick = () => {
+          selectedTagFilters = [];
+          render();
+        };
+        filterHeader.append(clearFiltersButton);
+      }
+
+      const cloud = document.createElement("div");
+      cloud.className = "tag-filter-cloud";
+
+      for (const entry of tagIndex.tags) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = `tag-filter-chip${selectedTagFilters.includes(entry.tag) ? " is-active" : ""}`;
+        chip.textContent = `${entry.tag} · ${entry.count}`;
+        chip.onclick = () => {
+          selectedTagFilters = selectedTagFilters.includes(entry.tag)
+            ? selectedTagFilters.filter((tag) => tag !== entry.tag)
+            : [...selectedTagFilters, entry.tag];
+          ensureVisibleActiveNote();
+          render();
+        };
+        cloud.append(chip);
+      }
+
+      filterSection.append(filterHeader, cloud);
+
+      if (selectedTagFilters.length > 0) {
+        const filterHint = document.createElement("p");
+        filterHint.className = "tag-filter-hint";
+        filterHint.textContent =
+          filteredNotes.length === 0
+            ? "No notes match all selected tags."
+            : `Showing ${filteredNotes.length} note${filteredNotes.length === 1 ? "" : "s"} that match every selected tag.`;
+        filterSection.append(filterHint);
+      }
+
+      notesPanel.append(filterSection);
+    }
+
+    notesPanel.append(buildNotesList(currentNoteId, filteredNotes));
+    return notesPanel;
+  };
+
+  const refreshNotesPanel = (): void => {
+    syncSelectedTagFilters();
+    ensureVisibleActiveNote();
+    const currentPanel = root.querySelector(".notes-panel");
+    if (!currentPanel) {
       return;
     }
 
-    currentList.replaceWith(buildNotesList(currentNoteId));
+    currentPanel.replaceWith(buildNotesPanel(getCurrentNote().id));
   };
 
   const getStatusText = (): string =>
@@ -307,6 +444,8 @@ export function createApp(root: HTMLElement): void {
 
   const render = (): void => {
     root.innerHTML = "";
+    syncSelectedTagFilters();
+    ensureVisibleActiveNote();
 
     const currentNote = getCurrentNote();
 
@@ -480,42 +619,7 @@ export function createApp(root: HTMLElement): void {
     const workspaceSection = document.createElement("section");
     workspaceSection.className = "workspace";
 
-    const notesPanel = document.createElement("aside");
-    notesPanel.className = "notes-panel";
-
-    const notesHeader = document.createElement("div");
-    notesHeader.className = "notes-panel-header";
-    notesHeader.innerHTML = `
-      <div>
-        <p class="panel-eyebrow">Notebook</p>
-        <h2>${workspace.notes.length} note${workspace.notes.length === 1 ? "" : "s"}</h2>
-      </div>
-    `;
-
-    const newNoteButton = document.createElement("button");
-    newNoteButton.className = "button";
-    newNoteButton.textContent = "New note";
-    newNoteButton.onclick = async () => {
-      try {
-        syncState = "loading";
-        lastError = "";
-        render();
-
-        const title = await generateFreshNoteTitle();
-        workspace = createNewNoteWorkspace(workspace, title);
-        persistLocalWorkspace(workspace);
-        syncState = "idle";
-        render();
-      } catch {
-        workspace = createNewNoteWorkspace(workspace);
-        persistLocalWorkspace(workspace);
-        syncState = "idle";
-        render();
-      }
-    };
-    notesHeader.append(newNoteButton);
-
-    notesPanel.append(notesHeader, buildNotesList(currentNote.id));
+    const notesPanel = buildNotesPanel(currentNote.id);
 
     const editor = document.createElement("section");
     editor.className = "editor-card";
@@ -535,7 +639,7 @@ export function createApp(root: HTMLElement): void {
         updatedAt: new Date().toISOString(),
       }));
       syncState = "idle";
-      refreshNotesList();
+      refreshNotesPanel();
     };
 
     const bodyInput = document.createElement("textarea");
@@ -548,7 +652,7 @@ export function createApp(root: HTMLElement): void {
         body: bodyInput.value,
         updatedAt: new Date().toISOString(),
       }));
-      refreshNotesList();
+      refreshNotesPanel();
     };
 
     editor.append(status, titleInput, buildTagInput(), bodyInput);

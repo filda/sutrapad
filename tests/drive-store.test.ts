@@ -24,6 +24,7 @@ function driveFile(id: string, name: string, extra: Record<string, unknown> = {}
 const isFolderSearch = (url: string): boolean => url.includes("google-apps.folder");
 const isHeadSearch = (url: string): boolean => url.includes("'head'") && url.includes("q=");
 const isIndexSearch = (url: string): boolean => url.includes("'index'") && url.includes("q=");
+const isTagSearch = (url: string): boolean => url.includes("'tags'") && url.includes("q=");
 const isContent = (url: string, id: string): boolean => url.includes(`/${id}?alt=media`);
 const isMetadata = (url: string, id: string): boolean => url.includes(`/${id}?fields=`);
 const isUpload = (_url: string, options?: RequestInit): boolean =>
@@ -127,6 +128,7 @@ describe("GoogleDriveStore", () => {
     it("creates a new immutable index snapshot and updates the head pointer", async () => {
       const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
       const legacyIndexFile = driveFile("index-1", "sutrapad-index.json");
+      const tagIndexFile = driveFile("tags-1", "sutrapad-tags.json", { parents: ["folder-1"] });
       const newIndexFile = driveFile("index-2", "index-2026-04-13T12-00-00-000Z.json", { parents: ["folder-1"] });
       const headFile = driveFile("head-1", "sutrapad-head.json", { parents: ["folder-1"] });
       const existingIndex: SutraPadIndex = {
@@ -136,26 +138,34 @@ describe("GoogleDriveStore", () => {
         activeNoteId: "note-abc",
         notes: [{ id: "note-abc", title: "My note", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
       };
-      const uploadBodies: string[] = [];
+      const uploadMetadata: string[] = [];
+      const uploadFiles: string[] = [];
 
       mockFetch(async (url, options) => {
         if (isUpload(url, options)) {
           if (options?.body instanceof FormData) {
             const metadataBlob = options.body.get("metadata");
+            const fileBlob = options.body.get("file");
             if (metadataBlob instanceof Blob) {
-              uploadBodies.push(await metadataBlob.text());
+              uploadMetadata.push(await metadataBlob.text());
+            }
+            if (fileBlob instanceof Blob) {
+              uploadFiles.push(await fileBlob.text());
             }
           }
 
           if (options?.method === "POST") return json(newIndexFile);
+          if (url.includes("/tags-1?uploadType=multipart")) return json(tagIndexFile);
           return json(headFile);
         }
 
         if (isFolderSearch(url)) return fileList([folder]);
         if (isHeadSearch(url)) return fileList([]);
         if (isIndexSearch(url)) return fileList([legacyIndexFile]);
+        if (isTagSearch(url)) return fileList([tagIndexFile]);
         if (isContent(url, "index-1")) return json(existingIndex);
         if (isMetadata(url, "index-2")) return json(newIndexFile);
+        if (isMetadata(url, "tags-1")) return json(tagIndexFile);
         if (isMetadata(url, "head-1")) return json(headFile);
         return fileList([]);
       });
@@ -167,20 +177,25 @@ describe("GoogleDriveStore", () => {
           id: "note-abc",
           title: "My note",
           body: "No changes",
-          tags: [],
+          tags: ["work"],
           updatedAt: "2026-04-13T10:00:00.000Z",
         }],
       });
 
-      expect(uploadBodies).toHaveLength(2);
-      expect(uploadBodies[0]).toContain('"kind":"index"');
-      expect(uploadBodies[1]).toContain('"kind":"head"');
+      expect(uploadMetadata).toHaveLength(3);
+      expect(uploadFiles).toHaveLength(3);
+      expect(uploadMetadata[0]).toContain('"kind":"index"');
+      expect(uploadMetadata[1]).toContain('"kind":"tags"');
+      expect(uploadFiles[1]).toContain('"tag": "work"');
+      expect(uploadFiles[1]).toContain('"noteIds": [');
+      expect(uploadMetadata[2]).toContain('"kind":"head"');
     });
 
     it("uploads a modified note before writing the new snapshot and head", async () => {
       const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
       const legacyIndexFile = driveFile("index-1", "sutrapad-index.json");
       const noteFile = driveFile("note-file-1", "note-abc.json", { parents: ["folder-1"] });
+      const tagIndexFile = driveFile("tags-1", "sutrapad-tags.json", { parents: ["folder-1"] });
       const newIndexFile = driveFile("index-2", "index-2026-04-13T12-00-00-000Z.json", { parents: ["folder-1"] });
       const headFile = driveFile("head-1", "sutrapad-head.json", { parents: ["folder-1"] });
       const existingIndex: SutraPadIndex = {
@@ -199,15 +214,18 @@ describe("GoogleDriveStore", () => {
         }
         if (isUpload(url, options)) {
           if (options?.method === "POST") return json(newIndexFile);
+          if (url.includes("/tags-1?uploadType=multipart")) return json(tagIndexFile);
           return json(headFile);
         }
 
         if (isFolderSearch(url)) return fileList([folder]);
         if (isHeadSearch(url)) return fileList([]);
         if (isIndexSearch(url)) return fileList([legacyIndexFile]);
+        if (isTagSearch(url)) return fileList([tagIndexFile]);
         if (isContent(url, "index-1")) return json(existingIndex);
         if (isMetadata(url, "note-file-1")) return json(noteFile);
         if (isMetadata(url, "index-2")) return json(newIndexFile);
+        if (isMetadata(url, "tags-1")) return json(tagIndexFile);
         if (isMetadata(url, "head-1")) return json(headFile);
         return fileList([]);
       });
@@ -232,6 +250,7 @@ describe("GoogleDriveStore", () => {
       const currentIndexFile = driveFile("index-current", "index-2026-04-13T10-00-00-000Z.json", {
         parents: ["folder-1"],
       });
+      const tagIndexFile = driveFile("tags-1", "sutrapad-tags.json", { parents: ["folder-1"] });
       const createdIndexFile = driveFile("index-new", "index-2026-04-13T12-00-00-000Z.json", {
         parents: ["folder-1"],
       });
@@ -260,6 +279,7 @@ describe("GoogleDriveStore", () => {
 
         if (isUpload(url, options)) {
           if (options?.method === "POST") return json(createdIndexFile);
+          if (url.includes("/tags-1?uploadType=multipart")) return json(tagIndexFile);
           return json(headFile);
         }
 
@@ -269,8 +289,10 @@ describe("GoogleDriveStore", () => {
         if (isFolderSearch(url)) return fileList([folder]);
         if (isHeadSearch(url)) return fileList([]);
         if (isIndexSearch(url)) return fileList([currentIndexFile]);
+        if (isTagSearch(url)) return fileList([tagIndexFile]);
         if (isContent(url, "index-current")) return json(existingIndex);
         if (isMetadata(url, "index-new")) return json(createdIndexFile);
+        if (isMetadata(url, "tags-1")) return json(tagIndexFile);
         if (isMetadata(url, "head-1")) return json(headFile);
         return fileList([]);
       });
