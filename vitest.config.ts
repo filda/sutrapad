@@ -8,7 +8,8 @@ export default defineConfig({
       tsconfig: "./tsconfig.vitest.json",
     },
     coverage: {
-      enabled: false,
+      provider: "istanbul",
+      include: ["src/**/*.ts"],
     },
   },
 });
