@@ -61,13 +61,20 @@ describe("GoogleDriveStore", () => {
         updatedAt: "2026-04-13T10:00:00.000Z",
         savedAt: "2026-04-13T10:00:00.000Z",
         activeNoteId: "note-abc",
-        notes: [{ id: "note-abc", title: "My note", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
+        notes: [{
+          id: "note-abc",
+          title: "My note",
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          fileId: "note-file-1",
+        }],
       };
       const note: SutraPadDocument = {
         id: "note-abc",
         title: "My note",
         body: "Hello world",
         tags: ["work"],
+        createdAt: "2026-04-13T10:00:00.000Z",
         updatedAt: "2026-04-13T10:00:00.000Z",
       };
 
@@ -99,12 +106,19 @@ describe("GoogleDriveStore", () => {
         updatedAt: "2026-04-13T10:00:00.000Z",
         savedAt: "2026-04-13T10:00:00.000Z",
         activeNoteId: "old-note",
-        notes: [{ id: "old-note", title: "Old", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
+        notes: [{
+          id: "old-note",
+          title: "Old",
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          fileId: "note-file-1",
+        }],
       };
       const legacyNote = {
         id: "old-note",
         title: "Old",
         body: "Legacy",
+        createdAt: "2026-04-13T10:00:00.000Z",
         updatedAt: "2026-04-13T10:00:00.000Z",
       };
 
@@ -136,7 +150,13 @@ describe("GoogleDriveStore", () => {
         updatedAt: "2026-04-13T10:00:00.000Z",
         savedAt: "2026-04-13T10:00:00.000Z",
         activeNoteId: "note-abc",
-        notes: [{ id: "note-abc", title: "My note", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
+        notes: [{
+          id: "note-abc",
+          title: "My note",
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          fileId: "note-file-1",
+        }],
       };
       const uploadMetadata: string[] = [];
       const uploadFiles: string[] = [];
@@ -178,6 +198,7 @@ describe("GoogleDriveStore", () => {
           title: "My note",
           body: "No changes",
           tags: ["work"],
+          createdAt: "2026-04-13T10:00:00.000Z",
           updatedAt: "2026-04-13T10:00:00.000Z",
         }],
       });
@@ -203,7 +224,13 @@ describe("GoogleDriveStore", () => {
         updatedAt: "2026-04-13T10:00:00.000Z",
         savedAt: "2026-04-13T10:00:00.000Z",
         activeNoteId: "note-abc",
-        notes: [{ id: "note-abc", title: "My note", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
+        notes: [{
+          id: "note-abc",
+          title: "My note",
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          fileId: "note-file-1",
+        }],
       };
       const noteUploadUrls: string[] = [];
 
@@ -238,6 +265,7 @@ describe("GoogleDriveStore", () => {
           title: "My note",
           body: "Updated body",
           tags: ["work"],
+          createdAt: "2026-04-13T10:00:00.000Z",
           updatedAt: "2026-04-13T12:00:00.000Z",
         }],
       });
@@ -260,7 +288,13 @@ describe("GoogleDriveStore", () => {
         updatedAt: "2026-04-13T10:00:00.000Z",
         savedAt: "2026-04-13T10:00:00.000Z",
         activeNoteId: "note-abc",
-        notes: [{ id: "note-abc", title: "My note", updatedAt: "2026-04-13T10:00:00.000Z", fileId: "note-file-1" }],
+        notes: [{
+          id: "note-abc",
+          title: "My note",
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          fileId: "note-file-1",
+        }],
       };
       const snapshotFiles = Array.from({ length: 12 }, (_, index) =>
         driveFile(
@@ -305,6 +339,7 @@ describe("GoogleDriveStore", () => {
           title: "My note",
           body: "No changes",
           tags: [],
+          createdAt: "2026-04-13T10:00:00.000Z",
           updatedAt: "2026-04-13T10:00:00.000Z",
         }],
       });

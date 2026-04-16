@@ -20,11 +20,13 @@ const WORKSPACE_FOLDER_NAME = "SutraPad";
 const MAX_INDEX_SNAPSHOTS = 10;
 
 function createInitialDocument(): SutraPadDocument {
+  const timestamp = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
     title: "My first note",
     body: "Start writing here.",
-    updatedAt: new Date().toISOString(),
+    createdAt: timestamp,
+    updatedAt: timestamp,
     tags: [],
   };
 }
@@ -55,6 +57,7 @@ function createIndex(
       return {
         id: note.id,
         title: note.title,
+        createdAt: note.createdAt,
         updatedAt: note.updatedAt,
         fileId: previous?.fileId,
       };
@@ -96,7 +99,11 @@ export class GoogleDriveStore {
         }
 
         const document = await this.fetchJsonFile<SutraPadDocument>(fileId);
-        return { ...document, tags: document.tags ?? [] };
+        return {
+          ...document,
+          createdAt: document.createdAt ?? document.updatedAt,
+          tags: document.tags ?? [],
+        };
       }),
     );
 
@@ -132,6 +139,7 @@ export class GoogleDriveStore {
           return {
             id: note.id,
             title: note.title,
+            createdAt: note.createdAt,
             updatedAt: note.updatedAt,
             fileId: existingFileId,
           } satisfies SutraPadNoteSummary;
@@ -164,6 +172,7 @@ export class GoogleDriveStore {
         return {
           id: note.id,
           title: note.title,
+          createdAt: note.createdAt,
           updatedAt: note.updatedAt,
           fileId: file.id,
         } satisfies SutraPadNoteSummary;

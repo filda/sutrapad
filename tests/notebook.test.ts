@@ -14,8 +14,16 @@ import {
 } from "../src/lib/notebook";
 import type { SutraPadDocument } from "../src/types";
 
-function makeNote(overrides: Partial<SutraPadDocument> & Pick<SutraPadDocument, "id" | "updatedAt">): SutraPadDocument {
-  return { title: "Test note", body: "", tags: [], ...overrides };
+function makeNote(
+  overrides: Partial<SutraPadDocument> & Pick<SutraPadDocument, "id" | "updatedAt">,
+): SutraPadDocument {
+  return {
+    title: "Test note",
+    body: "",
+    createdAt: overrides.createdAt ?? overrides.updatedAt,
+    tags: [],
+    ...overrides,
+  };
 }
 
 describe("notebook helpers", () => {
@@ -30,6 +38,7 @@ describe("notebook helpers", () => {
     expect(workspace.notes[0].title).toBe("Untitled note");
     expect(workspace.notes[0].body).toBe("");
     expect(workspace.notes[0].tags).toEqual([]);
+    expect(workspace.notes[0].createdAt).toBe("2026-04-13T10:00:00.000Z");
 
     vi.useRealTimers();
   });
@@ -200,6 +209,7 @@ describe("notebook helpers", () => {
       latitude: 50.0755,
       longitude: 14.4378,
     });
+    expect(updated.notes[0].createdAt).toBe("2026-04-13T15:00:00.000Z");
 
     vi.useRealTimers();
   });
@@ -229,6 +239,7 @@ describe("notebook helpers", () => {
       latitude: 50.0755,
       longitude: 14.4378,
     });
+    expect(updated.notes[0].createdAt).toBe("2026-04-13T13:00:00.000Z");
 
     vi.useRealTimers();
   });

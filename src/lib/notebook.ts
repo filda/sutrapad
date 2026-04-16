@@ -7,13 +7,15 @@ export function createNote(
   location?: string,
   coordinates?: SutraPadDocument["coordinates"],
 ): SutraPadDocument {
+  const timestamp = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
     title,
     body: "",
     location,
     coordinates,
-    updatedAt: new Date().toISOString(),
+    createdAt: timestamp,
+    updatedAt: timestamp,
     tags: [],
   };
 }
@@ -148,6 +150,7 @@ export function areWorkspacesEqual(
       note.location === other.location &&
       note.coordinates?.latitude === other.coordinates?.latitude &&
       note.coordinates?.longitude === other.coordinates?.longitude &&
+      note.createdAt === other.createdAt &&
       note.updatedAt === other.updatedAt &&
       tagsEqual
     );

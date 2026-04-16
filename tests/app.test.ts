@@ -110,9 +110,23 @@ describe("displayed note selection", () => {
   it("returns null when no note matches all selected tags", () => {
     const workspace: SutraPadWorkspace = {
       activeNoteId: "1",
-      notes: [
-        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work"] },
-        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea"] },
+        notes: [
+        {
+          id: "1",
+          title: "Alpha",
+          body: "",
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          tags: ["work"],
+        },
+        {
+          id: "2",
+          title: "Beta",
+          body: "",
+          createdAt: "2026-04-13T11:00:00.000Z",
+          updatedAt: "2026-04-13T11:00:00.000Z",
+          tags: ["idea"],
+        },
       ],
     };
 
@@ -123,8 +137,22 @@ describe("displayed note selection", () => {
     const workspace: SutraPadWorkspace = {
       activeNoteId: "1",
       notes: [
-        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work"] },
-        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea"] },
+        {
+          id: "1",
+          title: "Alpha",
+          body: "",
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          tags: ["work"],
+        },
+        {
+          id: "2",
+          title: "Beta",
+          body: "",
+          createdAt: "2026-04-13T11:00:00.000Z",
+          updatedAt: "2026-04-13T11:00:00.000Z",
+          tags: ["idea"],
+        },
       ],
     };
 
@@ -154,6 +182,7 @@ describe("fresh note details", () => {
         latitude: 50.0755,
         longitude: 14.4378,
       },
+      createdAt: undefined,
     });
   });
 });
@@ -170,6 +199,7 @@ describe("note metadata", () => {
           latitude: 50.0755,
           longitude: 14.4378,
         },
+        createdAt: new Date(2026, 3, 13, 11, 45, 0).toISOString(),
         updatedAt: new Date(2026, 3, 13, 12, 0, 0).toISOString(),
         tags: [],
       }),

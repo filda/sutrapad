@@ -72,6 +72,7 @@ function loadLocalWorkspace(): SutraPadWorkspace {
                 longitude: note.coordinates.longitude,
               }
             : undefined,
+        createdAt: note.createdAt ?? note.updatedAt,
         tags: note.tags ?? [],
       })),
       activeNoteId: parsed.activeNoteId ?? parsed.notes[0].id,

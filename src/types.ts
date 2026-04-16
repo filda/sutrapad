@@ -9,6 +9,7 @@ export interface SutraPadDocument {
   body: string;
   location?: string;
   coordinates?: SutraPadCoordinates;
+  createdAt: string;
   updatedAt: string;
   tags: string[];
 }
@@ -16,6 +17,7 @@ export interface SutraPadDocument {
 export interface SutraPadNoteSummary {
   id: string;
   title: string;
+  createdAt: string;
   updatedAt: string;
   fileId?: string;
 }
