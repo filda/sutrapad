@@ -2,11 +2,17 @@ import type { SutraPadDocument, SutraPadTagIndex, SutraPadWorkspace } from "../t
 
 const DEFAULT_NOTE_TITLE = "Untitled note";
 
-export function createNote(title = "Untitled note"): SutraPadDocument {
+export function createNote(
+  title = "Untitled note",
+  location?: string,
+  coordinates?: SutraPadDocument["coordinates"],
+): SutraPadDocument {
   return {
     id: crypto.randomUUID(),
     title,
     body: "",
+    location,
+    coordinates,
     updatedAt: new Date().toISOString(),
     tags: [],
   };
@@ -139,6 +145,9 @@ export function areWorkspacesEqual(
       note.id === other.id &&
       note.title === other.title &&
       note.body === other.body &&
+      note.location === other.location &&
+      note.coordinates?.latitude === other.coordinates?.latitude &&
+      note.coordinates?.longitude === other.coordinates?.longitude &&
       note.updatedAt === other.updatedAt &&
       tagsEqual
     );
@@ -163,8 +172,10 @@ export function upsertNote(
 export function createNewNoteWorkspace(
   workspace: SutraPadWorkspace,
   title = DEFAULT_NOTE_TITLE,
+  location?: string,
+  coordinates?: SutraPadDocument["coordinates"],
 ): SutraPadWorkspace {
-  const note = createNote(title);
+  const note = createNote(title, location, coordinates);
   return {
     notes: sortNotes([note, ...workspace.notes]),
     activeNoteId: note.id,
@@ -186,9 +197,9 @@ export function createCapturedNoteWorkspace(
 
 export function createTextNoteWorkspace(
   workspace: SutraPadWorkspace,
-  capture: { title: string; body: string },
+  capture: { title: string; body: string; location?: string; coordinates?: SutraPadDocument["coordinates"] },
 ): SutraPadWorkspace {
-  const note = createNote(capture.title);
+  const note = createNote(capture.title, capture.location, capture.coordinates);
   note.body = capture.body;
 
   return {

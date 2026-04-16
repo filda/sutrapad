@@ -185,11 +185,50 @@ describe("notebook helpers", () => {
     const updated = createTextNoteWorkspace(workspace, {
       title: "14/4/2026 Â· midnight",
       body: "A quick note",
+      location: "Prague",
+      coordinates: {
+        latitude: 50.0755,
+        longitude: 14.4378,
+      },
     });
 
     expect(updated.activeNoteId).toBe(updated.notes[0].id);
     expect(updated.notes[0].title).toBe("14/4/2026 Â· midnight");
     expect(updated.notes[0].body).toBe("A quick note");
+    expect(updated.notes[0].location).toBe("Prague");
+    expect(updated.notes[0].coordinates).toEqual({
+      latitude: 50.0755,
+      longitude: 14.4378,
+    });
+
+    vi.useRealTimers();
+  });
+
+  it("stores the generated location on newly created notes", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-13T13:00:00.000Z"));
+
+    const workspace = {
+      activeNoteId: "1",
+      notes: [makeNote({ id: "1", title: "Alpha", updatedAt: "2026-04-13T10:00:00.000Z" })],
+    };
+
+    const updated = createNewNoteWorkspace(
+      workspace,
+      "14/04/2026 · high noon · Prague",
+      "Prague",
+      {
+        latitude: 50.0755,
+        longitude: 14.4378,
+      },
+    );
+
+    expect(updated.notes[0].title).toBe("14/04/2026 · high noon · Prague");
+    expect(updated.notes[0].location).toBe("Prague");
+    expect(updated.notes[0].coordinates).toEqual({
+      latitude: 50.0755,
+      longitude: 14.4378,
+    });
 
     vi.useRealTimers();
   });

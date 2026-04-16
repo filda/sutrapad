@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildNoteMetadata,
+  generateFreshNoteDetails,
   readTagFiltersFromLocation,
   resolveDisplayedNote,
   restoreSessionOnStartup,
@@ -127,5 +129,50 @@ describe("displayed note selection", () => {
     };
 
     expect(resolveDisplayedNote(workspace, ["idea"])?.id).toBe("2");
+  });
+});
+
+describe("fresh note details", () => {
+  it("returns both a generated title and a standalone location field", async () => {
+    const localNoon = new Date(2026, 3, 13, 12, 0, 0);
+    const resolveCoordinates = vi.fn().mockResolvedValue({
+      latitude: 50.0755,
+      longitude: 14.4378,
+    });
+    const reverseGeocode = vi.fn().mockResolvedValue("Prague");
+
+    await expect(
+      generateFreshNoteDetails(
+        localNoon,
+        resolveCoordinates,
+        reverseGeocode,
+      ),
+    ).resolves.toEqual({
+      title: "13/04/2026 · high noon · Prague",
+      location: "Prague",
+      coordinates: {
+        latitude: 50.0755,
+        longitude: 14.4378,
+      },
+    });
+  });
+});
+
+describe("note metadata", () => {
+  it("combines location and update time into a quiet metadata line", () => {
+    expect(
+      buildNoteMetadata({
+        id: "1",
+        title: "Alpha",
+        body: "",
+        location: "Prague",
+        coordinates: {
+          latitude: 50.0755,
+          longitude: 14.4378,
+        },
+        updatedAt: new Date(2026, 3, 13, 12, 0, 0).toISOString(),
+        tags: [],
+      }),
+    ).toMatch(/^Prague · Updated .*2026/);
   });
 });

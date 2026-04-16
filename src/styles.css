@@ -567,6 +567,14 @@ a {
   padding: 18px;
 }
 
+.note-metadata {
+  margin: 14px 0 0;
+  font-size: 0.83rem;
+  color: var(--muted);
+  opacity: 0.88;
+  overflow-wrap: anywhere;
+}
+
 .footer {
   margin-top: 16px;
   color: var(--muted);

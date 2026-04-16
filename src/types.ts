@@ -1,7 +1,14 @@
+export interface SutraPadCoordinates {
+  latitude: number;
+  longitude: number;
+}
+
 export interface SutraPadDocument {
   id: string;
   title: string;
   body: string;
+  location?: string;
+  coordinates?: SutraPadCoordinates;
   updatedAt: string;
   tags: string[];
 }

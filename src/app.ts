@@ -14,16 +14,17 @@ import {
 import {
   buildNoteCaptureTitle,
   clearCaptureParamsFromLocation,
-  formatCoordinates,
   deriveTitleFromUrl,
   reverseGeocodeCoordinates,
   readNoteCapture,
   readUrlCapture,
   resolveCurrentCoordinates,
   resolveTitleFromUrl,
+  formatCoordinates,
+  type Coordinates,
 } from "./lib/url-capture";
 import { buildBookmarklet } from "./lib/bookmarklet";
-import type { SutraPadDocument, SutraPadWorkspace, UserProfile } from "./types";
+import type { SutraPadCoordinates, SutraPadDocument, SutraPadWorkspace, UserProfile } from "./types";
 
 type SyncState = "idle" | "loading" | "saving" | "error";
 type SaveMode = "interactive" | "background";
@@ -59,7 +60,20 @@ function loadLocalWorkspace(): SutraPadWorkspace {
     }
 
     return {
-      notes: parsed.notes.map((note) => ({ ...note, tags: note.tags ?? [] })),
+      notes: parsed.notes.map((note) => ({
+        ...note,
+        location: note.location?.trim() || undefined,
+        coordinates:
+          note.coordinates &&
+          Number.isFinite(note.coordinates.latitude) &&
+          Number.isFinite(note.coordinates.longitude)
+            ? {
+                latitude: note.coordinates.latitude,
+                longitude: note.coordinates.longitude,
+              }
+            : undefined,
+        tags: note.tags ?? [],
+      })),
       activeNoteId: parsed.activeNoteId ?? parsed.notes[0].id,
     };
   } catch {
@@ -69,6 +83,17 @@ function loadLocalWorkspace(): SutraPadWorkspace {
 
 function persistLocalWorkspace(workspace: SutraPadWorkspace): void {
   window.localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify(workspace));
+}
+
+export function buildNoteMetadata(note: SutraPadDocument): string {
+  const location = note.location?.trim();
+  const updated = `Updated ${formatDate(note.updatedAt)}`;
+
+  if (location) {
+    return `${location} · ${updated}`;
+  }
+
+  return updated;
 }
 
 export function readTagFiltersFromLocation(url: string): string[] {
@@ -151,6 +176,23 @@ export async function runWorkspaceSave(
     effects.setLastError(error instanceof Error ? error.message : "Saving to Google Drive failed.");
     refreshUi();
   }
+}
+
+export async function generateFreshNoteDetails(
+  now = new Date(),
+  resolveCoordinates: () => Promise<Coordinates | null> = resolveCurrentCoordinates,
+  reverseGeocode: (coordinates: Coordinates) => Promise<string | null> = reverseGeocodeCoordinates,
+): Promise<{ title: string; location?: string; coordinates?: SutraPadCoordinates }> {
+  const resolvedCoordinates = await resolveCoordinates();
+  const location = resolvedCoordinates
+    ? (await reverseGeocode(resolvedCoordinates)) ?? formatCoordinates(resolvedCoordinates)
+    : undefined;
+
+  return {
+    title: buildNoteCaptureTitle(now, location),
+    location,
+    coordinates: resolvedCoordinates ?? undefined,
+  };
 }
 
 export function createApp(root: HTMLElement): void {
@@ -369,8 +411,8 @@ export function createApp(root: HTMLElement): void {
         lastError = "";
         render();
 
-        const title = await generateFreshNoteTitle();
-        workspace = createNewNoteWorkspace(workspace, title);
+        const { title, location, coordinates } = await generateFreshNoteDetails();
+        workspace = createNewNoteWorkspace(workspace, title, location, coordinates);
         persistLocalWorkspace(workspace);
         syncState = "idle";
         render();
@@ -488,14 +530,11 @@ export function createApp(root: HTMLElement): void {
     status.textContent = getStatusText();
   };
 
-  const generateFreshNoteTitle = async (): Promise<string> => {
-    const now = new Date();
-    const coordinates = await resolveCurrentCoordinates();
-    const place = coordinates
-      ? (await reverseGeocodeCoordinates(coordinates)) ?? formatCoordinates(coordinates)
-      : undefined;
-
-    return buildNoteCaptureTitle(now, place);
+  const buildNoteMetadataList = (note: SutraPadDocument): HTMLParagraphElement => {
+    const metadata = document.createElement("p");
+    metadata.className = "note-metadata";
+    metadata.textContent = buildNoteMetadata(note);
+    return metadata;
   };
 
   const render = (): void => {
@@ -749,7 +788,14 @@ export function createApp(root: HTMLElement): void {
         refreshNotesPanel();
       };
 
-      editor.append(status, selectedFiltersBar, titleInput, buildTagInput(), bodyInput);
+      editor.append(
+        status,
+        selectedFiltersBar,
+        titleInput,
+        buildTagInput(),
+        bodyInput,
+        buildNoteMetadataList(note),
+      );
     }
     workspaceSection.append(notesPanel, editor);
     page.append(workspaceSection);
@@ -836,11 +882,13 @@ export function createApp(root: HTMLElement): void {
   const captureIncomingUrl = async (): Promise<void> => {
     const notePayload = readNoteCapture(window.location.href);
     if (notePayload) {
-      const title = await generateFreshNoteTitle();
+      const { title, location, coordinates } = await generateFreshNoteDetails();
 
       workspace = createTextNoteWorkspace(workspace, {
         title,
         body: notePayload.note,
+        location,
+        coordinates,
       });
       persistLocalWorkspace(workspace);
       window.history.replaceState({}, "", clearCaptureParamsFromLocation(window.location.href));
