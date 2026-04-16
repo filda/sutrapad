@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, loadEnv } from "vite";
@@ -7,9 +8,14 @@ export default defineConfig(({ command, mode }) => {
   const isBuild = command === "build";
   const base = isBuild ? "/sutrapad/" : "/";
   const env = loadEnv(mode, process.cwd(), "");
+  const packageJson = JSON.parse(
+    readFileSync(resolve(process.cwd(), "package.json"), "utf8"),
+  ) as { version?: string };
   const httpsKeyPath = env.VITE_DEV_HTTPS_KEY_PATH?.trim();
   const httpsCertPath = env.VITE_DEV_HTTPS_CERT_PATH?.trim();
   const httpsEnabled = Boolean(httpsKeyPath && httpsCertPath);
+  const buildTime = new Date().toISOString();
+  const commitHash = resolveGitCommitHash();
 
   const https =
     httpsEnabled && httpsKeyPath && httpsCertPath
@@ -33,6 +39,11 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     base,
+    define: {
+      __APP_VERSION__: JSON.stringify(packageJson.version ?? "0.0.0"),
+      __APP_BUILD_TIME__: JSON.stringify(buildTime),
+      __APP_COMMIT_HASH__: JSON.stringify(commitHash),
+    },
     plugins: [
       VitePWA({
         registerType: "autoUpdate",
@@ -71,3 +82,15 @@ export default defineConfig(({ command, mode }) => {
     },
   };
 });
+
+function resolveGitCommitHash(): string {
+  try {
+    return execSync("git rev-parse --short HEAD", {
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+}

@@ -469,6 +469,13 @@ a {
   font-size: 0.92rem;
 }
 
+.build-stamp {
+  margin-top: 0.4rem;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 0.82rem;
+  opacity: 0.88;
+}
+
 @media (max-width: 860px) {
   .page {
     width: min(100% - 20px, 760px);

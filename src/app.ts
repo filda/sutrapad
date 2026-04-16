@@ -34,6 +34,15 @@ function formatDate(isoDate: string): string {
   }).format(new Date(isoDate));
 }
 
+function formatBuildStamp(): string {
+  const builtAt = new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(__APP_BUILD_TIME__));
+
+  return `v${__APP_VERSION__} · ${__APP_COMMIT_HASH__} · built ${builtAt}`;
+}
+
 function loadLocalWorkspace(): SutraPadWorkspace {
   const saved = window.localStorage.getItem(LOCAL_WORKSPACE_KEY);
   if (!saved) {
@@ -509,6 +518,7 @@ export function createApp(root: HTMLElement): void {
     footer.className = "footer";
     footer.innerHTML = `
       <p>Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by <a href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OpenStreetMap</a> and <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noreferrer">Nominatim</a>.</p>
+      <p class="build-stamp">${formatBuildStamp()}</p>
     `;
     page.append(footer);
 
