@@ -35,12 +35,19 @@ interface GoogleNamespace {
 }
 
 const GOOGLE_IDENTITY_SCRIPT = "https://accounts.google.com/gsi/client";
+const GOOGLE_AUTH_SESSION_KEY = "sutrapad-google-auth-session";
 const GOOGLE_SCOPES = [
   "openid",
   "profile",
   "email",
   "https://www.googleapis.com/auth/drive.file",
 ].join(" ");
+
+interface StoredGoogleAuthSession {
+  accessToken: string;
+  expiresAt: string;
+  profile: UserProfile;
+}
 
 let googleScriptPromise: Promise<void> | null = null;
 
@@ -112,7 +119,9 @@ export class GoogleAuthService {
     });
 
     this.#accessToken = response.access_token;
-    return this.fetchUserProfile(response.access_token);
+    const profile = await this.fetchUserProfile(response.access_token);
+    this.persistSession(response, profile);
+    return profile;
   }
 
   async refreshSession(): Promise<UserProfile | null> {
@@ -140,19 +149,33 @@ export class GoogleAuthService {
       });
 
       this.#accessToken = token.access_token;
-      return await this.fetchUserProfile(token.access_token);
+      const profile = await this.fetchUserProfile(token.access_token);
+      this.persistSession(token, profile);
+      return profile;
     } catch {
       return null;
     }
   }
 
+  async restorePersistedSession(): Promise<UserProfile | null> {
+    const storedSession = this.readStoredSession();
+    if (!storedSession) {
+      return null;
+    }
+
+    this.#accessToken = storedSession.accessToken;
+    return storedSession.profile;
+  }
+
   signOut(): void {
     if (!this.#accessToken || !window.google?.accounts?.oauth2) {
+      this.clearStoredSession();
       this.#accessToken = null;
       return;
     }
 
     window.google.accounts.oauth2.revoke(this.#accessToken, () => undefined);
+    this.clearStoredSession();
     this.#accessToken = null;
   }
 
@@ -177,5 +200,46 @@ export class GoogleAuthService {
       email: data.email,
       picture: data.picture,
     };
+  }
+
+  private persistSession(tokenResponse: TokenResponse, profile: UserProfile): void {
+    const expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString();
+    window.localStorage.setItem(
+      GOOGLE_AUTH_SESSION_KEY,
+      JSON.stringify({
+        accessToken: tokenResponse.access_token,
+        expiresAt,
+        profile,
+      } satisfies StoredGoogleAuthSession),
+    );
+  }
+
+  private readStoredSession(): StoredGoogleAuthSession | null {
+    const rawValue = window.localStorage.getItem(GOOGLE_AUTH_SESSION_KEY);
+    if (!rawValue) {
+      return null;
+    }
+
+    try {
+      const session = JSON.parse(rawValue) as StoredGoogleAuthSession;
+      if (!session.accessToken || !session.expiresAt || !session.profile?.email || !session.profile?.name) {
+        this.clearStoredSession();
+        return null;
+      }
+
+      if (new Date(session.expiresAt).getTime() <= Date.now()) {
+        this.clearStoredSession();
+        return null;
+      }
+
+      return session;
+    } catch {
+      this.clearStoredSession();
+      return null;
+    }
+  }
+
+  private clearStoredSession(): void {
+    window.localStorage.removeItem(GOOGLE_AUTH_SESSION_KEY);
   }
 }

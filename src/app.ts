@@ -59,6 +59,21 @@ function persistLocalWorkspace(workspace: SutraPadWorkspace): void {
   window.localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify(workspace));
 }
 
+export async function restoreSessionOnStartup(
+  auth: Pick<GoogleAuthService, "restorePersistedSession">,
+  applyRestoredProfile: (profile: UserProfile) => void,
+  restoreWorkspaceAfterSignIn: () => Promise<void>,
+): Promise<UserProfile | null> {
+  const restoredProfile = await auth.restorePersistedSession();
+  if (!restoredProfile) {
+    return null;
+  }
+
+  applyRestoredProfile(restoredProfile);
+  await restoreWorkspaceAfterSignIn();
+  return restoredProfile;
+}
+
 export function createApp(root: HTMLElement): void {
   const auth = new GoogleAuthService();
   const iosShortcutUrl = "https://www.icloud.com/shortcuts/969e1b627e4a46deae3c690ef0c9ca84";
@@ -607,6 +622,17 @@ export function createApp(root: HTMLElement): void {
     try {
       await captureIncomingUrl();
       await auth.initialize();
+
+      profile = await restoreSessionOnStartup(
+        auth,
+        (restoredProfile) => {
+          profile = restoredProfile;
+        },
+        restoreWorkspaceAfterSignIn,
+      );
+      if (profile) {
+        return;
+      }
     } catch (error) {
       syncState = "error";
       lastError = error instanceof Error ? error.message : "App initialization failed.";
