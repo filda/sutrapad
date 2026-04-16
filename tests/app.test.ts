@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   readTagFiltersFromLocation,
+  resolveDisplayedNote,
   restoreSessionOnStartup,
   runWorkspaceSave,
   writeTagFiltersToLocation,
 } from "../src/app";
-import type { UserProfile } from "../src/types";
+import type { SutraPadWorkspace, UserProfile } from "../src/types";
 
 describe("app startup session restore", () => {
   it("restores the workspace when Google session refresh succeeds", async () => {
@@ -100,5 +101,31 @@ describe("tag filter location helpers", () => {
     expect(
       writeTagFiltersToLocation("https://example.com/app?foo=1&tags=work", []),
     ).toBe("https://example.com/app?foo=1");
+  });
+});
+
+describe("displayed note selection", () => {
+  it("returns null when no note matches all selected tags", () => {
+    const workspace: SutraPadWorkspace = {
+      activeNoteId: "1",
+      notes: [
+        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work"] },
+        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea"] },
+      ],
+    };
+
+    expect(resolveDisplayedNote(workspace, ["work", "idea"])).toBeNull();
+  });
+
+  it("falls back to the first matching note when the active note is filtered out", () => {
+    const workspace: SutraPadWorkspace = {
+      activeNoteId: "1",
+      notes: [
+        { id: "1", title: "Alpha", body: "", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work"] },
+        { id: "2", title: "Beta", body: "", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea"] },
+      ],
+    };
+
+    expect(resolveDisplayedNote(workspace, ["idea"])?.id).toBe("2");
   });
 });

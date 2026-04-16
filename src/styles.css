@@ -470,6 +470,24 @@ a {
   font-size: 0.82rem;
 }
 
+.empty-editor-state {
+  padding: 18px;
+  border: 1px dashed rgba(31, 41, 55, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 252, 247, 0.72);
+}
+
+.empty-editor-state h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.empty-editor-state p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .tags-row {
   display: flex;
   flex-wrap: wrap;

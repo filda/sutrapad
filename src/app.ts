@@ -98,6 +98,18 @@ export function writeTagFiltersToLocation(url: string, tags: string[]): string {
   return nextUrl.toString();
 }
 
+export function resolveDisplayedNote(
+  workspace: SutraPadWorkspace,
+  selectedTagFilters: string[],
+): SutraPadDocument | null {
+  const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
+  if (filteredNotes.length === 0) {
+    return null;
+  }
+
+  return filteredNotes.find((note) => note.id === workspace.activeNoteId) ?? filteredNotes[0];
+}
+
 export async function restoreSessionOnStartup(
   auth: Pick<GoogleAuthService, "restorePersistedSession">,
   applyRestoredProfile: (profile: UserProfile) => void,
@@ -444,7 +456,7 @@ export function createApp(root: HTMLElement): void {
       return;
     }
 
-    currentPanel.replaceWith(buildNotesPanel(getCurrentNote().id));
+    currentPanel.replaceWith(buildNotesPanel(resolveDisplayedNote(workspace, selectedTagFilters)?.id ?? ""));
   };
 
   const getStatusText = (): string =>
@@ -454,9 +466,17 @@ export function createApp(root: HTMLElement): void {
         ? "Saving…"
         : syncState === "error"
           ? lastError || "A synchronization error occurred."
-          : profile
-            ? `Notebook synced from Drive. Last change: ${formatDate(getCurrentNote().updatedAt)}`
-            : `Editing local notebook. Last change: ${formatDate(getCurrentNote().updatedAt)}`;
+          : (() => {
+              const displayedNote = resolveDisplayedNote(workspace, selectedTagFilters);
+              if (!displayedNote && selectedTagFilters.length > 0) {
+                return "No notes match all selected tags.";
+              }
+
+              const note = displayedNote ?? getCurrentNote();
+              return profile
+                ? `Notebook synced from Drive. Last change: ${formatDate(note.updatedAt)}`
+                : `Editing local notebook. Last change: ${formatDate(note.updatedAt)}`;
+            })();
 
   const refreshStatus = (): void => {
     const status = root.querySelector(".status");
@@ -485,6 +505,7 @@ export function createApp(root: HTMLElement): void {
     syncTagFiltersToLocation();
 
     const currentNote = getCurrentNote();
+    const displayedNote = resolveDisplayedNote(workspace, selectedTagFilters);
 
     const page = document.createElement("main");
     page.className = "page";
@@ -656,7 +677,7 @@ export function createApp(root: HTMLElement): void {
     const workspaceSection = document.createElement("section");
     workspaceSection.className = "workspace";
 
-    const notesPanel = buildNotesPanel(currentNote.id);
+    const notesPanel = buildNotesPanel(displayedNote?.id ?? "");
 
     const editor = document.createElement("section");
     editor.className = "editor-card";
@@ -690,34 +711,46 @@ export function createApp(root: HTMLElement): void {
       }
     }
 
-    const titleInput = document.createElement("input");
-    titleInput.className = "title-input";
-    titleInput.placeholder = "Note title";
-    titleInput.value = currentNote.title;
-    titleInput.oninput = () => {
-      replaceCurrentNote((note) => ({
-        ...note,
-        title: titleInput.value,
-        updatedAt: new Date().toISOString(),
-      }));
-      syncState = "idle";
-      refreshNotesPanel();
-    };
+    if (!displayedNote && selectedTagFilters.length > 0) {
+      const emptyEditor = document.createElement("div");
+      emptyEditor.className = "empty-editor-state";
+      emptyEditor.innerHTML = `
+        <h2>No notebook matches this filter.</h2>
+        <p>Try removing one of the selected tags or clear the filter to see all notes again.</p>
+      `;
+      editor.append(status, selectedFiltersBar, emptyEditor);
+    } else {
+      const note = displayedNote ?? currentNote;
 
-    const bodyInput = document.createElement("textarea");
-    bodyInput.className = "body-input";
-    bodyInput.placeholder = "Start writing...";
-    bodyInput.value = currentNote.body;
-    bodyInput.oninput = () => {
-      replaceCurrentNote((note) => ({
-        ...note,
-        body: bodyInput.value,
-        updatedAt: new Date().toISOString(),
-      }));
-      refreshNotesPanel();
-    };
+      const titleInput = document.createElement("input");
+      titleInput.className = "title-input";
+      titleInput.placeholder = "Note title";
+      titleInput.value = note.title;
+      titleInput.oninput = () => {
+        replaceCurrentNote((currentWorkspaceNote) => ({
+          ...currentWorkspaceNote,
+          title: titleInput.value,
+          updatedAt: new Date().toISOString(),
+        }));
+        syncState = "idle";
+        refreshNotesPanel();
+      };
 
-    editor.append(status, selectedFiltersBar, titleInput, buildTagInput(), bodyInput);
+      const bodyInput = document.createElement("textarea");
+      bodyInput.className = "body-input";
+      bodyInput.placeholder = "Start writing...";
+      bodyInput.value = note.body;
+      bodyInput.oninput = () => {
+        replaceCurrentNote((currentWorkspaceNote) => ({
+          ...currentWorkspaceNote,
+          body: bodyInput.value,
+          updatedAt: new Date().toISOString(),
+        }));
+        refreshNotesPanel();
+      };
+
+      editor.append(status, selectedFiltersBar, titleInput, buildTagInput(), bodyInput);
+    }
     workspaceSection.append(notesPanel, editor);
     page.append(workspaceSection);
 
