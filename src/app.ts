@@ -24,6 +24,7 @@ import { buildBookmarklet } from "./lib/bookmarklet";
 import type { SutraPadDocument, SutraPadWorkspace, UserProfile } from "./types";
 
 type SyncState = "idle" | "loading" | "saving" | "error";
+type SaveMode = "interactive" | "background";
 const LOCAL_WORKSPACE_KEY = "sutrapad-local-workspace";
 const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 
@@ -83,6 +84,34 @@ export async function restoreSessionOnStartup(
   return restoredProfile;
 }
 
+export async function runWorkspaceSave(
+  mode: SaveMode,
+  effects: {
+    persistLocalWorkspace: () => void;
+    saveRemoteWorkspace: () => Promise<void>;
+    setSyncState: (state: SyncState) => void;
+    setLastError: (message: string) => void;
+    render: () => void;
+    refreshStatus: () => void;
+  },
+): Promise<void> {
+  const refreshUi = mode === "interactive" ? effects.render : effects.refreshStatus;
+
+  try {
+    effects.setSyncState("saving");
+    effects.setLastError("");
+    effects.persistLocalWorkspace();
+    refreshUi();
+    await effects.saveRemoteWorkspace();
+    effects.setSyncState("idle");
+    refreshUi();
+  } catch (error) {
+    effects.setSyncState("error");
+    effects.setLastError(error instanceof Error ? error.message : "Saving to Google Drive failed.");
+    refreshUi();
+  }
+}
+
 export function createApp(root: HTMLElement): void {
   const auth = new GoogleAuthService();
   const iosShortcutUrl = "https://www.icloud.com/shortcuts/969e1b627e4a46deae3c690ef0c9ca84";
@@ -106,7 +135,7 @@ export function createApp(root: HTMLElement): void {
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(() => {
       autoSaveTimer = null;
-      void saveWorkspace();
+      void saveWorkspace("background");
     }, 2000);
   };
 
@@ -243,6 +272,27 @@ export function createApp(root: HTMLElement): void {
     }
 
     currentList.replaceWith(buildNotesList(currentNoteId));
+  };
+
+  const getStatusText = (): string =>
+    syncState === "loading"
+      ? "Loading…"
+      : syncState === "saving"
+        ? "Saving…"
+        : syncState === "error"
+          ? lastError || "A synchronization error occurred."
+          : profile
+            ? `Notebook synced from Drive. Last change: ${formatDate(getCurrentNote().updatedAt)}`
+            : `Editing local notebook. Last change: ${formatDate(getCurrentNote().updatedAt)}`;
+
+  const refreshStatus = (): void => {
+    const status = root.querySelector(".status");
+    if (!(status instanceof HTMLParagraphElement)) {
+      return;
+    }
+
+    status.className = `status status-${syncState}`;
+    status.textContent = getStatusText();
   };
 
   const generateFreshNoteTitle = async (): Promise<string> => {
@@ -472,16 +522,7 @@ export function createApp(root: HTMLElement): void {
 
     const status = document.createElement("p");
     status.className = `status status-${syncState}`;
-    status.textContent =
-      syncState === "loading"
-        ? "Loading…"
-        : syncState === "saving"
-          ? "Saving…"
-          : syncState === "error"
-            ? lastError || "A synchronization error occurred."
-            : profile
-              ? `Notebook synced from Drive. Last change: ${formatDate(currentNote.updatedAt)}`
-              : `Editing local notebook. Last change: ${formatDate(currentNote.updatedAt)}`;
+    status.textContent = getStatusText();
 
     const titleInput = document.createElement("input");
     titleInput.className = "title-input";
@@ -579,21 +620,19 @@ export function createApp(root: HTMLElement): void {
     }
   };
 
-  const saveWorkspace = async (): Promise<void> => {
-    try {
-      syncState = "saving";
-      lastError = "";
-      persistLocalWorkspace(workspace);
-      render();
-      await getStore().saveWorkspace(workspace);
-      syncState = "idle";
-      render();
-    } catch (error) {
-      syncState = "error";
-      lastError = error instanceof Error ? error.message : "Saving to Google Drive failed.";
-      render();
-    }
-  };
+  const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> =>
+    runWorkspaceSave(mode, {
+      persistLocalWorkspace: () => persistLocalWorkspace(workspace),
+      saveRemoteWorkspace: () => getStore().saveWorkspace(workspace),
+      setSyncState: (state) => {
+        syncState = state;
+      },
+      setLastError: (message) => {
+        lastError = message;
+      },
+      render,
+      refreshStatus,
+    });
 
   const captureIncomingUrl = async (): Promise<void> => {
     const notePayload = readNoteCapture(window.location.href);

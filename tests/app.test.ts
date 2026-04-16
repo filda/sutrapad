@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { restoreSessionOnStartup } from "../src/app";
+import { restoreSessionOnStartup, runWorkspaceSave } from "../src/app";
 import type { UserProfile } from "../src/types";
 
 describe("app startup session restore", () => {
@@ -39,5 +39,43 @@ describe("app startup session restore", () => {
     expect(auth.restorePersistedSession).toHaveBeenCalledTimes(1);
     expect(applyRestoredProfile).not.toHaveBeenCalled();
     expect(restoreWorkspaceAfterSignIn).not.toHaveBeenCalled();
+  });
+});
+
+describe("workspace save behavior", () => {
+  it("uses a lightweight status refresh during background autosave", async () => {
+    const effects = {
+      persistLocalWorkspace: vi.fn(),
+      saveRemoteWorkspace: vi.fn().mockResolvedValue(undefined),
+      setSyncState: vi.fn(),
+      setLastError: vi.fn(),
+      render: vi.fn(),
+      refreshStatus: vi.fn(),
+    };
+
+    await runWorkspaceSave("background", effects);
+
+    expect(effects.persistLocalWorkspace).toHaveBeenCalledTimes(1);
+    expect(effects.saveRemoteWorkspace).toHaveBeenCalledTimes(1);
+    expect(effects.setSyncState).toHaveBeenNthCalledWith(1, "saving");
+    expect(effects.setSyncState).toHaveBeenNthCalledWith(2, "idle");
+    expect(effects.refreshStatus).toHaveBeenCalledTimes(2);
+    expect(effects.render).not.toHaveBeenCalled();
+  });
+
+  it("still performs a full render for interactive saves", async () => {
+    const effects = {
+      persistLocalWorkspace: vi.fn(),
+      saveRemoteWorkspace: vi.fn().mockResolvedValue(undefined),
+      setSyncState: vi.fn(),
+      setLastError: vi.fn(),
+      render: vi.fn(),
+      refreshStatus: vi.fn(),
+    };
+
+    await runWorkspaceSave("interactive", effects);
+
+    expect(effects.render).toHaveBeenCalledTimes(2);
+    expect(effects.refreshStatus).not.toHaveBeenCalled();
   });
 });
