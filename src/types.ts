@@ -7,6 +7,7 @@ export interface SutraPadDocument {
   id: string;
   title: string;
   body: string;
+  urls: string[];
   location?: string;
   coordinates?: SutraPadCoordinates;
   createdAt: string;
@@ -47,6 +48,18 @@ export interface SutraPadTagIndex {
   version: 1;
   savedAt: string;
   tags: SutraPadTagEntry[];
+}
+
+export interface SutraPadLinkEntry {
+  url: string;
+  noteIds: string[];
+  count: number;
+}
+
+export interface SutraPadLinkIndex {
+  version: 1;
+  savedAt: string;
+  links: SutraPadLinkEntry[];
 }
 
 export interface SutraPadWorkspace {

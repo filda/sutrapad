@@ -6,7 +6,7 @@ import type {
   SutraPadNoteSummary,
   SutraPadWorkspace,
 } from "../types";
-import { buildTagIndex } from "../lib/notebook";
+import { buildLinkIndex, buildTagIndex, extractUrlsFromText } from "../lib/notebook";
 
 const GOOGLE_DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
@@ -16,6 +16,7 @@ const LEGACY_INDEX_FILE_NAME = import.meta.env.VITE_SUTRAPAD_FILE_NAME || "sutra
 const LEGACY_FILE_NAME = "sutrapad-data.json";
 const HEAD_FILE_NAME = "sutrapad-head.json";
 const TAG_INDEX_FILE_NAME = "sutrapad-tags.json";
+const LINK_INDEX_FILE_NAME = "sutrapad-links.json";
 const WORKSPACE_FOLDER_NAME = "SutraPad";
 const MAX_INDEX_SNAPSHOTS = 10;
 
@@ -25,6 +26,7 @@ function createInitialDocument(): SutraPadDocument {
     id: crypto.randomUUID(),
     title: "My first note",
     body: "Start writing here.",
+    urls: [],
     createdAt: timestamp,
     updatedAt: timestamp,
     tags: [],
@@ -102,6 +104,7 @@ export class GoogleDriveStore {
         return {
           ...document,
           createdAt: document.createdAt ?? document.updatedAt,
+          urls: document.urls ?? extractUrlsFromText(document.body),
           tags: document.tags ?? [],
         };
       }),
@@ -184,6 +187,7 @@ export class GoogleDriveStore {
       notes: savedNotes,
     };
     const tagIndex = buildTagIndex(workspace, finalIndex.savedAt);
+    const linkIndex = buildLinkIndex(workspace, finalIndex.savedAt);
 
     const indexSnapshotFile = await this.uploadJsonFile({
       fileName: this.buildIndexSnapshotFileName(finalIndex.savedAt),
@@ -210,6 +214,20 @@ export class GoogleDriveStore {
     });
 
     await this.ensureFileInFolder(tagIndexFile.id, workspaceFolder.id);
+
+    const existingLinkIndexFile = await this.findLinkIndexFile(workspaceFolder.id);
+    const linkIndexFile = await this.uploadJsonFile({
+      fileId: existingLinkIndexFile?.id,
+      fileName: LINK_INDEX_FILE_NAME,
+      data: linkIndex,
+      folderId: workspaceFolder.id,
+      appProperties: {
+        sutrapad: "true",
+        kind: "links",
+      },
+    });
+
+    await this.ensureFileInFolder(linkIndexFile.id, workspaceFolder.id);
 
     const existingHeadFile = await this.findHeadFile(workspaceFolder.id);
     const head: SutraPadHead = {
@@ -248,7 +266,12 @@ export class GoogleDriveStore {
     }
 
     const document = await this.fetchJsonFile<SutraPadDocument>(legacyFile.id);
-    return { ...document, tags: document.tags ?? [] };
+    return {
+      ...document,
+      createdAt: document.createdAt ?? document.updatedAt,
+      urls: document.urls ?? extractUrlsFromText(document.body),
+      tags: document.tags ?? [],
+    };
   }
 
   private async getWorkspaceFolder(): Promise<DriveFileRecord> {
@@ -340,6 +363,22 @@ export class GoogleDriveStore {
 
     return this.findSingleFile(
       `trashed = false and name = '${TAG_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='tags' }`,
+    );
+  }
+
+  private async findLinkIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
+    const inFolder = folderId
+      ? await this.findSingleFile(
+          `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='links' }`,
+        )
+      : null;
+
+    if (inFolder) {
+      return inFolder;
+    }
+
+    return this.findSingleFile(
+      `trashed = false and name = '${LINK_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='links' }`,
     );
   }
 

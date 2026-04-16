@@ -1,4 +1,4 @@
-import type { SutraPadDocument, SutraPadTagIndex, SutraPadWorkspace } from "../types";
+import type { SutraPadDocument, SutraPadLinkIndex, SutraPadTagIndex, SutraPadWorkspace } from "../types";
 
 const DEFAULT_NOTE_TITLE = "Untitled note";
 
@@ -12,6 +12,7 @@ export function createNote(
     id: crypto.randomUUID(),
     title,
     body: "",
+    urls: [],
     location,
     coordinates,
     createdAt: timestamp,
@@ -55,6 +56,54 @@ export function buildTagIndex(
         count: noteIds.length,
       }))
       .sort((left, right) => right.count - left.count || left.tag.localeCompare(right.tag)),
+  };
+}
+
+export function extractUrlsFromText(text: string): string[] {
+  const matches = text.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
+  const normalizedUrls: string[] = [];
+  const seen = new Set<string>();
+
+  for (const match of matches) {
+    const trimmedCandidate = match.replace(/[),.!?:;]+$/g, "");
+
+    try {
+      const normalizedUrl = new URL(trimmedCandidate).toString();
+      if (!seen.has(normalizedUrl)) {
+        seen.add(normalizedUrl);
+        normalizedUrls.push(normalizedUrl);
+      }
+    } catch {
+      // Ignore invalid URL-like fragments and keep scanning the text.
+    }
+  }
+
+  return normalizedUrls;
+}
+
+export function buildLinkIndex(
+  workspace: SutraPadWorkspace,
+  savedAt = new Date().toISOString(),
+): SutraPadLinkIndex {
+  const noteIdsByUrl = new Map<string, string[]>();
+
+  for (const note of workspace.notes) {
+    for (const url of note.urls) {
+      const existingNoteIds = noteIdsByUrl.get(url) ?? [];
+      noteIdsByUrl.set(url, [...existingNoteIds, note.id]);
+    }
+  }
+
+  return {
+    version: 1,
+    savedAt,
+    links: [...noteIdsByUrl.entries()]
+      .map(([url, noteIds]) => ({
+        url,
+        noteIds,
+        count: noteIds.length,
+      }))
+      .sort((left, right) => right.count - left.count || left.url.localeCompare(right.url)),
   };
 }
 
@@ -147,6 +196,8 @@ export function areWorkspacesEqual(
       note.id === other.id &&
       note.title === other.title &&
       note.body === other.body &&
+      note.urls.length === other.urls.length &&
+      note.urls.every((url, i) => url === other.urls[i]) &&
       note.location === other.location &&
       note.coordinates?.latitude === other.coordinates?.latitude &&
       note.coordinates?.longitude === other.coordinates?.longitude &&
@@ -191,6 +242,7 @@ export function createCapturedNoteWorkspace(
 ): SutraPadWorkspace {
   const note = createNote(capture.title);
   note.body = capture.url;
+  note.urls = extractUrlsFromText(capture.url);
 
   return {
     notes: sortNotes([note, ...workspace.notes]),
@@ -204,6 +256,7 @@ export function createTextNoteWorkspace(
 ): SutraPadWorkspace {
   const note = createNote(capture.title, capture.location, capture.coordinates);
   note.body = capture.body;
+  note.urls = extractUrlsFromText(capture.body);
 
   return {
     notes: sortNotes([note, ...workspace.notes]),

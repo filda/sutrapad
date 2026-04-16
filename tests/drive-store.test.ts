@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GoogleDriveStore } from "../src/services/drive-store";
-import type { SutraPadDocument, SutraPadHead, SutraPadIndex } from "../src/types";
+import type { SutraPadHead, SutraPadIndex } from "../src/types";
 
 function mockFetch(handler: (url: string, options?: RequestInit) => Response | Promise<Response>): void {
   vi.stubGlobal("fetch", vi.fn(handler));
@@ -69,10 +69,10 @@ describe("GoogleDriveStore", () => {
           fileId: "note-file-1",
         }],
       };
-      const note: SutraPadDocument = {
+      const note = {
         id: "note-abc",
         title: "My note",
-        body: "Hello world",
+        body: "Hello world https://example.com/hello",
         tags: ["work"],
         createdAt: "2026-04-13T10:00:00.000Z",
         updatedAt: "2026-04-13T10:00:00.000Z",
@@ -93,8 +93,9 @@ describe("GoogleDriveStore", () => {
 
       expect(workspace.notes).toHaveLength(1);
       expect(workspace.notes[0].id).toBe("note-abc");
-      expect(workspace.notes[0].body).toBe("Hello world");
+      expect(workspace.notes[0].body).toBe("Hello world https://example.com/hello");
       expect(workspace.notes[0].tags).toEqual(["work"]);
+      expect(workspace.notes[0].urls).toEqual(["https://example.com/hello"]);
       expect(workspace.activeNoteId).toBe("note-abc");
     });
 
@@ -117,7 +118,7 @@ describe("GoogleDriveStore", () => {
       const legacyNote = {
         id: "old-note",
         title: "Old",
-        body: "Legacy",
+        body: "Legacy https://example.com/legacy",
         createdAt: "2026-04-13T10:00:00.000Z",
         updatedAt: "2026-04-13T10:00:00.000Z",
       };
@@ -135,6 +136,7 @@ describe("GoogleDriveStore", () => {
       const workspace = await store.loadWorkspace();
 
       expect(workspace.notes[0].tags).toEqual([]);
+      expect(workspace.notes[0].urls).toEqual(["https://example.com/legacy"]);
     });
   });
 
@@ -176,6 +178,7 @@ describe("GoogleDriveStore", () => {
 
           if (options?.method === "POST") return json(newIndexFile);
           if (url.includes("/tags-1?uploadType=multipart")) return json(tagIndexFile);
+          if (url.includes("/sutrapad-links.json?uploadType=multipart")) return json(driveFile("links-1", "sutrapad-links.json", { parents: ["folder-1"] }));
           return json(headFile);
         }
 
@@ -197,19 +200,22 @@ describe("GoogleDriveStore", () => {
           id: "note-abc",
           title: "My note",
           body: "No changes",
+          urls: [],
           tags: ["work"],
           createdAt: "2026-04-13T10:00:00.000Z",
           updatedAt: "2026-04-13T10:00:00.000Z",
         }],
       });
 
-      expect(uploadMetadata).toHaveLength(3);
-      expect(uploadFiles).toHaveLength(3);
+      expect(uploadMetadata).toHaveLength(4);
+      expect(uploadFiles).toHaveLength(4);
       expect(uploadMetadata[0]).toContain('"kind":"index"');
       expect(uploadMetadata[1]).toContain('"kind":"tags"');
       expect(uploadFiles[1]).toContain('"tag": "work"');
       expect(uploadFiles[1]).toContain('"noteIds": [');
-      expect(uploadMetadata[2]).toContain('"kind":"head"');
+      expect(uploadMetadata[2]).toContain('"kind":"links"');
+      expect(uploadFiles[2]).toContain('"links": []');
+      expect(uploadMetadata[3]).toContain('"kind":"head"');
     });
 
     it("uploads a modified note before writing the new snapshot and head", async () => {
@@ -242,6 +248,7 @@ describe("GoogleDriveStore", () => {
         if (isUpload(url, options)) {
           if (options?.method === "POST") return json(newIndexFile);
           if (url.includes("/tags-1?uploadType=multipart")) return json(tagIndexFile);
+          if (url.includes("/sutrapad-links.json?uploadType=multipart")) return json(driveFile("links-1", "sutrapad-links.json", { parents: ["folder-1"] }));
           return json(headFile);
         }
 
@@ -263,7 +270,8 @@ describe("GoogleDriveStore", () => {
         notes: [{
           id: "note-abc",
           title: "My note",
-          body: "Updated body",
+          body: "Updated body https://example.com/updated",
+          urls: ["https://example.com/updated"],
           tags: ["work"],
           createdAt: "2026-04-13T10:00:00.000Z",
           updatedAt: "2026-04-13T12:00:00.000Z",
@@ -314,6 +322,7 @@ describe("GoogleDriveStore", () => {
         if (isUpload(url, options)) {
           if (options?.method === "POST") return json(createdIndexFile);
           if (url.includes("/tags-1?uploadType=multipart")) return json(tagIndexFile);
+          if (url.includes("/sutrapad-links.json?uploadType=multipart")) return json(driveFile("links-1", "sutrapad-links.json", { parents: ["folder-1"] }));
           return json(headFile);
         }
 
@@ -338,6 +347,7 @@ describe("GoogleDriveStore", () => {
           id: "note-abc",
           title: "My note",
           body: "No changes",
+          urls: [],
           tags: [],
           createdAt: "2026-04-13T10:00:00.000Z",
           updatedAt: "2026-04-13T10:00:00.000Z",

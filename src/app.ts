@@ -1,6 +1,7 @@
 import { GoogleAuthService } from "./services/google-auth";
 import { GoogleDriveStore } from "./services/drive-store";
 import {
+  extractUrlsFromText,
   buildTagIndex,
   areWorkspacesEqual,
   createCapturedNoteWorkspace,
@@ -62,6 +63,7 @@ function loadLocalWorkspace(): SutraPadWorkspace {
     return {
       notes: parsed.notes.map((note) => ({
         ...note,
+        urls: Array.isArray(note.urls) ? note.urls : extractUrlsFromText(note.body),
         location: note.location?.trim() || undefined,
         coordinates:
           note.coordinates &&
@@ -784,6 +786,7 @@ export function createApp(root: HTMLElement): void {
         replaceCurrentNote((currentWorkspaceNote) => ({
           ...currentWorkspaceNote,
           body: bodyInput.value,
+          urls: extractUrlsFromText(bodyInput.value),
           updatedAt: new Date().toISOString(),
         }));
         refreshNotesPanel();

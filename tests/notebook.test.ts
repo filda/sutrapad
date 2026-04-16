@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildLinkIndex,
   buildTagIndex,
   areWorkspacesEqual,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
+  extractUrlsFromText,
   filterNotesByAllTags,
   isPristineWorkspace,
   mergeWorkspaces,
@@ -21,6 +23,7 @@ function makeNote(
     title: "Test note",
     body: "",
     createdAt: overrides.createdAt ?? overrides.updatedAt,
+    urls: overrides.urls ?? [],
     tags: [],
     ...overrides,
   };
@@ -69,6 +72,49 @@ describe("notebook helpers", () => {
       tags: [
         { tag: "idea", noteIds: ["1", "2"], count: 2 },
         { tag: "work", noteIds: ["1", "3"], count: 2 },
+      ],
+    });
+  });
+
+  it("extracts normalized unique urls from free text", () => {
+    expect(
+      extractUrlsFromText(
+        "See https://example.com/one, https://example.com/two. Also https://example.com/one again.",
+      ),
+    ).toEqual(["https://example.com/one", "https://example.com/two"]);
+  });
+
+  it("builds a link index with note links and counts", () => {
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        makeNote({
+          id: "1",
+          updatedAt: "2026-04-13T12:00:00.000Z",
+          urls: ["https://example.com/one", "https://example.com/shared"],
+        }),
+        makeNote({
+          id: "2",
+          updatedAt: "2026-04-13T11:00:00.000Z",
+          urls: ["https://example.com/shared"],
+        }),
+      ],
+    };
+
+    expect(buildLinkIndex(workspace, "2026-04-13T12:30:00.000Z")).toEqual({
+      version: 1,
+      savedAt: "2026-04-13T12:30:00.000Z",
+      links: [
+        {
+          url: "https://example.com/shared",
+          noteIds: ["1", "2"],
+          count: 2,
+        },
+        {
+          url: "https://example.com/one",
+          noteIds: ["1"],
+          count: 1,
+        },
       ],
     });
   });
@@ -178,6 +224,7 @@ describe("notebook helpers", () => {
     expect(updated.activeNoteId).toBe(updated.notes[0].id);
     expect(updated.notes[0].title).toBe("Example page");
     expect(updated.notes[0].body).toBe("https://example.com/post");
+    expect(updated.notes[0].urls).toEqual(["https://example.com/post"]);
 
     vi.useRealTimers();
   });
@@ -193,7 +240,7 @@ describe("notebook helpers", () => {
 
     const updated = createTextNoteWorkspace(workspace, {
       title: "14/4/2026 Â· midnight",
-      body: "A quick note",
+      body: "A quick note with https://example.com/article",
       location: "Prague",
       coordinates: {
         latitude: 50.0755,
@@ -203,12 +250,13 @@ describe("notebook helpers", () => {
 
     expect(updated.activeNoteId).toBe(updated.notes[0].id);
     expect(updated.notes[0].title).toBe("14/4/2026 Â· midnight");
-    expect(updated.notes[0].body).toBe("A quick note");
+    expect(updated.notes[0].body).toBe("A quick note with https://example.com/article");
     expect(updated.notes[0].location).toBe("Prague");
     expect(updated.notes[0].coordinates).toEqual({
       latitude: 50.0755,
       longitude: 14.4378,
     });
+    expect(updated.notes[0].urls).toEqual(["https://example.com/article"]);
     expect(updated.notes[0].createdAt).toBe("2026-04-13T15:00:00.000Z");
 
     vi.useRealTimers();

@@ -117,6 +117,7 @@ describe("displayed note selection", () => {
           body: "",
           createdAt: "2026-04-13T10:00:00.000Z",
           updatedAt: "2026-04-13T10:00:00.000Z",
+          urls: [],
           tags: ["work"],
         },
         {
@@ -125,6 +126,7 @@ describe("displayed note selection", () => {
           body: "",
           createdAt: "2026-04-13T11:00:00.000Z",
           updatedAt: "2026-04-13T11:00:00.000Z",
+          urls: [],
           tags: ["idea"],
         },
       ],
@@ -143,6 +145,7 @@ describe("displayed note selection", () => {
           body: "",
           createdAt: "2026-04-13T10:00:00.000Z",
           updatedAt: "2026-04-13T10:00:00.000Z",
+          urls: [],
           tags: ["work"],
         },
         {
@@ -151,6 +154,7 @@ describe("displayed note selection", () => {
           body: "",
           createdAt: "2026-04-13T11:00:00.000Z",
           updatedAt: "2026-04-13T11:00:00.000Z",
+          urls: [],
           tags: ["idea"],
         },
       ],
@@ -194,6 +198,7 @@ describe("note metadata", () => {
         id: "1",
         title: "Alpha",
         body: "",
+        urls: [],
         location: "Prague",
         coordinates: {
           latitude: 50.0755,
