@@ -448,6 +448,28 @@ a {
   color: var(--danger);
 }
 
+.selected-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 14px;
+}
+
+.selected-filters-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.selected-filter-chip {
+  border: 1px solid rgba(192, 132, 87, 0.28);
+  background: rgba(192, 132, 87, 0.12);
+  color: var(--primary);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.82rem;
+}
+
 .tags-row {
   display: flex;
   flex-wrap: wrap;

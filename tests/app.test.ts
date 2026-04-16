@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { restoreSessionOnStartup, runWorkspaceSave } from "../src/app";
+import {
+  readTagFiltersFromLocation,
+  restoreSessionOnStartup,
+  runWorkspaceSave,
+  writeTagFiltersToLocation,
+} from "../src/app";
 import type { UserProfile } from "../src/types";
 
 describe("app startup session restore", () => {
@@ -77,5 +82,23 @@ describe("workspace save behavior", () => {
 
     expect(effects.render).toHaveBeenCalledTimes(2);
     expect(effects.refreshStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe("tag filter location helpers", () => {
+  it("reads normalized unique tag filters from the URL", () => {
+    expect(
+      readTagFiltersFromLocation("https://example.com/app?tags=Work,idea,work,,Draft"),
+    ).toEqual(["draft", "idea", "work"]);
+  });
+
+  it("writes tag filters into the URL and removes the param when empty", () => {
+    expect(
+      writeTagFiltersToLocation("https://example.com/app?foo=1", ["work", "Idea", "work", " draft "]),
+    ).toBe("https://example.com/app?foo=1&tags=draft%2Cidea%2Cwork");
+
+    expect(
+      writeTagFiltersToLocation("https://example.com/app?foo=1&tags=work", []),
+    ).toBe("https://example.com/app?foo=1");
   });
 });

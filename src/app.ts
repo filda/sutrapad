@@ -71,6 +71,33 @@ function persistLocalWorkspace(workspace: SutraPadWorkspace): void {
   window.localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify(workspace));
 }
 
+export function readTagFiltersFromLocation(url: string): string[] {
+  const filters = new URL(url).searchParams.get("tags");
+  if (!filters) {
+    return [];
+  }
+
+  return [...new Set(
+    filters
+      .split(",")
+      .map((tag) => tag.trim().toLowerCase())
+      .filter(Boolean),
+  )].sort((left, right) => left.localeCompare(right));
+}
+
+export function writeTagFiltersToLocation(url: string, tags: string[]): string {
+  const nextUrl = new URL(url);
+  const canonicalTags = [...new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right));
+  if (canonicalTags.length === 0) {
+    nextUrl.searchParams.delete("tags");
+  } else {
+    nextUrl.searchParams.set("tags", canonicalTags.join(","));
+  }
+
+  return nextUrl.toString();
+}
+
 export async function restoreSessionOnStartup(
   auth: Pick<GoogleAuthService, "restorePersistedSession">,
   applyRestoredProfile: (profile: UserProfile) => void,
@@ -126,7 +153,7 @@ export function createApp(root: HTMLElement): void {
   let bookmarkletHelperExpanded =
     window.localStorage.getItem(BOOKMARKLET_HELPER_KEY) !== "collapsed";
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  let selectedTagFilters: string[] = [];
+  let selectedTagFilters: string[] = readTagFiltersFromLocation(window.location.href);
 
   const getCurrentNote = (): SutraPadDocument => {
     const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
@@ -283,6 +310,13 @@ export function createApp(root: HTMLElement): void {
     selectedTagFilters = selectedTagFilters.filter((tag) => availableTags.has(tag));
   };
 
+  const syncTagFiltersToLocation = (): void => {
+    const nextUrl = writeTagFiltersToLocation(window.location.href, selectedTagFilters);
+    if (nextUrl !== window.location.href) {
+      window.history.replaceState({}, "", nextUrl);
+    }
+  };
+
   const ensureVisibleActiveNote = (): void => {
     const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
     if (
@@ -358,6 +392,7 @@ export function createApp(root: HTMLElement): void {
         clearFiltersButton.textContent = "Clear";
         clearFiltersButton.onclick = () => {
           selectedTagFilters = [];
+          syncTagFiltersToLocation();
           render();
         };
         filterHeader.append(clearFiltersButton);
@@ -376,6 +411,7 @@ export function createApp(root: HTMLElement): void {
             ? selectedTagFilters.filter((tag) => tag !== entry.tag)
             : [...selectedTagFilters, entry.tag];
           ensureVisibleActiveNote();
+          syncTagFiltersToLocation();
           render();
         };
         cloud.append(chip);
@@ -446,6 +482,7 @@ export function createApp(root: HTMLElement): void {
     root.innerHTML = "";
     syncSelectedTagFilters();
     ensureVisibleActiveNote();
+    syncTagFiltersToLocation();
 
     const currentNote = getCurrentNote();
 
@@ -628,6 +665,31 @@ export function createApp(root: HTMLElement): void {
     status.className = `status status-${syncState}`;
     status.textContent = getStatusText();
 
+    const selectedFiltersBar = document.createElement("div");
+    selectedFiltersBar.className = "selected-filters";
+    selectedFiltersBar.hidden = selectedTagFilters.length === 0;
+
+    if (selectedTagFilters.length > 0) {
+      const label = document.createElement("span");
+      label.className = "selected-filters-label";
+      label.textContent = "Filtered by";
+      selectedFiltersBar.append(label);
+
+      for (const tag of selectedTagFilters) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "selected-filter-chip";
+        chip.textContent = tag;
+        chip.onclick = () => {
+          selectedTagFilters = selectedTagFilters.filter((entry) => entry !== tag);
+          ensureVisibleActiveNote();
+          syncTagFiltersToLocation();
+          render();
+        };
+        selectedFiltersBar.append(chip);
+      }
+    }
+
     const titleInput = document.createElement("input");
     titleInput.className = "title-input";
     titleInput.placeholder = "Note title";
@@ -655,7 +717,7 @@ export function createApp(root: HTMLElement): void {
       refreshNotesPanel();
     };
 
-    editor.append(status, titleInput, buildTagInput(), bodyInput);
+    editor.append(status, selectedFiltersBar, titleInput, buildTagInput(), bodyInput);
     workspaceSection.append(notesPanel, editor);
     page.append(workspaceSection);
 
