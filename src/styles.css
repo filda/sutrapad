@@ -115,6 +115,7 @@ a {
 }
 
 .hero-top-row {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -912,6 +913,114 @@ a {
   }
 
   .update-banner-actions {
+    justify-content: flex-end;
+  }
+}
+
+.account-bar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.account-sign-in,
+.account-action {
+  padding: 0.45rem 0.95rem;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.account-menu {
+  position: relative;
+}
+
+.account-menu-trigger {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  padding: 2px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  transition:
+    box-shadow 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.account-menu-trigger:hover {
+  border-color: rgba(192, 132, 87, 0.5);
+  box-shadow: 0 6px 14px rgba(31, 41, 55, 0.08);
+  transform: translateY(-1px);
+}
+
+.account-menu-trigger:focus-visible {
+  outline: 2px solid rgba(192, 132, 87, 0.65);
+  outline-offset: 2px;
+}
+
+.account-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
+}
+
+.account-menu-trigger .avatar-fallback {
+  background: linear-gradient(135deg, #1f2937, #c08457);
+}
+
+.account-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 220px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 18px 40px rgba(31, 41, 55, 0.14);
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 20;
+}
+
+.account-menu:hover .account-menu-panel,
+.account-menu:focus-within .account-menu-panel {
+  display: flex;
+}
+
+.account-menu-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  word-break: break-word;
+}
+
+.account-menu-profile strong {
+  color: var(--primary);
+  font-size: 0.95rem;
+}
+
+.account-menu-profile span {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.account-menu-signout {
+  align-self: stretch;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 520px) {
+  .account-bar {
+    margin-left: 0;
+    width: 100%;
     justify-content: flex-end;
   }
 }
