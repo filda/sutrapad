@@ -13,8 +13,6 @@ import {
 } from "./pages/notes-page";
 import { buildPagePlaceholder } from "./pages/placeholder-page";
 
-export { buildNotesPanel };
-
 interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   root: HTMLElement;
   profile: UserProfile | null;

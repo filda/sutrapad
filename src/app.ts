@@ -38,7 +38,8 @@ import { restoreSessionOnStartup } from "./app/session/session";
 import { withAuthRetry, type AuthRetryContext } from "./app/session/auth-retry";
 import { runWorkspaceSave, type SaveMode, type SyncState } from "./app/session/workspace-sync";
 import { loadLocalWorkspace, persistLocalWorkspace } from "./app/storage/local-workspace";
-import { buildNotesPanel, renderAppPage } from "./app/view/render-app";
+import { renderAppPage } from "./app/view/render-app";
+import { buildNotesPanel } from "./app/view/pages/notes-page";
 import { type MenuItemId } from "./app/logic/menu";
 import {
   readActivePageFromLocation,
