@@ -9,8 +9,8 @@
     "build": "npm run typecheck && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.vitest.json",
     "check": "npm run test && npm run build",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test": "npm run typecheck && vitest run",
+    "test:coverage": "npm run typecheck && vitest run --coverage",
     "test:watch": "vitest",
     "test:mutation": "stryker run",
     "preview": "vite preview"

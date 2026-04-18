@@ -11,7 +11,7 @@ const sampleProfile: UserProfile = {
 
 describe("withAuthRetry", () => {
   it("returns the operation result without refreshing when no error is thrown", async () => {
-    const refreshSession = vi.fn<[], Promise<UserProfile | null>>();
+    const refreshSession = vi.fn<() => Promise<UserProfile | null>>();
     const onProfileRefreshed = vi.fn();
     const operation = vi.fn().mockResolvedValue("ok");
 
@@ -24,7 +24,7 @@ describe("withAuthRetry", () => {
   });
 
   it("rethrows non-401 errors without attempting a refresh", async () => {
-    const refreshSession = vi.fn<[], Promise<UserProfile | null>>();
+    const refreshSession = vi.fn<() => Promise<UserProfile | null>>();
     const onProfileRefreshed = vi.fn();
     const unrelated = new Error("network down");
     const operation = vi.fn().mockRejectedValueOnce(unrelated);
@@ -39,7 +39,7 @@ describe("withAuthRetry", () => {
   });
 
   it("rethrows Drive errors with non-401 status without refreshing", async () => {
-    const refreshSession = vi.fn<[], Promise<UserProfile | null>>();
+    const refreshSession = vi.fn<() => Promise<UserProfile | null>>();
     const operation = vi
       .fn()
       .mockRejectedValueOnce(new GoogleDriveApiError("Failed to list", 500, "server error"));
@@ -51,7 +51,7 @@ describe("withAuthRetry", () => {
   });
 
   it("refreshes the session and retries once after a 401", async () => {
-    const refreshSession = vi.fn<[], Promise<UserProfile | null>>().mockResolvedValue(sampleProfile);
+    const refreshSession = vi.fn<() => Promise<UserProfile | null>>().mockResolvedValue(sampleProfile);
     const onProfileRefreshed = vi.fn();
     const operation = vi
       .fn()
@@ -67,7 +67,7 @@ describe("withAuthRetry", () => {
   });
 
   it("rethrows the original 401 when silent refresh cannot succeed", async () => {
-    const refreshSession = vi.fn<[], Promise<UserProfile | null>>().mockResolvedValue(null);
+    const refreshSession = vi.fn<() => Promise<UserProfile | null>>().mockResolvedValue(null);
     const onProfileRefreshed = vi.fn();
     const authError = new GoogleDriveApiError("Failed to query Google Drive.", 401);
     const operation = vi.fn().mockRejectedValueOnce(authError);
@@ -82,7 +82,7 @@ describe("withAuthRetry", () => {
   });
 
   it("does not retry a second time when the retried operation also fails with a 401", async () => {
-    const refreshSession = vi.fn<[], Promise<UserProfile | null>>().mockResolvedValue(sampleProfile);
+    const refreshSession = vi.fn<() => Promise<UserProfile | null>>().mockResolvedValue(sampleProfile);
     const onProfileRefreshed = vi.fn();
     const secondError = new GoogleDriveApiError("Still unauthorized.", 401);
     const operation = vi
@@ -100,7 +100,7 @@ describe("withAuthRetry", () => {
   });
 
   it("tolerates a missing onProfileRefreshed callback", async () => {
-    const refreshSession = vi.fn<[], Promise<UserProfile | null>>().mockResolvedValue(sampleProfile);
+    const refreshSession = vi.fn<() => Promise<UserProfile | null>>().mockResolvedValue(sampleProfile);
     const operation = vi
       .fn()
       .mockRejectedValueOnce(new GoogleDriveApiError("Failed to query Google Drive.", 401))
