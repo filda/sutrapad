@@ -38,6 +38,7 @@ import { restoreSessionOnStartup } from "./app/session/session";
 import { runWorkspaceSave, type SaveMode, type SyncState } from "./app/session/workspace-sync";
 import { loadLocalWorkspace, persistLocalWorkspace } from "./app/storage/local-workspace";
 import { buildNotesPanel, renderAppPage } from "./app/view/render-app";
+import { DEFAULT_MENU_ITEM, type MenuItemId } from "./app/logic/menu";
 const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
@@ -60,6 +61,7 @@ export function createApp(root: HTMLElement): void {
     window.localStorage.getItem(BOOKMARKLET_HELPER_KEY) !== "collapsed";
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let selectedTagFilters: string[] = readTagFiltersFromLocation(window.location.href);
+  let activeMenuItem: MenuItemId = DEFAULT_MENU_ITEM;
 
   const getCurrentNote = (): SutraPadDocument => {
     const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
@@ -224,6 +226,12 @@ export function createApp(root: HTMLElement): void {
       bookmarkletMessage,
       iosShortcutUrl,
       buildStamp: formatBuildStamp(__APP_VERSION__, __APP_COMMIT_HASH__, __APP_BUILD_TIME__),
+      activeMenuItem,
+      onSelectMenuItem: (id) => {
+        if (activeMenuItem === id) return;
+        activeMenuItem = id;
+        render();
+      },
       onSignIn: () => {
         void (async () => {
           try {

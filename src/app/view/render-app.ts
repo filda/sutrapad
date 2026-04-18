@@ -2,6 +2,7 @@ import { buildTagIndex, filterNotesByAllTags } from "../../lib/notebook";
 import { buildBookmarklet } from "../../lib/bookmarklet";
 import { formatDate } from "../logic/formatting";
 import { buildNoteMetadata } from "../logic/note-metadata";
+import { MENU_ITEMS, getMenuItemLabel, type MenuItemId } from "../logic/menu";
 import type { SutraPadDocument, SutraPadWorkspace, UserProfile } from "../../types";
 import type { SyncState } from "../session/workspace-sync";
 
@@ -35,12 +36,46 @@ interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   bookmarkletMessage: string;
   iosShortcutUrl: string;
   buildStamp: string;
+  activeMenuItem: MenuItemId;
+  onSelectMenuItem: (id: MenuItemId) => void;
   onSignIn: () => void;
   onLoadNotebook: () => void;
   onSaveNotebook: () => void;
   onSignOut: () => void;
   onToggleBookmarkletHelper: () => void;
   onCopyBookmarklet: () => void;
+}
+
+function buildAppNav(
+  activeMenuItem: MenuItemId,
+  onSelectMenuItem: (id: MenuItemId) => void,
+): HTMLElement {
+  const nav = document.createElement("nav");
+  nav.className = "app-nav";
+  nav.setAttribute("aria-label", "Primary");
+
+  for (const item of MENU_ITEMS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `app-nav-item${item.id === activeMenuItem ? " is-active" : ""}`;
+    button.textContent = item.label;
+    button.setAttribute("aria-current", item.id === activeMenuItem ? "page" : "false");
+    button.onclick = () => onSelectMenuItem(item.id);
+    nav.append(button);
+  }
+
+  return nav;
+}
+
+function buildPagePlaceholder(id: MenuItemId): HTMLElement {
+  const section = document.createElement("section");
+  section.className = `page-placeholder page-placeholder-${id}`;
+
+  const heading = document.createElement("h2");
+  heading.textContent = getMenuItemLabel(id);
+  section.append(heading);
+
+  return section;
 }
 
 function buildSelectedFiltersBar(
@@ -371,6 +406,8 @@ export function renderAppPage({
   onBodyInput,
   onAddTag,
   onRemoveTag,
+  activeMenuItem,
+  onSelectMenuItem,
 }: RenderAppOptions): void {
   root.innerHTML = "";
 
@@ -379,13 +416,23 @@ export function renderAppPage({
 
   const hero = document.createElement("section");
   hero.className = "hero";
-  hero.innerHTML = `
-    <div>
+
+  const heroIntro = document.createElement("div");
+  heroIntro.className = "hero-intro";
+  heroIntro.innerHTML = `
+    <div class="hero-top-row">
       <p class="eyebrow">SutraPad</p>
-      <h1>notes & links</h1>
-      <p class="lede">Store and manage your <em>Gerümpel</em> on <a href="https://drive.google.com/drive/home" target="_blank" rel="noreferrer">Google Drive</a> — powered entirely by browser magic, questionable decisions, and multiple JSON files.</p>
     </div>
+    <h1>notes & links</h1>
+    <p class="lede">Store and manage your <em>Gerümpel</em> on <a href="https://drive.google.com/drive/home" target="_blank" rel="noreferrer">Google Drive</a> — powered entirely by browser magic, questionable decisions, and multiple JSON files.</p>
   `;
+
+  const topRow = heroIntro.querySelector(".hero-top-row");
+  if (topRow) {
+    topRow.append(buildAppNav(activeMenuItem, onSelectMenuItem));
+  }
+
+  hero.append(heroIntro);
 
   const heroCard = document.createElement("div");
   heroCard.className = "hero-card";
@@ -436,6 +483,19 @@ export function renderAppPage({
 
   hero.append(heroCard);
   page.append(hero);
+
+  if (activeMenuItem !== "notes") {
+    page.append(buildPagePlaceholder(activeMenuItem));
+    const earlyFooter = document.createElement("footer");
+    earlyFooter.className = "footer";
+    earlyFooter.innerHTML = `
+      <p>Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by <a href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OpenStreetMap</a> and <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noreferrer">Nominatim</a>.</p>
+      <p class="build-stamp">${buildStamp}</p>
+    `;
+    page.append(earlyFooter);
+    root.append(page);
+    return;
+  }
 
   const bookmarkletSection = document.createElement("section");
   bookmarkletSection.className = "bookmarklet-card";
