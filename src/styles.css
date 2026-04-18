@@ -244,6 +244,112 @@ a {
   font-size: 0.9rem;
 }
 
+.links-page {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--bg);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 22px 50px rgba(31, 41, 55, 0.08);
+  padding: 24px 28px;
+  margin-bottom: 20px;
+  display: grid;
+  gap: 18px;
+}
+
+.links-page-header h2 {
+  margin: 4px 0 0;
+  font-size: 1.5rem;
+}
+
+.links-page-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.links-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.link-item {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.link-url {
+  display: block;
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+  word-break: break-all;
+  border-bottom: 1px solid rgba(192, 132, 87, 0.4);
+  box-shadow: inset 0 -0.28em 0 rgba(192, 132, 87, 0.14);
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+  padding-bottom: 1px;
+}
+
+.link-url:hover {
+  color: var(--accent);
+  border-bottom-color: rgba(192, 132, 87, 0.9);
+  box-shadow: inset 0 -0.45em 0 rgba(192, 132, 87, 0.24);
+}
+
+.link-url:focus-visible {
+  outline: 2px solid rgba(192, 132, 87, 0.65);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.link-notebooks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.link-notebooks-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+
+.link-notebook-chip {
+  border: 1px solid rgba(192, 132, 87, 0.25);
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--primary);
+  border-radius: 999px;
+  padding: 0.32rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.link-notebook-chip:hover {
+  background: rgba(192, 132, 87, 0.18);
+  border-color: rgba(192, 132, 87, 0.5);
+}
+
+.link-notebook-chip:focus-visible {
+  outline: 2px solid rgba(192, 132, 87, 0.65);
+  outline-offset: 2px;
+}
+
 .hero-card,
 .notes-panel,
 .editor-card {
