@@ -6,6 +6,7 @@ export function createNote(
   title = "Untitled note",
   location?: string,
   coordinates?: SutraPadDocument["coordinates"],
+  captureContext?: SutraPadDocument["captureContext"],
 ): SutraPadDocument {
   const timestamp = new Date().toISOString();
   return {
@@ -13,6 +14,7 @@ export function createNote(
     title,
     body: "",
     urls: [],
+    captureContext,
     location,
     coordinates,
     createdAt: timestamp,
@@ -198,6 +200,7 @@ export function areWorkspacesEqual(
       note.body === other.body &&
       note.urls.length === other.urls.length &&
       note.urls.every((url, i) => url === other.urls[i]) &&
+      JSON.stringify(note.captureContext ?? null) === JSON.stringify(other.captureContext ?? null) &&
       note.location === other.location &&
       note.coordinates?.latitude === other.coordinates?.latitude &&
       note.coordinates?.longitude === other.coordinates?.longitude &&
@@ -228,8 +231,9 @@ export function createNewNoteWorkspace(
   title = DEFAULT_NOTE_TITLE,
   location?: string,
   coordinates?: SutraPadDocument["coordinates"],
+  captureContext?: SutraPadDocument["captureContext"],
 ): SutraPadWorkspace {
-  const note = createNote(title, location, coordinates);
+  const note = createNote(title, location, coordinates, captureContext);
   return {
     notes: sortNotes([note, ...workspace.notes]),
     activeNoteId: note.id,
@@ -238,9 +242,9 @@ export function createNewNoteWorkspace(
 
 export function createCapturedNoteWorkspace(
   workspace: SutraPadWorkspace,
-  capture: { title: string; url: string },
+  capture: { title: string; url: string; captureContext?: SutraPadDocument["captureContext"] },
 ): SutraPadWorkspace {
-  const note = createNote(capture.title);
+  const note = createNote(capture.title, undefined, undefined, capture.captureContext);
   note.body = capture.url;
   note.urls = extractUrlsFromText(capture.url);
 
@@ -252,9 +256,20 @@ export function createCapturedNoteWorkspace(
 
 export function createTextNoteWorkspace(
   workspace: SutraPadWorkspace,
-  capture: { title: string; body: string; location?: string; coordinates?: SutraPadDocument["coordinates"] },
+  capture: {
+    title: string;
+    body: string;
+    location?: string;
+    coordinates?: SutraPadDocument["coordinates"];
+    captureContext?: SutraPadDocument["captureContext"];
+  },
 ): SutraPadWorkspace {
-  const note = createNote(capture.title, capture.location, capture.coordinates);
+  const note = createNote(
+    capture.title,
+    capture.location,
+    capture.coordinates,
+    capture.captureContext,
+  );
   note.body = capture.body;
   note.urls = extractUrlsFromText(capture.body);
 

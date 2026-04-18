@@ -3,11 +3,86 @@ export interface SutraPadCoordinates {
   longitude: number;
 }
 
+export type SutraPadCaptureSource = "new-note" | "text-capture" | "url-capture";
+
+export interface SutraPadCapturePageMetadata {
+  title?: string;
+  lang?: string;
+  description?: string;
+  canonicalUrl?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: string;
+  author?: string;
+  publishedTime?: string;
+}
+
+export interface SutraPadCaptureScreenSnapshot {
+  viewportWidth?: number;
+  viewportHeight?: number;
+  screenWidth?: number;
+  screenHeight?: number;
+  pixelRatio?: number;
+  orientation?: string;
+}
+
+export interface SutraPadCaptureScrollSnapshot {
+  x?: number;
+  y?: number;
+  progress?: number;
+}
+
+export interface SutraPadCaptureNetworkSnapshot {
+  online?: boolean;
+  effectiveType?: string;
+  rtt?: number;
+  downlink?: number;
+  saveData?: boolean;
+}
+
+export interface SutraPadCaptureBatterySnapshot {
+  levelPercent?: number;
+  charging?: boolean;
+}
+
+export interface SutraPadCaptureWeatherSnapshot {
+  temperatureC?: number;
+  weatherCode?: number;
+  windSpeedKmh?: number;
+  isDay?: boolean;
+  source: "open-meteo";
+}
+
+export interface SutraPadCaptureExperimentalSnapshot {
+  ambientLightLux?: number;
+}
+
+export interface SutraPadCaptureContext {
+  source: SutraPadCaptureSource;
+  timezone?: string;
+  timezoneOffsetMinutes?: number;
+  locale?: string;
+  languages?: string[];
+  referrer?: string;
+  deviceType?: "mobile" | "tablet" | "desktop";
+  os?: string;
+  browser?: string;
+  screen?: SutraPadCaptureScreenSnapshot;
+  scroll?: SutraPadCaptureScrollSnapshot;
+  timeOnPageMs?: number;
+  page?: SutraPadCapturePageMetadata;
+  network?: SutraPadCaptureNetworkSnapshot;
+  battery?: SutraPadCaptureBatterySnapshot;
+  weather?: SutraPadCaptureWeatherSnapshot;
+  experimental?: SutraPadCaptureExperimentalSnapshot;
+}
+
 export interface SutraPadDocument {
   id: string;
   title: string;
   body: string;
   urls: string[];
+  captureContext?: SutraPadCaptureContext;
   location?: string;
   coordinates?: SutraPadCoordinates;
   createdAt: string;

@@ -9,6 +9,9 @@ describe("bookmarklet", () => {
     expect(bookmarklet).toContain("https://filda.github.io/sutrapad/");
     expect(bookmarklet).toContain('searchParams.set("url", window.location.href)');
     expect(bookmarklet).toContain('searchParams.set("title", document.title)');
+    expect(bookmarklet).toContain('searchParams.set("capture", JSON.stringify(capture))');
+    expect(bookmarklet).toContain("document.referrer");
+    expect(bookmarklet).toContain("performance.now()");
     expect(bookmarklet).toContain('window.open(finalUrl, "_blank")');
     expect(bookmarklet).toContain("opened.opener = null");
     expect(bookmarklet).not.toContain("noopener");

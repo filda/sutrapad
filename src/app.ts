@@ -12,6 +12,7 @@ import {
   mergeWorkspaces,
   upsertNote,
 } from "./lib/notebook";
+import { collectCaptureContext } from "./lib/capture-context";
 import {
   buildNoteCaptureTitle,
   clearCaptureParamsFromLocation,
@@ -25,7 +26,13 @@ import {
   type Coordinates,
 } from "./lib/url-capture";
 import { buildBookmarklet } from "./lib/bookmarklet";
-import type { SutraPadCoordinates, SutraPadDocument, SutraPadWorkspace, UserProfile } from "./types";
+import type {
+  SutraPadCaptureSource,
+  SutraPadCoordinates,
+  SutraPadDocument,
+  SutraPadWorkspace,
+  UserProfile,
+} from "./types";
 
 type SyncState = "idle" | "loading" | "saving" | "error";
 type SaveMode = "interactive" | "background";
@@ -64,6 +71,7 @@ function loadLocalWorkspace(): SutraPadWorkspace {
       notes: parsed.notes.map((note) => ({
         ...note,
         urls: Array.isArray(note.urls) ? note.urls : extractUrlsFromText(note.body),
+        captureContext: note.captureContext,
         location: note.location?.trim() || undefined,
         coordinates:
           note.coordinates &&
@@ -185,16 +193,57 @@ export async function generateFreshNoteDetails(
   now = new Date(),
   resolveCoordinates: () => Promise<Coordinates | null> = resolveCurrentCoordinates,
   reverseGeocode: (coordinates: Coordinates) => Promise<string | null> = reverseGeocodeCoordinates,
-): Promise<{ title: string; location?: string; coordinates?: SutraPadCoordinates }> {
+  captureContextBuilder: typeof collectCaptureContext = collectCaptureContext,
+): Promise<{
+  title: string;
+  location?: string;
+  coordinates?: SutraPadCoordinates;
+  captureContext?: SutraPadDocument["captureContext"];
+}> {
+  const resolvedCoordinates = await resolveCoordinates();
+  const location = resolvedCoordinates
+    ? (await reverseGeocode(resolvedCoordinates)) ?? formatCoordinates(resolvedCoordinates)
+    : undefined;
+  const captureContext = await captureContextBuilder({
+    source: "new-note",
+    coordinates: resolvedCoordinates ?? undefined,
+    currentDate: now,
+  });
+
+  return {
+    title: buildNoteCaptureTitle(now, location),
+    location,
+    coordinates: resolvedCoordinates ?? undefined,
+    captureContext,
+  };
+}
+
+async function collectNoteCaptureDetails(
+  source: SutraPadCaptureSource,
+  now = new Date(),
+  resolveCoordinates: () => Promise<Coordinates | null> = resolveCurrentCoordinates,
+  reverseGeocode: (coordinates: Coordinates) => Promise<string | null> = reverseGeocodeCoordinates,
+  captureContextBuilder: typeof collectCaptureContext = collectCaptureContext,
+  sourceSnapshot?: Partial<NonNullable<SutraPadDocument["captureContext"]>>,
+): Promise<{
+  location?: string;
+  coordinates?: SutraPadCoordinates;
+  captureContext?: SutraPadDocument["captureContext"];
+}> {
   const resolvedCoordinates = await resolveCoordinates();
   const location = resolvedCoordinates
     ? (await reverseGeocode(resolvedCoordinates)) ?? formatCoordinates(resolvedCoordinates)
     : undefined;
 
   return {
-    title: buildNoteCaptureTitle(now, location),
     location,
     coordinates: resolvedCoordinates ?? undefined,
+    captureContext: await captureContextBuilder({
+      source,
+      coordinates: resolvedCoordinates ?? undefined,
+      currentDate: now,
+      sourceSnapshot,
+    }),
   };
 }
 
@@ -414,8 +463,14 @@ export function createApp(root: HTMLElement): void {
         lastError = "";
         render();
 
-        const { title, location, coordinates } = await generateFreshNoteDetails();
-        workspace = createNewNoteWorkspace(workspace, title, location, coordinates);
+        const { title, location, coordinates, captureContext } = await generateFreshNoteDetails();
+        workspace = createNewNoteWorkspace(
+          workspace,
+          title,
+          location,
+          coordinates,
+          captureContext,
+        );
         persistLocalWorkspace(workspace);
         syncState = "idle";
         render();
@@ -886,13 +941,19 @@ export function createApp(root: HTMLElement): void {
   const captureIncomingUrl = async (): Promise<void> => {
     const notePayload = readNoteCapture(window.location.href);
     if (notePayload) {
-      const { title, location, coordinates } = await generateFreshNoteDetails();
+      const { title, location, coordinates, captureContext } = await generateFreshNoteDetails(
+        new Date(),
+        resolveCurrentCoordinates,
+        reverseGeocodeCoordinates,
+        async (options) => collectCaptureContext({ ...options, source: "text-capture" }),
+      );
 
       workspace = createTextNoteWorkspace(workspace, {
         title,
         body: notePayload.note,
         location,
         coordinates,
+        captureContext,
       });
       persistLocalWorkspace(workspace);
       window.history.replaceState({}, "", clearCaptureParamsFromLocation(window.location.href));
@@ -908,10 +969,19 @@ export function createApp(root: HTMLElement): void {
       urlPayload.title ??
       (await resolveTitleFromUrl(urlPayload.url)) ??
       deriveTitleFromUrl(urlPayload.url);
+    const { captureContext } = await collectNoteCaptureDetails(
+      "url-capture",
+      new Date(),
+      resolveCurrentCoordinates,
+      reverseGeocodeCoordinates,
+      collectCaptureContext,
+      urlPayload.captureContext,
+    );
 
     workspace = createCapturedNoteWorkspace(workspace, {
       title: resolvedTitle,
       url: urlPayload.url,
+      captureContext,
     });
     persistLocalWorkspace(workspace);
 

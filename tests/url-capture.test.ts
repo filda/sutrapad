@@ -30,6 +30,43 @@ describe("url capture helpers", () => {
     });
   });
 
+  it("reads serialized source-page metadata from the query string", () => {
+    const capture = encodeURIComponent(
+      JSON.stringify({
+        referrer: "https://news.example.com/",
+        timeOnPageMs: 4200,
+        scroll: {
+          x: 0,
+          y: 240,
+          progress: 0.5,
+        },
+        page: {
+          description: "Example article",
+        },
+      }),
+    );
+
+    expect(
+      readUrlCapture(
+        `https://filda.github.io/sutrapad/?url=https%3A%2F%2Fexample.com%2Fpost&capture=${capture}`,
+      ),
+    ).toEqual({
+      url: "https://example.com/post",
+      captureContext: {
+        referrer: "https://news.example.com/",
+        timeOnPageMs: 4200,
+        scroll: {
+          x: 0,
+          y: 240,
+          progress: 0.5,
+        },
+        page: {
+          description: "Example article",
+        },
+      },
+    });
+  });
+
   it("trims title whitespace and rejects invalid captured URLs", () => {
     expect(
       readUrlCapture(

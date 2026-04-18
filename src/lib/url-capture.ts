@@ -1,6 +1,9 @@
+import type { SutraPadCaptureContext } from "../types";
+
 export interface UrlCapturePayload {
   title?: string;
   url: string;
+  captureContext?: Partial<SutraPadCaptureContext>;
 }
 
 export interface NoteCapturePayload {
@@ -18,12 +21,29 @@ export function readUrlCapture(urlString: string): UrlCapturePayload | null {
   try {
     const normalizedUrl = new URL(capturedUrl).toString();
     const title = currentUrl.searchParams.get("title")?.trim() || undefined;
+    const serializedCaptureContext = currentUrl.searchParams.get("capture");
     return {
       title,
       url: normalizedUrl,
+      captureContext: parseCaptureContext(serializedCaptureContext),
     };
   } catch {
     return null;
+  }
+}
+
+function parseCaptureContext(
+  serializedCaptureContext: string | null,
+): Partial<SutraPadCaptureContext> | undefined {
+  if (!serializedCaptureContext) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(serializedCaptureContext) as Partial<SutraPadCaptureContext>;
+    return typeof parsed === "object" && parsed ? parsed : undefined;
+  } catch {
+    return undefined;
   }
 }
 

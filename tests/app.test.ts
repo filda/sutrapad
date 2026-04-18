@@ -172,12 +172,18 @@ describe("fresh note details", () => {
       longitude: 14.4378,
     });
     const reverseGeocode = vi.fn().mockResolvedValue("Prague");
+    const buildCaptureContext = vi.fn().mockResolvedValue({
+      source: "new-note",
+      timezone: "Europe/Prague",
+      locale: "en-US",
+    });
 
     await expect(
       generateFreshNoteDetails(
         localNoon,
         resolveCoordinates,
         reverseGeocode,
+        buildCaptureContext,
       ),
     ).resolves.toEqual({
       title: "13/04/2026 · high noon · Prague",
@@ -186,7 +192,11 @@ describe("fresh note details", () => {
         latitude: 50.0755,
         longitude: 14.4378,
       },
-      createdAt: undefined,
+      captureContext: {
+        source: "new-note",
+        timezone: "Europe/Prague",
+        locale: "en-US",
+      },
     });
   });
 });
