@@ -46,7 +46,7 @@ export default defineConfig(({ command, mode }) => {
     },
     plugins: [
       VitePWA({
-        registerType: "autoUpdate",
+        registerType: "prompt",
         injectRegister: false,
         devOptions: {
           enabled: false,

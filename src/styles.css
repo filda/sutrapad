@@ -614,3 +614,68 @@ a {
     min-height: 42vh;
   }
 }
+
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: min(560px, calc(100% - 32px));
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 12px 32px rgba(31, 41, 55, 0.18);
+  color: var(--primary);
+}
+
+.update-banner[hidden] {
+  display: none;
+}
+
+.update-banner-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.update-banner-message strong {
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.update-banner-message span {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.update-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.update-banner-reload[disabled],
+.update-banner-dismiss[disabled] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+@media (max-width: 520px) {
+  .update-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left;
+  }
+
+  .update-banner-actions {
+    justify-content: flex-end;
+  }
+}
