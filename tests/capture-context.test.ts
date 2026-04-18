@@ -82,6 +82,36 @@ describe("capture context helpers", () => {
     });
   });
 
+  it("tolerates missing title/lang without throwing (optional chaining path)", () => {
+    // Kills OptionalChaining mutants on `document.title?.trim()` and
+    // `documentElement.lang?.trim()` — removing the `?.` would throw here.
+    const documentStub = {
+      title: undefined,
+      referrer: "",
+      documentElement: { lang: undefined, scrollHeight: 0 },
+      querySelector: () => null,
+    } as unknown as Document;
+
+    expect(extractPageMetadataFromDocument(documentStub)).toEqual({
+      title: undefined,
+      lang: undefined,
+      description: undefined,
+      canonicalUrl: undefined,
+      ogTitle: undefined,
+      ogDescription: undefined,
+      ogImage: undefined,
+      author: undefined,
+      publishedTime: undefined,
+    });
+  });
+
+  it("reads canonical URLs and meta content directly", () => {
+    expect(extractCanonicalUrl(createDocumentStub({}))).toBeUndefined();
+    expect(
+      extractMetaContent(createDocumentStub({}), "meta[name='description']"),
+    ).toBeUndefined();
+  });
+
   it("computes and clamps scroll progress", () => {
     expect(
       computeScrollSnapshot(
@@ -106,32 +136,102 @@ describe("capture context helpers", () => {
     });
   });
 
-  it("detects device, operating system, browser and screen snapshots", () => {
+  it("reports zero progress when the page is shorter than the viewport", () => {
+    // Kills ConditionalExpression / EqualityOperator mutations on `scrollableHeight > 0`:
+    // when scrollableHeight is 0, mutations that flip `>` to `>=` would divide by zero
+    // and produce NaN instead of the clamped 0.
     expect(
-      detectDeviceType({ mobileHint: true, viewportWidth: 820, screenWidth: 820 }),
-    ).toBe("tablet");
+      computeScrollSnapshot(
+        { innerHeight: 1000, scrollX: 0, scrollY: 0 },
+        { documentElement: { scrollHeight: 600 } },
+      ),
+    ).toEqual({ x: 0, y: 0, progress: 0 });
+
     expect(
-      detectDeviceType({ maxTouchPoints: 5, viewportWidth: 390, screenWidth: 390 }),
-    ).toBe("mobile");
-    expect(detectDeviceType({ viewportWidth: 1440, screenWidth: 1440 })).toBe("desktop");
+      computeScrollSnapshot(
+        { innerHeight: 1000, scrollX: 0, scrollY: 0 },
+        { documentElement: { scrollHeight: 1000 } },
+      ),
+    ).toEqual({ x: 0, y: 0, progress: 0 });
+  });
 
-    expect(detectOperatingSystem("Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Win32")).toBe(
-      "Windows",
-    );
-    expect(detectOperatingSystem("Mozilla/5.0 (Linux; Android 14)", "")).toBe("Android");
+  // detectDeviceType boundary table — designed to kill EqualityOperator mutants
+  // (>= -> >, >= -> <, etc.) on both the mobileHint (>= 768) and touch (>= 900) thresholds.
+  it.each([
+    [{ mobileHint: true, viewportWidth: 767, screenWidth: 767 }, "mobile"],
+    [{ mobileHint: true, viewportWidth: 768, screenWidth: 768 }, "tablet"],
+    [{ mobileHint: true, viewportWidth: 820, screenWidth: 820 }, "tablet"],
+    [{ mobileHint: true, viewportWidth: 320 }, "mobile"],
+    [{ maxTouchPoints: 5, viewportWidth: 390, screenWidth: 390 }, "mobile"],
+    [{ maxTouchPoints: 5, viewportWidth: 899, screenWidth: 899 }, "mobile"],
+    [{ maxTouchPoints: 5, viewportWidth: 900, screenWidth: 900 }, "tablet"],
+    [{ maxTouchPoints: 0, viewportWidth: 1440, screenWidth: 1440 }, "desktop"],
+    [{ viewportWidth: 1440, screenWidth: 1440 }, "desktop"],
+  ] as const)("detectDeviceType(%j) === %s", (input, expected) => {
+    expect(detectDeviceType(input)).toBe(expected);
+  });
 
+  // detectOperatingSystem matrix — covers each if-branch twice (platform path + UA path).
+  // This kills the LogicalOperator mutants that flip `||` to `&&` and the StringLiteral
+  // mutants that swap individual needles.
+  it.each([
+    ["via platform", "", "Win32", "Windows"],
+    ["via UA", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "", "Windows"],
+    ["macOS via platform", "", "MacIntel", "macOS"],
+    ["macOS via UA", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", "", "macOS"],
+    ["iOS via platform (iPhone)", "", "iPhone", "iOS"],
+    ["iOS via platform (iPad)", "", "iPad", "iOS"],
+    ["iOS via UA", "Mozilla/5.0 (iOS 17; CPU)", "", "iOS"],
+    ["Android via UA", "Mozilla/5.0 (Linux; Android 14)", "Linux armv8l", "Android"],
+    ["Linux via platform", "Mozilla/5.0", "Linux x86_64", "Linux"],
+    ["Linux via UA", "Mozilla/5.0 (X11; Linux; rv:120.0) Gecko/20100101", "", "Linux"],
+    ["fallback to platform when nothing matches", "Mozilla/5.0 (FreeBSD; rv:120.0)", "FreeBSD", "FreeBSD"],
+  ])("detectOperatingSystem (%s)", (_label, userAgent, platform, expected) => {
+    expect(detectOperatingSystem(userAgent, platform)).toBe(expected);
+  });
+
+  it("returns undefined when no platform or UA signal matches", () => {
+    expect(detectOperatingSystem("Mozilla/5.0", "")).toBeUndefined();
+    expect(detectOperatingSystem("Mozilla/5.0")).toBeUndefined();
+  });
+
+  // detectBrowser table — each case targets one fall-through branch.
+  it("picks the first non-Not brand from Client Hints before looking at the UA", () => {
     expect(
       detectBrowser("Mozilla/5.0 Chrome/123.0 Safari/537.36", [
         { brand: "Not.A/Brand", version: "99" },
         { brand: "Google Chrome", version: "123" },
       ]),
     ).toBe("Google Chrome");
-    expect(
-      detectBrowser(
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X) Version/17.0 Safari/605.1.15",
-      ),
-    ).toBe("Safari");
+  });
 
+  it.each([
+    ["Mozilla/5.0 (Windows NT 10.0) Chrome/123.0 Safari/537.36 Edg/123.0.0.0", "Microsoft Edge"],
+    ["Mozilla/5.0 (Windows NT 10.0) Chrome/123.0 Safari/537.36 OPR/105.0.0.0", "Opera"],
+    ["Mozilla/5.0 (Windows NT 10.0) Opera/9.80", "Opera"],
+    ["Mozilla/5.0 (Windows NT 10.0) Gecko/20100101 Firefox/115.0", "Firefox"],
+    ["Mozilla/5.0 (Windows NT 10.0) Chrome/123.0 Safari/537.36", "Chrome"],
+    [
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15",
+      "Safari",
+    ],
+  ])("detects %s as %s", (userAgent, expected) => {
+    expect(detectBrowser(userAgent)).toBe(expected);
+  });
+
+  it("returns undefined when the UA is unknown and client hints are missing", () => {
+    expect(detectBrowser("Mozilla/5.0 SomeObscureBrowser/1.0")).toBeUndefined();
+  });
+
+  it("falls back to the UA when Client Hints only contain a Not-brand token", () => {
+    expect(
+      detectBrowser("Mozilla/5.0 Chrome/120.0 Safari/537.36", [
+        { brand: "Not.A/Brand", version: "99" },
+      ]),
+    ).toBe("Chrome");
+  });
+
+  it("builds a screen snapshot from window-like input", () => {
     expect(
       buildScreenSnapshot({
         innerWidth: 1440,

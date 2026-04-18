@@ -387,6 +387,124 @@ describe("notebook helpers", () => {
     expect(merged.activeNoteId).toBe("shared");
   });
 
+  it("keeps the remote copy when both sides share an identical updatedAt timestamp", () => {
+    // Kills EqualityOperator mutation `note.updatedAt > existing.updatedAt` -> `>=`.
+    // With strict `>`, ties are won by the first-encountered entry — remote is iterated
+    // before local in mergeWorkspaces, so remote should win on a tie.
+    const merged = mergeWorkspaces(
+      {
+        activeNoteId: "shared",
+        notes: [
+          makeNote({ id: "shared", title: "Local at tie", body: "local", updatedAt: "2026-04-13T12:00:00.000Z" }),
+        ],
+      },
+      {
+        activeNoteId: "shared",
+        notes: [
+          makeNote({ id: "shared", title: "Remote at tie", body: "remote", updatedAt: "2026-04-13T12:00:00.000Z" }),
+        ],
+      },
+    );
+
+    expect(merged.notes[0]).toMatchObject({
+      title: "Remote at tie",
+      body: "remote",
+    });
+  });
+
+  it("merges disjoint notes from both sides and prefers the local active note id", () => {
+    // Covers the LogicalOperator mutation on the `localWorkspace.activeNoteId && ...`
+    // guard: if local's active id is valid, the merged workspace must keep it as active
+    // rather than falling through to remote's.
+    const merged = mergeWorkspaces(
+      {
+        activeNoteId: "local-1",
+        notes: [
+          makeNote({ id: "local-1", title: "Local", body: "local", updatedAt: "2026-04-13T12:00:00.000Z" }),
+        ],
+      },
+      {
+        activeNoteId: "remote-1",
+        notes: [
+          makeNote({ id: "remote-1", title: "Remote", body: "remote", updatedAt: "2026-04-13T11:00:00.000Z" }),
+        ],
+      },
+    );
+
+    expect(merged.notes.map((note) => note.id).sort()).toEqual(["local-1", "remote-1"]);
+    expect(merged.activeNoteId).toBe("local-1");
+  });
+
+  it("falls back to the remote active note id when the local one is not in the merged set", () => {
+    const merged = mergeWorkspaces(
+      {
+        activeNoteId: "removed-locally",
+        notes: [
+          makeNote({ id: "kept", title: "Kept", body: "kept", updatedAt: "2026-04-13T12:00:00.000Z" }),
+        ],
+      },
+      {
+        activeNoteId: "kept",
+        notes: [
+          makeNote({ id: "kept", title: "Remote kept", body: "r", updatedAt: "2026-04-13T10:00:00.000Z" }),
+        ],
+      },
+    );
+
+    expect(merged.activeNoteId).toBe("kept");
+  });
+
+  it("falls back to the newest note id when neither side's active id survives the merge", () => {
+    const merged = mergeWorkspaces(
+      {
+        activeNoteId: "gone-local",
+        notes: [
+          makeNote({ id: "alpha", title: "Alpha", updatedAt: "2026-04-13T10:00:00.000Z" }),
+        ],
+      },
+      {
+        activeNoteId: "gone-remote",
+        notes: [
+          makeNote({ id: "beta", title: "Beta", updatedAt: "2026-04-13T12:00:00.000Z" }),
+        ],
+      },
+    );
+
+    // sortNotes orders by updatedAt desc, so the newest one (beta) lands first.
+    expect(merged.activeNoteId).toBe("beta");
+  });
+
+  it("treats two pristine workspaces by keeping local as the merged result", () => {
+    // Both sides pristine: neither pristine branch triggers (both require asymmetric
+    // pristine-ness). The merge path unions the notes — and because the IDs differ,
+    // both pristine notes survive. The local active id wins.
+    const localPristine = {
+      activeNoteId: "local-pristine",
+      notes: [makeNote({ id: "local-pristine", title: "Untitled note", updatedAt: "2026-04-13T10:00:00.000Z" })],
+    };
+    const remotePristine = {
+      activeNoteId: "remote-pristine",
+      notes: [makeNote({ id: "remote-pristine", title: "Untitled note", updatedAt: "2026-04-13T09:00:00.000Z" })],
+    };
+
+    const merged = mergeWorkspaces(localPristine, remotePristine);
+    expect(merged.notes).toHaveLength(2);
+    expect(merged.activeNoteId).toBe("local-pristine");
+  });
+
+  it("extracts urls but strips only trailing punctuation from them", () => {
+    // Kills Regex mutation that drops the + quantifier from /[),.!?:;]+$/g:
+    // with just /[),.!?:;]$/g only one trailing char would be stripped, leaving the rest.
+    expect(
+      extractUrlsFromText("See https://example.com/one!!! and https://example.com/two.,);"),
+    ).toEqual(["https://example.com/one", "https://example.com/two"]);
+  });
+
+  it("ignores strings that look like urls but are not actually parseable", () => {
+    // Kills Regex mutation that drops the `s?` and narrows protocol matching.
+    expect(extractUrlsFromText("Visit https://:::broken:::")).toEqual([]);
+  });
+
   it("detects when two workspaces are equivalent", () => {
     const leftWorkspace = {
       activeNoteId: "1",

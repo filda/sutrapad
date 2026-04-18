@@ -154,6 +154,26 @@ describe("url capture helpers", () => {
     );
   });
 
+  it("only strips a leading www. from the host and leaves www-like segments alone", () => {
+    // Kills Regex mutation that drops the ^ anchor in /^www\./:
+    // without the anchor, any "www." substring in the host would get removed.
+    expect(deriveTitleFromUrl("https://mywww.example.com/story")).toBe(
+      "story · mywww.example.com",
+    );
+  });
+
+  it("strips only the trailing file extension from the last segment", () => {
+    // Kills Regex mutation that drops the $ anchor in /\.[a-z0-9]+$/i:
+    // without the anchor, the first ".something" would be stripped instead of the last.
+    expect(deriveTitleFromUrl("https://example.com/articles/foo.bar.html")).toBe(
+      "foo.bar · example.com",
+    );
+  });
+
+  it("falls back to the host when the derived segment is empty after trimming", () => {
+    expect(deriveTitleFromUrl("https://example.com/.html")).toBe("example.com");
+  });
+
   it("extracts a title from HTML", () => {
     expect(
       extractHtmlTitle(
@@ -170,6 +190,30 @@ describe("url capture helpers", () => {
     ).toBe("Fish & Chips <3 > 2");
 
     expect(extractHtmlTitle('<html lang="en"><body>No title</body></html>')).toBeNull();
+  });
+
+  it("extracts titles from <title> tags that carry attributes", () => {
+    // Kills Regex mutation that rewrites [^>]* to [>]* in the title pattern.
+    expect(
+      extractHtmlTitle(
+        '<html><head><title class="page-title" data-id="42">Attributed title</title></head></html>',
+      ),
+    ).toBe("Attributed title");
+  });
+
+  it("collapses runs of whitespace inside titles into a single space", () => {
+    // Kills Regex mutation that drops the + quantifier from /\s+/g: with the
+    // quantifier gone, each whitespace character is replaced individually and
+    // runs of spaces/tabs are preserved instead of collapsed.
+    expect(
+      extractHtmlTitle(
+        "<html><head><title>Spaced\t\t  out  title</title></head></html>",
+      ),
+    ).toBe("Spaced out title");
+  });
+
+  it("returns null when the <title> body is blank after normalization", () => {
+    expect(extractHtmlTitle("<html><head><title>   </title></head></html>")).toBeNull();
   });
 
   it("extracts the document language from the html tag", () => {
@@ -193,6 +237,10 @@ describe("url capture helpers", () => {
     ).toBe("cs");
   });
 
+  it("returns null when the html tag has no lang attribute at all", () => {
+    expect(extractHtmlLang("<html><head></head></html>")).toBeNull();
+  });
+
   it("loads a title from a reachable page and ignores failed fetches", async () => {
     vi.stubGlobal(
       "fetch",
@@ -210,6 +258,15 @@ describe("url capture helpers", () => {
 
     await expect(resolveTitleFromUrl("https://example.com/post")).resolves.toBe("Loaded title");
     await expect(resolveTitleFromUrl("https://example.com/missing")).resolves.toBeNull();
+  });
+
+  it("returns null from resolveTitleFromUrl when fetch itself rejects", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("network down")),
+    );
+
+    await expect(resolveTitleFromUrl("https://example.com/post")).resolves.toBeNull();
   });
 
   it("builds a note capture title from date and place", () => {
@@ -235,12 +292,31 @@ describe("url capture helpers", () => {
     );
   });
 
-  it("handles daypart boundaries consistently", () => {
-    expect(getDaypart(new Date("2026-04-14T01:00:00"))).toBe("late night");
-    expect(getDaypart(new Date("2026-04-14T04:30:00"))).toBe("early morning");
-    expect(getDaypart(new Date("2026-04-14T11:30:00"))).toBe("high noon");
-    expect(getDaypart(new Date("2026-04-14T18:00:00"))).toBe("evening");
-    expect(getDaypart(new Date("2026-04-14T23:30:00"))).toBe("night");
+  // Boundary table: each row is exactly on a boundary or one minute either side.
+  // Designed to kill EqualityOperator mutations (< -> <=) on every daypart threshold.
+  it.each([
+    ["2026-04-14T00:00:00", "midnight"],
+    ["2026-04-14T00:59:00", "midnight"],
+    ["2026-04-14T01:00:00", "late night"],
+    ["2026-04-14T04:29:00", "late night"],
+    ["2026-04-14T04:30:00", "early morning"],
+    ["2026-04-14T06:59:00", "early morning"],
+    ["2026-04-14T07:00:00", "morning"],
+    ["2026-04-14T11:29:00", "morning"],
+    ["2026-04-14T11:30:00", "high noon"],
+    ["2026-04-14T12:29:00", "high noon"],
+    ["2026-04-14T12:30:00", "afternoon"],
+    ["2026-04-14T14:59:00", "afternoon"],
+    ["2026-04-14T15:00:00", "late afternoon"],
+    ["2026-04-14T17:59:00", "late afternoon"],
+    ["2026-04-14T18:00:00", "evening"],
+    ["2026-04-14T20:59:00", "evening"],
+    ["2026-04-14T21:00:00", "late evening"],
+    ["2026-04-14T22:59:00", "late evening"],
+    ["2026-04-14T23:00:00", "night"],
+    ["2026-04-14T23:30:00", "night"],
+  ])("maps %s to daypart %s", (iso, expected) => {
+    expect(getDaypart(new Date(iso))).toBe(expected);
   });
 
   it("derives a place label from reverse geocoding data", () => {

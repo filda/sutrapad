@@ -17,6 +17,11 @@ const config = {
   htmlReporter: {
     fileName: "reports/mutation/mutation.html",
   },
+  thresholds: {
+    high: 85,
+    low: 70,
+    break: 65,
+  },
   vitest: {
     configFile: "vitest.config.ts",
     related: true,
