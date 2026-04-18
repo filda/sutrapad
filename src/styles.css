@@ -187,6 +187,63 @@ a {
   color: var(--primary);
 }
 
+.tags-page {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--bg);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 22px 50px rgba(31, 41, 55, 0.08);
+  padding: 24px 28px;
+  margin-bottom: 20px;
+  display: grid;
+  gap: 18px;
+}
+
+.tags-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tags-page-header h2 {
+  margin: 4px 0 0;
+  font-size: 1.5rem;
+}
+
+.tags-cloud-wide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+
+.tags-cloud-wide .tag-filter-chip {
+  font-size: 0.95rem;
+  padding: 0.5rem 0.9rem;
+}
+
+.tags-page-empty,
+.tags-page-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.tags-page-matches {
+  display: grid;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.tags-page-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .hero-card,
 .notes-panel,
 .editor-card {
