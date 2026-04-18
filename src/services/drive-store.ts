@@ -12,6 +12,41 @@ const GOOGLE_DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
 const GOOGLE_DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
+/**
+ * Typed error for Google Drive REST failures. Surfaces the HTTP status so the
+ * app layer can react to authorization errors (401) by attempting a silent
+ * token refresh before propagating the failure to the user.
+ */
+export class GoogleDriveApiError extends Error {
+  readonly status: number;
+  readonly googleMessage?: string;
+
+  constructor(message: string, status: number, googleMessage?: string) {
+    super(googleMessage ? `${message} (${status}): ${googleMessage}` : `${message} (${status})`);
+    this.name = "GoogleDriveApiError";
+    this.status = status;
+    this.googleMessage = googleMessage;
+  }
+}
+
+export function isAuthExpiredError(error: unknown): error is GoogleDriveApiError {
+  return error instanceof GoogleDriveApiError && error.status === 401;
+}
+
+async function ensureDriveOk(response: Response, fallbackMessage: string): Promise<Response> {
+  if (response.ok) return response;
+
+  let googleMessage: string | undefined;
+  try {
+    const body = (await response.clone().json()) as { error?: { message?: string } };
+    googleMessage = body?.error?.message;
+  } catch {
+    // Non-JSON body — leave googleMessage undefined.
+  }
+
+  throw new GoogleDriveApiError(fallbackMessage, response.status, googleMessage);
+}
+
 const LEGACY_INDEX_FILE_NAME = import.meta.env.VITE_SUTRAPAD_FILE_NAME || "sutrapad-index.json";
 const LEGACY_FILE_NAME = "sutrapad-data.json";
 const HEAD_FILE_NAME = "sutrapad-head.json";
@@ -311,10 +346,7 @@ export class GoogleDriveStore {
       },
     );
 
-    if (!response.ok) {
-      throw new Error("Failed to create the SutraPad folder in Google Drive.");
-    }
-
+    await ensureDriveOk(response, "Failed to create the SutraPad folder in Google Drive.");
     return (await response.json()) as DriveFileRecord;
   }
 
@@ -457,10 +489,7 @@ export class GoogleDriveStore {
       },
     );
 
-    if (!response.ok) {
-      throw new Error("Failed to query Google Drive.");
-    }
-
+    await ensureDriveOk(response, "Failed to query Google Drive.");
     const payload = (await response.json()) as { files?: DriveFileRecord[] };
     return payload.files ?? [];
   }
@@ -472,10 +501,7 @@ export class GoogleDriveStore {
       },
     });
 
-    if (!response.ok) {
-      throw new Error("Failed to load data from Google Drive.");
-    }
-
+    await ensureDriveOk(response, "Failed to load data from Google Drive.");
     return (await response.json()) as T;
   }
 
@@ -504,9 +530,7 @@ export class GoogleDriveStore {
       },
     });
 
-    if (!response.ok) {
-      throw new Error("Failed to move SutraPad files into the Google Drive folder.");
-    }
+    await ensureDriveOk(response, "Failed to move SutraPad files into the Google Drive folder.");
   }
 
   private async fetchFileMetadata(fileId: string): Promise<DriveFileRecord> {
@@ -519,10 +543,7 @@ export class GoogleDriveStore {
       },
     );
 
-    if (!response.ok) {
-      throw new Error("Failed to inspect Google Drive file metadata.");
-    }
-
+    await ensureDriveOk(response, "Failed to inspect Google Drive file metadata.");
     return (await response.json()) as DriveFileRecord;
   }
 
@@ -534,9 +555,7 @@ export class GoogleDriveStore {
       },
     });
 
-    if (!response.ok) {
-      throw new Error("Failed to delete an old SutraPad index snapshot from Google Drive.");
-    }
+    await ensureDriveOk(response, "Failed to delete an old SutraPad index snapshot from Google Drive.");
   }
 
   private async cleanupOldIndexSnapshots(folderId: string, activeIndexId: string): Promise<void> {
@@ -591,10 +610,7 @@ export class GoogleDriveStore {
       body: formData,
     });
 
-    if (!response.ok) {
-      throw new Error("Failed to save data to Google Drive.");
-    }
-
+    await ensureDriveOk(response, "Failed to save data to Google Drive.");
     return (await response.json()) as DriveFileRecord;
   }
 }

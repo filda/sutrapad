@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GoogleDriveStore } from "../src/services/drive-store";
+import {
+  GoogleDriveApiError,
+  GoogleDriveStore,
+  isAuthExpiredError,
+} from "../src/services/drive-store";
 import type { SutraPadHead, SutraPadIndex } from "../src/types";
 
 function mockFetch(handler: (url: string, options?: RequestInit) => Response | Promise<Response>): void {
@@ -137,6 +141,40 @@ describe("GoogleDriveStore", () => {
 
       expect(workspace.notes[0].tags).toEqual([]);
       expect(workspace.notes[0].urls).toEqual(["https://example.com/legacy"]);
+    });
+  });
+
+  describe("error handling", () => {
+    it("throws a typed GoogleDriveApiError with status 401 when the access token is rejected", async () => {
+      mockFetch(() =>
+        new Response(
+          JSON.stringify({ error: { message: "Request had invalid authentication credentials." } }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+      const store = new GoogleDriveStore("expired-token");
+      const error = await store.loadWorkspace().catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(GoogleDriveApiError);
+      expect(isAuthExpiredError(error)).toBe(true);
+      if (error instanceof GoogleDriveApiError) {
+        expect(error.status).toBe(401);
+        expect(error.googleMessage).toBe("Request had invalid authentication credentials.");
+      }
+    });
+
+    it("throws a GoogleDriveApiError with the HTTP status for non-auth failures", async () => {
+      mockFetch(() => new Response("boom", { status: 500 }));
+
+      const store = new GoogleDriveStore("token");
+      const error = await store.loadWorkspace().catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(GoogleDriveApiError);
+      expect(isAuthExpiredError(error)).toBe(false);
+      if (error instanceof GoogleDriveApiError) {
+        expect(error.status).toBe(500);
+      }
     });
   });
 

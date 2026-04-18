@@ -35,6 +35,7 @@ import { formatBuildStamp, formatDate } from "./app/logic/formatting";
 import { buildNoteMetadata } from "./app/logic/note-metadata";
 import { readTagFiltersFromLocation, writeTagFiltersToLocation } from "./app/logic/tag-filters";
 import { restoreSessionOnStartup } from "./app/session/session";
+import { withAuthRetry, type AuthRetryContext } from "./app/session/auth-retry";
 import { runWorkspaceSave, type SaveMode, type SyncState } from "./app/session/workspace-sync";
 import { loadLocalWorkspace, persistLocalWorkspace } from "./app/storage/local-workspace";
 import { buildNotesPanel, renderAppPage } from "./app/view/render-app";
@@ -54,6 +55,7 @@ export {
   writeActivePageToLocation,
 } from "./app/logic/active-page";
 export { restoreSessionOnStartup } from "./app/session/session";
+export { withAuthRetry } from "./app/session/auth-retry";
 export { runWorkspaceSave } from "./app/session/workspace-sync";
 
 export function createApp(root: HTMLElement): void {
@@ -407,12 +409,19 @@ export function createApp(root: HTMLElement): void {
     return new GoogleDriveStore(token);
   };
 
+  const retryContext: AuthRetryContext = {
+    refreshSession: () => auth.refreshSession(),
+    onProfileRefreshed: (refreshedProfile) => {
+      profile = refreshedProfile;
+    },
+  };
+
   const loadWorkspace = async (): Promise<void> => {
     try {
       syncState = "loading";
       lastError = "";
       render();
-      workspace = await getStore().loadWorkspace();
+      workspace = await withAuthRetry(() => getStore().loadWorkspace(), retryContext);
       persistLocalWorkspace(workspace);
       syncState = "idle";
       render();
@@ -429,7 +438,10 @@ export function createApp(root: HTMLElement): void {
       lastError = "";
       render();
 
-      const remoteWorkspace = await getStore().loadWorkspace();
+      const remoteWorkspace = await withAuthRetry(
+        () => getStore().loadWorkspace(),
+        retryContext,
+      );
       const mergedWorkspace = mergeWorkspaces(workspace, remoteWorkspace);
       const needsRemoteSave = !areWorkspacesEqual(mergedWorkspace, remoteWorkspace);
 
@@ -439,7 +451,7 @@ export function createApp(root: HTMLElement): void {
       if (needsRemoteSave) {
         syncState = "saving";
         render();
-        await getStore().saveWorkspace(workspace);
+        await withAuthRetry(() => getStore().saveWorkspace(workspace), retryContext);
       }
 
       syncState = "idle";
@@ -455,7 +467,8 @@ export function createApp(root: HTMLElement): void {
   const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> =>
     runWorkspaceSave(mode, {
       persistLocalWorkspace: () => persistLocalWorkspace(workspace),
-      saveRemoteWorkspace: () => getStore().saveWorkspace(workspace),
+      saveRemoteWorkspace: () =>
+        withAuthRetry(() => getStore().saveWorkspace(workspace), retryContext),
       setSyncState: (state) => {
         syncState = state;
       },
