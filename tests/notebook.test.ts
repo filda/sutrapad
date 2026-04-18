@@ -391,15 +391,53 @@ describe("notebook helpers", () => {
     const leftWorkspace = {
       activeNoteId: "1",
       notes: [
-        makeNote({ id: "2", title: "Beta", updatedAt: "2026-04-13T11:00:00.000Z" }),
-        makeNote({ id: "1", title: "Alpha", body: "Hello", tags: ["draft"], updatedAt: "2026-04-13T10:00:00.000Z" }),
+        makeNote({
+          id: "2",
+          title: "Beta",
+          updatedAt: "2026-04-13T11:00:00.000Z",
+          urls: ["https://example.com/beta"],
+          location: "Brno",
+          coordinates: { latitude: 49.1951, longitude: 16.6068 },
+          captureContext: { source: "url-capture" },
+        }),
+        makeNote({
+          id: "1",
+          title: "Alpha",
+          body: "Hello",
+          tags: ["draft"],
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          urls: ["https://example.com/alpha"],
+          location: "Prague",
+          coordinates: { latitude: 50.0755, longitude: 14.4378 },
+          captureContext: { source: "new-note", timezone: "Europe/Prague" },
+          createdAt: "2026-04-13T09:55:00.000Z",
+        }),
       ],
     };
     const rightWorkspace = {
       activeNoteId: "1",
       notes: [
-        makeNote({ id: "1", title: "Alpha", body: "Hello", tags: ["draft"], updatedAt: "2026-04-13T10:00:00.000Z" }),
-        makeNote({ id: "2", title: "Beta", updatedAt: "2026-04-13T11:00:00.000Z" }),
+        makeNote({
+          id: "1",
+          title: "Alpha",
+          body: "Hello",
+          tags: ["draft"],
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          urls: ["https://example.com/alpha"],
+          location: "Prague",
+          coordinates: { latitude: 50.0755, longitude: 14.4378 },
+          captureContext: { source: "new-note", timezone: "Europe/Prague" },
+          createdAt: "2026-04-13T09:55:00.000Z",
+        }),
+        makeNote({
+          id: "2",
+          title: "Beta",
+          updatedAt: "2026-04-13T11:00:00.000Z",
+          urls: ["https://example.com/beta"],
+          location: "Brno",
+          coordinates: { latitude: 49.1951, longitude: 16.6068 },
+          captureContext: { source: "url-capture" },
+        }),
       ],
     };
 
@@ -445,5 +483,65 @@ describe("notebook helpers", () => {
         { activeNoteId: "1", notes: [makeNote({ id: "1", title: "Alpha", tags: ["work", "draft"], updatedAt: "2026-04-13T10:00:00.000Z" })] },
       ),
     ).toBe(true);
+  });
+
+  it("detects metadata differences between otherwise identical workspaces", () => {
+    const base = {
+      activeNoteId: "1",
+      notes: [
+        makeNote({
+          id: "1",
+          title: "Alpha",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          createdAt: "2026-04-13T09:00:00.000Z",
+          urls: ["https://example.com/alpha"],
+          location: "Prague",
+          coordinates: { latitude: 50.0755, longitude: 14.4378 },
+          captureContext: { source: "new-note", timezone: "Europe/Prague" },
+        }),
+      ],
+    };
+
+    expect(
+      areWorkspacesEqual(base, {
+        ...base,
+        notes: [makeNote({ ...base.notes[0], urls: ["https://example.com/other"] })],
+      }),
+    ).toBe(false);
+    expect(
+      areWorkspacesEqual(base, {
+        ...base,
+        notes: [makeNote({ ...base.notes[0], captureContext: { source: "url-capture" } })],
+      }),
+    ).toBe(false);
+    expect(
+      areWorkspacesEqual(base, {
+        ...base,
+        notes: [makeNote({ ...base.notes[0], location: "Brno" })],
+      }),
+    ).toBe(false);
+    expect(
+      areWorkspacesEqual(base, {
+        ...base,
+        notes: [
+          makeNote({
+            ...base.notes[0],
+            coordinates: { latitude: 49.1951, longitude: 16.6068 },
+          }),
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      areWorkspacesEqual(base, {
+        ...base,
+        notes: [makeNote({ ...base.notes[0], createdAt: "2026-04-13T08:59:00.000Z" })],
+      }),
+    ).toBe(false);
+    expect(
+      areWorkspacesEqual(base, {
+        ...base,
+        notes: [makeNote({ ...base.notes[0], updatedAt: "2026-04-13T10:01:00.000Z" })],
+      }),
+    ).toBe(false);
   });
 });

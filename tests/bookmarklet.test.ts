@@ -24,5 +24,6 @@ describe("bookmarklet", () => {
     expect(bookmarklet).not.toContain("draft=1");
     expect(bookmarklet).not.toContain("#capture");
     expect(bookmarklet).not.toContain("  ");
+    expect(bookmarklet).toBe(bookmarklet.trim());
   });
 });

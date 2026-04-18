@@ -67,6 +67,26 @@ describe("url capture helpers", () => {
     });
   });
 
+  it("ignores invalid serialized capture metadata values", () => {
+    expect(
+      readUrlCapture(
+        "https://filda.github.io/sutrapad/?url=https%3A%2F%2Fexample.com%2Fpost&capture=true",
+      ),
+    ).toEqual({
+      url: "https://example.com/post",
+      captureContext: undefined,
+    });
+
+    expect(
+      readUrlCapture(
+        "https://filda.github.io/sutrapad/?url=https%3A%2F%2Fexample.com%2Fpost&capture=%7Bnot-json",
+      ),
+    ).toEqual({
+      url: "https://example.com/post",
+      captureContext: undefined,
+    });
+  });
+
   it("trims title whitespace and rejects invalid captured URLs", () => {
     expect(
       readUrlCapture(
@@ -128,6 +148,12 @@ describe("url capture helpers", () => {
     );
   });
 
+  it("keeps the last non-empty path segment when the URL ends with a slash", () => {
+    expect(deriveTitleFromUrl("https://www.example.com/articles/hello--world__/")).toBe(
+      "hello world · example.com",
+    );
+  });
+
   it("extracts a title from HTML", () => {
     expect(
       extractHtmlTitle(
@@ -156,6 +182,15 @@ describe("url capture helpers", () => {
     ).toBe("en");
 
     expect(extractHtmlLang('<html data-theme="paper" lang=""><head></head></html>')).toBeNull();
+  });
+
+  it("extracts languages from loose html lang attributes", () => {
+    expect(
+      extractHtmlLang("<html data-theme='paper' lang='cs-CZ'><head></head></html>"),
+    ).toBe("cs-CZ");
+    expect(
+      extractHtmlLang("<html data-theme='paper' lang=cs><head></head></html>"),
+    ).toBe("cs");
   });
 
   it("loads a title from a reachable page and ignores failed fetches", async () => {

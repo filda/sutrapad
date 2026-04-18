@@ -5,7 +5,14 @@ const config = {
   testRunner: "vitest",
   checkers: ["typescript"],
   tsconfigFile: "tsconfig.json",
-  mutate: ["src/lib/**/*.ts", "!src/**/*.d.ts"],
+  mutate: [
+    "src/lib/**/*.ts",
+    "src/app/logic/**/*.ts",
+    "src/app/storage/**/*.ts",
+    "src/app/session/**/*.ts",
+    "src/app/capture/**/*.ts",
+    "!src/**/*.d.ts",
+  ],
   reporters: ["clear-text", "progress", "html"],
   htmlReporter: {
     fileName: "reports/mutation/mutation.html",
