@@ -119,17 +119,16 @@ export function buildHomePage({
   `;
   section.append(heroIntro);
 
-  if (!profile) {
-    const heroCard = document.createElement("div");
-    heroCard.className = "hero-card";
+  const heroCard = document.createElement("div");
+  heroCard.className = "hero-card";
 
-    const info = document.createElement("p");
-    info.textContent =
-      "You can write immediately in a local notebook. Sign in only when you want to sync with Google Drive.";
+  const info = document.createElement("p");
+  info.textContent = profile
+    ? "You can write immediately in a local notebook. Your notes sync to Google Drive when you're online."
+    : "You can write immediately in a local notebook. Sign in only when you want to sync with Google Drive.";
 
-    heroCard.append(info);
-    section.append(heroCard);
-  }
+  heroCard.append(info);
+  section.append(heroCard);
 
   section.append(
     buildBookmarkletCard({
