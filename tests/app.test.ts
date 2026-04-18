@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildNoteMetadata,
   generateFreshNoteDetails,
+  readActivePageFromLocation,
   readTagFiltersFromLocation,
   resolveDisplayedNote,
   restoreSessionOnStartup,
   runWorkspaceSave,
+  writeActivePageToLocation,
   writeTagFiltersToLocation,
 } from "../src/app";
 import type { SutraPadWorkspace, UserProfile } from "../src/types";
@@ -140,6 +142,112 @@ describe("tag filter location helpers", () => {
     expect(
       writeTagFiltersToLocation("https://example.com/app?foo=1&tags=work", []),
     ).toBe("https://example.com/app?foo=1");
+  });
+});
+
+describe("active page location helpers", () => {
+  describe("with root base (/)", () => {
+    it("returns the default page when the pathname is just the base", () => {
+      expect(readActivePageFromLocation("https://example.com/", "/")).toBe("notes");
+    });
+
+    it("reads a valid page id from the pathname", () => {
+      expect(readActivePageFromLocation("https://example.com/home", "/")).toBe("home");
+      expect(readActivePageFromLocation("https://example.com/links", "/")).toBe("links");
+      expect(readActivePageFromLocation("https://example.com/settings", "/")).toBe("settings");
+    });
+
+    it("writes non-default pages as a slug and strips the slug for the default page", () => {
+      expect(writeActivePageToLocation("https://example.com/", "home", "/")).toBe(
+        "https://example.com/home",
+      );
+      expect(
+        writeActivePageToLocation("https://example.com/links", "notes", "/"),
+      ).toBe("https://example.com/");
+    });
+  });
+
+  describe("with a sub-path base (/sutrapad/)", () => {
+    it("treats the bare base as the default page (with or without trailing slash)", () => {
+      expect(
+        readActivePageFromLocation("https://example.com/sutrapad/", "/sutrapad/"),
+      ).toBe("notes");
+      expect(
+        readActivePageFromLocation("https://example.com/sutrapad", "/sutrapad/"),
+      ).toBe("notes");
+    });
+
+    it("reads a valid slug under the base path", () => {
+      expect(
+        readActivePageFromLocation("https://example.com/sutrapad/home", "/sutrapad/"),
+      ).toBe("home");
+      expect(
+        readActivePageFromLocation("https://example.com/sutrapad/links", "/sutrapad/"),
+      ).toBe("links");
+    });
+
+    it("normalizes case and URL-encoded slugs before matching", () => {
+      expect(
+        readActivePageFromLocation("https://example.com/sutrapad/%48OME", "/sutrapad/"),
+      ).toBe("home");
+      expect(
+        readActivePageFromLocation("https://example.com/sutrapad/HOME", "/sutrapad/"),
+      ).toBe("home");
+    });
+
+    it("falls back to the default page for unknown slugs", () => {
+      expect(
+        readActivePageFromLocation(
+          "https://example.com/sutrapad/something-removed",
+          "/sutrapad/",
+        ),
+      ).toBe("notes");
+    });
+
+    it("falls back to the default page when the URL is outside the base", () => {
+      expect(
+        readActivePageFromLocation("https://example.com/other/links", "/sutrapad/"),
+      ).toBe("notes");
+    });
+
+    it("writes a non-default slug under the base and preserves query + hash", () => {
+      expect(
+        writeActivePageToLocation(
+          "https://example.com/sutrapad/?tags=work#anchor",
+          "links",
+          "/sutrapad/",
+        ),
+      ).toBe("https://example.com/sutrapad/links?tags=work#anchor");
+    });
+
+    it("collapses the default page back to the bare base", () => {
+      expect(
+        writeActivePageToLocation(
+          "https://example.com/sutrapad/links?tags=work",
+          "notes",
+          "/sutrapad/",
+        ),
+      ).toBe("https://example.com/sutrapad/?tags=work");
+    });
+
+    it("round-trips through read + write without drifting", () => {
+      const written = writeActivePageToLocation(
+        "https://example.com/sutrapad/",
+        "home",
+        "/sutrapad/",
+      );
+      expect(written).toBe("https://example.com/sutrapad/home");
+      expect(readActivePageFromLocation(written, "/sutrapad/")).toBe("home");
+    });
+  });
+
+  it("accepts bases written without a trailing slash", () => {
+    expect(
+      readActivePageFromLocation("https://example.com/sutrapad/tags", "/sutrapad"),
+    ).toBe("tags");
+    expect(
+      writeActivePageToLocation("https://example.com/sutrapad/", "tags", "/sutrapad"),
+    ).toBe("https://example.com/sutrapad/tags");
   });
 });
 

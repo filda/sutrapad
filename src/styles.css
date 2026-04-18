@@ -70,6 +70,34 @@ button {
   color: var(--accent);
 }
 
+button.eyebrow {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.8rem;
+  color: var(--accent);
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+button.eyebrow:hover {
+  opacity: 0.75;
+}
+
+button.eyebrow:focus-visible {
+  outline: 2px solid rgba(192, 132, 87, 0.65);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+button.eyebrow.is-active {
+  color: var(--accent);
+}
+
 h1 {
   margin: 0;
   max-width: 11ch;
@@ -121,6 +149,21 @@ a {
   align-items: center;
   gap: 12px 20px;
   margin: 0 0 8px;
+}
+
+.hero.hero-top-only {
+  display: block;
+  margin-bottom: 24px;
+}
+
+.home-page {
+  display: grid;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.home-page .hero-intro {
+  max-width: 72ch;
 }
 
 .hero-top-row .eyebrow {

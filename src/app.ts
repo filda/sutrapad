@@ -38,19 +38,29 @@ import { restoreSessionOnStartup } from "./app/session/session";
 import { runWorkspaceSave, type SaveMode, type SyncState } from "./app/session/workspace-sync";
 import { loadLocalWorkspace, persistLocalWorkspace } from "./app/storage/local-workspace";
 import { buildNotesPanel, renderAppPage } from "./app/view/render-app";
-import { DEFAULT_MENU_ITEM, type MenuItemId } from "./app/logic/menu";
+import { type MenuItemId } from "./app/logic/menu";
+import {
+  readActivePageFromLocation,
+  writeActivePageToLocation,
+} from "./app/logic/active-page";
 const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
 export { resolveDisplayedNote } from "./app/logic/displayed-note";
 export { buildNoteMetadata } from "./app/logic/note-metadata";
 export { readTagFiltersFromLocation, writeTagFiltersToLocation } from "./app/logic/tag-filters";
+export {
+  readActivePageFromLocation,
+  writeActivePageToLocation,
+} from "./app/logic/active-page";
 export { restoreSessionOnStartup } from "./app/session/session";
 export { runWorkspaceSave } from "./app/session/workspace-sync";
 
 export function createApp(root: HTMLElement): void {
   const auth = new GoogleAuthService();
   const iosShortcutUrl = "https://www.icloud.com/shortcuts/969e1b627e4a46deae3c690ef0c9ca84";
+  const appBasePath = import.meta.env.BASE_URL;
+  const appRootUrl = window.location.origin + appBasePath;
 
   let profile: UserProfile | null = null;
   let workspace: SutraPadWorkspace = loadLocalWorkspace();
@@ -61,7 +71,10 @@ export function createApp(root: HTMLElement): void {
     window.localStorage.getItem(BOOKMARKLET_HELPER_KEY) !== "collapsed";
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let selectedTagFilters: string[] = readTagFiltersFromLocation(window.location.href);
-  let activeMenuItem: MenuItemId = DEFAULT_MENU_ITEM;
+  let activeMenuItem: MenuItemId = readActivePageFromLocation(
+    window.location.href,
+    appBasePath,
+  );
 
   const getCurrentNote = (): SutraPadDocument => {
     const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
@@ -92,6 +105,17 @@ export function createApp(root: HTMLElement): void {
 
   const syncTagFiltersToLocation = (): void => {
     const nextUrl = writeTagFiltersToLocation(window.location.href, selectedTagFilters);
+    if (nextUrl !== window.location.href) {
+      window.history.replaceState({}, "", nextUrl);
+    }
+  };
+
+  const syncActivePageToLocation = (): void => {
+    const nextUrl = writeActivePageToLocation(
+      window.location.href,
+      activeMenuItem,
+      appBasePath,
+    );
     if (nextUrl !== window.location.href) {
       window.history.replaceState({}, "", nextUrl);
     }
@@ -209,6 +233,7 @@ export function createApp(root: HTMLElement): void {
     syncSelectedTagFilters();
     ensureVisibleActiveNote();
     syncTagFiltersToLocation();
+    syncActivePageToLocation();
 
     const currentNote = getCurrentNote();
     const displayedNote = resolveDisplayedNote(workspace, selectedTagFilters);
@@ -222,6 +247,7 @@ export function createApp(root: HTMLElement): void {
       syncState,
       statusText: getStatusText(),
       profile,
+      appRootUrl,
       bookmarkletHelperExpanded,
       bookmarkletMessage,
       iosShortcutUrl,
@@ -267,7 +293,7 @@ export function createApp(root: HTMLElement): void {
       onCopyBookmarklet: () => {
         void (async () => {
           try {
-            await navigator.clipboard.writeText(buildBookmarklet(window.location.origin + window.location.pathname));
+            await navigator.clipboard.writeText(buildBookmarklet(appRootUrl));
             bookmarkletMessage =
               "Bookmarklet copied. In Safari, create any bookmark, edit it, and paste this code into its URL field.";
           } catch {

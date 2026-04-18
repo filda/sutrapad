@@ -37,6 +37,7 @@ interface EditorCardOptions {
 interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   root: HTMLElement;
   profile: UserProfile | null;
+  appRootUrl: string;
   bookmarkletHelperExpanded: boolean;
   bookmarkletMessage: string;
   iosShortcutUrl: string;
@@ -172,6 +173,144 @@ function buildPagePlaceholder(id: MenuItemId): HTMLElement {
   const heading = document.createElement("h2");
   heading.textContent = getMenuItemLabel(id);
   section.append(heading);
+
+  return section;
+}
+
+interface BookmarkletCardOptions {
+  appRootUrl: string;
+  bookmarkletHelperExpanded: boolean;
+  bookmarkletMessage: string;
+  iosShortcutUrl: string;
+  onToggleBookmarkletHelper: () => void;
+  onCopyBookmarklet: () => void;
+}
+
+function buildBookmarkletCard({
+  appRootUrl,
+  bookmarkletHelperExpanded,
+  bookmarkletMessage,
+  iosShortcutUrl,
+  onToggleBookmarkletHelper,
+  onCopyBookmarklet,
+}: BookmarkletCardOptions): HTMLElement {
+  const bookmarkletSection = document.createElement("section");
+  bookmarkletSection.className = "bookmarklet-card";
+
+  const bookmarkletHeader = document.createElement("div");
+  bookmarkletHeader.className = "bookmarklet-header";
+  bookmarkletHeader.innerHTML = `
+    <div>
+      <p class="panel-eyebrow">Capture</p>
+      <h2>Bookmark any page into SutraPad.</h2>
+      <p>Drag the bookmarklet to your bookmarks bar. It sends the current page URL and title into a fresh note.</p>
+    </div>
+  `;
+
+  const toggleBookmarkletHelper = document.createElement("button");
+  toggleBookmarkletHelper.className = "button button-ghost bookmarklet-toggle";
+  toggleBookmarkletHelper.type = "button";
+  toggleBookmarkletHelper.textContent = bookmarkletHelperExpanded ? "Hide helper" : "Show helper";
+  toggleBookmarkletHelper.onclick = onToggleBookmarkletHelper;
+  bookmarkletHeader.append(toggleBookmarkletHelper);
+  bookmarkletSection.append(bookmarkletHeader);
+
+  const bookmarkletActions = document.createElement("div");
+  bookmarkletActions.className = "bookmarklet-actions";
+
+  const bookmarkletLink = document.createElement("a");
+  bookmarkletLink.className = "button button-primary bookmarklet-link";
+  bookmarkletLink.href = buildBookmarklet(appRootUrl);
+  bookmarkletLink.textContent = "Save to SutraPad";
+  bookmarkletLink.setAttribute("draggable", "true");
+
+  const copyBookmarkletButton = document.createElement("button");
+  copyBookmarkletButton.className = "button button-ghost";
+  copyBookmarkletButton.textContent = "Copy bookmarklet code";
+  copyBookmarkletButton.onclick = onCopyBookmarklet;
+
+  const bookmarkletHint = document.createElement("p");
+  bookmarkletHint.className = "bookmarklet-hint";
+  bookmarkletHint.innerHTML =
+    "We cannot detect whether a browser already has this bookmarklet saved. Browsers do not expose bookmark contents to normal web pages, so this helper stays manual by design. Desktop Safari usually works best if you create a normal bookmark first and then replace its URL with the copied bookmarklet code.";
+
+  const iosShortcutHint = document.createElement("p");
+  iosShortcutHint.className = "bookmarklet-hint";
+  iosShortcutHint.innerHTML =
+    `On iPhone and iPad, a Shortcut is usually the easiest option. <a href="${iosShortcutUrl}" download>Download the iOS Shortcut</a>, open it in Safari, add it to Shortcuts, and enable it in the Share Sheet.`;
+
+  const bookmarkletSteps = document.createElement("ol");
+  bookmarkletSteps.className = "bookmarklet-steps";
+  bookmarkletSteps.innerHTML = `
+    <li>Drag <strong>Save to SutraPad</strong> to your bookmarks bar in Chrome, Brave, or Opera.</li>
+    <li>In Safari, create a regular bookmark, choose <strong>Edit Address</strong>, and paste the copied bookmarklet code.</li>
+    <li>While browsing any page, click the bookmarklet to open SutraPad with a new captured note.</li>
+    <li>On iOS, download the Shortcut file, add it in Apple Shortcuts, and use it from the Share menu as <strong>Send to SutraPad</strong>.</li>
+  `;
+
+  bookmarkletActions.append(bookmarkletLink, copyBookmarkletButton);
+
+  if (bookmarkletMessage) {
+    const bookmarkletStatus = document.createElement("p");
+    bookmarkletStatus.className = "bookmarklet-status";
+    bookmarkletStatus.textContent = bookmarkletMessage;
+    bookmarkletActions.append(bookmarkletStatus);
+  }
+
+  if (bookmarkletHelperExpanded) {
+    bookmarkletActions.append(bookmarkletHint, iosShortcutHint, bookmarkletSteps);
+    bookmarkletSection.append(bookmarkletActions);
+  }
+
+  return bookmarkletSection;
+}
+
+interface HomePageOptions extends BookmarkletCardOptions {
+  profile: UserProfile | null;
+}
+
+function buildHomePage({
+  profile,
+  appRootUrl,
+  bookmarkletHelperExpanded,
+  bookmarkletMessage,
+  iosShortcutUrl,
+  onToggleBookmarkletHelper,
+  onCopyBookmarklet,
+}: HomePageOptions): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "home-page";
+
+  const heroIntro = document.createElement("div");
+  heroIntro.className = "hero-intro";
+  heroIntro.innerHTML = `
+    <h1>notes & links</h1>
+    <p class="lede">Store and manage your <em>Gerümpel</em> on <a href="https://drive.google.com/drive/home" target="_blank" rel="noreferrer">Google Drive</a> — powered entirely by browser magic, questionable decisions, and multiple JSON files.</p>
+  `;
+  section.append(heroIntro);
+
+  if (!profile) {
+    const heroCard = document.createElement("div");
+    heroCard.className = "hero-card";
+
+    const info = document.createElement("p");
+    info.textContent =
+      "You can write immediately in a local notebook. Sign in only when you want to sync with Google Drive.";
+
+    heroCard.append(info);
+    section.append(heroCard);
+  }
+
+  section.append(
+    buildBookmarkletCard({
+      appRootUrl,
+      bookmarkletHelperExpanded,
+      bookmarkletMessage,
+      iosShortcutUrl,
+      onToggleBookmarkletHelper,
+      onCopyBookmarklet,
+    }),
+  );
 
   return section;
 }
@@ -661,6 +800,7 @@ export function renderAppPage({
   syncState,
   statusText,
   profile,
+  appRootUrl,
   bookmarkletHelperExpanded,
   bookmarkletMessage,
   iosShortcutUrl,
@@ -689,14 +829,21 @@ export function renderAppPage({
   page.className = "page";
 
   const hero = document.createElement("section");
-  hero.className = "hero";
+  hero.className = "hero hero-top-only";
 
   const topRow = document.createElement("div");
   topRow.className = "hero-top-row";
 
-  const eyebrow = document.createElement("p");
-  eyebrow.className = "eyebrow";
+  const eyebrow = document.createElement("button");
+  eyebrow.type = "button";
+  eyebrow.className = `eyebrow eyebrow-home${activeMenuItem === "home" ? " is-active" : ""}`;
   eyebrow.textContent = "SutraPad";
+  eyebrow.setAttribute("aria-label", "Go to SutraPad home");
+  eyebrow.setAttribute(
+    "aria-current",
+    activeMenuItem === "home" ? "page" : "false",
+  );
+  eyebrow.onclick = () => onSelectMenuItem("home");
   topRow.append(eyebrow);
   topRow.append(buildAppNav(activeMenuItem, onSelectMenuItem));
   topRow.append(
@@ -710,28 +857,31 @@ export function renderAppPage({
   );
   hero.append(topRow);
 
-  const heroIntro = document.createElement("div");
-  heroIntro.className = "hero-intro";
-  heroIntro.innerHTML = `
-    <h1>notes & links</h1>
-    <p class="lede">Store and manage your <em>Gerümpel</em> on <a href="https://drive.google.com/drive/home" target="_blank" rel="noreferrer">Google Drive</a> — powered entirely by browser magic, questionable decisions, and multiple JSON files.</p>
+  page.append(hero);
+
+  const footer = document.createElement("footer");
+  footer.className = "footer";
+  footer.innerHTML = `
+    <p>Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by <a href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OpenStreetMap</a> and <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noreferrer">Nominatim</a>.</p>
+    <p class="build-stamp">${buildStamp}</p>
   `;
 
-  hero.append(heroIntro);
-
-  if (!profile) {
-    const heroCard = document.createElement("div");
-    heroCard.className = "hero-card";
-
-    const info = document.createElement("p");
-    info.textContent =
-      "You can write immediately in a local notebook. Sign in only when you want to sync with Google Drive.";
-
-    heroCard.append(info);
-    hero.append(heroCard);
+  if (activeMenuItem === "home") {
+    page.append(
+      buildHomePage({
+        profile,
+        appRootUrl,
+        bookmarkletHelperExpanded,
+        bookmarkletMessage,
+        iosShortcutUrl,
+        onToggleBookmarkletHelper,
+        onCopyBookmarklet,
+      }),
+    );
+    page.append(footer);
+    root.append(page);
+    return;
   }
-
-  page.append(hero);
 
   if (activeMenuItem !== "notes") {
     const openNoteInEditor = (noteId: string): void => {
@@ -761,85 +911,10 @@ export function renderAppPage({
     } else {
       page.append(buildPagePlaceholder(activeMenuItem));
     }
-    const earlyFooter = document.createElement("footer");
-    earlyFooter.className = "footer";
-    earlyFooter.innerHTML = `
-      <p>Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by <a href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OpenStreetMap</a> and <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noreferrer">Nominatim</a>.</p>
-      <p class="build-stamp">${buildStamp}</p>
-    `;
-    page.append(earlyFooter);
+    page.append(footer);
     root.append(page);
     return;
   }
-
-  const bookmarkletSection = document.createElement("section");
-  bookmarkletSection.className = "bookmarklet-card";
-  const bookmarkletHeader = document.createElement("div");
-  bookmarkletHeader.className = "bookmarklet-header";
-  bookmarkletHeader.innerHTML = `
-    <div>
-      <p class="panel-eyebrow">Capture</p>
-      <h2>Bookmark any page into SutraPad.</h2>
-      <p>Drag the bookmarklet to your bookmarks bar. It sends the current page URL and title into a fresh note.</p>
-    </div>
-  `;
-
-  const toggleBookmarkletHelper = document.createElement("button");
-  toggleBookmarkletHelper.className = "button button-ghost bookmarklet-toggle";
-  toggleBookmarkletHelper.type = "button";
-  toggleBookmarkletHelper.textContent = bookmarkletHelperExpanded ? "Hide helper" : "Show helper";
-  toggleBookmarkletHelper.onclick = onToggleBookmarkletHelper;
-  bookmarkletHeader.append(toggleBookmarkletHelper);
-  bookmarkletSection.append(bookmarkletHeader);
-
-  const bookmarkletActions = document.createElement("div");
-  bookmarkletActions.className = "bookmarklet-actions";
-
-  const bookmarkletLink = document.createElement("a");
-  bookmarkletLink.className = "button button-primary bookmarklet-link";
-  bookmarkletLink.href = buildBookmarklet(window.location.origin + window.location.pathname);
-  bookmarkletLink.textContent = "Save to SutraPad";
-  bookmarkletLink.setAttribute("draggable", "true");
-
-  const copyBookmarkletButton = document.createElement("button");
-  copyBookmarkletButton.className = "button button-ghost";
-  copyBookmarkletButton.textContent = "Copy bookmarklet code";
-  copyBookmarkletButton.onclick = onCopyBookmarklet;
-
-  const bookmarkletHint = document.createElement("p");
-  bookmarkletHint.className = "bookmarklet-hint";
-  bookmarkletHint.innerHTML =
-    "We cannot detect whether a browser already has this bookmarklet saved. Browsers do not expose bookmark contents to normal web pages, so this helper stays manual by design. Desktop Safari usually works best if you create a normal bookmark first and then replace its URL with the copied bookmarklet code.";
-
-  const iosShortcutHint = document.createElement("p");
-  iosShortcutHint.className = "bookmarklet-hint";
-  iosShortcutHint.innerHTML =
-    `On iPhone and iPad, a Shortcut is usually the easiest option. <a href="${iosShortcutUrl}" download>Download the iOS Shortcut</a>, open it in Safari, add it to Shortcuts, and enable it in the Share Sheet.`;
-
-  const bookmarkletSteps = document.createElement("ol");
-  bookmarkletSteps.className = "bookmarklet-steps";
-  bookmarkletSteps.innerHTML = `
-    <li>Drag <strong>Save to SutraPad</strong> to your bookmarks bar in Chrome, Brave, or Opera.</li>
-    <li>In Safari, create a regular bookmark, choose <strong>Edit Address</strong>, and paste the copied bookmarklet code.</li>
-    <li>While browsing any page, click the bookmarklet to open SutraPad with a new captured note.</li>
-    <li>On iOS, download the Shortcut file, add it in Apple Shortcuts, and use it from the Share menu as <strong>Send to SutraPad</strong>.</li>
-  `;
-
-  bookmarkletActions.append(bookmarkletLink, copyBookmarkletButton);
-
-  if (bookmarkletMessage) {
-    const bookmarkletStatus = document.createElement("p");
-    bookmarkletStatus.className = "bookmarklet-status";
-    bookmarkletStatus.textContent = bookmarkletMessage;
-    bookmarkletActions.append(bookmarkletStatus);
-  }
-
-  if (bookmarkletHelperExpanded) {
-    bookmarkletActions.append(bookmarkletHint, iosShortcutHint, bookmarkletSteps);
-    bookmarkletSection.append(bookmarkletActions);
-  }
-
-  page.append(bookmarkletSection);
 
   const workspaceSection = document.createElement("section");
   workspaceSection.className = "workspace";
@@ -868,12 +943,6 @@ export function renderAppPage({
   );
   page.append(workspaceSection);
 
-  const footer = document.createElement("footer");
-  footer.className = "footer";
-  footer.innerHTML = `
-    <p>Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by <a href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OpenStreetMap</a> and <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noreferrer">Nominatim</a>.</p>
-    <p class="build-stamp">${buildStamp}</p>
-  `;
   page.append(footer);
 
   root.append(page);

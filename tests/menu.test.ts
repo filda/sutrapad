@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MENU_ITEM,
+  HOME_MENU_ITEM,
   MENU_ITEMS,
   getMenuItemLabel,
   isMenuItemId,
@@ -39,6 +40,11 @@ describe("menu items", () => {
     expect(DEFAULT_MENU_ITEM).toBe<MenuItemId>("notes");
     expect(MENU_ITEMS.some((item) => item.id === DEFAULT_MENU_ITEM)).toBe(true);
   });
+
+  it("keeps the home view out of the primary nav (reached via the clickable SutraPad eyebrow)", () => {
+    expect(MENU_ITEMS.some((item) => item.id === HOME_MENU_ITEM.id)).toBe(false);
+    expect(HOME_MENU_ITEM).toEqual({ id: "home", label: "Home" });
+  });
 });
 
 describe("isMenuItemId", () => {
@@ -46,6 +52,11 @@ describe("isMenuItemId", () => {
     for (const item of MENU_ITEMS) {
       expect(isMenuItemId(item.id)).toBe(true);
     }
+  });
+
+  it("accepts the home id even though it is not rendered in the primary nav", () => {
+    expect(isMenuItemId(HOME_MENU_ITEM.id)).toBe(true);
+    expect(isMenuItemId("home")).toBe(true);
   });
 
   it("rejects unknown values", () => {
@@ -59,6 +70,7 @@ describe("isMenuItemId", () => {
 
 describe("getMenuItemLabel", () => {
   it("returns the label that matches the menu id", () => {
+    expect(getMenuItemLabel("home")).toBe("Home");
     expect(getMenuItemLabel("add")).toBe("Add");
     expect(getMenuItemLabel("notes")).toBe("Notes");
     expect(getMenuItemLabel("links")).toBe("Links");
