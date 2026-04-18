@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildAvailableTagIndex,
   buildLinkIndex,
   buildTagIndex,
   areWorkspacesEqual,
@@ -73,6 +74,89 @@ describe("notebook helpers", () => {
         { tag: "idea", noteIds: ["1", "2"], count: 2 },
         { tag: "work", noteIds: ["1", "3"], count: 2 },
       ],
+    });
+  });
+
+  it("returns the full tag index when no filter is selected", () => {
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        makeNote({ id: "1", updatedAt: "2026-04-13T12:00:00.000Z", tags: ["work", "idea"] }),
+        makeNote({ id: "2", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea"] }),
+        makeNote({ id: "3", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work"] }),
+      ],
+    };
+
+    expect(buildAvailableTagIndex(workspace, [], "2026-04-13T12:30:00.000Z")).toEqual(
+      buildTagIndex(workspace, "2026-04-13T12:30:00.000Z"),
+    );
+  });
+
+  it("narrows the cloud to tags that co-occur with the selected filter", () => {
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        makeNote({ id: "1", updatedAt: "2026-04-13T12:00:00.000Z", tags: ["work", "idea"] }),
+        makeNote({ id: "2", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea", "weekend"] }),
+        makeNote({ id: "3", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work", "urgent"] }),
+      ],
+    };
+
+    const index = buildAvailableTagIndex(workspace, ["work"], "2026-04-13T12:30:00.000Z");
+    const visibleTags = index.tags.map((entry) => entry.tag);
+
+    // "weekend" only appears on a non-matching note, so it must disappear.
+    expect(visibleTags).not.toContain("weekend");
+    // "work" itself and its co-occurring tags stay visible.
+    expect(visibleTags).toEqual(expect.arrayContaining(["work", "idea", "urgent"]));
+  });
+
+  it("reports counts against the filtered subset, not the global workspace", () => {
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        makeNote({ id: "1", updatedAt: "2026-04-13T12:00:00.000Z", tags: ["work", "idea"] }),
+        makeNote({ id: "2", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea", "weekend"] }),
+        makeNote({ id: "3", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work", "urgent"] }),
+      ],
+    };
+
+    const index = buildAvailableTagIndex(workspace, ["work"], "2026-04-13T12:30:00.000Z");
+
+    // In the full workspace "idea" has count 2, but when filtered to "work"-tagged notes it's only 1.
+    expect(index.tags.find((entry) => entry.tag === "idea")?.count).toBe(1);
+    expect(index.tags.find((entry) => entry.tag === "work")?.count).toBe(2);
+  });
+
+  it("requires notes to have every selected tag when multiple filters are active", () => {
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        makeNote({ id: "1", updatedAt: "2026-04-13T12:00:00.000Z", tags: ["work", "idea"] }),
+        makeNote({ id: "2", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea", "weekend"] }),
+        makeNote({ id: "3", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work", "urgent"] }),
+      ],
+    };
+
+    const index = buildAvailableTagIndex(workspace, ["work", "idea"], "2026-04-13T12:30:00.000Z");
+
+    // Only note 1 has both "work" AND "idea", so only its tags survive.
+    expect(index.tags.map((entry) => entry.tag).sort()).toEqual(["idea", "work"]);
+    expect(index.tags.every((entry) => entry.count === 1)).toBe(true);
+  });
+
+  it("returns an empty index when no notes match the selected filters", () => {
+    const workspace = {
+      activeNoteId: "1",
+      notes: [
+        makeNote({ id: "1", updatedAt: "2026-04-13T12:00:00.000Z", tags: ["work"] }),
+      ],
+    };
+
+    expect(buildAvailableTagIndex(workspace, ["missing"], "2026-04-13T12:30:00.000Z")).toEqual({
+      version: 1,
+      savedAt: "2026-04-13T12:30:00.000Z",
+      tags: [],
     });
   });
 

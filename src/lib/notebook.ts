@@ -61,6 +61,15 @@ export function buildTagIndex(
   };
 }
 
+export function buildAvailableTagIndex(
+  workspace: SutraPadWorkspace,
+  selectedTagFilters: string[],
+  savedAt = new Date().toISOString(),
+): SutraPadTagIndex {
+  const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
+  return buildTagIndex({ ...workspace, notes: filteredNotes }, savedAt);
+}
+
 export function extractUrlsFromText(text: string): string[] {
   const matches = text.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
   const normalizedUrls: string[] = [];

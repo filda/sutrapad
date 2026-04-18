@@ -1,4 +1,4 @@
-import { buildTagIndex, filterNotesByAllTags } from "../../lib/notebook";
+import { buildAvailableTagIndex, buildTagIndex, filterNotesByAllTags } from "../../lib/notebook";
 import { buildBookmarklet } from "../../lib/bookmarklet";
 import { formatDate } from "../logic/formatting";
 import { buildNoteMetadata } from "../logic/note-metadata";
@@ -121,9 +121,7 @@ function buildTagsPage({
 
   section.append(header);
 
-  const tagIndex = buildTagIndex(workspace);
-
-  if (tagIndex.tags.length === 0) {
+  if (buildTagIndex(workspace).tags.length === 0) {
     const empty = document.createElement("p");
     empty.className = "tags-page-empty";
     empty.textContent =
@@ -131,6 +129,8 @@ function buildTagsPage({
     section.append(empty);
     return section;
   }
+
+  const tagIndex = buildAvailableTagIndex(workspace, selectedTagFilters);
 
   const cloud = document.createElement("div");
   cloud.className = "tags-cloud-wide";
