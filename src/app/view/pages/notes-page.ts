@@ -189,6 +189,7 @@ export interface EditorCardOptions {
   onBodyInput: (value: string) => void;
   onAddTag: (value: string) => void;
   onRemoveTag: (tag: string) => void;
+  onBackToNotes?: () => void;
 }
 
 export function buildEditorCard({
@@ -202,9 +203,19 @@ export function buildEditorCard({
   onBodyInput,
   onAddTag,
   onRemoveTag,
+  onBackToNotes,
 }: EditorCardOptions): HTMLElement {
   const editor = document.createElement("section");
   editor.className = "editor-card";
+
+  if (onBackToNotes) {
+    const backButton = document.createElement("button");
+    backButton.type = "button";
+    backButton.className = "editor-back-button";
+    backButton.textContent = "← Back to notes";
+    backButton.addEventListener("click", onBackToNotes);
+    editor.append(backButton);
+  }
 
   const status = document.createElement("p");
   status.className = `status status-${syncState}`;

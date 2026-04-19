@@ -3,11 +3,13 @@ import {
   buildNoteMetadata,
   generateFreshNoteDetails,
   readActivePageFromLocation,
+  readNoteDetailIdFromLocation,
   readTagFiltersFromLocation,
   resolveDisplayedNote,
   restoreSessionOnStartup,
   runWorkspaceSave,
   writeActivePageToLocation,
+  writeNoteDetailIdToLocation,
   writeTagFiltersToLocation,
 } from "../src/app";
 import type { SutraPadWorkspace, UserProfile } from "../src/types";
@@ -248,6 +250,163 @@ describe("active page location helpers", () => {
     expect(
       writeActivePageToLocation("https://example.com/sutrapad/", "tags", "/sutrapad"),
     ).toBe("https://example.com/sutrapad/tags");
+  });
+
+  it("still resolves the notes page when a detail id trails the slug", () => {
+    // /notes/<id> remains a notes-page URL; the detail id is read separately.
+    expect(
+      readActivePageFromLocation(
+        "https://example.com/sutrapad/notes/abc-123",
+        "/sutrapad/",
+      ),
+    ).toBe("notes");
+  });
+});
+
+describe("note detail location helpers", () => {
+  describe("readNoteDetailIdFromLocation", () => {
+    it("returns null when the URL has no detail segment", () => {
+      expect(
+        readNoteDetailIdFromLocation("https://example.com/sutrapad/", "/sutrapad/"),
+      ).toBeNull();
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/notes",
+          "/sutrapad/",
+        ),
+      ).toBeNull();
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/notes/",
+          "/sutrapad/",
+        ),
+      ).toBeNull();
+    });
+
+    it("returns null for URLs outside the base", () => {
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/other/notes/abc",
+          "/sutrapad/",
+        ),
+      ).toBeNull();
+    });
+
+    it("returns null when the first segment is not 'notes'", () => {
+      // Detail routes only live under the notes page, not under tags/links/etc.
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/tags/abc",
+          "/sutrapad/",
+        ),
+      ).toBeNull();
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/links/abc",
+          "/sutrapad/",
+        ),
+      ).toBeNull();
+    });
+
+    it("reads and decodes the note id from /notes/<id>", () => {
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/notes/abc-123",
+          "/sutrapad/",
+        ),
+      ).toBe("abc-123");
+
+      // URL-encoded characters must be decoded — the id survives encode/decode
+      // even when it contains spaces or unusual characters.
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/notes/hello%20world",
+          "/sutrapad/",
+        ),
+      ).toBe("hello world");
+    });
+
+    it("ignores deeper path segments after the id", () => {
+      // Future sub-routes under a note (e.g. /edit) should not break parsing.
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/notes/abc/edit",
+          "/sutrapad/",
+        ),
+      ).toBe("abc");
+    });
+
+    it("returns null for malformed percent-encoding instead of throwing", () => {
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/notes/%E0%A4%A",
+          "/sutrapad/",
+        ),
+      ).toBeNull();
+    });
+
+    it("works with the root base", () => {
+      expect(
+        readNoteDetailIdFromLocation("https://example.com/notes/abc", "/"),
+      ).toBe("abc");
+      expect(
+        readNoteDetailIdFromLocation("https://example.com/notes", "/"),
+      ).toBeNull();
+    });
+  });
+
+  describe("writeNoteDetailIdToLocation", () => {
+    it("writes the id under /<base>notes/<id> and preserves query + hash", () => {
+      expect(
+        writeNoteDetailIdToLocation(
+          "https://example.com/sutrapad/?tags=work#anchor",
+          "abc-123",
+          "/sutrapad/",
+        ),
+      ).toBe("https://example.com/sutrapad/notes/abc-123?tags=work#anchor");
+    });
+
+    it("URL-encodes ids that contain unsafe characters", () => {
+      expect(
+        writeNoteDetailIdToLocation(
+          "https://example.com/sutrapad/",
+          "hello world",
+          "/sutrapad/",
+        ),
+      ).toBe("https://example.com/sutrapad/notes/hello%20world");
+    });
+
+    it("replaces any pre-existing pathname segments", () => {
+      // Going from the tags page to a note detail must overwrite /tags.
+      expect(
+        writeNoteDetailIdToLocation(
+          "https://example.com/sutrapad/tags?tags=work",
+          "abc",
+          "/sutrapad/",
+        ),
+      ).toBe("https://example.com/sutrapad/notes/abc?tags=work");
+    });
+
+    it("accepts bases without a trailing slash", () => {
+      expect(
+        writeNoteDetailIdToLocation(
+          "https://example.com/sutrapad/",
+          "abc",
+          "/sutrapad",
+        ),
+      ).toBe("https://example.com/sutrapad/notes/abc");
+    });
+
+    it("round-trips through write + read without drifting", () => {
+      const written = writeNoteDetailIdToLocation(
+        "https://example.com/sutrapad/",
+        "note id with space",
+        "/sutrapad/",
+      );
+      expect(readNoteDetailIdFromLocation(written, "/sutrapad/")).toBe(
+        "note id with space",
+      );
+    });
   });
 });
 

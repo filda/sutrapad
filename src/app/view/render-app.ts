@@ -22,6 +22,13 @@ interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   iosShortcutUrl: string;
   buildStamp: string;
   activeMenuItem: MenuItemId;
+  /**
+   * When set and the active menu item is "notes", the detail editor for this
+   * note is shown instead of the notes list. Callers are responsible for
+   * validating that the id still exists in the workspace before passing it
+   * through.
+   */
+  detailNoteId: string | null;
   onSelectMenuItem: (id: MenuItemId) => void;
   onSignIn: () => void;
   onLoadNotebook: () => void;
@@ -61,7 +68,9 @@ export function renderAppPage({
   onBodyInput,
   onAddTag,
   onRemoveTag,
+  onBackToNotes,
   activeMenuItem,
+  detailNoteId,
   onSelectMenuItem,
 }: RenderAppOptions): void {
   root.innerHTML = "";
@@ -125,9 +134,10 @@ export function renderAppPage({
   }
 
   if (activeMenuItem !== "notes") {
+    // onSelectNote already switches to the notes page and opens the detail
+    // route for the chosen note, so nothing further is needed from here.
     const openNoteInEditor = (noteId: string): void => {
       onSelectNote(noteId);
-      onSelectMenuItem("notes");
     };
 
     if (activeMenuItem === "tags") {
@@ -157,18 +167,24 @@ export function renderAppPage({
     return;
   }
 
-  const workspaceSection = document.createElement("section");
-  workspaceSection.className = "workspace";
-  workspaceSection.append(
-    buildNotesPanel({
-      workspace,
-      currentNoteId,
-      selectedTagFilters,
-      onSelectNote,
-      onToggleTagFilter,
-      onClearTagFilters,
-      onNewNote,
-    }),
+  if (detailNoteId === null) {
+    page.append(
+      buildNotesPanel({
+        workspace,
+        currentNoteId,
+        selectedTagFilters,
+        onSelectNote,
+        onToggleTagFilter,
+        onClearTagFilters,
+        onNewNote,
+      }),
+    );
+    page.append(footer);
+    root.append(page);
+    return;
+  }
+
+  page.append(
     buildEditorCard({
       note,
       currentNote,
@@ -180,10 +196,9 @@ export function renderAppPage({
       onBodyInput,
       onAddTag,
       onRemoveTag,
+      onBackToNotes,
     }),
   );
-  page.append(workspaceSection);
-
   page.append(footer);
 
   root.append(page);

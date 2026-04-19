@@ -41,7 +41,9 @@ import { buildNotesPanel } from "./app/view/pages/notes-page";
 import { type MenuItemId } from "./app/logic/menu";
 import {
   readActivePageFromLocation,
+  readNoteDetailIdFromLocation,
   writeActivePageToLocation,
+  writeNoteDetailIdToLocation,
 } from "./app/logic/active-page";
 const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 
@@ -51,7 +53,9 @@ export { buildNoteMetadata } from "./app/logic/note-metadata";
 export { readTagFiltersFromLocation, writeTagFiltersToLocation } from "./app/logic/tag-filters";
 export {
   readActivePageFromLocation,
+  readNoteDetailIdFromLocation,
   writeActivePageToLocation,
+  writeNoteDetailIdToLocation,
 } from "./app/logic/active-page";
 export { restoreSessionOnStartup } from "./app/session/session";
 export { withAuthRetry } from "./app/session/auth-retry";
@@ -76,6 +80,14 @@ export function createApp(root: HTMLElement): void {
     window.location.href,
     appBasePath,
   );
+  // When the URL points at /notes/<id> on load, remember the id so the first
+  // render lands directly on the detail page. The id is validated against the
+  // workspace in `render()`; an unknown id falls back to the list and the URL
+  // is rewritten at the next sync.
+  let detailNoteId: string | null =
+    activeMenuItem === "notes"
+      ? readNoteDetailIdFromLocation(window.location.href, appBasePath)
+      : null;
 
   const getCurrentNote = (): SutraPadDocument => {
     const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
@@ -112,13 +124,33 @@ export function createApp(root: HTMLElement): void {
   };
 
   const syncActivePageToLocation = (): void => {
-    const nextUrl = writeActivePageToLocation(
-      window.location.href,
-      activeMenuItem,
-      appBasePath,
-    );
+    const nextUrl =
+      activeMenuItem === "notes" && detailNoteId !== null
+        ? writeNoteDetailIdToLocation(window.location.href, detailNoteId, appBasePath)
+        : writeActivePageToLocation(window.location.href, activeMenuItem, appBasePath);
     if (nextUrl !== window.location.href) {
       window.history.replaceState({}, "", nextUrl);
+    }
+  };
+
+  const syncDetailNoteId = (): void => {
+    if (detailNoteId === null) return;
+    if (activeMenuItem !== "notes") {
+      detailNoteId = null;
+      return;
+    }
+    if (!workspace.notes.some((note) => note.id === detailNoteId)) {
+      detailNoteId = null;
+      return;
+    }
+    // Keep workspace.activeNoteId in sync with the route so the input handlers
+    // mutate the note the user is looking at (including a fresh deep-link load).
+    if (workspace.activeNoteId !== detailNoteId) {
+      workspace = {
+        ...workspace,
+        activeNoteId: detailNoteId,
+      };
+      persistLocalWorkspace(workspace);
     }
   };
 
@@ -151,6 +183,8 @@ export function createApp(root: HTMLElement): void {
         currentNoteId: resolveDisplayedNote(workspace, selectedTagFilters)?.id ?? "",
         selectedTagFilters,
         onSelectNote: (noteId) => {
+          activeMenuItem = "notes";
+          detailNoteId = noteId;
           workspace = {
             ...workspace,
             activeNoteId: noteId,
@@ -187,11 +221,15 @@ export function createApp(root: HTMLElement): void {
                 captureContext,
               );
               persistLocalWorkspace(workspace);
+              detailNoteId = workspace.activeNoteId ?? null;
+              activeMenuItem = "notes";
               syncState = "idle";
               render();
             } catch {
               workspace = createNewNoteWorkspace(workspace);
               persistLocalWorkspace(workspace);
+              detailNoteId = workspace.activeNoteId ?? null;
+              activeMenuItem = "notes";
               syncState = "idle";
               render();
             }
@@ -232,19 +270,33 @@ export function createApp(root: HTMLElement): void {
 
   const render = (): void => {
     syncSelectedTagFilters();
-    ensureVisibleActiveNote();
+    syncDetailNoteId();
+    // Only re-point activeNoteId when we're on the list route. On the detail
+    // route the URL pins which note is being edited, so we must not let the
+    // tag filter shift activeNoteId away from the note the user is looking at.
+    if (detailNoteId === null) {
+      ensureVisibleActiveNote();
+    }
     syncTagFiltersToLocation();
     syncActivePageToLocation();
 
     const currentNote = getCurrentNote();
-    const displayedNote = resolveDisplayedNote(workspace, selectedTagFilters);
+    // On the detail route we deliberately ignore the tag filter — the URL is
+    // authoritative about which note is being edited. On the list route the
+    // filter drives which note's metadata feeds the (hidden) editor.
+    const detailNote =
+      detailNoteId !== null
+        ? (workspace.notes.find((note) => note.id === detailNoteId) ?? null)
+        : null;
+    const displayedNote =
+      detailNote ?? resolveDisplayedNote(workspace, selectedTagFilters);
     renderAppPage({
       root,
       workspace,
       currentNoteId: displayedNote?.id ?? "",
       selectedTagFilters,
       note: displayedNote,
-      currentNote,
+      currentNote: detailNote ?? currentNote,
       syncState,
       statusText: getStatusText(),
       profile,
@@ -254,9 +306,14 @@ export function createApp(root: HTMLElement): void {
       iosShortcutUrl,
       buildStamp: formatBuildStamp(__APP_VERSION__, __APP_COMMIT_HASH__, __APP_BUILD_TIME__),
       activeMenuItem,
+      detailNoteId,
       onSelectMenuItem: (id) => {
-        if (activeMenuItem === id) return;
+        // Selecting a top-level nav item always drops back to the list/page
+        // view of that item, even if we were already on the same menu item's
+        // detail route (e.g. clicking "Notes" from /notes/<id> goes to the list).
+        if (activeMenuItem === id && detailNoteId === null) return;
         activeMenuItem = id;
+        detailNoteId = null;
         render();
       },
       onSignIn: () => {
@@ -305,11 +362,20 @@ export function createApp(root: HTMLElement): void {
         })();
       },
       onSelectNote: (noteId) => {
+        // Selecting a note from anywhere — list, tags page, links page — now
+        // opens the detail route. The list/detail views are mutually exclusive
+        // so we always land on the editor for the chosen note.
+        activeMenuItem = "notes";
+        detailNoteId = noteId;
         workspace = {
           ...workspace,
           activeNoteId: noteId,
         };
         persistLocalWorkspace(workspace);
+        render();
+      },
+      onBackToNotes: () => {
+        detailNoteId = null;
         render();
       },
       onToggleTagFilter: (tag) => {
@@ -341,11 +407,17 @@ export function createApp(root: HTMLElement): void {
               captureContext,
             );
             persistLocalWorkspace(workspace);
+            // createNewNoteWorkspace sets the new note as activeNoteId; mirror
+            // that into the detail route so the user lands in the editor.
+            detailNoteId = workspace.activeNoteId ?? null;
+            activeMenuItem = "notes";
             syncState = "idle";
             render();
           } catch {
             workspace = createNewNoteWorkspace(workspace);
             persistLocalWorkspace(workspace);
+            detailNoteId = workspace.activeNoteId ?? null;
+            activeMenuItem = "notes";
             syncState = "idle";
             render();
           }

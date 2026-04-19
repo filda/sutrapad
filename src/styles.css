@@ -483,10 +483,31 @@ a {
   min-width: 0;
 }
 
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-  gap: 18px;
+.editor-back-button {
+  align-self: flex-start;
+  margin: 0 0 16px;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid rgba(31, 41, 55, 0.12);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+.editor-back-button:hover {
+  color: var(--primary);
+  border-color: rgba(31, 41, 55, 0.28);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.editor-back-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .notes-panel {
@@ -880,10 +901,6 @@ a {
 
   .bookmarklet-header {
     flex-direction: column;
-  }
-
-  .workspace {
-    grid-template-columns: 1fr;
   }
 
   h1 {
