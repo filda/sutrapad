@@ -42,7 +42,7 @@ export function buildNotesPanel({
   const newNoteButton = document.createElement("button");
   newNoteButton.className = "button";
   newNoteButton.textContent = "New note";
-  newNoteButton.onclick = onNewNote;
+  newNoteButton.addEventListener("click", onNewNote);
   notesHeader.append(newNoteButton);
   notesPanel.append(notesHeader);
 
@@ -64,7 +64,7 @@ export function buildNotesPanel({
       clearFiltersButton.type = "button";
       clearFiltersButton.className = "tag-filter-clear";
       clearFiltersButton.textContent = "Clear";
-      clearFiltersButton.onclick = onClearTagFilters;
+      clearFiltersButton.addEventListener("click", onClearTagFilters);
       filterHeader.append(clearFiltersButton);
     }
 
@@ -76,7 +76,7 @@ export function buildNotesPanel({
       chip.type = "button";
       chip.className = `tag-filter-chip${selectedTagFilters.includes(entry.tag) ? " is-active" : ""}`;
       chip.textContent = `${entry.tag} · ${entry.count}`;
-      chip.onclick = () => onToggleTagFilter(entry.tag);
+      chip.addEventListener("click", () => onToggleTagFilter(entry.tag));
       cloud.append(chip);
     }
 
@@ -119,7 +119,7 @@ function buildTagInput(
     renderChips();
   };
 
-  input.onkeydown = (e) => {
+  input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       addTag(input.value);
@@ -132,18 +132,18 @@ function buildTagInput(
       renderChips();
       input.focus();
     }
-  };
+  });
 
-  input.onblur = () => {
+  input.addEventListener("blur", () => {
     if (input.value.trim()) {
       addTag(input.value);
       input.value = "";
     }
-  };
+  });
 
-  row.onclick = (e) => {
+  row.addEventListener("click", (e) => {
     if (e.target === row) input.focus();
-  };
+  });
 
   const renderChips = (): void => {
     while (row.firstChild) row.removeChild(row.firstChild);
@@ -160,11 +160,11 @@ function buildTagInput(
       removeBtn.className = "tag-chip-remove";
       removeBtn.setAttribute("aria-label", `Remove tag ${tag}`);
       removeBtn.textContent = "×";
-      removeBtn.onclick = () => {
+      removeBtn.addEventListener("click", () => {
         onRemoveTag(tag);
         renderChips();
         input.focus();
-      };
+      });
 
       chip.append(label, removeBtn);
       row.append(chip);
@@ -229,13 +229,13 @@ export function buildEditorCard({
   titleInput.className = "title-input";
   titleInput.placeholder = "Note title";
   titleInput.value = displayedNote.title;
-  titleInput.oninput = () => onTitleInput(titleInput.value);
+  titleInput.addEventListener("input", () => onTitleInput(titleInput.value));
 
   const bodyInput = document.createElement("textarea");
   bodyInput.className = "body-input";
   bodyInput.placeholder = "Start writing...";
   bodyInput.value = displayedNote.body;
-  bodyInput.oninput = () => onBodyInput(bodyInput.value);
+  bodyInput.addEventListener("input", () => onBodyInput(bodyInput.value));
 
   const noteMetadata = document.createElement("p");
   noteMetadata.className = "note-metadata";

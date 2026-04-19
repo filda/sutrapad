@@ -17,7 +17,7 @@ export function buildSelectedFiltersBar(
       chip.type = "button";
       chip.className = "selected-filter-chip";
       chip.textContent = tag;
-      chip.onclick = () => onRemoveSelectedFilter(tag);
+      chip.addEventListener("click", () => onRemoveSelectedFilter(tag));
       selectedFiltersBar.append(chip);
     }
   }

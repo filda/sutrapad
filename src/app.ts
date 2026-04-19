@@ -6,7 +6,6 @@ import {
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
-  createWorkspace,
   extractUrlsFromText,
   filterNotesByAllTags,
   mergeWorkspaces,
@@ -14,7 +13,6 @@ import {
 } from "./lib/notebook";
 import { collectCaptureContext } from "./lib/capture-context";
 import {
-  buildNoteCaptureTitle,
   clearCaptureParamsFromLocation,
   deriveTitleFromUrl,
   reverseGeocodeCoordinates,

@@ -35,7 +35,7 @@ function buildBookmarkletCard({
   toggleBookmarkletHelper.className = "button button-ghost bookmarklet-toggle";
   toggleBookmarkletHelper.type = "button";
   toggleBookmarkletHelper.textContent = bookmarkletHelperExpanded ? "Hide helper" : "Show helper";
-  toggleBookmarkletHelper.onclick = onToggleBookmarkletHelper;
+  toggleBookmarkletHelper.addEventListener("click", onToggleBookmarkletHelper);
   bookmarkletHeader.append(toggleBookmarkletHelper);
   bookmarkletSection.append(bookmarkletHeader);
 
@@ -51,7 +51,7 @@ function buildBookmarkletCard({
   const copyBookmarkletButton = document.createElement("button");
   copyBookmarkletButton.className = "button button-ghost";
   copyBookmarkletButton.textContent = "Copy bookmarklet code";
-  copyBookmarkletButton.onclick = onCopyBookmarklet;
+  copyBookmarkletButton.addEventListener("click", onCopyBookmarklet);
 
   const bookmarkletHint = document.createElement("p");
   bookmarkletHint.className = "bookmarklet-hint";

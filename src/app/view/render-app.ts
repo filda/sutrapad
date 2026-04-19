@@ -84,7 +84,7 @@ export function renderAppPage({
     "aria-current",
     activeMenuItem === "home" ? "page" : "false",
   );
-  eyebrow.onclick = () => onSelectMenuItem("home");
+  eyebrow.addEventListener("click", () => onSelectMenuItem("home"));
   topRow.append(eyebrow);
   topRow.append(buildAppNav(activeMenuItem, onSelectMenuItem));
   topRow.append(

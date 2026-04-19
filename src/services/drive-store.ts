@@ -155,7 +155,7 @@ export class GoogleDriveStore {
       : hydratedNotes[0].id;
 
     return {
-      notes: hydratedNotes.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+      notes: hydratedNotes.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
       activeNoteId,
     };
   }
@@ -562,7 +562,7 @@ export class GoogleDriveStore {
     const snapshotFiles = await this.findIndexSnapshotFiles(folderId);
     const staleSnapshots = snapshotFiles
       .filter((file) => file.id !== activeIndexId)
-      .sort((left, right) => right.name.localeCompare(left.name))
+      .toSorted((left, right) => right.name.localeCompare(left.name))
       .slice(MAX_INDEX_SNAPSHOTS - 1);
 
     await Promise.all(staleSnapshots.map(async (file) => this.deleteFile(file.id)));

@@ -141,7 +141,7 @@ describe("notebook helpers", () => {
     const index = buildAvailableTagIndex(workspace, ["work", "idea"], "2026-04-13T12:30:00.000Z");
 
     // Only note 1 has both "work" AND "idea", so only its tags survive.
-    expect(index.tags.map((entry) => entry.tag).sort()).toEqual(["idea", "work"]);
+    expect(index.tags.map((entry) => entry.tag).toSorted()).toEqual(["idea", "work"]);
     expect(index.tags.every((entry) => entry.count === 1)).toBe(true);
   });
 
@@ -515,7 +515,7 @@ describe("notebook helpers", () => {
       },
     );
 
-    expect(merged.notes.map((note) => note.id).sort()).toEqual(["local-1", "remote-1"]);
+    expect(merged.notes.map((note) => note.id).toSorted()).toEqual(["local-1", "remote-1"]);
     expect(merged.activeNoteId).toBe("local-1");
   });
 

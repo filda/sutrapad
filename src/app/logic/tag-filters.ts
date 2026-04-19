@@ -9,13 +9,13 @@ export function readTagFiltersFromLocation(url: string): string[] {
       .split(",")
       .map((tag) => tag.trim().toLowerCase())
       .filter(Boolean),
-  )].sort((left, right) => left.localeCompare(right));
+  )].toSorted((left, right) => left.localeCompare(right));
 }
 
 export function writeTagFiltersToLocation(url: string, tags: string[]): string {
   const nextUrl = new URL(url);
   const canonicalTags = [...new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))]
-    .sort((left, right) => left.localeCompare(right));
+    .toSorted((left, right) => left.localeCompare(right));
   if (canonicalTags.length === 0) {
     nextUrl.searchParams.delete("tags");
   } else {

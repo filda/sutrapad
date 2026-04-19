@@ -32,7 +32,7 @@ export function createWorkspace(): SutraPadWorkspace {
 }
 
 export function sortNotes(notes: SutraPadDocument[]): SutraPadDocument[] {
-  return [...notes].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  return [...notes].toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export function buildTagIndex(
@@ -57,7 +57,7 @@ export function buildTagIndex(
         noteIds,
         count: noteIds.length,
       }))
-      .sort((left, right) => right.count - left.count || left.tag.localeCompare(right.tag)),
+      .toSorted((left, right) => right.count - left.count || left.tag.localeCompare(right.tag)),
   };
 }
 
@@ -114,7 +114,7 @@ export function buildLinkIndex(
         noteIds,
         count: noteIds.length,
       }))
-      .sort((left, right) => right.count - left.count || left.url.localeCompare(right.url)),
+      .toSorted((left, right) => right.count - left.count || left.url.localeCompare(right.url)),
   };
 }
 
@@ -195,8 +195,8 @@ export function areWorkspacesEqual(
     return false;
   }
 
-  const leftNotes = [...leftWorkspace.notes].sort((left, right) => left.id.localeCompare(right.id));
-  const rightNotes = [...rightWorkspace.notes].sort((left, right) => left.id.localeCompare(right.id));
+  const leftNotes = [...leftWorkspace.notes].toSorted((left, right) => left.id.localeCompare(right.id));
+  const rightNotes = [...rightWorkspace.notes].toSorted((left, right) => left.id.localeCompare(right.id));
 
   return leftNotes.every((note, index) => {
     const other = rightNotes[index];

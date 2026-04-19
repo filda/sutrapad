@@ -30,15 +30,15 @@ export const HOME_MENU_ITEM: MenuItem = { id: "home", label: "Home" };
 
 export const DEFAULT_MENU_ITEM: MenuItemId = "notes";
 
-const ALL_MENU_ITEM_IDS: readonly MenuItemId[] = [
+const ALL_MENU_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>([
   HOME_MENU_ITEM.id,
   ...MENU_ITEMS.map((item) => item.id),
-];
+]);
 
 export function isMenuItemId(value: unknown): value is MenuItemId {
   return (
     typeof value === "string" &&
-    ALL_MENU_ITEM_IDS.includes(value as MenuItemId)
+    ALL_MENU_ITEM_IDS.has(value as MenuItemId)
   );
 }
 

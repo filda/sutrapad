@@ -54,19 +54,19 @@ export function createUpdateNotification(
   reloadButton.type = "button";
   reloadButton.className = "button button-primary update-banner-reload";
   reloadButton.textContent = "Reload";
-  reloadButton.onclick = () => {
+  reloadButton.addEventListener("click", () => {
     options.onReload();
-  };
+  });
 
   const dismissButton = document.createElement("button");
   dismissButton.type = "button";
   dismissButton.className = "button button-ghost update-banner-dismiss";
   dismissButton.setAttribute("aria-label", "Dismiss update notification");
   dismissButton.textContent = "Later";
-  dismissButton.onclick = () => {
+  dismissButton.addEventListener("click", () => {
     banner.hidden = true;
     options.onDismiss?.();
-  };
+  });
 
   actions.append(reloadButton, dismissButton);
   banner.append(message, actions);

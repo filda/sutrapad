@@ -44,7 +44,7 @@ export function buildTagsPage({
     clearButton.type = "button";
     clearButton.className = "button button-ghost";
     clearButton.textContent = "Clear filters";
-    clearButton.onclick = onClearTagFilters;
+    clearButton.addEventListener("click", onClearTagFilters);
     header.append(clearButton);
   }
 
@@ -69,7 +69,7 @@ export function buildTagsPage({
     chip.type = "button";
     chip.className = `tag-filter-chip${selectedTagFilters.includes(entry.tag) ? " is-active" : ""}`;
     chip.textContent = `${entry.tag} · ${entry.count}`;
-    chip.onclick = () => onToggleTagFilter(entry.tag);
+    chip.addEventListener("click", () => onToggleTagFilter(entry.tag));
     cloud.append(chip);
   }
 

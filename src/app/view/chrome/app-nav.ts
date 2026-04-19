@@ -14,7 +14,7 @@ export function buildAppNav(
     button.className = `app-nav-item${item.id === activeMenuItem ? " is-active" : ""}`;
     button.textContent = item.label;
     button.setAttribute("aria-current", item.id === activeMenuItem ? "page" : "false");
-    button.onclick = () => onSelectMenuItem(item.id);
+    button.addEventListener("click", () => onSelectMenuItem(item.id));
     nav.append(button);
   }
 

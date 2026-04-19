@@ -21,7 +21,7 @@ export function buildNotesList(
     const button = document.createElement("button");
     button.className = `note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
     button.type = "button";
-    button.onclick = () => onSelectNote(note.id);
+    button.addEventListener("click", () => onSelectNote(note.id));
 
     const excerpt = note.body.trim() || "Empty note";
     button.innerHTML = `

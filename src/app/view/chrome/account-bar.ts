@@ -23,7 +23,7 @@ export function buildAccountBar({
     signInButton.type = "button";
     signInButton.className = "button button-primary account-sign-in";
     signInButton.textContent = "Sign in with Google";
-    signInButton.onclick = onSignIn;
+    signInButton.addEventListener("click", onSignIn);
     bar.append(signInButton);
     return bar;
   }
@@ -34,7 +34,7 @@ export function buildAccountBar({
   loadButton.textContent = "Load";
   loadButton.title = "Load notebook from Google Drive";
   loadButton.setAttribute("aria-label", "Load notebook");
-  loadButton.onclick = onLoadNotebook;
+  loadButton.addEventListener("click", onLoadNotebook);
 
   const saveButton = document.createElement("button");
   saveButton.type = "button";
@@ -42,7 +42,7 @@ export function buildAccountBar({
   saveButton.textContent = "Save";
   saveButton.title = "Save notebook to Google Drive";
   saveButton.setAttribute("aria-label", "Save notebook");
-  saveButton.onclick = onSaveNotebook;
+  saveButton.addEventListener("click", onSaveNotebook);
 
   const menu = document.createElement("div");
   menu.className = "account-menu";
@@ -84,7 +84,7 @@ export function buildAccountBar({
   signOutButton.type = "button";
   signOutButton.className = "button button-ghost account-menu-signout";
   signOutButton.textContent = "Sign out";
-  signOutButton.onclick = onSignOut;
+  signOutButton.addEventListener("click", onSignOut);
 
   panel.append(profileInfo, signOutButton);
   menu.append(trigger, panel);

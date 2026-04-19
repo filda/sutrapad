@@ -51,6 +51,13 @@ interface StoredGoogleAuthSession {
 
 let googleScriptPromise: Promise<void> | null = null;
 
+function requireGoogleOAuth(): GoogleNamespace["accounts"]["oauth2"] {
+  if (!window.google?.accounts?.oauth2) {
+    throw new Error("Google OAuth client is not available.");
+  }
+  return window.google.accounts.oauth2;
+}
+
 async function loadGoogleIdentityScript(): Promise<void> {
   if (window.google?.accounts?.oauth2) {
     return;
@@ -62,8 +69,8 @@ async function loadGoogleIdentityScript(): Promise<void> {
       script.src = GOOGLE_IDENTITY_SCRIPT;
       script.async = true;
       script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Failed to load Google Identity Services."));
+      script.addEventListener("load", () => resolve());
+      script.addEventListener("error", () => reject(new Error("Failed to load Google Identity Services.")));
       document.head.append(script);
     });
   }
@@ -84,11 +91,7 @@ export class GoogleAuthService {
 
     await loadGoogleIdentityScript();
 
-    if (!window.google?.accounts?.oauth2) {
-      throw new Error("Google OAuth client is not available.");
-    }
-
-    this.#tokenClient = window.google.accounts.oauth2.initTokenClient({
+    this.#tokenClient = requireGoogleOAuth().initTokenClient({
       client_id: clientId,
       scope: GOOGLE_SCOPES,
       callback: () => undefined,
@@ -101,7 +104,7 @@ export class GoogleAuthService {
     }
 
     const response = await new Promise<TokenResponse>((resolve, reject) => {
-      this.#tokenClient = window.google!.accounts.oauth2.initTokenClient({
+      this.#tokenClient = requireGoogleOAuth().initTokenClient({
         client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
         scope: GOOGLE_SCOPES,
         callback: (tokenResponse) => {
@@ -131,7 +134,7 @@ export class GoogleAuthService {
 
     try {
       const token = await new Promise<TokenResponse>((resolve, reject) => {
-        this.#tokenClient = window.google!.accounts.oauth2.initTokenClient({
+        this.#tokenClient = requireGoogleOAuth().initTokenClient({
           client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
           scope: GOOGLE_SCOPES,
           callback: (tokenResponse) => {

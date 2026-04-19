@@ -65,7 +65,7 @@ export function buildLinksPage({ workspace, onOpenNote }: LinksPageOptions): HTM
       chip.type = "button";
       chip.className = "link-notebook-chip";
       chip.textContent = note.title.trim() || "Untitled note";
-      chip.onclick = () => onOpenNote(noteId);
+      chip.addEventListener("click", () => onOpenNote(noteId));
       references.append(chip);
     }
 
