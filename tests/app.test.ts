@@ -1,15 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildNoteMetadata,
+  DEFAULT_NOTES_VIEW,
   generateFreshNoteDetails,
+  isNotesViewMode,
+  loadStoredNotesView,
   readActivePageFromLocation,
   readNoteDetailIdFromLocation,
+  readNotesViewFromLocation,
   readTagFiltersFromLocation,
   resolveDisplayedNote,
+  resolveInitialNotesView,
   restoreSessionOnStartup,
   runWorkspaceSave,
   writeActivePageToLocation,
   writeNoteDetailIdToLocation,
+  writeNotesViewToLocation,
   writeTagFiltersToLocation,
 } from "../src/app";
 import type { SutraPadWorkspace, UserProfile } from "../src/types";
@@ -406,6 +412,118 @@ describe("note detail location helpers", () => {
       expect(readNoteDetailIdFromLocation(written, "/sutrapad/")).toBe(
         "note id with space",
       );
+    });
+  });
+});
+
+describe("notes view mode location helpers", () => {
+  describe("isNotesViewMode", () => {
+    it("accepts the supported modes", () => {
+      expect(isNotesViewMode("list")).toBe(true);
+      expect(isNotesViewMode("cards")).toBe(true);
+    });
+
+    it("rejects unknown values, case variations, and non-strings", () => {
+      expect(isNotesViewMode("grid")).toBe(false);
+      expect(isNotesViewMode("LIST")).toBe(false);
+      expect(isNotesViewMode("")).toBe(false);
+      expect(isNotesViewMode(null)).toBe(false);
+      expect(isNotesViewMode(undefined)).toBe(false);
+      expect(isNotesViewMode(42)).toBe(false);
+    });
+  });
+
+  describe("readNotesViewFromLocation", () => {
+    it("returns the parsed mode when ?view= is set", () => {
+      expect(readNotesViewFromLocation("https://example.com/?view=list")).toBe("list");
+      expect(readNotesViewFromLocation("https://example.com/?view=cards")).toBe("cards");
+    });
+
+    it("ignores casing and surrounding whitespace", () => {
+      expect(readNotesViewFromLocation("https://example.com/?view=%20LIST%20")).toBe(
+        "list",
+      );
+    });
+
+    it("returns null when the param is missing or unrecognised", () => {
+      expect(readNotesViewFromLocation("https://example.com/")).toBeNull();
+      expect(readNotesViewFromLocation("https://example.com/?view=grid")).toBeNull();
+      expect(readNotesViewFromLocation("https://example.com/?view=")).toBeNull();
+    });
+  });
+
+  describe("writeNotesViewToLocation", () => {
+    it("writes the non-default mode into ?view=", () => {
+      expect(writeNotesViewToLocation("https://example.com/", "list")).toBe(
+        "https://example.com/?view=list",
+      );
+    });
+
+    it("strips the param when writing the default mode", () => {
+      expect(
+        writeNotesViewToLocation("https://example.com/?view=list", DEFAULT_NOTES_VIEW),
+      ).toBe("https://example.com/");
+    });
+
+    it("preserves other query params and the hash", () => {
+      expect(
+        writeNotesViewToLocation(
+          "https://example.com/notes?tags=a%2Cb#focus",
+          "list",
+        ),
+      ).toBe("https://example.com/notes?tags=a%2Cb&view=list#focus");
+    });
+
+    it("round-trips through write + read", () => {
+      const written = writeNotesViewToLocation("https://example.com/", "list");
+      expect(readNotesViewFromLocation(written)).toBe("list");
+    });
+  });
+
+  describe("resolveInitialNotesView", () => {
+    it("prefers the URL when both URL and storage are populated", () => {
+      const storage = { getItem: vi.fn().mockReturnValue("cards") };
+      expect(
+        resolveInitialNotesView("https://example.com/?view=list", storage),
+      ).toBe("list");
+      // URL wins so storage need not even be consulted, but the contract is
+      // "URL first, then storage" — we just want to confirm URL takes priority.
+    });
+
+    it("falls back to storage when the URL has no view param", () => {
+      const storage = { getItem: vi.fn().mockReturnValue("list") };
+      expect(resolveInitialNotesView("https://example.com/", storage)).toBe("list");
+    });
+
+    it("falls back to the default when neither URL nor storage have a value", () => {
+      const storage = { getItem: vi.fn().mockReturnValue(null) };
+      expect(resolveInitialNotesView("https://example.com/", storage)).toBe(
+        DEFAULT_NOTES_VIEW,
+      );
+    });
+
+    it("ignores garbage values stored in localStorage", () => {
+      const storage = { getItem: vi.fn().mockReturnValue("waffle") };
+      expect(resolveInitialNotesView("https://example.com/", storage)).toBe(
+        DEFAULT_NOTES_VIEW,
+      );
+    });
+  });
+
+  describe("loadStoredNotesView", () => {
+    it("returns the stored mode when valid", () => {
+      const storage = { getItem: vi.fn().mockReturnValue("list") };
+      expect(loadStoredNotesView(storage)).toBe("list");
+    });
+
+    it("returns null when no value is stored", () => {
+      const storage = { getItem: vi.fn().mockReturnValue(null) };
+      expect(loadStoredNotesView(storage)).toBeNull();
+    });
+
+    it("returns null when the stored value isn't a recognised mode", () => {
+      const storage = { getItem: vi.fn().mockReturnValue("cosmic-grid") };
+      expect(loadStoredNotesView(storage)).toBeNull();
     });
   });
 });

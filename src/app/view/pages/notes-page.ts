@@ -1,5 +1,6 @@
 import { buildTagIndex, filterNotesByAllTags } from "../../../lib/notebook";
 import { buildNoteMetadata } from "../../logic/note-metadata";
+import type { NotesViewMode } from "../../logic/notes-view";
 import type { SutraPadDocument, SutraPadWorkspace } from "../../../types";
 import type { SyncState } from "../../session/workspace-sync";
 import { buildNotesList } from "../shared/notes-list";
@@ -9,20 +10,53 @@ export interface NotesPanelOptions {
   workspace: SutraPadWorkspace;
   currentNoteId: string;
   selectedTagFilters: string[];
+  notesViewMode: NotesViewMode;
   onSelectNote: (noteId: string) => void;
   onToggleTagFilter: (tag: string) => void;
   onClearTagFilters: () => void;
   onNewNote: () => void;
+  onChangeNotesView: (mode: NotesViewMode) => void;
+}
+
+const VIEW_TOGGLE_OPTIONS: ReadonlyArray<{ mode: NotesViewMode; label: string }> = [
+  { mode: "list", label: "List" },
+  { mode: "cards", label: "Cards" },
+];
+
+function buildViewToggle(
+  active: NotesViewMode,
+  onChange: (mode: NotesViewMode) => void,
+): HTMLElement {
+  const group = document.createElement("div");
+  group.className = "view-toggle";
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", "Notebook view");
+
+  for (const option of VIEW_TOGGLE_OPTIONS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `view-toggle-button${option.mode === active ? " is-active" : ""}`;
+    button.textContent = option.label;
+    button.setAttribute("aria-pressed", option.mode === active ? "true" : "false");
+    button.addEventListener("click", () => {
+      if (option.mode !== active) onChange(option.mode);
+    });
+    group.append(button);
+  }
+
+  return group;
 }
 
 export function buildNotesPanel({
   workspace,
   currentNoteId,
   selectedTagFilters,
+  notesViewMode,
   onSelectNote,
   onToggleTagFilter,
   onClearTagFilters,
   onNewNote,
+  onChangeNotesView,
 }: NotesPanelOptions): HTMLElement {
   const notesPanel = document.createElement("aside");
   notesPanel.className = "notes-panel";
@@ -39,11 +73,17 @@ export function buildNotesPanel({
     </div>
   `;
 
+  const headerActions = document.createElement("div");
+  headerActions.className = "notes-panel-header-actions";
+  headerActions.append(buildViewToggle(notesViewMode, onChangeNotesView));
+
   const newNoteButton = document.createElement("button");
   newNoteButton.className = "button";
   newNoteButton.textContent = "New note";
   newNoteButton.addEventListener("click", onNewNote);
-  notesHeader.append(newNoteButton);
+  headerActions.append(newNoteButton);
+
+  notesHeader.append(headerActions);
   notesPanel.append(notesHeader);
 
   if (tagIndex.tags.length > 0) {
@@ -95,7 +135,9 @@ export function buildNotesPanel({
     notesPanel.append(filterSection);
   }
 
-  notesPanel.append(buildNotesList(currentNoteId, filteredNotes, onSelectNote));
+  notesPanel.append(
+    buildNotesList(currentNoteId, filteredNotes, onSelectNote, notesViewMode),
+  );
   return notesPanel;
 }
 

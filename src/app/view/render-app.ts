@@ -63,6 +63,8 @@ export function renderAppPage({
   onToggleTagFilter,
   onClearTagFilters,
   onNewNote,
+  notesViewMode,
+  onChangeNotesView,
   onRemoveSelectedFilter,
   onTitleInput,
   onBodyInput,
@@ -173,10 +175,12 @@ export function renderAppPage({
         workspace,
         currentNoteId,
         selectedTagFilters,
+        notesViewMode,
         onSelectNote,
         onToggleTagFilter,
         onClearTagFilters,
         onNewNote,
+        onChangeNotesView,
       }),
     );
     page.append(footer);

@@ -1,13 +1,19 @@
 import { formatDate } from "../../logic/formatting";
+import type { NotesViewMode } from "../../logic/notes-view";
 import type { SutraPadDocument } from "../../../types";
 
 export function buildNotesList(
   currentNoteId: string,
   notes: SutraPadDocument[],
   onSelectNote: (noteId: string) => void,
+  viewMode?: NotesViewMode,
 ): HTMLDivElement {
   const notesList = document.createElement("div");
-  notesList.className = "notes-list";
+  // Callers that don't opt into a view mode (e.g. the tags page) keep the
+  // original single-column card-list styling. Notes passes the user's
+  // toggled mode through so the container picks up a grid / compact variant.
+  notesList.className =
+    viewMode === undefined ? "notes-list" : `notes-list notes-list--${viewMode}`;
 
   if (notes.length === 0) {
     const emptyState = document.createElement("p");

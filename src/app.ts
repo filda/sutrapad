@@ -45,6 +45,12 @@ import {
   writeActivePageToLocation,
   writeNoteDetailIdToLocation,
 } from "./app/logic/active-page";
+import {
+  persistNotesView,
+  resolveInitialNotesView,
+  writeNotesViewToLocation,
+  type NotesViewMode,
+} from "./app/logic/notes-view";
 const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
@@ -57,6 +63,16 @@ export {
   writeActivePageToLocation,
   writeNoteDetailIdToLocation,
 } from "./app/logic/active-page";
+export {
+  DEFAULT_NOTES_VIEW,
+  isNotesViewMode,
+  loadStoredNotesView,
+  persistNotesView,
+  readNotesViewFromLocation,
+  resolveInitialNotesView,
+  writeNotesViewToLocation,
+  type NotesViewMode,
+} from "./app/logic/notes-view";
 export { restoreSessionOnStartup } from "./app/session/session";
 export { withAuthRetry } from "./app/session/auth-retry";
 export { runWorkspaceSave } from "./app/session/workspace-sync";
@@ -88,6 +104,10 @@ export function createApp(root: HTMLElement): void {
     activeMenuItem === "notes"
       ? readNoteDetailIdFromLocation(window.location.href, appBasePath)
       : null;
+  // Notebook listing layout. URL wins on initial load so a shared link honours
+  // the sender's choice, otherwise fall back to the last mode the user picked
+  // on this device, otherwise the default (cards).
+  let notesViewMode: NotesViewMode = resolveInitialNotesView(window.location.href);
 
   const getCurrentNote = (): SutraPadDocument => {
     const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
@@ -128,6 +148,24 @@ export function createApp(root: HTMLElement): void {
       activeMenuItem === "notes" && detailNoteId !== null
         ? writeNoteDetailIdToLocation(window.location.href, detailNoteId, appBasePath)
         : writeActivePageToLocation(window.location.href, activeMenuItem, appBasePath);
+    if (nextUrl !== window.location.href) {
+      window.history.replaceState({}, "", nextUrl);
+    }
+  };
+
+  const syncNotesViewToLocation = (): void => {
+    // Only the notes list cares about ?view — keep tags/links/home URLs clean
+    // by stripping the param when we navigate away from the notes list.
+    const shouldExpose = activeMenuItem === "notes" && detailNoteId === null;
+    if (!shouldExpose) {
+      const stripped = new URL(window.location.href);
+      if (stripped.searchParams.has("view")) {
+        stripped.searchParams.delete("view");
+        window.history.replaceState({}, "", stripped.toString());
+      }
+      return;
+    }
+    const nextUrl = writeNotesViewToLocation(window.location.href, notesViewMode);
     if (nextUrl !== window.location.href) {
       window.history.replaceState({}, "", nextUrl);
     }
@@ -182,6 +220,13 @@ export function createApp(root: HTMLElement): void {
         workspace,
         currentNoteId: resolveDisplayedNote(workspace, selectedTagFilters)?.id ?? "",
         selectedTagFilters,
+        notesViewMode,
+        onChangeNotesView: (mode) => {
+          if (mode === notesViewMode) return;
+          notesViewMode = mode;
+          persistNotesView(mode);
+          render();
+        },
         onSelectNote: (noteId) => {
           activeMenuItem = "notes";
           detailNoteId = noteId;
@@ -279,6 +324,7 @@ export function createApp(root: HTMLElement): void {
     }
     syncTagFiltersToLocation();
     syncActivePageToLocation();
+    syncNotesViewToLocation();
 
     const currentNote = getCurrentNote();
     // On the detail route we deliberately ignore the tag filter — the URL is
@@ -307,6 +353,13 @@ export function createApp(root: HTMLElement): void {
       buildStamp: formatBuildStamp(__APP_VERSION__, __APP_COMMIT_HASH__, __APP_BUILD_TIME__),
       activeMenuItem,
       detailNoteId,
+      notesViewMode,
+      onChangeNotesView: (mode) => {
+        if (mode === notesViewMode) return;
+        notesViewMode = mode;
+        persistNotesView(mode);
+        render();
+      },
       onSelectMenuItem: (id) => {
         // Selecting a top-level nav item always drops back to the list/page
         // view of that item, even if we were already on the same menu item's

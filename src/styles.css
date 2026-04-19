@@ -538,6 +538,46 @@ a {
   font-size: 1.25rem;
 }
 
+.notes-panel-header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.view-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid rgba(31, 41, 55, 0.16);
+  background: rgba(255, 252, 247, 0.85);
+  border-radius: 999px;
+  gap: 2px;
+}
+
+.view-toggle-button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
+}
+
+.view-toggle-button:hover {
+  color: var(--primary);
+}
+
+.view-toggle-button.is-active {
+  background: rgba(192, 132, 87, 0.18);
+  color: var(--primary);
+}
+
 .tag-filter-card {
   padding: 14px;
   border: 1px solid rgba(31, 41, 55, 0.09);
@@ -597,6 +637,59 @@ a {
   display: grid;
   gap: 10px;
   min-width: 0;
+}
+
+/*
+ * Cards variant: dynamically-sized grid. auto-fill lets the row breathe so
+ * wider screens just add more columns without stretching the cards into big
+ * empty rectangles.
+ */
+.notes-list--cards {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+/*
+ * List variant: compact one-liner rows — title + date on the same line, body
+ * excerpt hidden. Tags stay inline so the user can still scan them, but the
+ * row is much shorter than a card.
+ */
+.notes-list--list {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.notes-list--list .note-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 8px 14px;
+  border-radius: 12px;
+}
+
+.notes-list--list .note-list-item strong {
+  margin-bottom: 0;
+  grid-column: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-list--list .note-list-item span {
+  margin-bottom: 0;
+  grid-column: 2;
+  justify-self: end;
+  font-size: 0.78rem;
+}
+
+.notes-list--list .note-list-item p {
+  display: none;
+}
+
+.notes-list--list .note-list-tags {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  gap: 4px;
 }
 
 .notes-list-empty {
