@@ -129,6 +129,7 @@ export interface SutraPadLinkEntry {
   url: string;
   noteIds: string[];
   count: number;
+  latestUpdatedAt: string;
 }
 
 export interface SutraPadLinkIndex {

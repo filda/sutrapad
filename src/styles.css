@@ -355,6 +355,12 @@ a {
   border-radius: 4px;
 }
 
+.link-last-added {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
 .link-notebooks {
   display: flex;
   flex-wrap: wrap;

@@ -1,4 +1,5 @@
 import { buildLinkIndex } from "../../../lib/notebook";
+import { formatDate } from "../../logic/formatting";
 import type { SutraPadWorkspace } from "../../../types";
 
 export interface LinksPageOptions {
@@ -45,6 +46,14 @@ export function buildLinksPage({ workspace, onOpenNote }: LinksPageOptions): HTM
     anchor.rel = "noreferrer noopener";
     anchor.textContent = entry.url;
     item.append(anchor);
+
+    if (entry.latestUpdatedAt) {
+      const lastAdded = document.createElement("time");
+      lastAdded.className = "link-last-added";
+      lastAdded.dateTime = entry.latestUpdatedAt;
+      lastAdded.textContent = `Last added ${formatDate(entry.latestUpdatedAt)}`;
+      item.append(lastAdded);
+    }
 
     const references = document.createElement("div");
     references.className = "link-notebooks";

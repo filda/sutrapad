@@ -96,12 +96,22 @@ export function buildLinkIndex(
   workspace: SutraPadWorkspace,
   savedAt = new Date().toISOString(),
 ): SutraPadLinkIndex {
-  const noteIdsByUrl = new Map<string, string[]>();
+  const notesSortedByRecency = [...workspace.notes].toSorted((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt),
+  );
 
-  for (const note of workspace.notes) {
+  const noteIdsByUrl = new Map<string, string[]>();
+  const latestUpdatedAtByUrl = new Map<string, string>();
+
+  for (const note of notesSortedByRecency) {
     for (const url of note.urls) {
       const existingNoteIds = noteIdsByUrl.get(url) ?? [];
       noteIdsByUrl.set(url, [...existingNoteIds, note.id]);
+
+      const previousLatest = latestUpdatedAtByUrl.get(url);
+      if (!previousLatest || note.updatedAt.localeCompare(previousLatest) > 0) {
+        latestUpdatedAtByUrl.set(url, note.updatedAt);
+      }
     }
   }
 
@@ -113,8 +123,13 @@ export function buildLinkIndex(
         url,
         noteIds,
         count: noteIds.length,
+        latestUpdatedAt: latestUpdatedAtByUrl.get(url) ?? "",
       }))
-      .toSorted((left, right) => right.count - left.count || left.url.localeCompare(right.url)),
+      .toSorted(
+        (left, right) =>
+          right.latestUpdatedAt.localeCompare(left.latestUpdatedAt) ||
+          left.url.localeCompare(right.url),
+      ),
   };
 }
 

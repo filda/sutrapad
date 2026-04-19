@@ -168,19 +168,24 @@ describe("notebook helpers", () => {
     ).toEqual(["https://example.com/one", "https://example.com/two"]);
   });
 
-  it("builds a link index with note links and counts", () => {
+  it("builds a link index sorted by the most recent note that contains each url", () => {
     const workspace = {
-      activeNoteId: "1",
+      activeNoteId: "3",
       notes: [
         makeNote({
           id: "1",
-          updatedAt: "2026-04-13T12:00:00.000Z",
-          urls: ["https://example.com/one", "https://example.com/shared"],
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          urls: ["https://example.com/older"],
         }),
         makeNote({
           id: "2",
           updatedAt: "2026-04-13T11:00:00.000Z",
-          urls: ["https://example.com/shared"],
+          urls: ["https://example.com/middle", "https://example.com/older"],
+        }),
+        makeNote({
+          id: "3",
+          updatedAt: "2026-04-13T12:00:00.000Z",
+          urls: ["https://example.com/newest"],
         }),
       ],
     };
@@ -190,16 +195,60 @@ describe("notebook helpers", () => {
       savedAt: "2026-04-13T12:30:00.000Z",
       links: [
         {
-          url: "https://example.com/shared",
-          noteIds: ["1", "2"],
-          count: 2,
+          url: "https://example.com/newest",
+          noteIds: ["3"],
+          count: 1,
+          latestUpdatedAt: "2026-04-13T12:00:00.000Z",
         },
         {
-          url: "https://example.com/one",
-          noteIds: ["1"],
+          url: "https://example.com/older",
+          noteIds: ["2", "1"],
+          count: 2,
+          latestUpdatedAt: "2026-04-13T11:00:00.000Z",
+        },
+        {
+          url: "https://example.com/middle",
+          noteIds: ["2"],
           count: 1,
+          latestUpdatedAt: "2026-04-13T11:00:00.000Z",
         },
       ],
+    });
+  });
+
+  it("moves a re-added link to the top of the link index", () => {
+    const workspace = {
+      activeNoteId: "fresh",
+      notes: [
+        makeNote({
+          id: "old",
+          updatedAt: "2026-04-13T09:00:00.000Z",
+          urls: ["https://example.com/repeat"],
+        }),
+        makeNote({
+          id: "other",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          urls: ["https://example.com/other"],
+        }),
+        makeNote({
+          id: "fresh",
+          updatedAt: "2026-04-13T11:00:00.000Z",
+          urls: ["https://example.com/repeat"],
+        }),
+      ],
+    };
+
+    const linkIndex = buildLinkIndex(workspace, "2026-04-13T11:30:00.000Z");
+
+    expect(linkIndex.links.map((entry) => entry.url)).toEqual([
+      "https://example.com/repeat",
+      "https://example.com/other",
+    ]);
+    expect(linkIndex.links[0]).toEqual({
+      url: "https://example.com/repeat",
+      noteIds: ["fresh", "old"],
+      count: 2,
+      latestUpdatedAt: "2026-04-13T11:00:00.000Z",
     });
   });
 
