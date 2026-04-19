@@ -77,6 +77,69 @@ export { restoreSessionOnStartup } from "./app/session/session";
 export { withAuthRetry } from "./app/session/auth-retry";
 export { runWorkspaceSave } from "./app/session/workspace-sync";
 
+async function createFreshWorkspaceNote(
+  workspace: SutraPadWorkspace,
+): Promise<SutraPadWorkspace> {
+  try {
+    const { title, location, coordinates, captureContext } = await generateFreshNoteDetails();
+    return createNewNoteWorkspace(
+      workspace,
+      title,
+      location,
+      coordinates,
+      captureContext,
+    );
+  } catch {
+    return createNewNoteWorkspace(workspace);
+  }
+}
+
+async function captureIncomingWorkspaceFromUrl(
+  workspace: SutraPadWorkspace,
+): Promise<SutraPadWorkspace> {
+  const notePayload = readNoteCapture(window.location.href);
+  if (notePayload) {
+    const { title, location, coordinates, captureContext } = await generateFreshNoteDetails(
+      new Date(),
+      resolveCurrentCoordinates,
+      reverseGeocodeCoordinates,
+      async (options) => collectCaptureContext({ ...options, source: "text-capture" }),
+    );
+
+    return createTextNoteWorkspace(workspace, {
+      title,
+      body: notePayload.note,
+      location,
+      coordinates,
+      captureContext,
+    });
+  }
+
+  const urlPayload = readUrlCapture(window.location.href);
+  if (!urlPayload) {
+    return workspace;
+  }
+
+  const resolvedTitle =
+    urlPayload.title ??
+    (await resolveTitleFromUrl(urlPayload.url)) ??
+    deriveTitleFromUrl(urlPayload.url);
+  const { captureContext } = await collectNoteCaptureDetails({
+    source: "url-capture",
+    now: new Date(),
+    resolveCoordinates: resolveCurrentCoordinates,
+    reverseGeocode: reverseGeocodeCoordinates,
+    captureContextBuilder: collectCaptureContext,
+    sourceSnapshot: urlPayload.captureContext,
+  });
+
+  return createCapturedNoteWorkspace(workspace, {
+    title: resolvedTitle,
+    url: urlPayload.url,
+    captureContext,
+  });
+}
+
 export function createApp(root: HTMLElement): void {
   const auth = new GoogleAuthService();
   const iosShortcutUrl = "https://www.icloud.com/shortcuts/969e1b627e4a46deae3c690ef0c9ca84";
@@ -252,32 +315,16 @@ export function createApp(root: HTMLElement): void {
         },
         onNewNote: () => {
           void (async () => {
-            try {
-              syncState = "loading";
-              lastError = "";
-              render();
+            syncState = "loading";
+            lastError = "";
+            render();
 
-              const { title, location, coordinates, captureContext } = await generateFreshNoteDetails();
-              workspace = createNewNoteWorkspace(
-                workspace,
-                title,
-                location,
-                coordinates,
-                captureContext,
-              );
-              persistLocalWorkspace(workspace);
-              detailNoteId = workspace.activeNoteId ?? null;
-              activeMenuItem = "notes";
-              syncState = "idle";
-              render();
-            } catch {
-              workspace = createNewNoteWorkspace(workspace);
-              persistLocalWorkspace(workspace);
-              detailNoteId = workspace.activeNoteId ?? null;
-              activeMenuItem = "notes";
-              syncState = "idle";
-              render();
-            }
+            workspace = await createFreshWorkspaceNote(workspace);
+            persistLocalWorkspace(workspace);
+            detailNoteId = workspace.activeNoteId ?? null;
+            activeMenuItem = "notes";
+            syncState = "idle";
+            render();
           })();
         },
       }),
@@ -446,34 +493,18 @@ export function createApp(root: HTMLElement): void {
       },
       onNewNote: () => {
         void (async () => {
-          try {
-            syncState = "loading";
-            lastError = "";
-            render();
+          syncState = "loading";
+          lastError = "";
+          render();
 
-            const { title, location, coordinates, captureContext } = await generateFreshNoteDetails();
-            workspace = createNewNoteWorkspace(
-              workspace,
-              title,
-              location,
-              coordinates,
-              captureContext,
-            );
-            persistLocalWorkspace(workspace);
-            // createNewNoteWorkspace sets the new note as activeNoteId; mirror
-            // that into the detail route so the user lands in the editor.
-            detailNoteId = workspace.activeNoteId ?? null;
-            activeMenuItem = "notes";
-            syncState = "idle";
-            render();
-          } catch {
-            workspace = createNewNoteWorkspace(workspace);
-            persistLocalWorkspace(workspace);
-            detailNoteId = workspace.activeNoteId ?? null;
-            activeMenuItem = "notes";
-            syncState = "idle";
-            render();
-          }
+          workspace = await createFreshWorkspaceNote(workspace);
+          persistLocalWorkspace(workspace);
+          // createNewNoteWorkspace sets the new note as activeNoteId; mirror
+          // that into the detail route so the user lands in the editor.
+          detailNoteId = workspace.activeNoteId ?? null;
+          activeMenuItem = "notes";
+          syncState = "idle";
+          render();
         })();
       },
       onRemoveSelectedFilter: (tag) => {
@@ -603,59 +634,11 @@ export function createApp(root: HTMLElement): void {
       refreshStatus,
     });
 
-  const captureIncomingUrl = async (): Promise<void> => {
-    const notePayload = readNoteCapture(window.location.href);
-    if (notePayload) {
-      const { title, location, coordinates, captureContext } = await generateFreshNoteDetails(
-        new Date(),
-        resolveCurrentCoordinates,
-        reverseGeocodeCoordinates,
-        async (options) => collectCaptureContext({ ...options, source: "text-capture" }),
-      );
-
-      workspace = createTextNoteWorkspace(workspace, {
-        title,
-        body: notePayload.note,
-        location,
-        coordinates,
-        captureContext,
-      });
-      persistLocalWorkspace(workspace);
-      window.history.replaceState({}, "", clearCaptureParamsFromLocation(window.location.href));
-      return;
-    }
-
-    const urlPayload = readUrlCapture(window.location.href);
-    if (!urlPayload) {
-      return;
-    }
-
-    const resolvedTitle =
-      urlPayload.title ??
-      (await resolveTitleFromUrl(urlPayload.url)) ??
-      deriveTitleFromUrl(urlPayload.url);
-    const { captureContext } = await collectNoteCaptureDetails(
-      "url-capture",
-      new Date(),
-      resolveCurrentCoordinates,
-      reverseGeocodeCoordinates,
-      collectCaptureContext,
-      urlPayload.captureContext,
-    );
-
-    workspace = createCapturedNoteWorkspace(workspace, {
-      title: resolvedTitle,
-      url: urlPayload.url,
-      captureContext,
-    });
-    persistLocalWorkspace(workspace);
-
-    window.history.replaceState({}, "", clearCaptureParamsFromLocation(window.location.href));
-  };
-
   void (async () => {
     try {
-      await captureIncomingUrl();
+      workspace = await captureIncomingWorkspaceFromUrl(workspace);
+      persistLocalWorkspace(workspace);
+      window.history.replaceState({}, "", clearCaptureParamsFromLocation(window.location.href));
       await auth.initialize();
 
       profile = await restoreSessionOnStartup(

@@ -72,6 +72,16 @@ interface DocumentLike {
   };
 }
 
+interface CollectCaptureContextOptions {
+  source: SutraPadCaptureContext["source"];
+  coordinates?: SutraPadCoordinates;
+  sourceSnapshot?: Partial<SutraPadCaptureContext>;
+  currentDate?: Date;
+  navigatorLike?: NavigatorLike;
+  currentWindow?: WindowLike;
+  currentDocument?: DocumentLike;
+}
+
 export function extractMetaContent(document: Document, selector: string): string | undefined {
   const element = document.querySelector(selector);
   const content = element?.getAttribute("content")?.trim();
@@ -298,43 +308,56 @@ export async function resolveCurrentWeather(
   }
 }
 
-export async function collectCaptureContext({
-  source,
-  coordinates,
-  sourceSnapshot,
-  currentDate = new Date(),
-  navigatorLike = navigator,
-  currentWindow = window,
-  currentDocument = document,
-}: {
-  source: SutraPadCaptureContext["source"];
-  coordinates?: SutraPadCoordinates;
-  sourceSnapshot?: Partial<SutraPadCaptureContext>;
-  currentDate?: Date;
-  navigatorLike?: NavigatorLike;
-  currentWindow?: WindowLike;
-  currentDocument?: DocumentLike;
-}): Promise<SutraPadCaptureContext> {
-  const resolvedOptions = new Intl.DateTimeFormat().resolvedOptions();
-  const screen = buildScreenSnapshot(currentWindow);
+function resolvePageSnapshot(
+  sourceSnapshot?: Partial<SutraPadCaptureContext>,
+): SutraPadCapturePageMetadata | undefined {
   const page = {
     ...sourceSnapshot?.page,
   };
-  const battery = await resolveBatterySnapshot(navigatorLike);
-  const weather = await resolveCurrentWeather(coordinates);
-  const experimental = await resolveAmbientLightSnapshot(currentWindow);
+
+  return Object.values(page).some(Boolean) ? page : undefined;
+}
+
+function resolveTimeOnPageMs(
+  sourceSnapshot: Partial<SutraPadCaptureContext> | undefined,
+  currentWindow: WindowLike,
+): number | undefined {
+  return sourceSnapshot?.timeOnPageMs ??
+    (typeof currentWindow.performance?.now === "function"
+      ? Math.round(currentWindow.performance.now())
+      : undefined);
+}
+
+function buildNetworkSnapshot(
+  connection: NavigatorConnectionLike | undefined,
+  navigatorLike: NavigatorLike,
+) {
+  return {
+    online: navigatorLike.onLine,
+    effectiveType: connection?.effectiveType,
+    rtt: connection?.rtt,
+    downlink: connection?.downlink,
+    saveData: connection?.saveData,
+  };
+}
+
+function buildEnvironmentSnapshot(
+  navigatorLike: NavigatorLike,
+  currentWindow: WindowLike,
+  currentDocument: DocumentLike,
+  sourceSnapshot?: Partial<SutraPadCaptureContext>,
+) {
+  const screen = buildScreenSnapshot(currentWindow);
   const connection = navigatorLike.connection;
-  const scroll = sourceSnapshot?.scroll ?? computeScrollSnapshot(currentWindow, currentDocument);
   const userAgent = navigatorLike.userAgent ?? "";
   const platform = navigatorLike.userAgentData?.platform ?? navigatorLike.platform;
 
   return {
-    source,
-    timezone: resolvedOptions.timeZone,
-    timezoneOffsetMinutes: -currentDate.getTimezoneOffset(),
-    locale: resolvedOptions.locale || navigatorLike.language,
-    languages: navigatorLike.languages?.length ? [...navigatorLike.languages] : undefined,
+    screen,
+    scroll: sourceSnapshot?.scroll ?? computeScrollSnapshot(currentWindow, currentDocument),
     referrer: sourceSnapshot?.referrer ?? (currentDocument.referrer || undefined),
+    locale: navigatorLike.language,
+    languages: navigatorLike.languages?.length ? [...navigatorLike.languages] : undefined,
     deviceType: detectDeviceType({
       mobileHint: navigatorLike.userAgentData?.mobile,
       maxTouchPoints: navigatorLike.maxTouchPoints,
@@ -343,23 +366,67 @@ export async function collectCaptureContext({
     }),
     os: detectOperatingSystem(userAgent, platform),
     browser: detectBrowser(userAgent, navigatorLike.userAgentData?.brands),
-    screen,
-    scroll,
-    timeOnPageMs:
-      sourceSnapshot?.timeOnPageMs ??
-      (typeof currentWindow.performance?.now === "function"
-        ? Math.round(currentWindow.performance.now())
-        : undefined),
-    page: Object.values(page).some(Boolean) ? page : undefined,
-    network: {
-      online: navigatorLike.onLine,
-      effectiveType: connection?.effectiveType,
-      rtt: connection?.rtt,
-      downlink: connection?.downlink,
-      saveData: connection?.saveData,
-    },
+    network: buildNetworkSnapshot(connection, navigatorLike),
+  };
+}
+
+async function resolveAsyncContextData(
+  navigatorLike: NavigatorLike,
+  currentWindow: WindowLike,
+  coordinates?: SutraPadCoordinates,
+) {
+  const [battery, weather, experimental] = await Promise.all([
+    resolveBatterySnapshot(navigatorLike),
+    resolveCurrentWeather(coordinates),
+    resolveAmbientLightSnapshot(currentWindow),
+  ]);
+
+  return {
     battery,
     weather,
     experimental,
+  };
+}
+
+export async function collectCaptureContext({
+  source,
+  coordinates,
+  sourceSnapshot,
+  currentDate = new Date(),
+  navigatorLike = navigator,
+  currentWindow = window,
+  currentDocument = document,
+}: CollectCaptureContextOptions): Promise<SutraPadCaptureContext> {
+  const resolvedOptions = new Intl.DateTimeFormat().resolvedOptions();
+  const environment = buildEnvironmentSnapshot(
+    navigatorLike,
+    currentWindow,
+    currentDocument,
+    sourceSnapshot,
+  );
+  const asyncContextData = await resolveAsyncContextData(
+    navigatorLike,
+    currentWindow,
+    coordinates,
+  );
+
+  return {
+    source,
+    timezone: resolvedOptions.timeZone,
+    timezoneOffsetMinutes: -currentDate.getTimezoneOffset(),
+    locale: resolvedOptions.locale || environment.locale,
+    languages: environment.languages,
+    referrer: environment.referrer,
+    deviceType: environment.deviceType,
+    os: environment.os,
+    browser: environment.browser,
+    screen: environment.screen,
+    scroll: environment.scroll,
+    timeOnPageMs: resolveTimeOnPageMs(sourceSnapshot, currentWindow),
+    page: resolvePageSnapshot(sourceSnapshot),
+    network: environment.network,
+    battery: asyncContextData.battery,
+    weather: asyncContextData.weather,
+    experimental: asyncContextData.experimental,
   };
 }
