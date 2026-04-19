@@ -35,11 +35,27 @@ const ALL_MENU_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>([
   ...MENU_ITEMS.map((item) => item.id),
 ]);
 
+/**
+ * Menu items that do not represent a page but trigger an action when selected.
+ * "add" is a shortcut for the "New note" button on the notebook list — clicking
+ * it creates a fresh note and opens its editor instead of navigating to a page.
+ */
+const MENU_ACTION_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>(["add"]);
+
 export function isMenuItemId(value: unknown): value is MenuItemId {
   return (
     typeof value === "string" &&
     ALL_MENU_ITEM_IDS.has(value as MenuItemId)
   );
+}
+
+/**
+ * Returns true when selecting this menu id should trigger an action rather
+ * than navigating to a page. Page-style menu ids (e.g. "notes", "links") stay
+ * false and continue to drive the active page state.
+ */
+export function isMenuActionItemId(id: MenuItemId): boolean {
+  return MENU_ACTION_ITEM_IDS.has(id);
 }
 
 export function getMenuItemLabel(id: MenuItemId): string {

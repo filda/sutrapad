@@ -4,6 +4,7 @@ import {
   HOME_MENU_ITEM,
   MENU_ITEMS,
   getMenuItemLabel,
+  isMenuActionItemId,
   isMenuItemId,
   type MenuItemId,
 } from "../src/app/logic/menu";
@@ -77,5 +78,18 @@ describe("getMenuItemLabel", () => {
     expect(getMenuItemLabel("tags")).toBe("Tags");
     expect(getMenuItemLabel("tasks")).toBe("Tasks");
     expect(getMenuItemLabel("settings")).toBe("Settings");
+  });
+});
+
+describe("isMenuActionItemId", () => {
+  it("classifies the 'add' menu item as an action (shortcut for New note)", () => {
+    expect(isMenuActionItemId("add")).toBe(true);
+  });
+
+  it("classifies every page-style menu id as not an action", () => {
+    const pageIds: MenuItemId[] = ["home", "notes", "links", "tags", "tasks", "settings"];
+    for (const id of pageIds) {
+      expect(isMenuActionItemId(id)).toBe(false);
+    }
   });
 });

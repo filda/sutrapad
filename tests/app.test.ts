@@ -267,6 +267,16 @@ describe("active page location helpers", () => {
       ),
     ).toBe("notes");
   });
+
+  it("falls back to the default page for action-only menu ids like /add", () => {
+    // "add" is a menu action (shortcut for New note), not a navigable page,
+    // so a deep link to it must land on the default page instead of leaving
+    // the user on an empty placeholder.
+    expect(
+      readActivePageFromLocation("https://example.com/sutrapad/add", "/sutrapad/"),
+    ).toBe("notes");
+    expect(readActivePageFromLocation("https://example.com/add", "/")).toBe("notes");
+  });
 });
 
 describe("note detail location helpers", () => {

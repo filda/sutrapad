@@ -1,4 +1,9 @@
-import { DEFAULT_MENU_ITEM, isMenuItemId, type MenuItemId } from "./menu";
+import {
+  DEFAULT_MENU_ITEM,
+  isMenuActionItemId,
+  isMenuItemId,
+  type MenuItemId,
+} from "./menu";
 
 /**
  * Normalizes a Vite-style base (`"/"`, `"/sutrapad/"`, `"sutrapad"`, …) into a
@@ -53,7 +58,10 @@ export function readActivePageFromLocation(url: string, base: string): MenuItemI
   }
 
   const normalized = candidate.trim().toLowerCase();
-  return isMenuItemId(normalized) ? normalized : DEFAULT_MENU_ITEM;
+  if (!isMenuItemId(normalized)) return DEFAULT_MENU_ITEM;
+  // Action-only menu ids (e.g. "add") have no dedicated page — surface them as
+  // the default page so a deep link never lands on an empty placeholder view.
+  return isMenuActionItemId(normalized) ? DEFAULT_MENU_ITEM : normalized;
 }
 
 /**

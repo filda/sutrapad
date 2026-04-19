@@ -38,7 +38,7 @@ import { runWorkspaceSave, type SaveMode, type SyncState } from "./app/session/w
 import { loadLocalWorkspace, persistLocalWorkspace } from "./app/storage/local-workspace";
 import { renderAppPage } from "./app/view/render-app";
 import { buildNotesPanel } from "./app/view/pages/notes-page";
-import { type MenuItemId } from "./app/logic/menu";
+import { isMenuActionItemId, type MenuItemId } from "./app/logic/menu";
 import {
   readActivePageFromLocation,
   readNoteDetailIdFromLocation,
@@ -270,6 +270,23 @@ export function createApp(root: HTMLElement): void {
     }
   };
 
+  const handleNewNote = (): void => {
+    void (async () => {
+      syncState = "loading";
+      lastError = "";
+      render();
+
+      workspace = await createFreshWorkspaceNote(workspace);
+      persistLocalWorkspace(workspace);
+      // createNewNoteWorkspace sets the new note as activeNoteId; mirror
+      // that into the detail route so the user lands in the editor.
+      detailNoteId = workspace.activeNoteId ?? null;
+      activeMenuItem = "notes";
+      syncState = "idle";
+      render();
+    })();
+  };
+
   const refreshNotesPanel = (): void => {
     syncSelectedTagFilters();
     ensureVisibleActiveNote();
@@ -313,20 +330,7 @@ export function createApp(root: HTMLElement): void {
           syncTagFiltersToLocation();
           render();
         },
-        onNewNote: () => {
-          void (async () => {
-            syncState = "loading";
-            lastError = "";
-            render();
-
-            workspace = await createFreshWorkspaceNote(workspace);
-            persistLocalWorkspace(workspace);
-            detailNoteId = workspace.activeNoteId ?? null;
-            activeMenuItem = "notes";
-            syncState = "idle";
-            render();
-          })();
-        },
+        onNewNote: handleNewNote,
       }),
     );
   };
@@ -408,6 +412,13 @@ export function createApp(root: HTMLElement): void {
         render();
       },
       onSelectMenuItem: (id) => {
+        // Action-style menu items (e.g. "Add") do not have a page of their own
+        // — they run a side-effect and leave the user on the notes view, same
+        // as the "New note" button on the notebook list.
+        if (isMenuActionItemId(id)) {
+          handleNewNote();
+          return;
+        }
         // Selecting a top-level nav item always drops back to the list/page
         // view of that item, even if we were already on the same menu item's
         // detail route (e.g. clicking "Notes" from /notes/<id> goes to the list).
@@ -491,22 +502,7 @@ export function createApp(root: HTMLElement): void {
         syncTagFiltersToLocation();
         render();
       },
-      onNewNote: () => {
-        void (async () => {
-          syncState = "loading";
-          lastError = "";
-          render();
-
-          workspace = await createFreshWorkspaceNote(workspace);
-          persistLocalWorkspace(workspace);
-          // createNewNoteWorkspace sets the new note as activeNoteId; mirror
-          // that into the detail route so the user lands in the editor.
-          detailNoteId = workspace.activeNoteId ?? null;
-          activeMenuItem = "notes";
-          syncState = "idle";
-          render();
-        })();
-      },
+      onNewNote: handleNewNote,
       onRemoveSelectedFilter: (tag) => {
         selectedTagFilters = selectedTagFilters.filter((entry) => entry !== tag);
         ensureVisibleActiveNote();
