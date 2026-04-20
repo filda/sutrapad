@@ -54,6 +54,12 @@ import {
   writeNotesViewToLocation,
   type NotesViewMode,
 } from "./app/logic/notes-view";
+import {
+  applyThemeChoice,
+  persistThemeChoice,
+  resolveInitialThemeChoice,
+  type ThemeChoice,
+} from "./app/logic/theme";
 const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
@@ -76,6 +82,19 @@ export {
   writeNotesViewToLocation,
   type NotesViewMode,
 } from "./app/logic/notes-view";
+export {
+  applyThemeChoice,
+  DEFAULT_THEME_CHOICE,
+  isThemeChoice,
+  loadStoredThemeChoice,
+  persistThemeChoice,
+  resolveInitialThemeChoice,
+  resolveThemeId,
+  THEMES,
+  type ThemeChoice,
+  type ThemeDescriptor,
+  type ThemeId,
+} from "./app/logic/theme";
 export { restoreSessionOnStartup } from "./app/session/session";
 export { withAuthRetry } from "./app/session/auth-retry";
 export { runWorkspaceSave } from "./app/session/workspace-sync";
@@ -292,6 +311,8 @@ interface RenderCallbackOptions {
   setDetailNoteId: (detailNoteId: string | null) => void;
   getNotesViewMode: () => NotesViewMode;
   setNotesViewMode: (notesViewMode: NotesViewMode) => void;
+  getCurrentTheme: () => ThemeChoice;
+  setCurrentTheme: (theme: ThemeChoice) => void;
   handleNewNote: () => void;
   loadWorkspace: () => Promise<void>;
   saveWorkspace: () => Promise<void>;
@@ -340,6 +361,8 @@ function createRenderCallbacks({
   setDetailNoteId,
   getNotesViewMode,
   setNotesViewMode,
+  getCurrentTheme,
+  setCurrentTheme,
   handleNewNote,
   loadWorkspace,
   saveWorkspace,
@@ -355,6 +378,13 @@ function createRenderCallbacks({
       if (mode === getNotesViewMode()) return;
       setNotesViewMode(mode);
       persistNotesView(mode);
+      render();
+    },
+    onChangeTheme: (choice: ThemeChoice) => {
+      if (choice === getCurrentTheme()) return;
+      setCurrentTheme(choice);
+      persistThemeChoice(choice);
+      applyThemeChoice(choice);
       render();
     },
     onSelectMenuItem: (id: MenuItemId) => {
@@ -630,6 +660,23 @@ export function createApp(root: HTMLElement): void {
   // the sender's choice, otherwise fall back to the last mode the user picked
   // on this device, otherwise the default (cards).
   let notesViewMode: NotesViewMode = resolveInitialNotesView(window.location.href);
+  // Visual theme is explicitly device-local — no URL sync, no Drive sync. It
+  // was already applied on boot by `main.ts` to prevent a flash of the wrong
+  // palette; this keeps our in-memory copy in sync with what the document
+  // currently shows.
+  let currentTheme: ThemeChoice = resolveInitialThemeChoice();
+  // When the user picked "auto", the concrete palette depends on the OS
+  // light/dark preference. Subscribe once so a system switch during a live
+  // session re-applies the theme without a reload.
+  const darkSchemeMedia =
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-color-scheme: dark)")
+      : null;
+  darkSchemeMedia?.addEventListener?.("change", () => {
+    if (currentTheme === "auto") {
+      applyThemeChoice(currentTheme);
+    }
+  });
 
   const scheduleAutoSave = (): void => {
     if (!profile) return;
@@ -816,6 +863,10 @@ export function createApp(root: HTMLElement): void {
       setNotesViewMode: (nextNotesViewMode) => {
         notesViewMode = nextNotesViewMode;
       },
+      getCurrentTheme: () => currentTheme,
+      setCurrentTheme: (nextCurrentTheme) => {
+        currentTheme = nextCurrentTheme;
+      },
       handleNewNote,
       loadWorkspace,
       saveWorkspace: () => saveWorkspace(),
@@ -850,6 +901,7 @@ export function createApp(root: HTMLElement): void {
       activeMenuItem,
       detailNoteId,
       notesViewMode,
+      currentTheme,
       ...callbacks,
     });
   };

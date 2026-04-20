@@ -6,6 +6,13 @@ import {
   createUpdateCoordinator,
 } from "./app/session/sw-update";
 import { createUpdateNotification } from "./app/view/update-notification";
+import { applyThemeChoice, resolveInitialThemeChoice } from "./app/logic/theme";
+
+// Apply the stored theme before any markup renders. Doing it after createApp()
+// leaves a visible flash on cold loads where the default Sand palette paints
+// first and is then replaced — this runs synchronously against
+// <html> so the correct palette is used from the first paint.
+applyThemeChoice(resolveInitialThemeChoice());
 
 const root = document.querySelector<HTMLDivElement>("#app");
 

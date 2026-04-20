@@ -1,4 +1,5 @@
 import type { MenuItemId } from "../logic/menu";
+import type { ThemeChoice } from "../logic/theme";
 import type { UserProfile } from "../../types";
 import { buildTagIndex } from "../../lib/notebook";
 import { buildAppNav } from "./chrome/app-nav";
@@ -14,6 +15,7 @@ import {
   type NotesPanelOptions,
 } from "./pages/notes-page";
 import { buildPagePlaceholder } from "./pages/placeholder-page";
+import { buildSettingsPage } from "./pages/settings-page";
 
 // The editor-card builder needs the list of available tag suggestions, but
 // callers don't have to supply it — it's derived here from the workspace that
@@ -36,6 +38,11 @@ interface RenderAppOptions
    * through.
    */
   detailNoteId: string | null;
+  /**
+   * Currently selected theme choice (device-local). Rendered on the Settings
+   * page so the current selection is visible.
+   */
+  currentTheme: ThemeChoice;
   onSelectMenuItem: (id: MenuItemId) => void;
   onSignIn: () => void;
   onLoadNotebook: () => void;
@@ -44,6 +51,7 @@ interface RenderAppOptions
   onToggleBookmarkletHelper: () => void;
   onCopyBookmarklet: () => void;
   onToggleTask: (noteId: string, lineIndex: number) => void;
+  onChangeTheme: (choice: ThemeChoice) => void;
 }
 
 export function renderAppPage({
@@ -81,8 +89,10 @@ export function renderAppPage({
   onBackToNotes,
   activeMenuItem,
   detailNoteId,
+  currentTheme,
   onSelectMenuItem,
   onToggleTask,
+  onChangeTheme,
 }: RenderAppOptions): void {
   root.innerHTML = "";
 
@@ -176,6 +186,13 @@ export function renderAppPage({
           workspace,
           onOpenNote: openNoteInEditor,
           onToggleTask,
+        }),
+      );
+    } else if (activeMenuItem === "settings") {
+      page.append(
+        buildSettingsPage({
+          currentTheme,
+          onChangeTheme,
         }),
       );
     } else {
