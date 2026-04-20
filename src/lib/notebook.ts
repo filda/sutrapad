@@ -190,6 +190,30 @@ export function countTasksInNote(note: SutraPadDocument): { open: number; done: 
   return { open, done };
 }
 
+/**
+ * Comparator used to order the task index. Extracted from `buildTaskIndex`
+ * as an exported pure function so every branch (open/done, recency,
+ * noteId, lineIndex) can be unit-tested with crafted pairs; the integration
+ * path through `parseTasksFromNote` only ever produces lineIndex-ascending
+ * input so the tie-breakers are otherwise unobservable.
+ *
+ * Ordering, in order of precedence:
+ *   1. Open tasks before completed ones.
+ *   2. Most recently touched note first (by `noteUpdatedAt` descending).
+ *   3. Alphabetical by `noteId` to make ordering deterministic for ties.
+ *   4. Ascending `lineIndex` so tasks inside a note mirror the note body.
+ */
+export function compareTaskEntries(
+  left: SutraPadTaskEntry,
+  right: SutraPadTaskEntry,
+): number {
+  if (left.done !== right.done) return left.done ? 1 : -1;
+  const updatedAtDelta = right.noteUpdatedAt.localeCompare(left.noteUpdatedAt);
+  if (updatedAtDelta !== 0) return updatedAtDelta;
+  if (left.noteId !== right.noteId) return left.noteId.localeCompare(right.noteId);
+  return left.lineIndex - right.lineIndex;
+}
+
 export function buildTaskIndex(
   workspace: SutraPadWorkspace,
   savedAt = new Date().toISOString(),
@@ -199,21 +223,10 @@ export function buildTaskIndex(
     tasks.push(...parseTasksFromNote(note));
   }
 
-  // Primary sort: open tasks first, then completed.
-  // Secondary sort: most recently touched note first.
-  // Tertiary sort: stable by line order within a note.
-  const sorted = tasks.toSorted((left, right) => {
-    if (left.done !== right.done) return left.done ? 1 : -1;
-    const updatedAtDelta = right.noteUpdatedAt.localeCompare(left.noteUpdatedAt);
-    if (updatedAtDelta !== 0) return updatedAtDelta;
-    if (left.noteId !== right.noteId) return left.noteId.localeCompare(right.noteId);
-    return left.lineIndex - right.lineIndex;
-  });
-
   return {
     version: 1,
     savedAt,
-    tasks: sorted,
+    tasks: tasks.toSorted(compareTaskEntries),
   };
 }
 

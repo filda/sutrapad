@@ -1,6 +1,7 @@
 import { countTasksInNote } from "../../../lib/notebook";
 import { formatDate } from "../../logic/formatting";
 import type { NotesViewMode } from "../../logic/notes-view";
+import { describeTaskChip } from "../../logic/task-chip";
 import type { SutraPadDocument } from "../../../types";
 
 export function buildNotesList(
@@ -31,17 +32,13 @@ export function buildNotesList(
     button.addEventListener("click", () => onSelectNote(note.id));
 
     const excerpt = note.body.trim() || "Empty note";
-    const { open, done } = countTasksInNote(note);
-    const total = open + done;
-    // Only render the task chip when the note actually has tasks — keeps
-    // task-free notes visually clean. "All done" gets a check glyph and a
-    // muted variant so completed notebooks feel finished, not urgent.
+    // Branching/labelling lives in describeTaskChip so the UI stays purely
+    // presentational: pick the class, drop in text + aria-label, or omit.
+    const taskChip = describeTaskChip(countTasksInNote(note));
     const taskChipHtml =
-      total === 0
+      taskChip === null
         ? ""
-        : open === 0
-          ? `<span class="note-list-tasks is-all-done" aria-label="${total} task${total === 1 ? "" : "s"}, all completed">✓ ${done}/${total}</span>`
-          : `<span class="note-list-tasks" aria-label="${open} of ${total} task${total === 1 ? "" : "s"} open">☐ ${open}/${total}</span>`;
+        : `<span class="note-list-tasks${taskChip.tone === "all-done" ? " is-all-done" : ""}" aria-label="${taskChip.ariaLabel}">${taskChip.text}</span>`;
 
     button.innerHTML = `
       <strong>${note.title || "Untitled note"}</strong>
