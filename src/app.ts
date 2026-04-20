@@ -6,6 +6,7 @@ import {
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
+  DEFAULT_NOTE_TITLE,
   extractUrlsFromText,
   filterNotesByAllTags,
   mergeWorkspaces,
@@ -28,6 +29,7 @@ import type {
   UserProfile,
 } from "./types";
 import { generateFreshNoteDetails, collectNoteCaptureDetails } from "./app/capture/fresh-note";
+import { applyFreshNoteDetails } from "./app/capture/apply-fresh-note-details";
 import { resolveDisplayedNote } from "./app/logic/displayed-note";
 import { formatBuildStamp, formatDate } from "./app/logic/formatting";
 import { buildNoteMetadata } from "./app/logic/note-metadata";
@@ -76,23 +78,6 @@ export {
 export { restoreSessionOnStartup } from "./app/session/session";
 export { withAuthRetry } from "./app/session/auth-retry";
 export { runWorkspaceSave } from "./app/session/workspace-sync";
-
-async function createFreshWorkspaceNote(
-  workspace: SutraPadWorkspace,
-): Promise<SutraPadWorkspace> {
-  try {
-    const { title, location, coordinates, captureContext } = await generateFreshNoteDetails();
-    return createNewNoteWorkspace(
-      workspace,
-      title,
-      location,
-      coordinates,
-      captureContext,
-    );
-  } catch {
-    return createNewNoteWorkspace(workspace);
-  }
-}
 
 async function captureIncomingWorkspaceFromUrl(
   workspace: SutraPadWorkspace,
@@ -271,19 +256,64 @@ export function createApp(root: HTMLElement): void {
   };
 
   const handleNewNote = (): void => {
-    void (async () => {
-      syncState = "loading";
-      lastError = "";
-      render();
+    // Open a blank note immediately so the user can start typing. The old
+    // flow blocked on geolocation + reverse-geocoding before rendering the
+    // editor, which could take seconds on a cold connection. Here we create
+    // the note synchronously with the placeholder title and then let the
+    // "nice-to-have" metadata (geocoded title, coordinates, capture context)
+    // arrive in the background and be merged in — without overwriting any
+    // field the user has already edited.
+    workspace = createNewNoteWorkspace(workspace);
+    persistLocalWorkspace(workspace);
+    const newNoteId = workspace.activeNoteId;
+    detailNoteId = newNoteId ?? null;
+    activeMenuItem = "notes";
+    syncState = "idle";
+    lastError = "";
+    render();
+    if (!newNoteId) return;
 
-      workspace = await createFreshWorkspaceNote(workspace);
+    void (async () => {
+      let details: Awaited<ReturnType<typeof generateFreshNoteDetails>>;
+      try {
+        details = await generateFreshNoteDetails();
+      } catch {
+        // Resolving coordinates or reverse-geocoding failed. The user is
+        // already editing; there is nothing useful to surface — they keep
+        // the placeholder title and can edit as normal.
+        return;
+      }
+
+      // The workspace may have changed while we awaited — the user could
+      // have signed in and merged a remote workspace, deleted the note, or
+      // just edited its fields. Re-read the latest copy and back off if the
+      // note is gone or no auto field can be applied any more.
+      const currentNote = workspace.notes.find((note) => note.id === newNoteId);
+      if (!currentNote) return;
+      const patchedNote = applyFreshNoteDetails(currentNote, details);
+      if (patchedNote === currentNote) return;
+
+      workspace = upsertNote(workspace, newNoteId, () => patchedNote);
       persistLocalWorkspace(workspace);
-      // createNewNoteWorkspace sets the new note as activeNoteId; mirror
-      // that into the detail route so the user lands in the editor.
-      detailNoteId = workspace.activeNoteId ?? null;
-      activeMenuItem = "notes";
-      syncState = "idle";
-      render();
+      scheduleAutoSave();
+
+      // Surgically reflect the backfilled metadata in the editor without
+      // rebuilding it — a full render() would steal focus if the user has
+      // already started typing. The sidebar is rebuilt separately (safe:
+      // it does not hold focus) so the note title updates in the list too.
+      if (detailNoteId === newNoteId) {
+        const titleInput = root.querySelector<HTMLInputElement>(".title-input");
+        if (
+          titleInput &&
+          titleInput.value === DEFAULT_NOTE_TITLE &&
+          document.activeElement !== titleInput
+        ) {
+          titleInput.value = patchedNote.title;
+        }
+        const metadataEl = root.querySelector(".note-metadata");
+        if (metadataEl) metadataEl.textContent = buildNoteMetadata(patchedNote);
+      }
+      refreshNotesPanel();
     })();
   };
 

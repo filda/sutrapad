@@ -1,6 +1,6 @@
 import type { SutraPadDocument, SutraPadLinkIndex, SutraPadTagIndex, SutraPadWorkspace } from "../types";
 
-const DEFAULT_NOTE_TITLE = "Untitled note";
+export const DEFAULT_NOTE_TITLE = "Untitled note";
 
 export function createNote(
   title = "Untitled note",
