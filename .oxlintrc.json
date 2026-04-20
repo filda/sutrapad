@@ -21,13 +21,13 @@
     "no-debugger": "error",
     "eqeqeq": ["error", "always", { "null": "ignore" }],
     "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
-    "complexity": ["warn", { "max": 25, "variant": "classic" }],
-    "max-depth": ["warn", { "max": 5 }],
+    "complexity": ["warn", { "max": 22, "variant": "classic" }],
+    "max-depth": ["warn", { "max": 4 }],
     "max-lines-per-function": [
       "warn",
-      { "max": 500, "skipBlankLines": true, "skipComments": true }
+      { "max": 350, "skipBlankLines": true, "skipComments": true }
     ],
-    "max-nested-callbacks": ["warn", { "max": 4 }],
+    "max-nested-callbacks": ["warn", { "max": 3 }],
     "max-params": ["warn", { "max": 5 }],
     "typescript/no-explicit-any": "warn",
     "typescript/no-non-null-assertion": "warn",

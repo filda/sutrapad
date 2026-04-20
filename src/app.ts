@@ -126,6 +126,456 @@ async function captureIncomingWorkspaceFromUrl(
   });
 }
 
+function getCurrentWorkspaceNote(workspace: SutraPadWorkspace): SutraPadDocument {
+  const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
+  return note ?? workspace.notes[0];
+}
+
+function syncTagFiltersToLocation(selectedTagFilters: string[]): void {
+  const nextUrl = writeTagFiltersToLocation(window.location.href, selectedTagFilters);
+  if (nextUrl !== window.location.href) {
+    window.history.replaceState({}, "", nextUrl);
+  }
+}
+
+function syncActivePageToLocation(
+  activeMenuItem: MenuItemId,
+  detailNoteId: string | null,
+  appBasePath: string,
+): void {
+  const nextUrl =
+    activeMenuItem === "notes" && detailNoteId !== null
+      ? writeNoteDetailIdToLocation(window.location.href, detailNoteId, appBasePath)
+      : writeActivePageToLocation(window.location.href, activeMenuItem, appBasePath);
+  if (nextUrl !== window.location.href) {
+    window.history.replaceState({}, "", nextUrl);
+  }
+}
+
+function syncNotesViewToLocation(
+  activeMenuItem: MenuItemId,
+  detailNoteId: string | null,
+  notesViewMode: NotesViewMode,
+): void {
+  const shouldExpose = activeMenuItem === "notes" && detailNoteId === null;
+  if (!shouldExpose) {
+    const stripped = new URL(window.location.href);
+    if (stripped.searchParams.has("view")) {
+      stripped.searchParams.delete("view");
+      window.history.replaceState({}, "", stripped.toString());
+    }
+    return;
+  }
+
+  const nextUrl = writeNotesViewToLocation(window.location.href, notesViewMode);
+  if (nextUrl !== window.location.href) {
+    window.history.replaceState({}, "", nextUrl);
+  }
+}
+
+function syncDetailRouteSelection(
+  activeMenuItem: MenuItemId,
+  detailNoteId: string | null,
+  workspace: SutraPadWorkspace,
+): {
+  detailNoteId: string | null;
+  workspace: SutraPadWorkspace;
+  shouldPersistWorkspace: boolean;
+} {
+  if (detailNoteId === null) {
+    return { detailNoteId, workspace, shouldPersistWorkspace: false };
+  }
+  if (activeMenuItem !== "notes") {
+    return { detailNoteId: null, workspace, shouldPersistWorkspace: false };
+  }
+  if (!workspace.notes.some((note) => note.id === detailNoteId)) {
+    return { detailNoteId: null, workspace, shouldPersistWorkspace: false };
+  }
+  if (workspace.activeNoteId === detailNoteId) {
+    return { detailNoteId, workspace, shouldPersistWorkspace: false };
+  }
+
+  return {
+    detailNoteId,
+    workspace: {
+      ...workspace,
+      activeNoteId: detailNoteId,
+    },
+    shouldPersistWorkspace: true,
+  };
+}
+
+function ensureVisibleActiveNoteSelection(
+  workspace: SutraPadWorkspace,
+  selectedTagFilters: string[],
+): {
+  workspace: SutraPadWorkspace;
+  shouldPersistWorkspace: boolean;
+} {
+  const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
+  if (
+    filteredNotes.length === 0 ||
+    !workspace.activeNoteId ||
+    filteredNotes.some((note) => note.id === workspace.activeNoteId)
+  ) {
+    return { workspace, shouldPersistWorkspace: false };
+  }
+
+  return {
+    workspace: {
+      ...workspace,
+      activeNoteId: filteredNotes[0].id,
+    },
+    shouldPersistWorkspace: true,
+  };
+}
+
+function getAppStatusText({
+  syncState,
+  lastError,
+  workspace,
+  selectedTagFilters,
+  profile,
+}: {
+  syncState: SyncState;
+  lastError: string;
+  workspace: SutraPadWorkspace;
+  selectedTagFilters: string[];
+  profile: UserProfile | null;
+}): string {
+  if (syncState === "loading") return "Loading…";
+  if (syncState === "saving") return "Saving…";
+  if (syncState === "error") return lastError || "A synchronization error occurred.";
+
+  const displayedNote = resolveDisplayedNote(workspace, selectedTagFilters);
+  if (!displayedNote && selectedTagFilters.length > 0) {
+    return "No notes match all selected tags.";
+  }
+
+  const note = displayedNote ?? getCurrentWorkspaceNote(workspace);
+  return profile
+    ? `Notebook synced from Drive. Last change: ${formatDate(note.updatedAt)}`
+    : `Editing local notebook. Last change: ${formatDate(note.updatedAt)}`;
+}
+
+interface NewNoteHandlerOptions {
+  root: HTMLElement;
+  getWorkspace: () => SutraPadWorkspace;
+  setWorkspace: (workspace: SutraPadWorkspace) => void;
+  getDetailNoteId: () => string | null;
+  setDetailNoteId: (detailNoteId: string | null) => void;
+  setActiveMenuItem: (menuItemId: MenuItemId) => void;
+  setSyncState: (syncState: SyncState) => void;
+  setLastError: (lastError: string) => void;
+  persistWorkspace: (workspace: SutraPadWorkspace) => void;
+  scheduleAutoSave: () => void;
+  render: () => void;
+  refreshNotesPanel: () => void;
+}
+
+interface RenderCallbackOptions {
+  auth: GoogleAuthService;
+  appRootUrl: string;
+  setProfile: (profile: UserProfile | null) => void;
+  getWorkspace: () => SutraPadWorkspace;
+  setWorkspace: (workspace: SutraPadWorkspace) => void;
+  setSyncState: (syncState: SyncState) => void;
+  setLastError: (lastError: string) => void;
+  getBookmarkletHelperExpanded: () => boolean;
+  setBookmarkletHelperExpanded: (expanded: boolean) => void;
+  setBookmarkletMessage: (message: string) => void;
+  getSelectedTagFilters: () => string[];
+  setSelectedTagFilters: (selectedTagFilters: string[]) => void;
+  getActiveMenuItem: () => MenuItemId;
+  setActiveMenuItem: (menuItemId: MenuItemId) => void;
+  getDetailNoteId: () => string | null;
+  setDetailNoteId: (detailNoteId: string | null) => void;
+  getNotesViewMode: () => NotesViewMode;
+  setNotesViewMode: (notesViewMode: NotesViewMode) => void;
+  handleNewNote: () => void;
+  loadWorkspace: () => Promise<void>;
+  saveWorkspace: () => Promise<void>;
+  restoreWorkspaceAfterSignIn: () => Promise<void>;
+  replaceCurrentNote: (updater: (note: SutraPadDocument) => SutraPadDocument) => void;
+  persistWorkspace: (workspace: SutraPadWorkspace) => void;
+  scheduleAutoSave: () => void;
+  render: () => void;
+  refreshNotesPanel: () => void;
+}
+
+function toggleSelectedTagFilter(selectedTagFilters: string[], tag: string): string[] {
+  return selectedTagFilters.includes(tag)
+    ? selectedTagFilters.filter((entry) => entry !== tag)
+    : [...selectedTagFilters, tag];
+}
+
+function applyVisibleActiveNoteSelection(
+  workspace: SutraPadWorkspace,
+  selectedTagFilters: string[],
+  persistWorkspace: (workspace: SutraPadWorkspace) => void,
+): SutraPadWorkspace {
+  const visibleActiveNote = ensureVisibleActiveNoteSelection(workspace, selectedTagFilters);
+  if (visibleActiveNote.shouldPersistWorkspace) {
+    persistWorkspace(visibleActiveNote.workspace);
+  }
+  return visibleActiveNote.workspace;
+}
+
+function createRenderCallbacks({
+  auth,
+  appRootUrl,
+  setProfile,
+  getWorkspace,
+  setWorkspace,
+  setSyncState,
+  setLastError,
+  getBookmarkletHelperExpanded,
+  setBookmarkletHelperExpanded,
+  setBookmarkletMessage,
+  getSelectedTagFilters,
+  setSelectedTagFilters,
+  getActiveMenuItem,
+  setActiveMenuItem,
+  getDetailNoteId,
+  setDetailNoteId,
+  getNotesViewMode,
+  setNotesViewMode,
+  handleNewNote,
+  loadWorkspace,
+  saveWorkspace,
+  restoreWorkspaceAfterSignIn,
+  replaceCurrentNote,
+  persistWorkspace,
+  scheduleAutoSave,
+  render,
+  refreshNotesPanel,
+}: RenderCallbackOptions) {
+  return {
+    onChangeNotesView: (mode: NotesViewMode) => {
+      if (mode === getNotesViewMode()) return;
+      setNotesViewMode(mode);
+      persistNotesView(mode);
+      render();
+    },
+    onSelectMenuItem: (id: MenuItemId) => {
+      if (isMenuActionItemId(id)) {
+        handleNewNote();
+        return;
+      }
+      if (getActiveMenuItem() === id && getDetailNoteId() === null) return;
+      setActiveMenuItem(id);
+      setDetailNoteId(null);
+      render();
+    },
+    onSignIn: () => {
+      void (async () => {
+        try {
+          setSyncState("loading");
+          setLastError("");
+          render();
+          setProfile(await auth.signIn());
+          await restoreWorkspaceAfterSignIn();
+        } catch (error) {
+          setSyncState("error");
+          setLastError(error instanceof Error ? error.message : "Sign-in failed.");
+          render();
+        }
+      })();
+    },
+    onLoadNotebook: () => void loadWorkspace(),
+    onSaveNotebook: () => void saveWorkspace(),
+    onSignOut: () => {
+      auth.signOut();
+      setProfile(null);
+      setSyncState("idle");
+      setLastError("");
+      render();
+    },
+    onToggleBookmarkletHelper: () => {
+      const nextExpanded = !getBookmarkletHelperExpanded();
+      setBookmarkletHelperExpanded(nextExpanded);
+      window.localStorage.setItem(
+        BOOKMARKLET_HELPER_KEY,
+        nextExpanded ? "expanded" : "collapsed",
+      );
+      render();
+    },
+    onCopyBookmarklet: () => {
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(buildBookmarklet(appRootUrl));
+          setBookmarkletMessage(
+            "Bookmarklet copied. In Safari, create any bookmark, edit it, and paste this code into its URL field.",
+          );
+        } catch {
+          setBookmarkletMessage(
+            "Copy failed. In Safari, you can still drag the bookmarklet or manually copy the link target.",
+          );
+        }
+        render();
+      })();
+    },
+    onSelectNote: (noteId: string) => {
+      setActiveMenuItem("notes");
+      setDetailNoteId(noteId);
+      const workspace = {
+        ...getWorkspace(),
+        activeNoteId: noteId,
+      };
+      setWorkspace(workspace);
+      persistWorkspace(workspace);
+      render();
+    },
+    onBackToNotes: () => {
+      setDetailNoteId(null);
+      render();
+    },
+    onToggleTagFilter: (tag: string) => {
+      const nextSelectedTagFilters = toggleSelectedTagFilter(getSelectedTagFilters(), tag);
+      setSelectedTagFilters(nextSelectedTagFilters);
+      setWorkspace(
+        applyVisibleActiveNoteSelection(getWorkspace(), nextSelectedTagFilters, persistWorkspace),
+      );
+      syncTagFiltersToLocation(nextSelectedTagFilters);
+      render();
+    },
+    onClearTagFilters: () => {
+      setSelectedTagFilters([]);
+      syncTagFiltersToLocation([]);
+      render();
+    },
+    onNewNote: handleNewNote,
+    onRemoveSelectedFilter: (tag: string) => {
+      const nextSelectedTagFilters = getSelectedTagFilters().filter((entry) => entry !== tag);
+      setSelectedTagFilters(nextSelectedTagFilters);
+      setWorkspace(
+        applyVisibleActiveNoteSelection(getWorkspace(), nextSelectedTagFilters, persistWorkspace),
+      );
+      syncTagFiltersToLocation(nextSelectedTagFilters);
+      render();
+    },
+    onTitleInput: (value: string) => {
+      replaceCurrentNote((currentWorkspaceNote) => ({
+        ...currentWorkspaceNote,
+        title: value,
+        updatedAt: new Date().toISOString(),
+      }));
+      setSyncState("idle");
+      refreshNotesPanel();
+    },
+    onBodyInput: (value: string) => {
+      replaceCurrentNote((currentWorkspaceNote) => ({
+        ...currentWorkspaceNote,
+        body: value,
+        urls: extractUrlsFromText(value),
+        updatedAt: new Date().toISOString(),
+      }));
+      refreshNotesPanel();
+    },
+    onToggleTask: (noteId: string, lineIndex: number) => {
+      const workspace = getWorkspace();
+      const targetNote = workspace.notes.find((entry) => entry.id === noteId);
+      if (!targetNote) return;
+
+      const nextBody = toggleTaskInBody(targetNote.body, lineIndex);
+      if (nextBody === targetNote.body) return;
+
+      const previousActiveNoteId = workspace.activeNoteId;
+      const updatedWorkspace = upsertNote(workspace, noteId, (note) => ({
+        ...note,
+        body: nextBody,
+        urls: extractUrlsFromText(nextBody),
+        updatedAt: new Date().toISOString(),
+      }));
+      setWorkspace({ ...updatedWorkspace, activeNoteId: previousActiveNoteId });
+      persistWorkspace(getWorkspace());
+      scheduleAutoSave();
+      render();
+    },
+    onAddTag: (value: string) => {
+      const tag = value.trim().toLowerCase();
+      if (!tag || getCurrentWorkspaceNote(getWorkspace()).tags.includes(tag)) return;
+      replaceCurrentNote((currentWorkspaceNote) => ({
+        ...currentWorkspaceNote,
+        tags: [...currentWorkspaceNote.tags, tag],
+        updatedAt: new Date().toISOString(),
+      }));
+      setSyncState("idle");
+      render();
+    },
+    onRemoveTag: (tag: string) => {
+      if (!tag) return;
+      replaceCurrentNote((currentWorkspaceNote) => ({
+        ...currentWorkspaceNote,
+        tags: currentWorkspaceNote.tags.filter((entry) => entry !== tag),
+        updatedAt: new Date().toISOString(),
+      }));
+      setSyncState("idle");
+      render();
+    },
+  };
+}
+
+function handleNewNoteCreation({
+  root,
+  getWorkspace,
+  setWorkspace,
+  getDetailNoteId,
+  setDetailNoteId,
+  setActiveMenuItem,
+  setSyncState,
+  setLastError,
+  persistWorkspace,
+  scheduleAutoSave,
+  render,
+  refreshNotesPanel,
+}: NewNoteHandlerOptions): void {
+  const nextWorkspace = createNewNoteWorkspace(getWorkspace());
+  persistWorkspace(nextWorkspace);
+  setWorkspace(nextWorkspace);
+  const newNoteId = nextWorkspace.activeNoteId;
+  setDetailNoteId(newNoteId ?? null);
+  setActiveMenuItem("notes");
+  setSyncState("idle");
+  setLastError("");
+  render();
+  if (!newNoteId) return;
+
+  void (async () => {
+    let details: Awaited<ReturnType<typeof generateFreshNoteDetails>>;
+    try {
+      details = await generateFreshNoteDetails();
+    } catch {
+      return;
+    }
+
+    const latestWorkspace = getWorkspace();
+    const currentNote = latestWorkspace.notes.find((note) => note.id === newNoteId);
+    if (!currentNote) return;
+    const patchedNote = applyFreshNoteDetails(currentNote, details);
+    if (patchedNote === currentNote) return;
+
+    const patchedWorkspace = upsertNote(latestWorkspace, newNoteId, () => patchedNote);
+    setWorkspace(patchedWorkspace);
+    persistWorkspace(patchedWorkspace);
+    scheduleAutoSave();
+
+    if (getDetailNoteId() === newNoteId) {
+      const titleInput = root.querySelector<HTMLInputElement>(".title-input");
+      if (
+        titleInput &&
+        titleInput.value === DEFAULT_NOTE_TITLE &&
+        document.activeElement !== titleInput
+      ) {
+        titleInput.value = patchedNote.title;
+      }
+      const metadataEl = root.querySelector(".note-metadata");
+      if (metadataEl) metadataEl.textContent = buildNoteMetadata(patchedNote);
+    }
+    refreshNotesPanel();
+  })();
+}
+
 export function createApp(root: HTMLElement): void {
   const auth = new GoogleAuthService();
   const iosShortcutUrl = "https://www.icloud.com/shortcuts/969e1b627e4a46deae3c690ef0c9ca84";
@@ -158,11 +608,6 @@ export function createApp(root: HTMLElement): void {
   // on this device, otherwise the default (cards).
   let notesViewMode: NotesViewMode = resolveInitialNotesView(window.location.href);
 
-  const getCurrentNote = (): SutraPadDocument => {
-    const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
-    return note ?? workspace.notes[0];
-  };
-
   const scheduleAutoSave = (): void => {
     if (!profile) return;
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
@@ -173,7 +618,7 @@ export function createApp(root: HTMLElement): void {
   };
 
   const replaceCurrentNote = (updater: (note: SutraPadDocument) => SutraPadDocument): void => {
-    const current = getCurrentNote();
+    const current = getCurrentWorkspaceNote(workspace);
     workspace = upsertNote(workspace, current.id, updater);
 
     persistLocalWorkspace(workspace);
@@ -185,142 +630,39 @@ export function createApp(root: HTMLElement): void {
     selectedTagFilters = selectedTagFilters.filter((tag) => availableTags.has(tag));
   };
 
-  const syncTagFiltersToLocation = (): void => {
-    const nextUrl = writeTagFiltersToLocation(window.location.href, selectedTagFilters);
-    if (nextUrl !== window.location.href) {
-      window.history.replaceState({}, "", nextUrl);
-    }
-  };
-
-  const syncActivePageToLocation = (): void => {
-    const nextUrl =
-      activeMenuItem === "notes" && detailNoteId !== null
-        ? writeNoteDetailIdToLocation(window.location.href, detailNoteId, appBasePath)
-        : writeActivePageToLocation(window.location.href, activeMenuItem, appBasePath);
-    if (nextUrl !== window.location.href) {
-      window.history.replaceState({}, "", nextUrl);
-    }
-  };
-
-  const syncNotesViewToLocation = (): void => {
-    // Only the notes list cares about ?view — keep tags/links/home URLs clean
-    // by stripping the param when we navigate away from the notes list.
-    const shouldExpose = activeMenuItem === "notes" && detailNoteId === null;
-    if (!shouldExpose) {
-      const stripped = new URL(window.location.href);
-      if (stripped.searchParams.has("view")) {
-        stripped.searchParams.delete("view");
-        window.history.replaceState({}, "", stripped.toString());
-      }
-      return;
-    }
-    const nextUrl = writeNotesViewToLocation(window.location.href, notesViewMode);
-    if (nextUrl !== window.location.href) {
-      window.history.replaceState({}, "", nextUrl);
-    }
-  };
-
-  const syncDetailNoteId = (): void => {
-    if (detailNoteId === null) return;
-    if (activeMenuItem !== "notes") {
-      detailNoteId = null;
-      return;
-    }
-    if (!workspace.notes.some((note) => note.id === detailNoteId)) {
-      detailNoteId = null;
-      return;
-    }
-    // Keep workspace.activeNoteId in sync with the route so the input handlers
-    // mutate the note the user is looking at (including a fresh deep-link load).
-    if (workspace.activeNoteId !== detailNoteId) {
-      workspace = {
-        ...workspace,
-        activeNoteId: detailNoteId,
-      };
-      persistLocalWorkspace(workspace);
-    }
-  };
-
-  const ensureVisibleActiveNote = (): void => {
-    const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
-    if (
-      filteredNotes.length > 0 &&
-      workspace.activeNoteId &&
-      !filteredNotes.some((note) => note.id === workspace.activeNoteId)
-    ) {
-      workspace = {
-        ...workspace,
-        activeNoteId: filteredNotes[0].id,
-      };
-      persistLocalWorkspace(workspace);
-    }
-  };
-
-  const handleNewNote = (): void => {
-    // Open a blank note immediately so the user can start typing. The old
-    // flow blocked on geolocation + reverse-geocoding before rendering the
-    // editor, which could take seconds on a cold connection. Here we create
-    // the note synchronously with the placeholder title and then let the
-    // "nice-to-have" metadata (geocoded title, coordinates, capture context)
-    // arrive in the background and be merged in — without overwriting any
-    // field the user has already edited.
-    workspace = createNewNoteWorkspace(workspace);
-    persistLocalWorkspace(workspace);
-    const newNoteId = workspace.activeNoteId;
-    detailNoteId = newNoteId ?? null;
-    activeMenuItem = "notes";
-    syncState = "idle";
-    lastError = "";
-    render();
-    if (!newNoteId) return;
-
-    void (async () => {
-      let details: Awaited<ReturnType<typeof generateFreshNoteDetails>>;
-      try {
-        details = await generateFreshNoteDetails();
-      } catch {
-        // Resolving coordinates or reverse-geocoding failed. The user is
-        // already editing; there is nothing useful to surface — they keep
-        // the placeholder title and can edit as normal.
-        return;
-      }
-
-      // The workspace may have changed while we awaited — the user could
-      // have signed in and merged a remote workspace, deleted the note, or
-      // just edited its fields. Re-read the latest copy and back off if the
-      // note is gone or no auto field can be applied any more.
-      const currentNote = workspace.notes.find((note) => note.id === newNoteId);
-      if (!currentNote) return;
-      const patchedNote = applyFreshNoteDetails(currentNote, details);
-      if (patchedNote === currentNote) return;
-
-      workspace = upsertNote(workspace, newNoteId, () => patchedNote);
-      persistLocalWorkspace(workspace);
-      scheduleAutoSave();
-
-      // Surgically reflect the backfilled metadata in the editor without
-      // rebuilding it — a full render() would steal focus if the user has
-      // already started typing. The sidebar is rebuilt separately (safe:
-      // it does not hold focus) so the note title updates in the list too.
-      if (detailNoteId === newNoteId) {
-        const titleInput = root.querySelector<HTMLInputElement>(".title-input");
-        if (
-          titleInput &&
-          titleInput.value === DEFAULT_NOTE_TITLE &&
-          document.activeElement !== titleInput
-        ) {
-          titleInput.value = patchedNote.title;
-        }
-        const metadataEl = root.querySelector(".note-metadata");
-        if (metadataEl) metadataEl.textContent = buildNoteMetadata(patchedNote);
-      }
-      refreshNotesPanel();
-    })();
-  };
+  const handleNewNote = (): void =>
+    handleNewNoteCreation({
+      root,
+      getWorkspace: () => workspace,
+      setWorkspace: (nextWorkspace) => {
+        workspace = nextWorkspace;
+      },
+      getDetailNoteId: () => detailNoteId,
+      setDetailNoteId: (nextDetailNoteId) => {
+        detailNoteId = nextDetailNoteId;
+      },
+      setActiveMenuItem: (nextActiveMenuItem) => {
+        activeMenuItem = nextActiveMenuItem;
+      },
+      setSyncState: (nextSyncState) => {
+        syncState = nextSyncState;
+      },
+      setLastError: (nextLastError) => {
+        lastError = nextLastError;
+      },
+      persistWorkspace: persistLocalWorkspace,
+      scheduleAutoSave,
+      render,
+      refreshNotesPanel,
+    });
 
   const refreshNotesPanel = (): void => {
     syncSelectedTagFilters();
-    ensureVisibleActiveNote();
+    const visibleActiveNote = ensureVisibleActiveNoteSelection(workspace, selectedTagFilters);
+    workspace = visibleActiveNote.workspace;
+    if (visibleActiveNote.shouldPersistWorkspace) {
+      persistLocalWorkspace(workspace);
+    }
     const currentPanel = root.querySelector(".notes-panel");
     if (!currentPanel) {
       return;
@@ -352,38 +694,23 @@ export function createApp(root: HTMLElement): void {
           selectedTagFilters = selectedTagFilters.includes(tag)
             ? selectedTagFilters.filter((entry) => entry !== tag)
             : [...selectedTagFilters, tag];
-          ensureVisibleActiveNote();
-          syncTagFiltersToLocation();
+          const nextVisibleNote = ensureVisibleActiveNoteSelection(workspace, selectedTagFilters);
+          workspace = nextVisibleNote.workspace;
+          if (nextVisibleNote.shouldPersistWorkspace) {
+            persistLocalWorkspace(workspace);
+          }
+          syncTagFiltersToLocation(selectedTagFilters);
           render();
         },
         onClearTagFilters: () => {
           selectedTagFilters = [];
-          syncTagFiltersToLocation();
+          syncTagFiltersToLocation(selectedTagFilters);
           render();
         },
         onNewNote: handleNewNote,
       }),
     );
   };
-
-  const getStatusText = (): string =>
-    syncState === "loading"
-      ? "Loading…"
-      : syncState === "saving"
-        ? "Saving…"
-        : syncState === "error"
-          ? lastError || "A synchronization error occurred."
-          : (() => {
-              const displayedNote = resolveDisplayedNote(workspace, selectedTagFilters);
-              if (!displayedNote && selectedTagFilters.length > 0) {
-                return "No notes match all selected tags.";
-              }
-
-              const note = displayedNote ?? getCurrentNote();
-              return profile
-                ? `Notebook synced from Drive. Last change: ${formatDate(note.updatedAt)}`
-                : `Editing local notebook. Last change: ${formatDate(note.updatedAt)}`;
-            })();
 
   const refreshStatus = (): void => {
     const status = root.querySelector(".status");
@@ -392,32 +719,90 @@ export function createApp(root: HTMLElement): void {
     }
 
     status.className = `status status-${syncState}`;
-    status.textContent = getStatusText();
+    status.textContent = getAppStatusText({
+      syncState,
+      lastError,
+      workspace,
+      selectedTagFilters,
+      profile,
+    });
   };
 
   const render = (): void => {
     syncSelectedTagFilters();
-    syncDetailNoteId();
-    // Only re-point activeNoteId when we're on the list route. On the detail
-    // route the URL pins which note is being edited, so we must not let the
-    // tag filter shift activeNoteId away from the note the user is looking at.
-    if (detailNoteId === null) {
-      ensureVisibleActiveNote();
+    const detailRoute = syncDetailRouteSelection(activeMenuItem, detailNoteId, workspace);
+    detailNoteId = detailRoute.detailNoteId;
+    workspace = detailRoute.workspace;
+    if (detailRoute.shouldPersistWorkspace) {
+      persistLocalWorkspace(workspace);
     }
-    syncTagFiltersToLocation();
-    syncActivePageToLocation();
-    syncNotesViewToLocation();
+    if (detailNoteId === null) {
+      const visibleActiveNote = ensureVisibleActiveNoteSelection(workspace, selectedTagFilters);
+      workspace = visibleActiveNote.workspace;
+      if (visibleActiveNote.shouldPersistWorkspace) {
+        persistLocalWorkspace(workspace);
+      }
+    }
+    syncTagFiltersToLocation(selectedTagFilters);
+    syncActivePageToLocation(activeMenuItem, detailNoteId, appBasePath);
+    syncNotesViewToLocation(activeMenuItem, detailNoteId, notesViewMode);
 
-    const currentNote = getCurrentNote();
-    // On the detail route we deliberately ignore the tag filter — the URL is
-    // authoritative about which note is being edited. On the list route the
-    // filter drives which note's metadata feeds the (hidden) editor.
+    const currentNote = getCurrentWorkspaceNote(workspace);
     const detailNote =
       detailNoteId !== null
         ? (workspace.notes.find((note) => note.id === detailNoteId) ?? null)
         : null;
     const displayedNote =
       detailNote ?? resolveDisplayedNote(workspace, selectedTagFilters);
+    const callbacks = createRenderCallbacks({
+      auth,
+      appRootUrl,
+      setProfile: (nextProfile) => {
+        profile = nextProfile;
+      },
+      getWorkspace: () => workspace,
+      setWorkspace: (nextWorkspace) => {
+        workspace = nextWorkspace;
+      },
+      setSyncState: (nextSyncState) => {
+        syncState = nextSyncState;
+      },
+      setLastError: (nextLastError) => {
+        lastError = nextLastError;
+      },
+      getBookmarkletHelperExpanded: () => bookmarkletHelperExpanded,
+      setBookmarkletHelperExpanded: (expanded) => {
+        bookmarkletHelperExpanded = expanded;
+      },
+      setBookmarkletMessage: (message) => {
+        bookmarkletMessage = message;
+      },
+      getSelectedTagFilters: () => selectedTagFilters,
+      setSelectedTagFilters: (nextSelectedTagFilters) => {
+        selectedTagFilters = nextSelectedTagFilters;
+      },
+      getActiveMenuItem: () => activeMenuItem,
+      setActiveMenuItem: (nextActiveMenuItem) => {
+        activeMenuItem = nextActiveMenuItem;
+      },
+      getDetailNoteId: () => detailNoteId,
+      setDetailNoteId: (nextDetailNoteId) => {
+        detailNoteId = nextDetailNoteId;
+      },
+      getNotesViewMode: () => notesViewMode,
+      setNotesViewMode: (nextNotesViewMode) => {
+        notesViewMode = nextNotesViewMode;
+      },
+      handleNewNote,
+      loadWorkspace,
+      saveWorkspace: () => saveWorkspace(),
+      restoreWorkspaceAfterSignIn,
+      replaceCurrentNote,
+      persistWorkspace: persistLocalWorkspace,
+      scheduleAutoSave,
+      render,
+      refreshNotesPanel,
+    });
     renderAppPage({
       root,
       workspace,
@@ -426,7 +811,13 @@ export function createApp(root: HTMLElement): void {
       note: displayedNote,
       currentNote: detailNote ?? currentNote,
       syncState,
-      statusText: getStatusText(),
+      statusText: getAppStatusText({
+        syncState,
+        lastError,
+        workspace,
+        selectedTagFilters,
+        profile,
+      }),
       profile,
       appRootUrl,
       bookmarkletHelperExpanded,
@@ -436,175 +827,7 @@ export function createApp(root: HTMLElement): void {
       activeMenuItem,
       detailNoteId,
       notesViewMode,
-      onChangeNotesView: (mode) => {
-        if (mode === notesViewMode) return;
-        notesViewMode = mode;
-        persistNotesView(mode);
-        render();
-      },
-      onSelectMenuItem: (id) => {
-        // Action-style menu items (e.g. "Add") do not have a page of their own
-        // — they run a side-effect and leave the user on the notes view, same
-        // as the "New note" button on the notebook list.
-        if (isMenuActionItemId(id)) {
-          handleNewNote();
-          return;
-        }
-        // Selecting a top-level nav item always drops back to the list/page
-        // view of that item, even if we were already on the same menu item's
-        // detail route (e.g. clicking "Notes" from /notes/<id> goes to the list).
-        if (activeMenuItem === id && detailNoteId === null) return;
-        activeMenuItem = id;
-        detailNoteId = null;
-        render();
-      },
-      onSignIn: () => {
-        void (async () => {
-          try {
-            syncState = "loading";
-            lastError = "";
-            render();
-            profile = await auth.signIn();
-            await restoreWorkspaceAfterSignIn();
-          } catch (error) {
-            syncState = "error";
-            lastError = error instanceof Error ? error.message : "Sign-in failed.";
-            render();
-          }
-        })();
-      },
-      onLoadNotebook: () => void loadWorkspace(),
-      onSaveNotebook: () => void saveWorkspace(),
-      onSignOut: () => {
-        auth.signOut();
-        profile = null;
-        syncState = "idle";
-        lastError = "";
-        render();
-      },
-      onToggleBookmarkletHelper: () => {
-        bookmarkletHelperExpanded = !bookmarkletHelperExpanded;
-        window.localStorage.setItem(
-          BOOKMARKLET_HELPER_KEY,
-          bookmarkletHelperExpanded ? "expanded" : "collapsed",
-        );
-        render();
-      },
-      onCopyBookmarklet: () => {
-        void (async () => {
-          try {
-            await navigator.clipboard.writeText(buildBookmarklet(appRootUrl));
-            bookmarkletMessage =
-              "Bookmarklet copied. In Safari, create any bookmark, edit it, and paste this code into its URL field.";
-          } catch {
-            bookmarkletMessage =
-              "Copy failed. In Safari, you can still drag the bookmarklet or manually copy the link target.";
-          }
-          render();
-        })();
-      },
-      onSelectNote: (noteId) => {
-        // Selecting a note from anywhere — list, tags page, links page — now
-        // opens the detail route. The list/detail views are mutually exclusive
-        // so we always land on the editor for the chosen note.
-        activeMenuItem = "notes";
-        detailNoteId = noteId;
-        workspace = {
-          ...workspace,
-          activeNoteId: noteId,
-        };
-        persistLocalWorkspace(workspace);
-        render();
-      },
-      onBackToNotes: () => {
-        detailNoteId = null;
-        render();
-      },
-      onToggleTagFilter: (tag) => {
-        selectedTagFilters = selectedTagFilters.includes(tag)
-          ? selectedTagFilters.filter((entry) => entry !== tag)
-          : [...selectedTagFilters, tag];
-        ensureVisibleActiveNote();
-        syncTagFiltersToLocation();
-        render();
-      },
-      onClearTagFilters: () => {
-        selectedTagFilters = [];
-        syncTagFiltersToLocation();
-        render();
-      },
-      onNewNote: handleNewNote,
-      onRemoveSelectedFilter: (tag) => {
-        selectedTagFilters = selectedTagFilters.filter((entry) => entry !== tag);
-        ensureVisibleActiveNote();
-        syncTagFiltersToLocation();
-        render();
-      },
-      onTitleInput: (value) => {
-        replaceCurrentNote((currentWorkspaceNote) => ({
-          ...currentWorkspaceNote,
-          title: value,
-          updatedAt: new Date().toISOString(),
-        }));
-        syncState = "idle";
-        refreshNotesPanel();
-      },
-      onBodyInput: (value) => {
-        replaceCurrentNote((currentWorkspaceNote) => ({
-          ...currentWorkspaceNote,
-          body: value,
-          urls: extractUrlsFromText(value),
-          updatedAt: new Date().toISOString(),
-        }));
-        refreshNotesPanel();
-      },
-      onToggleTask: (noteId, lineIndex) => {
-        // Toggles a checkbox from the Tasks page. The target note is usually
-        // *not* the currently open note, so we rewrite the specific note by id
-        // instead of going through replaceCurrentNote.
-        const targetNote = workspace.notes.find((entry) => entry.id === noteId);
-        if (!targetNote) return;
-
-        const nextBody = toggleTaskInBody(targetNote.body, lineIndex);
-        if (nextBody === targetNote.body) return;
-
-        const previousActiveNoteId = workspace.activeNoteId;
-        workspace = upsertNote(workspace, noteId, (note) => ({
-          ...note,
-          body: nextBody,
-          urls: extractUrlsFromText(nextBody),
-          updatedAt: new Date().toISOString(),
-        }));
-        // upsertNote sets activeNoteId to the edited note; restore the
-        // previous selection because the user did not navigate away from
-        // the Tasks page.
-        workspace = { ...workspace, activeNoteId: previousActiveNoteId };
-
-        persistLocalWorkspace(workspace);
-        scheduleAutoSave();
-        render();
-      },
-      onAddTag: (value) => {
-        const tag = value.trim().toLowerCase();
-        if (!tag || getCurrentNote().tags.includes(tag)) return;
-        replaceCurrentNote((currentWorkspaceNote) => ({
-          ...currentWorkspaceNote,
-          tags: [...currentWorkspaceNote.tags, tag],
-          updatedAt: new Date().toISOString(),
-        }));
-        syncState = "idle";
-        render();
-      },
-      onRemoveTag: (tag) => {
-        if (!tag) return;
-        replaceCurrentNote((currentWorkspaceNote) => ({
-          ...currentWorkspaceNote,
-          tags: currentWorkspaceNote.tags.filter((entry) => entry !== tag),
-          updatedAt: new Date().toISOString(),
-        }));
-        syncState = "idle";
-        render();
-      },
+      ...callbacks,
     });
   };
 
