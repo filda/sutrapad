@@ -1063,18 +1063,67 @@ a {
   line-height: 1.5;
 }
 
+.tags-field {
+  position: relative;
+  margin-bottom: 14px;
+}
+
 .tags-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 14px;
   padding: 8px 14px;
   border: 1px solid var(--line);
   background: rgba(255, 253, 249, 0.88);
   border-radius: 18px;
   min-height: 46px;
   cursor: text;
+}
+
+.tag-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: rgba(255, 253, 249, 0.98);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(63, 43, 28, 0.08);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.tag-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.tag-suggestion.is-active {
+  background: rgba(192, 132, 87, 0.13);
+}
+
+.tag-suggestion-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-suggestion-count {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .tag-chip {

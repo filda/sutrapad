@@ -1,6 +1,7 @@
 import type {
   SutraPadDocument,
   SutraPadLinkIndex,
+  SutraPadTagEntry,
   SutraPadTagIndex,
   SutraPadTaskEntry,
   SutraPadTaskIndex,
@@ -262,6 +263,37 @@ export function toggleTaskInBody(body: string, lineIndex: number): string {
 
   lines[lineIndex] = `${nextPrefix}${rest}`;
   return lines.join("\n");
+}
+
+/**
+ * Filters a pre-built tag index down to suggestion candidates for the tag
+ * input. Pure and DOM-free so the UI can render without any logic of its own:
+ *
+ *   - case-insensitive substring match against the user's query
+ *   - blank/whitespace-only queries return every available tag
+ *   - tags already on the current note are excluded (no-op to add them)
+ *   - input ordering from `buildTagIndex` (count desc, then alpha) is preserved
+ *   - `limit` caps the dropdown size so a workspace with hundreds of tags
+ *     doesn't render a scrollable wall on focus
+ */
+export function filterTagSuggestions(
+  availableTags: readonly SutraPadTagEntry[],
+  query: string,
+  excludedTags: readonly string[],
+  limit = 8,
+): SutraPadTagEntry[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  const excluded = new Set(excludedTags);
+  const matches: SutraPadTagEntry[] = [];
+
+  for (const entry of availableTags) {
+    if (excluded.has(entry.tag)) continue;
+    if (normalizedQuery && !entry.tag.toLowerCase().includes(normalizedQuery)) continue;
+    matches.push(entry);
+    if (matches.length >= limit) break;
+  }
+
+  return matches;
 }
 
 export function filterNotesByAllTags(

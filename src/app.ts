@@ -501,7 +501,7 @@ function createRenderCallbacks({
         updatedAt: new Date().toISOString(),
       }));
       setSyncState("idle");
-      render();
+      renderPreservingTagInputFocus(render);
     },
     onRemoveTag: (tag: string) => {
       if (!tag) return;
@@ -511,9 +511,32 @@ function createRenderCallbacks({
         updatedAt: new Date().toISOString(),
       }));
       setSyncState("idle");
-      render();
+      renderPreservingTagInputFocus(render);
     },
   };
+}
+
+/**
+ * `render()` rebuilds the editor card wholesale, so the tag <input> gets
+ * replaced and its focus/caret are dropped. For tag add/remove interactions
+ * the user expects to keep typing more tags, so we detect whether focus (or a
+ * recent click) came from the tag row and, if so, move focus to the freshly
+ * rendered input after the DOM swap.
+ */
+function renderPreservingTagInputFocus(render: () => void): void {
+  const active = document.activeElement;
+  const shouldRefocus =
+    active instanceof HTMLElement &&
+    (active.classList.contains("tag-text-input") ||
+      active.classList.contains("tag-chip-remove") ||
+      active.classList.contains("tag-suggestion"));
+
+  render();
+
+  if (shouldRefocus) {
+    const nextInput = document.querySelector<HTMLInputElement>(".editor-card .tag-text-input");
+    nextInput?.focus();
+  }
 }
 
 function handleNewNoteCreation({

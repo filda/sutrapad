@@ -1,5 +1,6 @@
 import type { MenuItemId } from "../logic/menu";
 import type { UserProfile } from "../../types";
+import { buildTagIndex } from "../../lib/notebook";
 import { buildAppNav } from "./chrome/app-nav";
 import { buildAccountBar } from "./chrome/account-bar";
 import { buildHomePage } from "./pages/home-page";
@@ -14,7 +15,12 @@ import {
 } from "./pages/notes-page";
 import { buildPagePlaceholder } from "./pages/placeholder-page";
 
-interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
+// The editor-card builder needs the list of available tag suggestions, but
+// callers don't have to supply it — it's derived here from the workspace that
+// NotesPanelOptions already requires.
+interface RenderAppOptions
+  extends Omit<EditorCardOptions, "availableTagSuggestions">,
+    NotesPanelOptions {
   root: HTMLElement;
   profile: UserProfile | null;
   appRootUrl: string;
@@ -204,6 +210,7 @@ export function renderAppPage({
       note,
       currentNote,
       selectedTagFilters,
+      availableTagSuggestions: buildTagIndex(workspace).tags,
       syncState,
       statusText,
       onRemoveSelectedFilter,
