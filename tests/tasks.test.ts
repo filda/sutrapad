@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTaskIndex, toggleTaskInBody } from "../src/lib/notebook";
+import { buildTaskIndex, countTasksInNote, toggleTaskInBody } from "../src/lib/notebook";
 import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 
 function makeNote(
@@ -152,6 +152,38 @@ describe("buildTaskIndex", () => {
 
     expect(tasks).toEqual([]);
     expect(version).toBe(1);
+  });
+});
+
+describe("countTasksInNote", () => {
+  it("counts open and completed tasks separately", () => {
+    const note = makeNote({
+      id: "n1",
+      updatedAt: "2026-04-20T10:00:00.000Z",
+      body: ["[ ] open one", "[x] done one", "- [ ] open two", "[X] done two"].join("\n"),
+    });
+
+    expect(countTasksInNote(note)).toEqual({ open: 2, done: 2 });
+  });
+
+  it("returns zeros for a note without checkboxes", () => {
+    const note = makeNote({
+      id: "n1",
+      updatedAt: "2026-04-20T10:00:00.000Z",
+      body: "prose only\nno checkboxes here",
+    });
+
+    expect(countTasksInNote(note)).toEqual({ open: 0, done: 0 });
+  });
+
+  it("ignores empty-checkbox lines the same way the index does", () => {
+    const note = makeNote({
+      id: "n1",
+      updatedAt: "2026-04-20T10:00:00.000Z",
+      body: ["[ ]", "[ ]   ", "[ ] real task"].join("\n"),
+    });
+
+    expect(countTasksInNote(note)).toEqual({ open: 1, done: 0 });
   });
 });
 

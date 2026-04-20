@@ -175,6 +175,21 @@ function parseTasksFromNote(note: SutraPadDocument): SutraPadTaskEntry[] {
   return tasks;
 }
 
+/**
+ * Counts open and completed tasks in a single note. Used by the notebook list
+ * to show a "has-tasks" chip next to each note card. Kept here (next to the
+ * parser it reuses) so the UI code stays DOM-free and testable.
+ */
+export function countTasksInNote(note: SutraPadDocument): { open: number; done: number } {
+  let open = 0;
+  let done = 0;
+  for (const task of parseTasksFromNote(note)) {
+    if (task.done) done += 1;
+    else open += 1;
+  }
+  return { open, done };
+}
+
 export function buildTaskIndex(
   workspace: SutraPadWorkspace,
   savedAt = new Date().toISOString(),
