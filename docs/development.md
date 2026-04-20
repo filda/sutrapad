@@ -185,7 +185,13 @@ This runs:
 npm run test:mutation
 ```
 
-This runs StrykerJS mutation testing against the currently unit-tested library modules in `src/lib/**`.
+This runs StrykerJS mutation testing against the pure helper modules in:
+
+- `src/lib/**/*.ts`
+- `src/app/logic/**/*.ts`
+- `src/app/storage/**/*.ts`
+- `src/app/session/**/*.ts`
+- `src/app/capture/**/*.ts`
 
 The HTML report is written to:
 
@@ -319,7 +325,8 @@ Compatibility notes:
 - When a piece of logic becomes awkward to test through DOM setup in `src/app.ts`, extract it into `src/app/logic/**`, `src/app/storage/**`, or another pure helper module first.
 - Coverage and mutation testing both improve faster when new behavior lands in pure modules instead of controller or DOM wiring code.
 - `src/app/view/render-app.ts` is intentionally still mostly untested at the unit level; prefer moving decision-heavy logic out of it before adding large DOM-heavy tests.
-- Stryker currently mutates only `src/lib/**/*.ts`, so logic outside `src/lib` benefits from normal coverage immediately, but only affects mutation score after the Stryker config is widened.
+- Stryker currently mutates `src/lib/**/*.ts` plus the pure helper areas under `src/app/{logic,storage,session,capture}/**`.
+- UI-heavy controller and rendering files outside that scope still benefit from normal coverage immediately, but do not affect mutation score until the Stryker config is widened again.
 
 ## Structure
 
