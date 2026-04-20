@@ -10,6 +10,7 @@ import {
   extractUrlsFromText,
   filterNotesByAllTags,
   mergeWorkspaces,
+  toggleTaskInBody,
   upsertNote,
 } from "./lib/notebook";
 import { collectCaptureContext } from "./lib/capture-context";
@@ -556,6 +557,32 @@ export function createApp(root: HTMLElement): void {
           updatedAt: new Date().toISOString(),
         }));
         refreshNotesPanel();
+      },
+      onToggleTask: (noteId, lineIndex) => {
+        // Toggles a checkbox from the Tasks page. The target note is usually
+        // *not* the currently open note, so we rewrite the specific note by id
+        // instead of going through replaceCurrentNote.
+        const targetNote = workspace.notes.find((entry) => entry.id === noteId);
+        if (!targetNote) return;
+
+        const nextBody = toggleTaskInBody(targetNote.body, lineIndex);
+        if (nextBody === targetNote.body) return;
+
+        const previousActiveNoteId = workspace.activeNoteId;
+        workspace = upsertNote(workspace, noteId, (note) => ({
+          ...note,
+          body: nextBody,
+          urls: extractUrlsFromText(nextBody),
+          updatedAt: new Date().toISOString(),
+        }));
+        // upsertNote sets activeNoteId to the edited note; restore the
+        // previous selection because the user did not navigate away from
+        // the Tasks page.
+        workspace = { ...workspace, activeNoteId: previousActiveNoteId };
+
+        persistLocalWorkspace(workspace);
+        scheduleAutoSave();
+        render();
       },
       onAddTag: (value) => {
         const tag = value.trim().toLowerCase();

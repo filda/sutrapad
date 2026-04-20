@@ -1,4 +1,11 @@
-import type { SutraPadDocument, SutraPadLinkIndex, SutraPadTagIndex, SutraPadWorkspace } from "../types";
+import type {
+  SutraPadDocument,
+  SutraPadLinkIndex,
+  SutraPadTagIndex,
+  SutraPadTaskEntry,
+  SutraPadTaskIndex,
+  SutraPadWorkspace,
+} from "../types";
 
 export const DEFAULT_NOTE_TITLE = "Untitled note";
 
@@ -131,6 +138,102 @@ export function buildLinkIndex(
           left.url.localeCompare(right.url),
       ),
   };
+}
+
+/**
+ * Matches a checkbox at the start of a line (optional leading whitespace and
+ * an optional `-` bullet). Accepted bracket variants are `[]`, `[ ]`, `[x]`
+ * and `[X]`. Captured groups:
+ *   1 — full prefix up to and including the closing bracket
+ *   2 — bracket content (empty string, space, or `x`/`X`)
+ *   3 — remaining text on the line (the task description)
+ */
+const TASK_LINE_REGEX = /^(\s*(?:-\s+)?\[([ xX]?)\])\s?(.*)$/;
+
+function parseTasksFromNote(note: SutraPadDocument): SutraPadTaskEntry[] {
+  const tasks: SutraPadTaskEntry[] = [];
+  const lines = note.body.split("\n");
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const match = TASK_LINE_REGEX.exec(lines[lineIndex]);
+    if (!match) continue;
+
+    const bracketContent = match[2];
+    const text = match[3].trimEnd();
+    // Skip lines that are just a checkbox with nothing after it; they are
+    // almost always a typo rather than an intentional empty task and would
+    // otherwise clutter the Tasks page with ghost entries.
+    if (text.length === 0) continue;
+
+    tasks.push({
+      noteId: note.id,
+      lineIndex,
+      text,
+      done: bracketContent === "x" || bracketContent === "X",
+      noteUpdatedAt: note.updatedAt,
+    });
+  }
+  return tasks;
+}
+
+export function buildTaskIndex(
+  workspace: SutraPadWorkspace,
+  savedAt = new Date().toISOString(),
+): SutraPadTaskIndex {
+  const tasks: SutraPadTaskEntry[] = [];
+  for (const note of workspace.notes) {
+    tasks.push(...parseTasksFromNote(note));
+  }
+
+  // Primary sort: open tasks first, then completed.
+  // Secondary sort: most recently touched note first.
+  // Tertiary sort: stable by line order within a note.
+  const sorted = tasks.toSorted((left, right) => {
+    if (left.done !== right.done) return left.done ? 1 : -1;
+    const updatedAtDelta = right.noteUpdatedAt.localeCompare(left.noteUpdatedAt);
+    if (updatedAtDelta !== 0) return updatedAtDelta;
+    if (left.noteId !== right.noteId) return left.noteId.localeCompare(right.noteId);
+    return left.lineIndex - right.lineIndex;
+  });
+
+  return {
+    version: 1,
+    savedAt,
+    tasks: sorted,
+  };
+}
+
+/**
+ * Flips the done-state of a single task at `lineIndex` within `body`. Unknown
+ * or non-checkbox lines are returned unchanged so callers can safely invoke
+ * this even if the index is momentarily stale (e.g. the user edited the note
+ * between the render and the click). The bracket style is preserved for the
+ * open state (`[]` stays `[]`, `[ ]` stays `[ ]`); marking a task done always
+ * writes `[x]`.
+ */
+export function toggleTaskInBody(body: string, lineIndex: number): string {
+  const lines = body.split("\n");
+  if (lineIndex < 0 || lineIndex >= lines.length) return body;
+
+  const line = lines[lineIndex];
+  const match = TASK_LINE_REGEX.exec(line);
+  if (!match) return body;
+
+  const bracketContent = match[2];
+  const isDone = bracketContent === "x" || bracketContent === "X";
+  const prefix = match[1];
+  const rest = line.slice(prefix.length);
+
+  let nextPrefix: string;
+  if (isDone) {
+    // Preserve the original open style when we can infer it; default to `[ ]`.
+    nextPrefix = prefix.replace(/\[[xX]\]$/, "[ ]");
+  } else {
+    // Collapse both `[]` and `[ ]` to `[x]` on completion.
+    nextPrefix = prefix.replace(/\[[ ]?\]$/, "[x]");
+  }
+
+  lines[lineIndex] = `${nextPrefix}${rest}`;
+  return lines.join("\n");
 }
 
 export function filterNotesByAllTags(

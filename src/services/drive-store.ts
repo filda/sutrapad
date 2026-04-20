@@ -6,7 +6,7 @@ import type {
   SutraPadNoteSummary,
   SutraPadWorkspace,
 } from "../types";
-import { buildLinkIndex, buildTagIndex, extractUrlsFromText } from "../lib/notebook";
+import { buildLinkIndex, buildTagIndex, buildTaskIndex, extractUrlsFromText } from "../lib/notebook";
 
 const GOOGLE_DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
@@ -52,6 +52,7 @@ const LEGACY_FILE_NAME = "sutrapad-data.json";
 const HEAD_FILE_NAME = "sutrapad-head.json";
 const TAG_INDEX_FILE_NAME = "sutrapad-tags.json";
 const LINK_INDEX_FILE_NAME = "sutrapad-links.json";
+const TASK_INDEX_FILE_NAME = "sutrapad-tasks.json";
 const WORKSPACE_FOLDER_NAME = "SutraPad";
 const MAX_INDEX_SNAPSHOTS = 10;
 
@@ -223,6 +224,7 @@ export class GoogleDriveStore {
     };
     const tagIndex = buildTagIndex(workspace, finalIndex.savedAt);
     const linkIndex = buildLinkIndex(workspace, finalIndex.savedAt);
+    const taskIndex = buildTaskIndex(workspace, finalIndex.savedAt);
 
     const indexSnapshotFile = await this.uploadJsonFile({
       fileName: this.buildIndexSnapshotFileName(finalIndex.savedAt),
@@ -263,6 +265,20 @@ export class GoogleDriveStore {
     });
 
     await this.ensureFileInFolder(linkIndexFile.id, workspaceFolder.id);
+
+    const existingTaskIndexFile = await this.findTaskIndexFile(workspaceFolder.id);
+    const taskIndexFile = await this.uploadJsonFile({
+      fileId: existingTaskIndexFile?.id,
+      fileName: TASK_INDEX_FILE_NAME,
+      data: taskIndex,
+      folderId: workspaceFolder.id,
+      appProperties: {
+        sutrapad: "true",
+        kind: "tasks",
+      },
+    });
+
+    await this.ensureFileInFolder(taskIndexFile.id, workspaceFolder.id);
 
     const existingHeadFile = await this.findHeadFile(workspaceFolder.id);
     const head: SutraPadHead = {
@@ -411,6 +427,22 @@ export class GoogleDriveStore {
 
     return this.findSingleFile(
       `trashed = false and name = '${LINK_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='links' }`,
+    );
+  }
+
+  private async findTaskIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
+    const inFolder = folderId
+      ? await this.findSingleFile(
+          `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='tasks' }`,
+        )
+      : null;
+
+    if (inFolder) {
+      return inFolder;
+    }
+
+    return this.findSingleFile(
+      `trashed = false and name = '${TASK_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='tasks' }`,
     );
   }
 

@@ -21,8 +21,8 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "add", label: "Add" },
   { id: "notes", label: "Notes" },
   { id: "links", label: "Links" },
-  { id: "tags", label: "Tags" },
   { id: "tasks", label: "Tasks" },
+  { id: "tags", label: "Tags" },
   { id: "settings", label: "Settings" },
 ];
 

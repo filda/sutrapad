@@ -138,6 +138,27 @@ export interface SutraPadLinkIndex {
   links: SutraPadLinkEntry[];
 }
 
+/**
+ * A single checkbox-style task extracted from a note's body. Tasks are parsed
+ * from lines that start (after optional whitespace and an optional `-`) with
+ * `[ ]`, `[]`, `[x]`, or `[X]`. The `lineIndex` pins the task to a specific
+ * line so toggling can rewrite the bracket in place without relying on the
+ * task text (which may repeat within a note).
+ */
+export interface SutraPadTaskEntry {
+  noteId: string;
+  lineIndex: number;
+  text: string;
+  done: boolean;
+  noteUpdatedAt: string;
+}
+
+export interface SutraPadTaskIndex {
+  version: 1;
+  savedAt: string;
+  tasks: SutraPadTaskEntry[];
+}
+
 export interface SutraPadWorkspace {
   notes: SutraPadDocument[];
   activeNoteId: string | null;

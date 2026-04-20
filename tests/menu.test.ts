@@ -15,8 +15,8 @@ describe("menu items", () => {
       "add",
       "notes",
       "links",
-      "tags",
       "tasks",
+      "tags",
       "settings",
     ]);
   });
@@ -26,8 +26,8 @@ describe("menu items", () => {
       "Add",
       "Notes",
       "Links",
-      "Tags",
       "Tasks",
+      "Tags",
       "Settings",
     ]);
   });

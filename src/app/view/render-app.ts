@@ -5,6 +5,7 @@ import { buildAccountBar } from "./chrome/account-bar";
 import { buildHomePage } from "./pages/home-page";
 import { buildTagsPage } from "./pages/tags-page";
 import { buildLinksPage } from "./pages/links-page";
+import { buildTasksPage } from "./pages/tasks-page";
 import {
   buildEditorCard,
   buildNotesPanel,
@@ -36,6 +37,7 @@ interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   onSignOut: () => void;
   onToggleBookmarkletHelper: () => void;
   onCopyBookmarklet: () => void;
+  onToggleTask: (noteId: string, lineIndex: number) => void;
 }
 
 export function renderAppPage({
@@ -74,6 +76,7 @@ export function renderAppPage({
   activeMenuItem,
   detailNoteId,
   onSelectMenuItem,
+  onToggleTask,
 }: RenderAppOptions): void {
   root.innerHTML = "";
 
@@ -159,6 +162,14 @@ export function renderAppPage({
         buildLinksPage({
           workspace,
           onOpenNote: openNoteInEditor,
+        }),
+      );
+    } else if (activeMenuItem === "tasks") {
+      page.append(
+        buildTasksPage({
+          workspace,
+          onOpenNote: openNoteInEditor,
+          onToggleTask,
         }),
       );
     } else {
