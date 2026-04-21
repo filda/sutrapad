@@ -8,7 +8,10 @@ import type {
   SutraPadTagFilterMode,
   SutraPadWorkspace,
 } from "../../../types";
-import { buildNotesList } from "../shared/notes-list";
+import {
+  buildNotesList,
+  type NotesListPersonaOptions,
+} from "../shared/notes-list";
 import { buildSelectedFiltersBar } from "../shared/selected-filters-bar";
 import { appendTagChipContent } from "../shared/tag-chip-content";
 
@@ -17,6 +20,8 @@ export interface TagsPageOptions {
   selectedTagFilters: string[];
   filterMode: SutraPadTagFilterMode;
   currentNoteId: string;
+  /** See NotesPanelOptions.personaOptions — same contract, off when absent. */
+  personaOptions?: NotesListPersonaOptions;
   onToggleTagFilter: (tag: string) => void;
   onClearTagFilters: () => void;
   onChangeFilterMode: (mode: SutraPadTagFilterMode) => void;
@@ -86,6 +91,7 @@ export function buildTagsPage({
   selectedTagFilters,
   filterMode,
   currentNoteId,
+  personaOptions,
   onToggleTagFilter,
   onClearTagFilters,
   onChangeFilterMode,
@@ -205,7 +211,15 @@ export function buildTagsPage({
     matches.append(summary);
   }
 
-  matches.append(buildNotesList(currentNoteId, filteredNotes, onOpenNote));
+  matches.append(
+    buildNotesList(
+      currentNoteId,
+      filteredNotes,
+      onOpenNote,
+      undefined,
+      personaOptions,
+    ),
+  );
   section.append(matches);
 
   return section;

@@ -1,10 +1,13 @@
 import type { UserProfile } from "../../../types";
+import { type PersonaPreference } from "../../logic/persona";
 import { THEMES, type ThemeChoice } from "../../logic/theme";
 
 export interface SettingsPageOptions {
   currentTheme: ThemeChoice;
+  personaPreference: PersonaPreference;
   profile: UserProfile | null;
   onChangeTheme: (choice: ThemeChoice) => void;
+  onChangePersonaPreference: (preference: PersonaPreference) => void;
   onLoadNotebook: () => void;
   onSaveNotebook: () => void;
   onSignIn: () => void;
@@ -12,14 +15,17 @@ export interface SettingsPageOptions {
 
 /**
  * Settings page. Each concern lives in its own card inside the page wrapper:
- * appearance (per-device theme) and backup (manual Google Drive load/save).
- * Further device-local or account-level preferences slot in as additional
- * cards in the same container.
+ * appearance (per-device theme), notebook persona (decorative card layer),
+ * and backup (manual Google Drive load/save). Further device-local or
+ * account-level preferences slot in as additional cards in the same
+ * container.
  */
 export function buildSettingsPage({
   currentTheme,
+  personaPreference,
   profile,
   onChangeTheme,
+  onChangePersonaPreference,
   onLoadNotebook,
   onSaveNotebook,
   onSignIn,
@@ -28,6 +34,9 @@ export function buildSettingsPage({
   page.className = "settings-page";
 
   page.append(buildAppearanceCard({ currentTheme, onChangeTheme }));
+  page.append(
+    buildPersonaCard({ personaPreference, onChangePersonaPreference }),
+  );
   page.append(
     buildBackupCard({ profile, onLoadNotebook, onSaveNotebook, onSignIn }),
   );
@@ -101,6 +110,90 @@ function buildAppearanceCard({
   }
 
   card.append(grid);
+  return card;
+}
+
+interface PersonaCardOptions {
+  personaPreference: PersonaPreference;
+  onChangePersonaPreference: (preference: PersonaPreference) => void;
+}
+
+/**
+ * Notebook persona card. The persona layer paints each note card with a
+ * time-of-day paper palette, a small rotation, and decorative stickers —
+ * it's opinionated, so it ships off by default and the user turns it on
+ * here. The toggle is a pair of radio-style buttons rather than a checkbox
+ * so the two states read as equally first-class choices (matching the
+ * Theme card's grid below).
+ */
+function buildPersonaCard({
+  personaPreference,
+  onChangePersonaPreference,
+}: PersonaCardOptions): HTMLElement {
+  const card = document.createElement("section");
+  card.className = "settings-card";
+
+  const header = document.createElement("header");
+  header.className = "settings-card-header";
+  header.innerHTML = `
+    <p class="panel-eyebrow">Notebook</p>
+    <h2>Persona</h2>
+  `;
+  card.append(header);
+
+  const hint = document.createElement("p");
+  hint.className = "settings-card-hint";
+  hint.textContent =
+    "Paints each note card with a paper colour and a little rotation based on when you wrote it, plus small stickers for notes with open tasks or night-time capture. Saved per-device.";
+  card.append(hint);
+
+  const group = document.createElement("div");
+  group.className = "persona-toggle";
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", "Notebook persona");
+
+  const options: ReadonlyArray<{
+    value: PersonaPreference;
+    label: string;
+    description: string;
+  }> = [
+    {
+      value: "off",
+      label: "Off",
+      description: "Keep notes as plain, flat cards.",
+    },
+    {
+      value: "on",
+      label: "On",
+      description: "Show paper colours, stickers, and subtle wear.",
+    },
+  ];
+
+  for (const option of options) {
+    const isSelected = option.value === personaPreference;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `persona-toggle-option${isSelected ? " is-active" : ""}`;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", isSelected ? "true" : "false");
+    button.setAttribute("data-persona-preference", option.value);
+
+    const label = document.createElement("span");
+    label.className = "persona-toggle-label";
+    label.textContent = option.label;
+
+    const description = document.createElement("span");
+    description.className = "persona-toggle-description";
+    description.textContent = option.description;
+
+    button.append(label, description);
+    button.addEventListener("click", () =>
+      onChangePersonaPreference(option.value),
+    );
+    group.append(button);
+  }
+
+  card.append(group);
   return card;
 }
 

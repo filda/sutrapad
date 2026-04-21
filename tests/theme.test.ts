@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyThemeChoice,
   DEFAULT_THEME_CHOICE,
+  isDarkThemeId,
   isThemeChoice,
   loadStoredThemeChoice,
   persistThemeChoice,
@@ -30,6 +31,8 @@ describe("theme catalogue", () => {
       "forest",
       "midnight",
       "dark",
+      "parchment",
+      "parchment-dark",
     ]);
   });
 
@@ -144,6 +147,21 @@ describe("applyThemeChoice", () => {
     const setAttribute = vi.fn();
     applyThemeChoice("auto", { setAttribute }, { matches: false });
     expect(setAttribute).toHaveBeenCalledWith("data-theme", "sand");
+  });
+});
+
+describe("isDarkThemeId", () => {
+  it("flags dark, midnight, and parchment-dark as dark themes", () => {
+    expect(isDarkThemeId("dark")).toBe(true);
+    expect(isDarkThemeId("midnight")).toBe(true);
+    expect(isDarkThemeId("parchment-dark")).toBe(true);
+  });
+
+  it("treats every other concrete theme id as light", () => {
+    expect(isDarkThemeId("sand")).toBe(false);
+    expect(isDarkThemeId("paper")).toBe(false);
+    expect(isDarkThemeId("forest")).toBe(false);
+    expect(isDarkThemeId("parchment")).toBe(false);
   });
 });
 

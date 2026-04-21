@@ -2,7 +2,6 @@ import { GoogleAuthService } from "./services/google-auth";
 import { GoogleDriveStore } from "./services/drive-store";
 import {
   buildCombinedTagIndex,
-  areWorkspacesEqual,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
@@ -10,13 +9,11 @@ import {
   extractUrlsFromText,
   filterNotesByTags,
   mergeHashtagsIntoTags,
-  mergeWorkspaces,
   toggleTaskInBody,
   upsertNote,
 } from "./lib/notebook";
 import { collectCaptureContext } from "./lib/capture-context";
 import {
-  clearCaptureParamsFromLocation,
   deriveTitleFromUrl,
   reverseGeocodeCoordinates,
   readNoteCapture,
@@ -42,9 +39,15 @@ import {
   writeTagFilterModeToLocation,
   writeTagFiltersToLocation,
 } from "./app/logic/tag-filters";
-import { restoreSessionOnStartup } from "./app/session/session";
+import { runAppBootstrap } from "./app/session/session";
 import { withAuthRetry, type AuthRetryContext } from "./app/session/auth-retry";
-import { runWorkspaceSave, type SaveMode, type SyncState } from "./app/session/workspace-sync";
+import {
+  runWorkspaceLoad,
+  runWorkspaceRestoreAfterSignIn,
+  runWorkspaceSave,
+  type SaveMode,
+  type SyncState,
+} from "./app/session/workspace-sync";
 import { loadLocalWorkspace, persistLocalWorkspace } from "./app/storage/local-workspace";
 import { renderAppPage } from "./app/view/render-app";
 import { buildNotesPanel } from "./app/view/pages/notes-page";
@@ -63,10 +66,20 @@ import {
 } from "./app/logic/notes-view";
 import {
   applyThemeChoice,
+  isDarkThemeId,
   persistThemeChoice,
   resolveInitialThemeChoice,
+  resolveThemeId,
+  watchAutoTheme,
   type ThemeChoice,
 } from "./app/logic/theme";
+import {
+  isPersonaEnabled,
+  persistPersonaPreference,
+  resolveInitialPersonaPreference,
+  type PersonaPreference,
+} from "./app/logic/persona";
+import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
 const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
@@ -97,6 +110,7 @@ export {
 export {
   applyThemeChoice,
   DEFAULT_THEME_CHOICE,
+  isDarkThemeId,
   isThemeChoice,
   loadStoredThemeChoice,
   persistThemeChoice,
@@ -107,6 +121,15 @@ export {
   type ThemeDescriptor,
   type ThemeId,
 } from "./app/logic/theme";
+export {
+  DEFAULT_PERSONA_PREFERENCE,
+  isPersonaEnabled,
+  isPersonaPreference,
+  loadStoredPersonaPreference,
+  persistPersonaPreference,
+  resolveInitialPersonaPreference,
+  type PersonaPreference,
+} from "./app/logic/persona";
 export { restoreSessionOnStartup } from "./app/session/session";
 export { withAuthRetry } from "./app/session/auth-retry";
 export { runWorkspaceSave } from "./app/session/workspace-sync";
@@ -343,6 +366,8 @@ interface RenderCallbackOptions {
   setNotesViewMode: (notesViewMode: NotesViewMode) => void;
   getCurrentTheme: () => ThemeChoice;
   setCurrentTheme: (theme: ThemeChoice) => void;
+  getPersonaPreference: () => PersonaPreference;
+  setPersonaPreference: (preference: PersonaPreference) => void;
   handleNewNote: () => void;
   loadWorkspace: () => Promise<void>;
   saveWorkspace: () => Promise<void>;
@@ -400,6 +425,8 @@ function createRenderCallbacks({
   setNotesViewMode,
   getCurrentTheme,
   setCurrentTheme,
+  getPersonaPreference,
+  setPersonaPreference,
   handleNewNote,
   loadWorkspace,
   saveWorkspace,
@@ -422,6 +449,12 @@ function createRenderCallbacks({
       setCurrentTheme(choice);
       persistThemeChoice(choice);
       applyThemeChoice(choice);
+      render();
+    },
+    onChangePersonaPreference: (preference: PersonaPreference) => {
+      if (preference === getPersonaPreference()) return;
+      setPersonaPreference(preference);
+      persistPersonaPreference(preference);
       render();
     },
     onSelectMenuItem: (id: MenuItemId) => {
@@ -767,18 +800,14 @@ export function createApp(root: HTMLElement): void {
   // palette; this keeps our in-memory copy in sync with what the document
   // currently shows.
   let currentTheme: ThemeChoice = resolveInitialThemeChoice();
+  // Notebook persona is explicitly device-local too: each browser/device
+  // picks its own on/off stance, nothing flows through URL or Drive so a
+  // shared link can't force a decorative view on the recipient.
+  let personaPreference: PersonaPreference = resolveInitialPersonaPreference();
   // When the user picked "auto", the concrete palette depends on the OS
   // light/dark preference. Subscribe once so a system switch during a live
   // session re-applies the theme without a reload.
-  const darkSchemeMedia =
-    typeof window.matchMedia === "function"
-      ? window.matchMedia("(prefers-color-scheme: dark)")
-      : null;
-  darkSchemeMedia?.addEventListener?.("change", () => {
-    if (currentTheme === "auto") {
-      applyThemeChoice(currentTheme);
-    }
-  });
+  watchAutoTheme(() => currentTheme);
 
   const scheduleAutoSave = (): void => {
     if (!profile) return;
@@ -833,6 +862,20 @@ export function createApp(root: HTMLElement): void {
       refreshNotesPanel,
     });
 
+  /**
+   * Resolves the persona render-time options from the current preference and
+   * theme state. Returning `undefined` when persona is off keeps the
+   * decoration path skipped entirely rather than paying for a derivation
+   * every render — the notes-list helper treats `undefined` as "flat cards".
+   */
+  const resolveCurrentPersonaOptions = (): NotesListPersonaOptions | undefined => {
+    if (!isPersonaEnabled(personaPreference)) return undefined;
+    return {
+      allNotes: workspace.notes,
+      dark: isDarkThemeId(resolveThemeId(currentTheme)),
+    };
+  };
+
   const refreshNotesPanel = (): void => {
     syncSelectedTagFilters();
     const visibleActiveNote = ensureVisibleActiveNoteSelection(
@@ -857,6 +900,7 @@ export function createApp(root: HTMLElement): void {
         selectedTagFilters,
         filterMode,
         notesViewMode,
+        personaOptions: resolveCurrentPersonaOptions(),
         onChangeNotesView: (mode) => {
           if (mode === notesViewMode) return;
           notesViewMode = mode;
@@ -950,50 +994,28 @@ export function createApp(root: HTMLElement): void {
     const callbacks = createRenderCallbacks({
       auth,
       appRootUrl,
-      setProfile: (nextProfile) => {
-        profile = nextProfile;
-      },
+      setProfile: setProfileState,
       getWorkspace: () => workspace,
-      setWorkspace: (nextWorkspace) => {
-        workspace = nextWorkspace;
-      },
-      setSyncState: (nextSyncState) => {
-        syncState = nextSyncState;
-      },
-      setLastError: (nextLastError) => {
-        lastError = nextLastError;
-      },
+      setWorkspace: setWorkspaceState,
+      setSyncState: setSyncStateValue,
+      setLastError: setLastErrorValue,
       getBookmarkletHelperExpanded: () => bookmarkletHelperExpanded,
-      setBookmarkletHelperExpanded: (expanded) => {
-        bookmarkletHelperExpanded = expanded;
-      },
-      setBookmarkletMessage: (message) => {
-        bookmarkletMessage = message;
-      },
+      setBookmarkletHelperExpanded: setBookmarkletHelperExpandedState,
+      setBookmarkletMessage: setBookmarkletMessageState,
       getSelectedTagFilters: () => selectedTagFilters,
-      setSelectedTagFilters: (nextSelectedTagFilters) => {
-        selectedTagFilters = nextSelectedTagFilters;
-      },
+      setSelectedTagFilters: setSelectedTagFiltersState,
       getFilterMode: () => filterMode,
-      setFilterMode: (nextFilterMode) => {
-        filterMode = nextFilterMode;
-      },
+      setFilterMode: setFilterModeState,
       getActiveMenuItem: () => activeMenuItem,
-      setActiveMenuItem: (nextActiveMenuItem) => {
-        activeMenuItem = nextActiveMenuItem;
-      },
+      setActiveMenuItem: setActiveMenuItemState,
       getDetailNoteId: () => detailNoteId,
-      setDetailNoteId: (nextDetailNoteId) => {
-        detailNoteId = nextDetailNoteId;
-      },
+      setDetailNoteId: setDetailNoteIdState,
       getNotesViewMode: () => notesViewMode,
-      setNotesViewMode: (nextNotesViewMode) => {
-        notesViewMode = nextNotesViewMode;
-      },
+      setNotesViewMode: setNotesViewModeState,
       getCurrentTheme: () => currentTheme,
-      setCurrentTheme: (nextCurrentTheme) => {
-        currentTheme = nextCurrentTheme;
-      },
+      setCurrentTheme: setCurrentThemeState,
+      getPersonaPreference: () => personaPreference,
+      setPersonaPreference: setPersonaPreferenceState,
       handleNewNote,
       loadWorkspace,
       saveWorkspace: () => saveWorkspace(),
@@ -1031,6 +1053,7 @@ export function createApp(root: HTMLElement): void {
       detailNoteId,
       notesViewMode,
       currentTheme,
+      personaPreference,
       ...callbacks,
     });
   };
@@ -1051,53 +1074,47 @@ export function createApp(root: HTMLElement): void {
     },
   };
 
-  const loadWorkspace = async (): Promise<void> => {
-    try {
-      syncState = "loading";
-      lastError = "";
-      render();
-      workspace = await withAuthRetry(() => getStore().loadWorkspace(), retryContext);
-      persistLocalWorkspace(workspace);
-      syncState = "idle";
-      render();
-    } catch (error) {
-      syncState = "error";
-      lastError = error instanceof Error ? error.message : "Loading from Google Drive failed.";
-      render();
-    }
-  };
+  // Tiny typed setters for the mutable state that multiple helpers (Drive
+  // lifecycle, renderer callbacks, bootstrap) all need to write to. Hoisting
+  // them out of the option bags keeps the call sites to one-liners.
+  const setWorkspaceState = (next: SutraPadWorkspace): void => { workspace = next; };
+  const setSyncStateValue = (next: SyncState): void => { syncState = next; };
+  const setLastErrorValue = (next: string): void => { lastError = next; };
+  const setProfileState = (next: UserProfile | null): void => { profile = next; };
+  const setSelectedTagFiltersState = (next: string[]): void => { selectedTagFilters = next; };
+  const setFilterModeState = (next: SutraPadTagFilterMode): void => { filterMode = next; };
+  const setActiveMenuItemState = (next: MenuItemId): void => { activeMenuItem = next; };
+  const setDetailNoteIdState = (next: string | null): void => { detailNoteId = next; };
+  const setNotesViewModeState = (next: NotesViewMode): void => { notesViewMode = next; };
+  const setCurrentThemeState = (next: ThemeChoice): void => { currentTheme = next; };
+  const setPersonaPreferenceState = (next: PersonaPreference): void => { personaPreference = next; };
+  const setBookmarkletHelperExpandedState = (next: boolean): void => { bookmarkletHelperExpanded = next; };
+  const setBookmarkletMessageState = (next: string): void => { bookmarkletMessage = next; };
 
-  const restoreWorkspaceAfterSignIn = async (): Promise<void> => {
-    try {
-      syncState = "loading";
-      lastError = "";
-      render();
+  const loadWorkspace = async (): Promise<void> =>
+    runWorkspaceLoad({
+      loadRemoteWorkspace: () =>
+        withAuthRetry(() => getStore().loadWorkspace(), retryContext),
+      setWorkspace: setWorkspaceState,
+      persistLocalWorkspace,
+      setSyncState: setSyncStateValue,
+      setLastError: setLastErrorValue,
+      render,
+    });
 
-      const remoteWorkspace = await withAuthRetry(
-        () => getStore().loadWorkspace(),
-        retryContext,
-      );
-      const mergedWorkspace = mergeWorkspaces(workspace, remoteWorkspace);
-      const needsRemoteSave = !areWorkspacesEqual(mergedWorkspace, remoteWorkspace);
-
-      workspace = mergedWorkspace;
-      persistLocalWorkspace(workspace);
-
-      if (needsRemoteSave) {
-        syncState = "saving";
-        render();
-        await withAuthRetry(() => getStore().saveWorkspace(workspace), retryContext);
-      }
-
-      syncState = "idle";
-      render();
-    } catch (error) {
-      syncState = "error";
-      lastError =
-        error instanceof Error ? error.message : "Loading from Google Drive failed.";
-      render();
-    }
-  };
+  const restoreWorkspaceAfterSignIn = async (): Promise<void> =>
+    runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () =>
+        withAuthRetry(() => getStore().loadWorkspace(), retryContext),
+      saveRemoteWorkspace: (ws) =>
+        withAuthRetry(() => getStore().saveWorkspace(ws), retryContext),
+      getWorkspace: () => workspace,
+      setWorkspace: setWorkspaceState,
+      persistLocalWorkspace,
+      setSyncState: setSyncStateValue,
+      setLastError: setLastErrorValue,
+      render,
+    });
 
   const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> =>
     runWorkspaceSave(mode, {
@@ -1114,30 +1131,18 @@ export function createApp(root: HTMLElement): void {
       refreshStatus,
     });
 
-  void (async () => {
-    try {
-      workspace = await captureIncomingWorkspaceFromUrl(workspace);
-      persistLocalWorkspace(workspace);
-      window.history.replaceState({}, "", clearCaptureParamsFromLocation(window.location.href));
-      await auth.initialize();
-
-      profile = await restoreSessionOnStartup(
-        auth,
-        (restoredProfile) => {
-          profile = restoredProfile;
-        },
-        restoreWorkspaceAfterSignIn,
-      );
-      if (profile) {
-        return;
-      }
-    } catch (error) {
-      syncState = "error";
-      lastError = error instanceof Error ? error.message : "App initialization failed.";
-    }
-
-    render();
-  })();
+  void runAppBootstrap({
+    auth,
+    captureIncomingWorkspaceFromUrl,
+    getWorkspace: () => workspace,
+    setWorkspace: setWorkspaceState,
+    setProfile: setProfileState,
+    setSyncState: setSyncStateValue,
+    setLastError: setLastErrorValue,
+    persistLocalWorkspace,
+    restoreWorkspaceAfterSignIn,
+    render,
+  });
 
   render();
 }

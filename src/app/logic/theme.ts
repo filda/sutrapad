@@ -7,7 +7,14 @@
  * to either "sand" (light) or "dark" (dark) at apply time. The literal id
  * "auto" never appears as the rendered `data-theme` attribute.
  */
-export type ThemeId = "sand" | "dark" | "paper" | "forest" | "midnight";
+export type ThemeId =
+  | "sand"
+  | "dark"
+  | "paper"
+  | "forest"
+  | "midnight"
+  | "parchment"
+  | "parchment-dark";
 
 /**
  * Full set of values the user can pick on the Settings page — including the
@@ -102,6 +109,28 @@ export const THEMES: readonly ThemeDescriptor[] = [
       background: "#171513",
     },
   },
+  {
+    id: "parchment",
+    label: "Parchment",
+    description:
+      "Warm notebook paper with serif headings — the redesign palette.",
+    swatches: {
+      primary: "#1b1714",
+      accent: "#c46a3a",
+      background: "#fbf7ef",
+    },
+  },
+  {
+    id: "parchment-dark",
+    label: "Parchment Dark",
+    description:
+      "Parchment in deep-ink mode: candlelit paper tones on a warm black.",
+    swatches: {
+      primary: "#f1e8d7",
+      accent: "#e89a5a",
+      background: "#15120f",
+    },
+  },
 ];
 
 const ALL_CHOICES: ReadonlySet<ThemeChoice> = new Set<ThemeChoice>(
@@ -177,4 +206,40 @@ export function resolveInitialThemeChoice(
   storage?: Pick<Storage, "getItem">,
 ): ThemeChoice {
   return loadStoredThemeChoice(storage) ?? DEFAULT_THEME_CHOICE;
+}
+
+const DARK_THEME_IDS: ReadonlySet<ThemeId> = new Set<ThemeId>([
+  "dark",
+  "midnight",
+  "parchment-dark",
+]);
+
+/**
+ * Returns `true` when the concrete palette id is a dark-mode theme. Callers
+ * typically want this *after* `resolveThemeId` has collapsed "auto" to a real
+ * id. The persona decorator uses it to pick the dark variant of its paper
+ * palette so note cards stay legible against a dark page background.
+ */
+export function isDarkThemeId(id: ThemeId): boolean {
+  return DARK_THEME_IDS.has(id);
+}
+
+/**
+ * Subscribes to OS light/dark preference changes and re-applies the theme
+ * when the user is on "auto". Extracted so callers don't have to repeat the
+ * `matchMedia` null-check or rebind the handler on each re-render. Returns
+ * the MediaQueryList so tests can dispatch synthetic change events.
+ */
+export function watchAutoTheme(
+  getCurrentChoice: () => ThemeChoice,
+): MediaQueryList | null {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return null;
+  }
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener?.("change", () => {
+    const choice = getCurrentChoice();
+    if (choice === "auto") applyThemeChoice(choice);
+  });
+  return media;
 }

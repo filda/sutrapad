@@ -12,7 +12,10 @@ import type {
   SutraPadWorkspace,
 } from "../../../types";
 import type { SyncState } from "../../session/workspace-sync";
-import { buildNotesList } from "../shared/notes-list";
+import {
+  buildNotesList,
+  type NotesListPersonaOptions,
+} from "../shared/notes-list";
 import { buildSelectedFiltersBar } from "../shared/selected-filters-bar";
 import { appendTagChipContent } from "../shared/tag-chip-content";
 
@@ -22,6 +25,13 @@ export interface NotesPanelOptions {
   selectedTagFilters: string[];
   filterMode: SutraPadTagFilterMode;
   notesViewMode: NotesViewMode;
+  /**
+   * Persona decoration options. `undefined` keeps the original flat-card
+   * rendering; passing an object turns on the persona layer (paper palette,
+   * rotation, stickers, patina). The object carries the full workspace notes
+   * list so recurrence-based stickers can see the population.
+   */
+  personaOptions?: NotesListPersonaOptions;
   onSelectNote: (noteId: string) => void;
   onToggleTagFilter: (tag: string) => void;
   onClearTagFilters: () => void;
@@ -64,6 +74,7 @@ export function buildNotesPanel({
   selectedTagFilters,
   filterMode,
   notesViewMode,
+  personaOptions,
   onSelectNote,
   onToggleTagFilter,
   onClearTagFilters,
@@ -160,7 +171,13 @@ export function buildNotesPanel({
   }
 
   notesPanel.append(
-    buildNotesList(currentNoteId, filteredNotes, onSelectNote, notesViewMode),
+    buildNotesList(
+      currentNoteId,
+      filteredNotes,
+      onSelectNote,
+      notesViewMode,
+      personaOptions,
+    ),
   );
   return notesPanel;
 }

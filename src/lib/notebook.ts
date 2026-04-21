@@ -255,11 +255,7 @@ export function extractUrlsFromText(text: string): string[] {
     // Validate before canonicalizing so URL-like fragments (e.g. `https://:::`)
     // don't slip into the index — `canonicalizeUrl` echoes unparseable input
     // back verbatim by design, which is the wrong behaviour for this path.
-    try {
-      new URL(trimmedCandidate);
-    } catch {
-      continue;
-    }
+    if (!URL.canParse(trimmedCandidate)) continue;
 
     const canonicalUrl = canonicalizeUrl(trimmedCandidate);
     if (!seen.has(canonicalUrl)) {

@@ -579,7 +579,7 @@ describe("notebook helpers: note updates and creation", () => {
     });
 });
 
-describe("notebook helpers: workspace merging and equality", () => {
+describe("isPristineWorkspace and mergeWorkspaces", () => {
     it("treats the default local workspace as pristine", () => {
       const workspace = {
         activeNoteId: "1",
@@ -765,7 +765,9 @@ describe("notebook helpers: workspace merging and equality", () => {
       expect(merged.notes).toHaveLength(2);
       expect(merged.activeNoteId).toBe("local-pristine");
     });
+});
 
+describe("extractUrlsFromText and canonicalizeUrl", () => {
     it("extracts urls but strips only trailing punctuation from them", () => {
       expect(
         extractUrlsFromText("See https://example.com/one!!! and https://example.com/two.,);"),
@@ -821,7 +823,9 @@ describe("notebook helpers: workspace merging and equality", () => {
         ),
       ).toEqual(["https://example.com/post"]);
     });
+});
 
+describe("areWorkspacesEqual", () => {
     it("detects when two workspaces are equivalent", () => {
       const leftWorkspace = {
         activeNoteId: "1",

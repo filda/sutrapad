@@ -1,5 +1,13 @@
 import type { MenuItemId } from "../logic/menu";
-import type { ThemeChoice } from "../logic/theme";
+import {
+  isDarkThemeId,
+  resolveThemeId,
+  type ThemeChoice,
+} from "../logic/theme";
+import {
+  isPersonaEnabled,
+  type PersonaPreference,
+} from "../logic/persona";
 import type { SutraPadTagFilterMode, UserProfile } from "../../types";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
 import { buildAppNav } from "./chrome/app-nav";
@@ -44,6 +52,12 @@ interface RenderAppOptions
    * page so the current selection is visible.
    */
   currentTheme: ThemeChoice;
+  /**
+   * Whether the notebook-card persona layer is active. Device-local, mirrors
+   * the theme contract. When "on", the shared notes list draws paper colours,
+   * rotation, stickers, and patina. When "off", the flat card style runs.
+   */
+  personaPreference: PersonaPreference;
   onSelectMenuItem: (id: MenuItemId) => void;
   onSignIn: () => void;
   onLoadNotebook: () => void;
@@ -53,6 +67,7 @@ interface RenderAppOptions
   onCopyBookmarklet: () => void;
   onToggleTask: (noteId: string, lineIndex: number) => void;
   onChangeTheme: (choice: ThemeChoice) => void;
+  onChangePersonaPreference: (preference: PersonaPreference) => void;
   onChangeFilterMode: (mode: SutraPadTagFilterMode) => void;
 }
 
@@ -94,11 +109,24 @@ export function renderAppPage({
   activeMenuItem,
   detailNoteId,
   currentTheme,
+  personaPreference,
   onSelectMenuItem,
   onToggleTask,
   onChangeTheme,
+  onChangePersonaPreference,
 }: RenderAppOptions): void {
   root.innerHTML = "";
+
+  // Persona decoration only runs when the user opted in *and* we have a
+  // concrete dark/light answer to feed the paper-palette chooser. `auto`
+  // themes resolve here so a system light/dark switch during a session flips
+  // the card paper variants on the next re-render without a reload.
+  const personaOptions = isPersonaEnabled(personaPreference)
+    ? {
+        allNotes: workspace.notes,
+        dark: isDarkThemeId(resolveThemeId(currentTheme)),
+      }
+    : undefined;
 
   const page = document.createElement("main");
   page.className = "page";
@@ -170,6 +198,7 @@ export function renderAppPage({
           selectedTagFilters,
           filterMode,
           currentNoteId,
+          personaOptions,
           onToggleTagFilter,
           onClearTagFilters,
           onChangeFilterMode,
@@ -196,8 +225,10 @@ export function renderAppPage({
       page.append(
         buildSettingsPage({
           currentTheme,
+          personaPreference,
           profile,
           onChangeTheme,
+          onChangePersonaPreference,
           onLoadNotebook,
           onSaveNotebook,
           onSignIn,
@@ -219,6 +250,7 @@ export function renderAppPage({
         selectedTagFilters,
         filterMode,
         notesViewMode,
+        personaOptions,
         onSelectNote,
         onToggleTagFilter,
         onClearTagFilters,

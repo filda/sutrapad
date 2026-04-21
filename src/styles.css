@@ -1,3 +1,11 @@
+/*
+ * Google Fonts used exclusively by the "parchment" / "parchment-dark" themes
+ * (redesign palette based on docs/design_handoff_sutrapad). `display=swap`
+ * keeps first paint on the system-font fallback while the custom faces load
+ * in the background, so switching to parchment never blocks rendering.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;1,400;1,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@400;600&display=swap");
+
 :root {
   color-scheme: light;
   font-family: "Segoe UI", "Trebuchet MS", sans-serif;
@@ -7,6 +15,17 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /*
+   * Font-family stacks used by the notebook persona decorator (when enabled).
+   * Declared at the base so every theme can opt in regardless of whether it
+   * redeclares the palette tokens — the persona stickers + paper rendering
+   * shouldn't depend on which theme happens to be active.
+   */
+  --serif: "Newsreader", "Cormorant Garamond", Georgia, serif;
+  --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --handwritten: "Caveat", "Kalam", cursive;
 }
 
 /*
@@ -158,6 +177,110 @@
   --bookmarklet-bg:
     linear-gradient(135deg, rgba(82, 60, 42, 0.68), rgba(45, 40, 36, 0.8)),
     rgba(46, 42, 38, 0.85);
+}
+
+/*
+ * "Parchment" and "Parchment Dark" — warm paper-notebook redesign palette
+ * lifted from docs/design_handoff_sutrapad/src/tokens.css. These themes set
+ * both the shared app tokens (--accent, --primary, --bg, …) so every
+ * existing style keeps rendering, AND the design-handoff-native tokens
+ * (--paper-*, --ink-*, --serif, --sans, …) so the notebook-persona styling
+ * can consume them directly.
+ */
+:root[data-theme="parchment"] {
+  color-scheme: light;
+  color: #1b1714;
+  font-family: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  background: var(--app-bg);
+  --app-bg:
+    radial-gradient(1200px 700px at 85% -10%, rgba(196, 106, 58, 0.1), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(109, 77, 125, 0.08), transparent 60%),
+    linear-gradient(180deg, #fbf7ef 0%, #f2ead7 100%);
+  --bg: rgba(255, 252, 246, 0.82);
+  --line: rgba(27, 23, 20, 0.1);
+  --primary: #1b1714;
+  --primary-rgb: 27, 23, 20;
+  --accent: #c46a3a;
+  --accent-rgb: 196, 106, 58;
+  --muted: #6a5d50;
+  --success: #3f7a55;
+  --danger: #a93a2b;
+  --on-primary: #fbf7ef;
+  --surface-soft: rgba(255, 252, 246, 0.82);
+  --surface-subtle: rgba(255, 253, 248, 0.86);
+  --surface-active: rgba(236, 226, 204, 0.92);
+  --surface-tint: rgba(255, 250, 244, 0.88);
+  --surface-ghost: rgba(255, 252, 246, 0.6);
+  --surface-ghost-strong: rgba(255, 252, 246, 0.8);
+  --bookmarklet-bg:
+    linear-gradient(135deg, rgba(255, 250, 240, 0.92), rgba(236, 226, 204, 0.72)),
+    rgba(255, 252, 246, 0.82);
+
+  /* Design-handoff-native palette: persona styles use these directly. */
+  --paper-0: #fbf7ef;
+  --paper-1: #f5eedf;
+  --paper-2: #ece2cc;
+  --paper-3: #dfd1b4;
+  --ink-900: #1b1714;
+  --ink-700: #3a322b;
+  --ink-500: #6a5d50;
+  --ink-400: #8a7c6c;
+  --ink-300: #b8ac98;
+  --line-strong: rgba(27, 23, 20, 0.18);
+  --accent-olive: #8a6f2a;
+  --accent-plum: #6d4d7d;
+  --serif: "Newsreader", "Cormorant Garamond", Georgia, serif;
+  --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --handwritten: "Caveat", "Kalam", cursive;
+}
+
+:root[data-theme="parchment-dark"] {
+  color-scheme: dark;
+  color: #f1e8d7;
+  font-family: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  background: var(--app-bg);
+  --app-bg:
+    radial-gradient(1200px 700px at 85% -10%, rgba(232, 154, 90, 0.12), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, rgba(176, 138, 184, 0.1), transparent 60%),
+    linear-gradient(180deg, #15120f 0%, #22201a 100%);
+  --bg: rgba(32, 28, 22, 0.82);
+  --line: rgba(241, 232, 215, 0.12);
+  --primary: #f1e8d7;
+  --primary-rgb: 241, 232, 215;
+  --accent: #e89a5a;
+  --accent-rgb: 232, 154, 90;
+  --muted: #9c907a;
+  --success: #6ee7b7;
+  --danger: #fca5a5;
+  --on-primary: #15120f;
+  --surface-soft: rgba(32, 28, 22, 0.78);
+  --surface-subtle: rgba(26, 23, 18, 0.82);
+  --surface-active: rgba(51, 45, 36, 0.85);
+  --surface-tint: rgba(32, 28, 22, 0.85);
+  --surface-ghost: rgba(28, 25, 21, 0.6);
+  --surface-ghost-strong: rgba(28, 25, 21, 0.82);
+  --bookmarklet-bg:
+    linear-gradient(135deg, rgba(51, 45, 36, 0.65), rgba(28, 25, 21, 0.78)),
+    rgba(28, 25, 21, 0.85);
+
+  /* Design-handoff-native palette, dark variant. */
+  --paper-0: #15120f;
+  --paper-1: #1c1915;
+  --paper-2: #26221c;
+  --paper-3: #332d24;
+  --ink-900: #f1e8d7;
+  --ink-700: #d6cab1;
+  --ink-500: #9c907a;
+  --ink-400: #786d5c;
+  --ink-300: #544b3f;
+  --line-strong: rgba(241, 232, 215, 0.2);
+  --accent-olive: #c4a864;
+  --accent-plum: #b08ab8;
+  --serif: "Newsreader", "Cormorant Garamond", Georgia, serif;
+  --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --handwritten: "Caveat", "Kalam", cursive;
 }
 
 * {
@@ -1344,6 +1467,365 @@ a {
   border-radius: 999px;
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+/*
+ * Notebook persona decoration (opt-in via Settings). Each card gets a paper
+ * colour + ink + rotation + stickers/patina derived in
+ * src/lib/notebook-persona.ts. The decorator writes CSS custom properties
+ * inline on the button and data attributes for per-kind styling, so this
+ * stylesheet stays static — only the values change per card.
+ *
+ * When the persona is off, the `.notes-list--persona` class is absent and
+ * every rule below is inert: cards keep the flat `.note-list-item` look.
+ */
+.notes-list--persona {
+  /*
+   * The inline `--nc-rotation` breaks out of the grid cell slightly, so add a
+   * little vertical breathing room to avoid rotated corners clipping their
+   * neighbours. Mirrors the design-handoff layout without widening gaps on
+   * the flat-card mode.
+   */
+  gap: 14px;
+  padding-block: 4px;
+}
+
+.notes-list--persona .note-list-item {
+  /*
+   * Paper colour + ink come from the persona derivation. Fallbacks resolve to
+   * the original flat style so a half-rendered card (e.g. if the persona lib
+   * ever fails) still looks reasonable.
+   */
+  background: var(--nc-bg, var(--surface-soft));
+  color: var(--nc-ink, var(--primary));
+  border-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 18%, transparent);
+  /*
+   * Small signed rotation makes the grid feel like a loose pinboard. Hovering
+   * straightens the card so interaction targets stay predictable.
+   */
+  transform: rotate(var(--nc-rotation, 0deg));
+  transition:
+    transform 200ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.notes-list--persona .note-list-item:hover {
+  transform: rotate(0deg) translateY(-1px);
+  border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 55%, transparent);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+}
+
+.notes-list--persona .note-list-item.is-active {
+  border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 65%, transparent);
+  box-shadow:
+    inset 0 0 0 1px
+      color-mix(in oklab, var(--nc-accent, var(--accent)) 25%, transparent);
+}
+
+.notes-list--persona .note-list-item > strong {
+  font-family: var(--nc-title-font, var(--serif));
+  color: var(--nc-ink, var(--primary));
+  letter-spacing: 0.005em;
+}
+
+.notes-list--persona .note-list-item > p {
+  font-family: var(--nc-body-font, var(--serif));
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 80%, transparent);
+}
+
+.notes-list--persona .note-list-item > .note-list-meta,
+.notes-list--persona .note-list-item .note-list-tag {
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 62%, transparent);
+}
+
+.notes-list--persona .note-list-item[data-font-tier="handwritten"] > strong {
+  /* Bigger, slightly airier leading reads right for the hand-drawn face. */
+  font-size: 1.15rem;
+  line-height: 1.1;
+}
+
+.notes-list--persona .note-list-item[data-font-tier="mono"] > strong {
+  font-size: 0.95rem;
+  letter-spacing: 0;
+}
+
+/* --- Stickers ------------------------------------------------------------
+ * Stickers are small tone-tagged pills that sit in their own row below the
+ * tags. Each sticker kind styles its own variant via `data-sticker=<kind>`.
+ * Rotation per-chip is an inline `transform` set from the JS layer in the
+ * handoff; we keep it consistent via `nth-child`-based tilts instead so the
+ * runtime only has to hand us a kind.
+ */
+.note-list-stickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.note-list-sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-family: var(--sans);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: color-mix(in oklab, var(--nc-ink, var(--primary)) 8%, transparent);
+  border: 1px solid
+    color-mix(in oklab, var(--nc-ink, var(--primary)) 20%, transparent);
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 78%, transparent);
+  transform-origin: center;
+}
+
+.note-list-sticker:nth-child(1) {
+  transform: rotate(-2deg);
+}
+.note-list-sticker:nth-child(2) {
+  transform: rotate(1.5deg);
+}
+.note-list-sticker:nth-child(3) {
+  transform: rotate(-1deg);
+}
+
+.note-list-sticker[data-sticker="night-owl"] {
+  background: rgba(45, 55, 95, 0.18);
+  border-color: rgba(70, 85, 135, 0.55);
+  color: #2a3358;
+  border-radius: 999px;
+}
+
+:root[data-theme="midnight"] .note-list-sticker[data-sticker="night-owl"],
+:root[data-theme="dark"] .note-list-sticker[data-sticker="night-owl"],
+:root[data-theme="parchment-dark"] .note-list-sticker[data-sticker="night-owl"] {
+  background: rgba(160, 180, 230, 0.18);
+  border-color: rgba(160, 180, 230, 0.5);
+  color: #c7d1ef;
+}
+
+.note-list-sticker[data-sticker="one-shot"] {
+  background: rgba(180, 40, 40, 0.15);
+  border-color: rgba(180, 40, 40, 0.6);
+  color: #8a1f1f;
+}
+
+.note-list-sticker[data-sticker="reading"] {
+  background: rgba(120, 80, 40, 0.15);
+  border-color: rgba(120, 80, 40, 0.45);
+  color: #6b4a22;
+  border-radius: 3px;
+}
+
+.note-list-sticker[data-sticker="regular"] {
+  background: rgba(200, 150, 60, 0.18);
+  border-color: rgba(180, 130, 50, 0.55);
+  color: #7a5a1e;
+}
+
+.note-list-sticker[data-sticker="first-of-kind"] {
+  background: linear-gradient(
+    135deg,
+    rgba(220, 180, 80, 0.25),
+    rgba(255, 220, 130, 0.25)
+  );
+  border-color: rgba(180, 140, 60, 0.65);
+  color: #6e4f16;
+}
+
+.note-list-sticker[data-sticker="to-go"] {
+  background: rgba(250, 225, 80, 0.55);
+  border-color: rgba(200, 175, 40, 0.75);
+  color: #5c4b10;
+  border-radius: 2px;
+}
+
+.note-list-sticker[data-sticker="away"] {
+  background: rgba(60, 100, 160, 0.18);
+  border-color: rgba(60, 100, 160, 0.55);
+  color: #274774;
+}
+
+.note-list-sticker[data-sticker="voice"] {
+  background: rgba(120, 60, 130, 0.18);
+  border-color: rgba(120, 60, 130, 0.5);
+  color: #5a2a62;
+}
+
+/* --- Patinas --------------------------------------------------------------
+ * Patina overlays ride on ::before/::after pseudo-elements so the decorative
+ * layer costs nothing extra in the DOM. The `data-patina` attribute on the
+ * card is a space-separated list of kinds, and `[data-patina~="<kind>"]`
+ * targets the individual kinds.
+ *
+ * Only the CSS-only patinas are handled here; the SVG-heavy ones from the
+ * handoff (coffee-ring, pencil-marks, date-stamp, pin) degrade to a subtle
+ * texture cue rather than a full illustration.
+ */
+.notes-list--persona .note-list-item[data-patina~="folded-corner"]::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(
+    135deg,
+    transparent 50%,
+    color-mix(in oklab, var(--nc-ink, var(--primary)) 22%, transparent) 50%
+  );
+  opacity: calc(0.55 + var(--nc-wear, 0.3) * 0.45);
+  pointer-events: none;
+}
+
+.notes-list--persona .note-list-item[data-patina~="washi"]::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: -14px;
+  width: 72px;
+  height: 22px;
+  transform: rotate(-18deg);
+  background: rgba(180, 200, 130, 0.55);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.28) 0 3px,
+    transparent 3px 6px
+  );
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+}
+
+.notes-list--persona .note-list-item[data-patina~="highlight"] > strong {
+  background-image: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 230, 120, 0.55) 15%,
+    rgba(255, 230, 120, 0.55) 85%,
+    transparent 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 0.55em;
+  background-position: 0 85%;
+  padding-inline: 2px;
+}
+
+.notes-list--persona .note-list-item[data-patina~="coffee-ring"]::after {
+  content: "";
+  position: absolute;
+  right: 16px;
+  bottom: 18px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(122, 74, 44, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(122, 74, 44, 0.2);
+  opacity: calc(0.4 + var(--nc-wear, 0.3) * 0.35);
+  pointer-events: none;
+}
+
+/*
+ * Pin ↗ draw a tiny red dot at the top-center of the card. The handoff uses
+ * an SVG with a radial gradient; this CSS-only approximation reads the same
+ * at list-item scale without the extra markup.
+ */
+.notes-list--persona .note-list-item[data-patina~="pin"]::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ff6a6a, #c83030 70%, #6a1515);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+/*
+ * When a card carries BOTH `pin` and `washi` the two compete for ::before.
+ * Washi wins (larger, more prominent) and pin falls through as an inline
+ * decoration that reuses the sticker row — we just drop the pin overlay to
+ * avoid a silently-broken render.
+ */
+.notes-list--persona
+  .note-list-item[data-patina~="washi"][data-patina~="pin"]::before {
+  content: "";
+  top: -8px;
+  left: -14px;
+  transform: rotate(-18deg);
+  width: 72px;
+  height: 22px;
+  border-radius: 0;
+  background: rgba(180, 200, 130, 0.55);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.28) 0 3px,
+    transparent 3px 6px
+  );
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* --- Persona toggle (Settings page) --------------------------------------
+ * Two side-by-side radio-buttons, styled to match the Theme card below.
+ */
+.persona-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.persona-toggle-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--primary-rgb), 0.14);
+  background: var(--surface-subtle);
+  color: var(--primary);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.persona-toggle-option:hover {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  transform: translateY(-1px);
+}
+
+.persona-toggle-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.persona-toggle-option.is-active {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  background: var(--surface-active);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.2);
+}
+
+.persona-toggle-label {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.persona-toggle-description {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
 }
 
 .profile {
