@@ -191,6 +191,71 @@ export function extractUrlsFromText(text: string): string[] {
   return normalizedUrls;
 }
 
+/**
+ * Matches `#tag` occurrences to be lifted out of a note body. Rules:
+ *
+ *   - Must start at the beginning of the string or after whitespace, so URL
+ *     fragments like `https://example.com#section` are ignored (the `#`
+ *     there is preceded by a letter, not whitespace).
+ *   - Tag body accepts Unicode letters and numbers plus `_` and `-`, so
+ *     Czech diacritics (`#nápad`) and CJK (`#日本語`) are preserved.
+ *   - Must be followed by whitespace or punctuation. End-of-string is
+ *     deliberately NOT a valid terminator — see `extractHashtagsFromText`
+ *     for why.
+ *
+ * Lookbehind is safe here: the codebase already ships ES2023-only features
+ * (e.g. `Array#toSorted`), so the minimum browser set supports it.
+ */
+const HASHTAG_PATTERN = /(?<=^|\s)#([\p{L}\p{N}_-]+)(?=[\s\p{P}])/gu;
+
+/**
+ * Extracts every distinct `#tag` from `text`. Tags are lowercased so they
+ * match the canonical form the app already uses everywhere else (tag filter
+ * URL, tag index, chip input). Order follows first-appearance in the body —
+ * stable and predictable for the merge step that appends them.
+ *
+ * Only hashtags that are already "closed" by a trailing space or punctuation
+ * are returned. A trailing `#idea` at the very end of the body is NOT
+ * extracted — committing it on every keystroke would walk the tag list
+ * through `i`, `id`, `ide`, `idea` as the user types, and the additive merge
+ * (by design) would never prune the stale prefixes. The user signals "done
+ * with this tag" by typing the next character, at which point the tag
+ * commits naturally.
+ */
+export function extractHashtagsFromText(text: string): string[] {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  for (const match of text.matchAll(HASHTAG_PATTERN)) {
+    const tag = match[1].toLowerCase();
+    if (seen.has(tag)) continue;
+    seen.add(tag);
+    tags.push(tag);
+  }
+  return tags;
+}
+
+/**
+ * Returns the union of `existingTags` and any hashtags found in `body`,
+ * preserving the existing order and appending newly-discovered tags at the
+ * end. Deliberately additive — a tag the user deleted from the body is
+ * **not** removed from the note, because hand-curated tags (added via the
+ * tag chip input) should outlive edits to the prose. If the user wants a
+ * tag gone, they remove it explicitly via the chip's × button.
+ */
+export function mergeHashtagsIntoTags(
+  existingTags: readonly string[],
+  body: string,
+): string[] {
+  const seen = new Set(existingTags);
+  const merged = [...existingTags];
+  for (const tag of extractHashtagsFromText(body)) {
+    if (seen.has(tag)) continue;
+    seen.add(tag);
+    merged.push(tag);
+  }
+  return merged;
+}
+
 export function buildLinkIndex(
   workspace: SutraPadWorkspace,
   savedAt = new Date().toISOString(),

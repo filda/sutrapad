@@ -9,9 +9,11 @@ import {
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
+  extractHashtagsFromText,
   extractUrlsFromText,
   filterNotesByAllTags,
   isPristineWorkspace,
+  mergeHashtagsIntoTags,
   mergeWorkspaces,
   sortNotes,
   upsertNote,
@@ -823,4 +825,119 @@ describe("notebook helpers: workspace merging and equality", () => {
         }),
       ).toBe(false);
     });
+});
+
+describe("extractHashtagsFromText", () => {
+  it("returns an empty array when the text has no hashtags", () => {
+    expect(extractHashtagsFromText("Just plain prose without any tags.")).toEqual([]);
+  });
+
+  it("extracts a hashtag at the start of the text once a terminator follows", () => {
+    expect(extractHashtagsFromText("#idea first line")).toEqual(["idea"]);
+  });
+
+  it("extracts hashtags preceded by whitespace anywhere in the body", () => {
+    expect(extractHashtagsFromText("Random thought #idea that leads to #work.")).toEqual([
+      "idea",
+      "work",
+    ]);
+  });
+
+  it("ignores `#` that follows a non-whitespace character (URL fragments, code)", () => {
+    expect(
+      extractHashtagsFromText("See https://example.com#section and foo#bar in code."),
+    ).toEqual([]);
+  });
+
+  it("accepts a hashtag after a newline just like after a space", () => {
+    expect(extractHashtagsFromText("first\n#idea\nlast")).toEqual(["idea"]);
+  });
+
+  it("dedupes repeated hashtags and preserves first-appearance order", () => {
+    expect(extractHashtagsFromText("#work then #idea and #work again.")).toEqual([
+      "work",
+      "idea",
+    ]);
+  });
+
+  it("lowercases hashtags so they match the canonical stored form", () => {
+    expect(extractHashtagsFromText("#Idea vs #IDEA vs #idea.")).toEqual(["idea"]);
+  });
+
+  it("drops trailing punctuation from a hashtag", () => {
+    expect(extractHashtagsFromText("That's brilliant, #idea! Really #work.")).toEqual([
+      "idea",
+      "work",
+    ]);
+  });
+
+  it("supports Czech diacritics", () => {
+    expect(extractHashtagsFromText("Dneska jsem měl #nápad a pak #úkol.")).toEqual([
+      "nápad",
+      "úkol",
+    ]);
+  });
+
+  it("supports hyphens and underscores inside tags", () => {
+    expect(extractHashtagsFromText("Let's do a #weekly-review and a #dry_run.")).toEqual([
+      "weekly-review",
+      "dry_run",
+    ]);
+  });
+
+  it("ignores a lone `#` with no word characters after it", () => {
+    expect(extractHashtagsFromText("Pure punctuation # is not a tag.")).toEqual([]);
+  });
+
+  // Prevent the “intermediate tag” bug — during live typing every keystroke
+  // parses the body, and if end-of-string counted as a terminator a user
+  // typing `#idea` would walk the tag list through `i`, `id`, `ide`, `idea`.
+  // Only a trailing space/punctuation signals “this tag is done”.
+  it("does not extract a hashtag that is still being typed at end-of-text", () => {
+    expect(extractHashtagsFromText("Working on #idea")).toEqual([]);
+  });
+
+  it("commits a previously-untyped tag as soon as the user types the terminator", () => {
+    // Simulates the two adjacent keystrokes: before the space, nothing; with
+    // the space, `idea` commits exactly once.
+    expect(extractHashtagsFromText("Working on #idea")).toEqual([]);
+    expect(extractHashtagsFromText("Working on #idea ")).toEqual(["idea"]);
+  });
+});
+
+describe("mergeHashtagsIntoTags", () => {
+  it("returns a copy of existing tags when the body has no hashtags", () => {
+    const existing = ["work", "idea"];
+    const result = mergeHashtagsIntoTags(existing, "plain body, no tags here");
+    expect(result).toEqual(["work", "idea"]);
+    // Defensive copy — callers rely on this being a fresh array they can mutate
+    // via the `replaceCurrentNote` reducer without aliasing the old tag list.
+    expect(result).not.toBe(existing);
+  });
+
+  it("appends newly-discovered tags after the existing ones in first-appearance order", () => {
+    expect(mergeHashtagsIntoTags(["work"], "A thought #idea and a #chore.")).toEqual([
+      "work",
+      "idea",
+      "chore",
+    ]);
+  });
+
+  it("skips body hashtags that are already on the note", () => {
+    expect(mergeHashtagsIntoTags(["idea"], "Duplicate #idea stays single.")).toEqual(["idea"]);
+  });
+
+  it("does not remove existing tags that no longer appear in the body", () => {
+    // Curated tags (added via the chip UI) must survive edits to the prose —
+    // only the user removing the chip should delete the tag.
+    expect(mergeHashtagsIntoTags(["work", "idea"], "only #chore mentioned now.")).toEqual([
+      "work",
+      "idea",
+      "chore",
+    ]);
+  });
+
+  it("normalises parsed hashtags to lowercase before comparing with existing tags", () => {
+    expect(mergeHashtagsIntoTags(["idea"], "#IDEA once more.")).toEqual(["idea"]);
+  });
 });

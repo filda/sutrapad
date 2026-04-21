@@ -9,6 +9,7 @@ import {
   DEFAULT_NOTE_TITLE,
   extractUrlsFromText,
   filterNotesByAllTags,
+  mergeHashtagsIntoTags,
   mergeWorkspaces,
   toggleTaskInBody,
   upsertNote,
@@ -494,13 +495,27 @@ function createRenderCallbacks({
       refreshNotesPanel();
     },
     onBodyInput: (value: string) => {
+      const tagsBefore = getCurrentWorkspaceNote(getWorkspace()).tags;
+      const mergedTags = mergeHashtagsIntoTags(tagsBefore, value);
+      // Only re-render the whole editor when a new hashtag actually appeared
+      // in the body — otherwise every keystroke would swap the textarea and
+      // lose caret/IME state. The notes panel still refreshes for title/body
+      // preview updates even when no new tag is added.
+      const tagsChanged = mergedTags.length !== tagsBefore.length;
+
       replaceCurrentNote((currentWorkspaceNote) => ({
         ...currentWorkspaceNote,
         body: value,
         urls: extractUrlsFromText(value),
+        tags: mergedTags,
         updatedAt: new Date().toISOString(),
       }));
-      refreshNotesPanel();
+
+      if (tagsChanged) {
+        renderPreservingBodyInputFocus(render);
+      } else {
+        refreshNotesPanel();
+      }
     },
     onToggleTask: (noteId: string, lineIndex: number) => {
       const workspace = getWorkspace();
@@ -566,6 +581,32 @@ function renderPreservingTagInputFocus(render: () => void): void {
   if (shouldRefocus) {
     const nextInput = document.querySelector<HTMLInputElement>(".editor-card .tag-text-input");
     nextInput?.focus();
+  }
+}
+
+/**
+ * Auto-parsing hashtags from the body forces a full render when a new tag
+ * appears (so the tag chips update), and a full render rebuilds the <textarea>
+ * — dropping focus and the caret position. We capture selection before the
+ * swap and restore it on the freshly-rendered node so the user's typing flow
+ * is not interrupted mid-word.
+ */
+function renderPreservingBodyInputFocus(render: () => void): void {
+  const active = document.activeElement;
+  const wasBodyActive =
+    active instanceof HTMLTextAreaElement && active.classList.contains("body-input");
+  const savedStart = wasBodyActive ? active.selectionStart : 0;
+  const savedEnd = wasBodyActive ? active.selectionEnd : 0;
+
+  render();
+
+  if (wasBodyActive) {
+    const nextTextarea =
+      document.querySelector<HTMLTextAreaElement>(".editor-card .body-input");
+    if (nextTextarea) {
+      nextTextarea.focus();
+      nextTextarea.setSelectionRange(savedStart, savedEnd);
+    }
   }
 }
 
