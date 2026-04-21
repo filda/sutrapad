@@ -553,6 +553,64 @@ a {
   font-size: 1.5rem;
 }
 
+.tags-page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/*
+ * Segmented control for combining selected tags. Using `role="group"` with
+ * `aria-pressed` on the buttons keeps this accessible without dragging in a
+ * radio-group pattern — the visual affordance (one button sunk in) maps 1:1
+ * to the pressed state of the active option.
+ */
+.filter-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  background: var(--surface-subtle);
+  border-radius: 999px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.filter-mode-button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.filter-mode-button:hover {
+  color: var(--primary);
+}
+
+.filter-mode-button.is-active {
+  background: rgba(var(--accent-rgb), 0.18);
+  color: var(--primary);
+}
+
+/*
+ * Headings that separate user tags from auto tags on the Tags page. They sit
+ * directly above their respective clouds, so margins are asymmetric to tighten
+ * the visual coupling.
+ */
+.tags-cloud-heading {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+
 .tags-cloud-wide {
   display: flex;
   flex-wrap: wrap;
@@ -1079,6 +1137,46 @@ a {
   border-color: rgba(var(--accent-rgb), 0.5);
 }
 
+/*
+ * Auto-tag chips are derived from metadata (date, device, location, …) rather
+ * than typed by the user, so they're visually de-emphasised relative to user
+ * tags: a neutral muted palette instead of the accent tint. The namespace
+ * (`date:`, `device:`) is lifted out of the text and rendered as a small
+ * category icon by `appendTagChipContent`; see `.tag-chip-icon` below.
+ * Active state keeps the accent so a selected auto-filter is still unambiguous.
+ */
+.tag-filter-chip.is-auto {
+  background: rgba(var(--primary-rgb), 0.05);
+  border-color: rgba(var(--primary-rgb), 0.16);
+  color: var(--muted);
+}
+
+.tag-filter-chip.is-auto.is-active {
+  background: rgba(var(--accent-rgb), 0.14);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  color: var(--primary);
+}
+
+/*
+ * Icon + label spans live inside every auto-tag chip. The icon is an emoji
+ * glyph (e.g. 📍 for location, 💻 for device) standing in for the namespace
+ * prefix that's kept in the stored tag value but hidden from the UI.
+ * `display: inline-flex` on the parent is inherited from the chip; these
+ * spans just keep the gap consistent and prevent the icon from reflowing
+ * mid-label if the chip wraps.
+ */
+.tag-chip-icon {
+  display: inline-block;
+  margin-right: 0.4em;
+  font-size: 0.95em;
+  line-height: 1;
+  vertical-align: -0.05em;
+}
+
+.tag-chip-label {
+  display: inline;
+}
+
 .tag-filter-hint {
   margin: 10px 0 0;
   color: var(--muted);
@@ -1338,6 +1436,17 @@ a {
   border-radius: 999px;
   padding: 0.3rem 0.7rem;
   font-size: 0.82rem;
+}
+
+/*
+ * Mirror the auto-chip treatment used in the tag cloud so a selected auto
+ * filter (e.g. `device:mobile`) reads the same way in both places. The icon
+ * comes from the `.tag-chip-icon` span, not a pseudo-element.
+ */
+.selected-filter-chip.is-auto {
+  border-color: rgba(var(--primary-rgb), 0.22);
+  background: rgba(var(--primary-rgb), 0.06);
+  color: var(--muted);
 }
 
 .empty-editor-state {

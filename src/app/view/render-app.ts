@@ -1,7 +1,7 @@
 import type { MenuItemId } from "../logic/menu";
 import type { ThemeChoice } from "../logic/theme";
-import type { UserProfile } from "../../types";
-import { buildTagIndex } from "../../lib/notebook";
+import type { SutraPadTagFilterMode, UserProfile } from "../../types";
+import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
 import { buildAppNav } from "./chrome/app-nav";
 import { buildAccountBar } from "./chrome/account-bar";
 import { buildHomePage } from "./pages/home-page";
@@ -17,11 +17,12 @@ import {
 import { buildPagePlaceholder } from "./pages/placeholder-page";
 import { buildSettingsPage } from "./pages/settings-page";
 
-// The editor-card builder needs the list of available tag suggestions, but
-// callers don't have to supply it — it's derived here from the workspace that
-// NotesPanelOptions already requires.
+// The editor-card builder needs the list of available tag suggestions and the
+// set of auto-tags for chip styling, but callers don't have to supply either
+// — both are derived here from the workspace that NotesPanelOptions already
+// requires.
 interface RenderAppOptions
-  extends Omit<EditorCardOptions, "availableTagSuggestions">,
+  extends Omit<EditorCardOptions, "availableTagSuggestions" | "autoTagLookup">,
     NotesPanelOptions {
   root: HTMLElement;
   profile: UserProfile | null;
@@ -52,6 +53,7 @@ interface RenderAppOptions
   onCopyBookmarklet: () => void;
   onToggleTask: (noteId: string, lineIndex: number) => void;
   onChangeTheme: (choice: ThemeChoice) => void;
+  onChangeFilterMode: (mode: SutraPadTagFilterMode) => void;
 }
 
 export function renderAppPage({
@@ -59,6 +61,7 @@ export function renderAppPage({
   workspace,
   currentNoteId,
   selectedTagFilters,
+  filterMode,
   note,
   currentNote,
   syncState,
@@ -78,6 +81,7 @@ export function renderAppPage({
   onSelectNote,
   onToggleTagFilter,
   onClearTagFilters,
+  onChangeFilterMode,
   onNewNote,
   notesViewMode,
   onChangeNotesView,
@@ -164,9 +168,11 @@ export function renderAppPage({
         buildTagsPage({
           workspace,
           selectedTagFilters,
+          filterMode,
           currentNoteId,
           onToggleTagFilter,
           onClearTagFilters,
+          onChangeFilterMode,
           onRemoveSelectedFilter,
           onOpenNote: openNoteInEditor,
         }),
@@ -211,6 +217,7 @@ export function renderAppPage({
         workspace,
         currentNoteId,
         selectedTagFilters,
+        filterMode,
         notesViewMode,
         onSelectNote,
         onToggleTagFilter,
@@ -224,11 +231,21 @@ export function renderAppPage({
     return;
   }
 
+  // Auto-tag values are cached from the full combined index so the editor's
+  // selected-filters bar can style chips without re-deriving per-note tags.
+  const autoTagLookup = new Set(
+    buildCombinedTagIndex(workspace).tags
+      .filter((entry) => entry.kind === "auto")
+      .map((entry) => entry.tag),
+  );
+
   page.append(
     buildEditorCard({
       note,
       currentNote,
       selectedTagFilters,
+      filterMode,
+      autoTagLookup,
       availableTagSuggestions: buildTagIndex(workspace).tags,
       syncState,
       statusText,

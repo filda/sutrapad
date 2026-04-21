@@ -1,17 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildAvailableCombinedTagIndex,
   buildAvailableTagIndex,
+  buildCombinedTagIndex,
   buildLinkIndex,
   buildTagIndex,
   areWorkspacesEqual,
   canonicalizeUrl,
+  collectAllTagsForNote,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
   extractHashtagsFromText,
   extractUrlsFromText,
-  filterNotesByAllTags,
+  filterNotesByTags,
   isPristineWorkspace,
   mergeHashtagsIntoTags,
   mergeWorkspaces,
@@ -74,8 +77,8 @@ describe("notebook helpers: indexes and filtering", () => {
         version: 1,
         savedAt: "2026-04-13T12:30:00.000Z",
         tags: [
-          { tag: "idea", noteIds: ["1", "2"], count: 2 },
-          { tag: "work", noteIds: ["1", "3"], count: 2 },
+          { tag: "idea", noteIds: ["1", "2"], count: 2, kind: "user" },
+          { tag: "work", noteIds: ["1", "3"], count: 2, kind: "user" },
         ],
       });
     });
@@ -249,17 +252,168 @@ describe("notebook helpers: indexes and filtering", () => {
       });
     });
 
-    it("filters notes by requiring every selected tag", () => {
+    it("filters notes by requiring every selected tag (mode=all)", () => {
       const notes: SutraPadDocument[] = [
         makeNote({ id: "1", updatedAt: "2026-04-13T12:00:00.000Z", tags: ["work", "idea"] }),
         makeNote({ id: "2", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea"] }),
         makeNote({ id: "3", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["work", "draft"] }),
       ];
 
-      expect(filterNotesByAllTags(notes, ["work"]).map((note) => note.id)).toEqual(["1", "3"]);
-      expect(filterNotesByAllTags(notes, ["work", "idea"]).map((note) => note.id)).toEqual(["1"]);
-      expect(filterNotesByAllTags(notes, ["missing"])).toEqual([]);
-      expect(filterNotesByAllTags(notes, [])).toEqual(notes);
+      expect(filterNotesByTags(notes, ["work"], "all").map((note: SutraPadDocument) => note.id)).toEqual(["1", "3"]);
+      expect(filterNotesByTags(notes, ["work", "idea"], "all").map((note: SutraPadDocument) => note.id)).toEqual(["1"]);
+      expect(filterNotesByTags(notes, ["missing"], "all")).toEqual([]);
+      expect(filterNotesByTags(notes, [], "all")).toEqual(notes);
+    });
+
+    it("filters notes matching any selected tag (mode=any)", () => {
+      const notes: SutraPadDocument[] = [
+        makeNote({ id: "1", updatedAt: "2026-04-13T12:00:00.000Z", tags: ["work"] }),
+        makeNote({ id: "2", updatedAt: "2026-04-13T11:00:00.000Z", tags: ["idea"] }),
+        makeNote({ id: "3", updatedAt: "2026-04-13T10:00:00.000Z", tags: ["draft"] }),
+      ];
+
+      expect(
+        filterNotesByTags(notes, ["work", "idea"], "any").map(
+          (note: SutraPadDocument) => note.id,
+        ),
+      ).toEqual(["1", "2"]);
+      expect(
+        filterNotesByTags(notes, ["missing"], "any").map(
+          (note: SutraPadDocument) => note.id,
+        ),
+      ).toEqual([]);
+      expect(filterNotesByTags(notes, [], "any")).toEqual(notes);
+    });
+
+    it("filterNotesByTags matches auto-derived tags as well as user tags", () => {
+      const now = new Date("2026-04-21T12:00:00.000Z");
+      const notes: SutraPadDocument[] = [
+        makeNote({
+          id: "1",
+          updatedAt: "2026-04-21T08:00:00.000Z",
+          createdAt: "2026-04-21T08:00:00.000Z",
+          tags: [],
+          captureContext: { source: "new-note", deviceType: "mobile" },
+        }),
+        makeNote({
+          id: "2",
+          updatedAt: "2026-04-21T08:00:00.000Z",
+          createdAt: "2026-04-21T08:00:00.000Z",
+          tags: [],
+          captureContext: { source: "new-note", deviceType: "desktop" },
+        }),
+      ];
+
+      expect(
+        filterNotesByTags(notes, ["device:mobile"], "all", now).map(
+          (note: SutraPadDocument) => note.id,
+        ),
+      ).toEqual(["1"]);
+      expect(
+        filterNotesByTags(notes, ["device:mobile", "device:desktop"], "any", now).map(
+          (note: SutraPadDocument) => note.id,
+        ),
+      ).toEqual(["1", "2"]);
+      // With mode="all" a note can only match if it has both — impossible here.
+      expect(
+        filterNotesByTags(notes, ["device:mobile", "device:desktop"], "all", now),
+      ).toEqual([]);
+    });
+
+    it("collectAllTagsForNote merges user tags and derived auto-tags", () => {
+      const now = new Date("2026-04-21T12:00:00.000Z");
+      const note = makeNote({
+        id: "1",
+        updatedAt: "2026-04-21T08:00:00.000Z",
+        createdAt: "2026-04-21T08:00:00.000Z",
+        tags: ["work"],
+        captureContext: { source: "new-note", deviceType: "desktop" },
+      });
+
+      const all = collectAllTagsForNote(note, now);
+
+      expect(all.has("work")).toBe(true);
+      expect(all.has("device:desktop")).toBe(true);
+      expect(all.has("date:today")).toBe(true);
+    });
+
+    it("buildCombinedTagIndex puts user tags before auto tags", () => {
+      const now = new Date("2026-04-21T12:00:00.000Z");
+      const workspace = {
+        activeNoteId: "1",
+        notes: [
+          makeNote({
+            id: "1",
+            updatedAt: "2026-04-21T08:00:00.000Z",
+            createdAt: "2026-04-21T08:00:00.000Z",
+            tags: ["work"],
+            captureContext: { source: "new-note", deviceType: "mobile" },
+          }),
+          makeNote({
+            id: "2",
+            updatedAt: "2026-04-21T08:00:00.000Z",
+            createdAt: "2026-04-21T08:00:00.000Z",
+            tags: ["idea"],
+            captureContext: { source: "new-note", deviceType: "mobile" },
+          }),
+        ],
+      };
+
+      const index = buildCombinedTagIndex(
+        workspace,
+        now,
+        "2026-04-21T12:00:00.000Z",
+      );
+
+      const kinds = index.tags.map((entry) => entry.kind);
+      const firstAutoIdx = kinds.indexOf("auto");
+      const lastUserIdx = kinds.lastIndexOf("user");
+
+      // All user entries must come before any auto entry.
+      expect(lastUserIdx).toBeLessThan(firstAutoIdx);
+
+      // Auto entries have the expected namespaced values and counts.
+      const deviceEntry = index.tags.find((entry) => entry.tag === "device:mobile");
+      expect(deviceEntry?.kind).toBe("auto");
+      expect(deviceEntry?.count).toBe(2);
+    });
+
+    it("buildAvailableCombinedTagIndex narrows the cloud using auto-tag filters", () => {
+      const now = new Date("2026-04-21T12:00:00.000Z");
+      const workspace = {
+        activeNoteId: "1",
+        notes: [
+          makeNote({
+            id: "1",
+            updatedAt: "2026-04-21T08:00:00.000Z",
+            createdAt: "2026-04-21T08:00:00.000Z",
+            tags: ["work"],
+            captureContext: { source: "new-note", deviceType: "mobile" },
+          }),
+          makeNote({
+            id: "2",
+            updatedAt: "2026-04-21T08:00:00.000Z",
+            createdAt: "2026-04-21T08:00:00.000Z",
+            tags: ["idea"],
+            captureContext: { source: "new-note", deviceType: "desktop" },
+          }),
+        ],
+      };
+
+      const index = buildAvailableCombinedTagIndex(
+        workspace,
+        ["device:mobile"],
+        "all",
+        now,
+        "2026-04-21T12:00:00.000Z",
+      );
+
+      const visible = index.tags.map((entry) => entry.tag);
+      expect(visible).toContain("work");
+      expect(visible).not.toContain("idea");
+      expect(visible).toContain("device:mobile");
+      // `device:desktop` only lives on note 2, which was filtered out.
+      expect(visible).not.toContain("device:desktop");
     });
 });
 

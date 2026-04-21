@@ -1,11 +1,20 @@
-import { filterNotesByAllTags } from "../../lib/notebook";
-import type { SutraPadDocument, SutraPadWorkspace } from "../../types";
+import { filterNotesByTags } from "../../lib/notebook";
+import type {
+  SutraPadDocument,
+  SutraPadTagFilterMode,
+  SutraPadWorkspace,
+} from "../../types";
 
 export function resolveDisplayedNote(
   workspace: SutraPadWorkspace,
   selectedTagFilters: string[],
+  filterMode: SutraPadTagFilterMode = "all",
 ): SutraPadDocument | null {
-  const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
+  const filteredNotes = filterNotesByTags(
+    workspace.notes,
+    selectedTagFilters,
+    filterMode,
+  );
   if (filteredNotes.length === 0) {
     return null;
   }

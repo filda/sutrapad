@@ -113,10 +113,25 @@ export interface SutraPadHead {
   savedAt: string;
 }
 
+/**
+ * Distinguishes hand-curated tags (typed by the user or lifted from `#hashtag`
+ * in the body) from tags derived automatically from a note's metadata
+ * (`createdAt`, `captureContext`, `urls`, …). Kept as a discriminated field
+ * on `SutraPadTagEntry` so the filter UI can style the two kinds differently
+ * without a parallel type hierarchy.
+ */
+export type SutraPadTagKind = "user" | "auto";
+
 export interface SutraPadTagEntry {
   tag: string;
   noteIds: string[];
   count: number;
+  /**
+   * Optional on the base type for backwards compatibility with persisted
+   * indexes written before auto-tags existed. Readers should treat a missing
+   * `kind` as `"user"` — which is what `buildTagIndex` produced exclusively.
+   */
+  kind?: SutraPadTagKind;
 }
 
 export interface SutraPadTagIndex {
@@ -124,6 +139,14 @@ export interface SutraPadTagIndex {
   savedAt: string;
   tags: SutraPadTagEntry[];
 }
+
+/**
+ * How multi-tag filtering combines the selected tags. `all` requires every
+ * tag to be present on a note (intersection); `any` matches notes that
+ * carry at least one of the selected tags (union). `all` is the historical
+ * default and stays the default when the URL parameter is absent.
+ */
+export type SutraPadTagFilterMode = "all" | "any";
 
 export interface SutraPadLinkEntry {
   url: string;

@@ -2,11 +2,11 @@ import type {
   SutraPadDocument,
   SutraPadLinkIndex,
   SutraPadTagEntry,
+  SutraPadTagFilterMode,
   SutraPadTagIndex,
-  SutraPadTaskEntry,
-  SutraPadTaskIndex,
   SutraPadWorkspace,
 } from "../types";
+import { deriveAutoTags } from "./auto-tags";
 
 export const DEFAULT_NOTE_TITLE = "Untitled note";
 
@@ -64,8 +64,57 @@ export function buildTagIndex(
         tag,
         noteIds,
         count: noteIds.length,
+        kind: "user" as const,
       }))
       .toSorted((left, right) => right.count - left.count || left.tag.localeCompare(right.tag)),
+  };
+}
+
+/**
+ * Builds a unified index of both user-curated tags (from `note.tags`) and
+ * auto-tags derived from each note's metadata via `deriveAutoTags`. Every
+ * entry is marked with `kind` so callers can style the two groups distinctly
+ * without re-running the derivation. Ordering is stable: user tags first
+ * (most-used wins, alpha breaks ties), then auto tags under the same rule —
+ * the split keeps the hand-curated tags visually prominent even in
+ * workspaces where auto-derived tags vastly outnumber them.
+ *
+ * Tag collisions across kinds are resolved by kind: a user tag `mobile` and
+ * the auto-tag `device:mobile` are distinct chips (different tag values),
+ * so no collision is possible by construction — this is exactly why auto
+ * tags are namespaced.
+ */
+export function buildCombinedTagIndex(
+  workspace: SutraPadWorkspace,
+  now: Date = new Date(),
+  savedAt = new Date().toISOString(),
+): SutraPadTagIndex {
+  const userEntries = buildTagIndex(workspace, savedAt).tags;
+
+  const autoNoteIdsByTag = new Map<string, string[]>();
+  for (const note of workspace.notes) {
+    for (const tag of deriveAutoTags(note, now)) {
+      const existingNoteIds = autoNoteIdsByTag.get(tag) ?? [];
+      autoNoteIdsByTag.set(tag, [...existingNoteIds, note.id]);
+    }
+  }
+
+  const autoEntries: SutraPadTagEntry[] = [...autoNoteIdsByTag.entries()]
+    .map(([tag, noteIds]) => ({
+      tag,
+      noteIds,
+      count: noteIds.length,
+      kind: "auto" as const,
+    }))
+    .toSorted(
+      (left, right) =>
+        right.count - left.count || left.tag.localeCompare(right.tag),
+    );
+
+  return {
+    version: 1,
+    savedAt,
+    tags: [...userEntries, ...autoEntries],
   };
 }
 
@@ -74,8 +123,39 @@ export function buildAvailableTagIndex(
   selectedTagFilters: string[],
   savedAt = new Date().toISOString(),
 ): SutraPadTagIndex {
-  const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
+  const filteredNotes = filterNotesByTags(
+    workspace.notes,
+    selectedTagFilters,
+    "all",
+  );
   return buildTagIndex({ ...workspace, notes: filteredNotes }, savedAt);
+}
+
+/**
+ * Combined-index companion to `buildAvailableTagIndex`: narrows the workspace
+ * to notes matching the active filter (respecting `mode` so auto and user
+ * tags combine the same way the filtered list does), then rebuilds the
+ * user + auto index over that narrower set. The Tags page uses it to hide
+ * chips that would produce an empty list after the next click.
+ */
+export function buildAvailableCombinedTagIndex(
+  workspace: SutraPadWorkspace,
+  selectedTagFilters: string[],
+  mode: SutraPadTagFilterMode = "all",
+  now: Date = new Date(),
+  savedAt = new Date().toISOString(),
+): SutraPadTagIndex {
+  const filteredNotes = filterNotesByTags(
+    workspace.notes,
+    selectedTagFilters,
+    mode,
+    now,
+  );
+  return buildCombinedTagIndex(
+    { ...workspace, notes: filteredNotes },
+    now,
+    savedAt,
+  );
 }
 
 /**
@@ -297,129 +377,16 @@ export function buildLinkIndex(
   };
 }
 
-/**
- * Matches a checkbox at the start of a line (optional leading whitespace and
- * an optional `-` bullet). Accepted bracket variants are `[]`, `[ ]`, `[x]`
- * and `[X]`. Captured groups:
- *   1 — full prefix up to and including the closing bracket
- *   2 — bracket content (empty string, space, or `x`/`X`)
- *   3 — remaining text on the line (the task description)
- */
-const TASK_LINE_REGEX = /^(\s*(?:-\s+)?\[([ xX]?)\])\s?(.*)$/;
-
-function parseTasksFromNote(note: SutraPadDocument): SutraPadTaskEntry[] {
-  const tasks: SutraPadTaskEntry[] = [];
-  const lines = note.body.split("\n");
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const match = TASK_LINE_REGEX.exec(lines[lineIndex]);
-    if (!match) continue;
-
-    const bracketContent = match[2];
-    const text = match[3].trimEnd();
-    // Skip lines that are just a checkbox with nothing after it; they are
-    // almost always a typo rather than an intentional empty task and would
-    // otherwise clutter the Tasks page with ghost entries.
-    if (text.length === 0) continue;
-
-    tasks.push({
-      noteId: note.id,
-      lineIndex,
-      text,
-      done: bracketContent === "x" || bracketContent === "X",
-      noteUpdatedAt: note.updatedAt,
-    });
-  }
-  return tasks;
-}
-
-/**
- * Counts open and completed tasks in a single note. Used by the notebook list
- * to show a "has-tasks" chip next to each note card. Kept here (next to the
- * parser it reuses) so the UI code stays DOM-free and testable.
- */
-export function countTasksInNote(note: SutraPadDocument): { open: number; done: number } {
-  let open = 0;
-  let done = 0;
-  for (const task of parseTasksFromNote(note)) {
-    if (task.done) done += 1;
-    else open += 1;
-  }
-  return { open, done };
-}
-
-/**
- * Comparator used to order the task index. Extracted from `buildTaskIndex`
- * as an exported pure function so every branch (open/done, recency,
- * noteId, lineIndex) can be unit-tested with crafted pairs; the integration
- * path through `parseTasksFromNote` only ever produces lineIndex-ascending
- * input so the tie-breakers are otherwise unobservable.
- *
- * Ordering, in order of precedence:
- *   1. Open tasks before completed ones.
- *   2. Most recently touched note first (by `noteUpdatedAt` descending).
- *   3. Alphabetical by `noteId` to make ordering deterministic for ties.
- *   4. Ascending `lineIndex` so tasks inside a note mirror the note body.
- */
-export function compareTaskEntries(
-  left: SutraPadTaskEntry,
-  right: SutraPadTaskEntry,
-): number {
-  if (left.done !== right.done) return left.done ? 1 : -1;
-  const updatedAtDelta = right.noteUpdatedAt.localeCompare(left.noteUpdatedAt);
-  if (updatedAtDelta !== 0) return updatedAtDelta;
-  if (left.noteId !== right.noteId) return left.noteId.localeCompare(right.noteId);
-  return left.lineIndex - right.lineIndex;
-}
-
-export function buildTaskIndex(
-  workspace: SutraPadWorkspace,
-  savedAt = new Date().toISOString(),
-): SutraPadTaskIndex {
-  const tasks: SutraPadTaskEntry[] = [];
-  for (const note of workspace.notes) {
-    tasks.push(...parseTasksFromNote(note));
-  }
-
-  return {
-    version: 1,
-    savedAt,
-    tasks: tasks.toSorted(compareTaskEntries),
-  };
-}
-
-/**
- * Flips the done-state of a single task at `lineIndex` within `body`. Unknown
- * or non-checkbox lines are returned unchanged so callers can safely invoke
- * this even if the index is momentarily stale (e.g. the user edited the note
- * between the render and the click). The bracket style is preserved for the
- * open state (`[]` stays `[]`, `[ ]` stays `[ ]`); marking a task done always
- * writes `[x]`.
- */
-export function toggleTaskInBody(body: string, lineIndex: number): string {
-  const lines = body.split("\n");
-  if (lineIndex < 0 || lineIndex >= lines.length) return body;
-
-  const line = lines[lineIndex];
-  const match = TASK_LINE_REGEX.exec(line);
-  if (!match) return body;
-
-  const bracketContent = match[2];
-  const isDone = bracketContent === "x" || bracketContent === "X";
-  const prefix = match[1];
-  const rest = line.slice(prefix.length);
-
-  let nextPrefix: string;
-  if (isDone) {
-    // Preserve the original open style when we can infer it; default to `[ ]`.
-    nextPrefix = prefix.replace(/\[[xX]\]$/, "[ ]");
-  } else {
-    // Collapse both `[]` and `[ ]` to `[x]` on completion.
-    nextPrefix = prefix.replace(/\[[ ]?\]$/, "[x]");
-  }
-
-  lines[lineIndex] = `${nextPrefix}${rest}`;
-  return lines.join("\n");
-}
+// Task-related parsing/indexing lives in `./tasks` (separated so auto-tag
+// derivation can import it without creating a cycle through this module).
+// Re-exported here to keep every existing `import … from "./notebook"`
+// call-site working unchanged.
+export {
+  buildTaskIndex,
+  compareTaskEntries,
+  countTasksInNote,
+  toggleTaskInBody,
+} from "./tasks";
 
 /**
  * Filters a pre-built tag index down to suggestion candidates for the tag
@@ -452,16 +419,54 @@ export function filterTagSuggestions(
   return matches;
 }
 
-export function filterNotesByAllTags(
+/**
+ * Collects every tag that can match a filter for this note — the union of
+ * hand-curated `note.tags` and every auto-tag derived from its metadata.
+ * Used by `filterNotesByTags`; kept DOM-free and exported so tests can
+ * assert the exact set without indirection.
+ */
+export function collectAllTagsForNote(
+  note: SutraPadDocument,
+  now: Date = new Date(),
+): Set<string> {
+  const set = new Set<string>(note.tags);
+  for (const tag of deriveAutoTags(note, now)) {
+    set.add(tag);
+  }
+  return set;
+}
+
+/**
+ * Filters `notes` by `selectedTags`, combining user and auto-derived tags
+ * (namespaced, see `deriveAutoTags`) before the test. `mode` picks the
+ * combination rule:
+ *
+ *   - `"all"` (default): a note must carry every selected tag — the historical
+ *     behaviour, and what a shared URL with a single `tags=` param has always
+ *     meant.
+ *   - `"any"`: a note matches if it carries at least one of the selected tags.
+ *
+ * An empty selection returns the input unchanged under both modes.
+ */
+export function filterNotesByTags(
   notes: SutraPadDocument[],
   selectedTags: string[],
+  mode: SutraPadTagFilterMode = "all",
+  now: Date = new Date(),
 ): SutraPadDocument[] {
   if (selectedTags.length === 0) {
     return notes;
   }
 
-  return notes.filter((note) => selectedTags.every((tag) => note.tags.includes(tag)));
+  return notes.filter((note) => {
+    const tagsForNote = collectAllTagsForNote(note, now);
+    if (mode === "any") {
+      return selectedTags.some((tag) => tagsForNote.has(tag));
+    }
+    return selectedTags.every((tag) => tagsForNote.has(tag));
+  });
 }
+
 
 export function isPristineWorkspace(workspace: SutraPadWorkspace): boolean {
   if (workspace.notes.length !== 1) {

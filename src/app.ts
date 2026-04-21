@@ -1,14 +1,14 @@
 import { GoogleAuthService } from "./services/google-auth";
 import { GoogleDriveStore } from "./services/drive-store";
 import {
-  buildTagIndex,
+  buildCombinedTagIndex,
   areWorkspacesEqual,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   DEFAULT_NOTE_TITLE,
   extractUrlsFromText,
-  filterNotesByAllTags,
+  filterNotesByTags,
   mergeHashtagsIntoTags,
   mergeWorkspaces,
   toggleTaskInBody,
@@ -27,6 +27,7 @@ import {
 import { buildBookmarklet } from "./lib/bookmarklet";
 import type {
   SutraPadDocument,
+  SutraPadTagFilterMode,
   SutraPadWorkspace,
   UserProfile,
 } from "./types";
@@ -35,7 +36,12 @@ import { applyFreshNoteDetails } from "./app/capture/apply-fresh-note-details";
 import { resolveDisplayedNote } from "./app/logic/displayed-note";
 import { formatBuildStamp, formatDate } from "./app/logic/formatting";
 import { buildNoteMetadata } from "./app/logic/note-metadata";
-import { readTagFiltersFromLocation, writeTagFiltersToLocation } from "./app/logic/tag-filters";
+import {
+  readTagFilterModeFromLocation,
+  readTagFiltersFromLocation,
+  writeTagFilterModeToLocation,
+  writeTagFiltersToLocation,
+} from "./app/logic/tag-filters";
 import { restoreSessionOnStartup } from "./app/session/session";
 import { withAuthRetry, type AuthRetryContext } from "./app/session/auth-retry";
 import { runWorkspaceSave, type SaveMode, type SyncState } from "./app/session/workspace-sync";
@@ -66,7 +72,12 @@ const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
 export { resolveDisplayedNote } from "./app/logic/displayed-note";
 export { buildNoteMetadata } from "./app/logic/note-metadata";
-export { readTagFiltersFromLocation, writeTagFiltersToLocation } from "./app/logic/tag-filters";
+export {
+  readTagFilterModeFromLocation,
+  readTagFiltersFromLocation,
+  writeTagFilterModeToLocation,
+  writeTagFiltersToLocation,
+} from "./app/logic/tag-filters";
 export {
   readActivePageFromLocation,
   readNoteDetailIdFromLocation,
@@ -158,6 +169,13 @@ function syncTagFiltersToLocation(selectedTagFilters: string[]): void {
   }
 }
 
+function syncFilterModeToLocation(filterMode: SutraPadTagFilterMode): void {
+  const nextUrl = writeTagFilterModeToLocation(window.location.href, filterMode);
+  if (nextUrl !== window.location.href) {
+    window.history.replaceState({}, "", nextUrl);
+  }
+}
+
 function syncActivePageToLocation(
   activeMenuItem: MenuItemId,
   detailNoteId: string | null,
@@ -228,11 +246,16 @@ function syncDetailRouteSelection(
 function ensureVisibleActiveNoteSelection(
   workspace: SutraPadWorkspace,
   selectedTagFilters: string[],
+  filterMode: SutraPadTagFilterMode,
 ): {
   workspace: SutraPadWorkspace;
   shouldPersistWorkspace: boolean;
 } {
-  const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
+  const filteredNotes = filterNotesByTags(
+    workspace.notes,
+    selectedTagFilters,
+    filterMode,
+  );
   if (
     filteredNotes.length === 0 ||
     !workspace.activeNoteId ||
@@ -255,21 +278,25 @@ function getAppStatusText({
   lastError,
   workspace,
   selectedTagFilters,
+  filterMode,
   profile,
 }: {
   syncState: SyncState;
   lastError: string;
   workspace: SutraPadWorkspace;
   selectedTagFilters: string[];
+  filterMode: SutraPadTagFilterMode;
   profile: UserProfile | null;
 }): string {
   if (syncState === "loading") return "Loading…";
   if (syncState === "saving") return "Saving…";
   if (syncState === "error") return lastError || "A synchronization error occurred.";
 
-  const displayedNote = resolveDisplayedNote(workspace, selectedTagFilters);
+  const displayedNote = resolveDisplayedNote(workspace, selectedTagFilters, filterMode);
   if (!displayedNote && selectedTagFilters.length > 0) {
-    return "No notes match all selected tags.";
+    return filterMode === "any"
+      ? "No notes match any selected tag."
+      : "No notes match all selected tags.";
   }
 
   const note = displayedNote ?? getCurrentWorkspaceNote(workspace);
@@ -306,6 +333,8 @@ interface RenderCallbackOptions {
   setBookmarkletMessage: (message: string) => void;
   getSelectedTagFilters: () => string[];
   setSelectedTagFilters: (selectedTagFilters: string[]) => void;
+  getFilterMode: () => SutraPadTagFilterMode;
+  setFilterMode: (filterMode: SutraPadTagFilterMode) => void;
   getActiveMenuItem: () => MenuItemId;
   setActiveMenuItem: (menuItemId: MenuItemId) => void;
   getDetailNoteId: () => string | null;
@@ -334,9 +363,14 @@ function toggleSelectedTagFilter(selectedTagFilters: string[], tag: string): str
 function applyVisibleActiveNoteSelection(
   workspace: SutraPadWorkspace,
   selectedTagFilters: string[],
+  filterMode: SutraPadTagFilterMode,
   persistWorkspace: (workspace: SutraPadWorkspace) => void,
 ): SutraPadWorkspace {
-  const visibleActiveNote = ensureVisibleActiveNoteSelection(workspace, selectedTagFilters);
+  const visibleActiveNote = ensureVisibleActiveNoteSelection(
+    workspace,
+    selectedTagFilters,
+    filterMode,
+  );
   if (visibleActiveNote.shouldPersistWorkspace) {
     persistWorkspace(visibleActiveNote.workspace);
   }
@@ -356,6 +390,8 @@ function createRenderCallbacks({
   setBookmarkletMessage,
   getSelectedTagFilters,
   setSelectedTagFilters,
+  getFilterMode,
+  setFilterMode,
   getActiveMenuItem,
   setActiveMenuItem,
   getDetailNoteId,
@@ -465,7 +501,12 @@ function createRenderCallbacks({
       const nextSelectedTagFilters = toggleSelectedTagFilter(getSelectedTagFilters(), tag);
       setSelectedTagFilters(nextSelectedTagFilters);
       setWorkspace(
-        applyVisibleActiveNoteSelection(getWorkspace(), nextSelectedTagFilters, persistWorkspace),
+        applyVisibleActiveNoteSelection(
+          getWorkspace(),
+          nextSelectedTagFilters,
+          getFilterMode(),
+          persistWorkspace,
+        ),
       );
       syncTagFiltersToLocation(nextSelectedTagFilters);
       render();
@@ -475,12 +516,31 @@ function createRenderCallbacks({
       syncTagFiltersToLocation([]);
       render();
     },
+    onChangeFilterMode: (mode: SutraPadTagFilterMode) => {
+      if (mode === getFilterMode()) return;
+      setFilterMode(mode);
+      setWorkspace(
+        applyVisibleActiveNoteSelection(
+          getWorkspace(),
+          getSelectedTagFilters(),
+          mode,
+          persistWorkspace,
+        ),
+      );
+      syncFilterModeToLocation(mode);
+      render();
+    },
     onNewNote: handleNewNote,
     onRemoveSelectedFilter: (tag: string) => {
       const nextSelectedTagFilters = getSelectedTagFilters().filter((entry) => entry !== tag);
       setSelectedTagFilters(nextSelectedTagFilters);
       setWorkspace(
-        applyVisibleActiveNoteSelection(getWorkspace(), nextSelectedTagFilters, persistWorkspace),
+        applyVisibleActiveNoteSelection(
+          getWorkspace(),
+          nextSelectedTagFilters,
+          getFilterMode(),
+          persistWorkspace,
+        ),
       );
       syncTagFiltersToLocation(nextSelectedTagFilters);
       render();
@@ -685,6 +745,7 @@ export function createApp(root: HTMLElement): void {
     window.localStorage.getItem(BOOKMARKLET_HELPER_KEY) !== "collapsed";
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let selectedTagFilters: string[] = readTagFiltersFromLocation(window.location.href);
+  let filterMode: SutraPadTagFilterMode = readTagFilterModeFromLocation(window.location.href);
   let activeMenuItem: MenuItemId = readActivePageFromLocation(
     window.location.href,
     appBasePath,
@@ -737,7 +798,12 @@ export function createApp(root: HTMLElement): void {
   };
 
   const syncSelectedTagFilters = (): void => {
-    const availableTags = new Set(buildTagIndex(workspace).tags.map((entry) => entry.tag));
+    // Combined index covers both user tags and auto-derived tags, so a filter
+    // like `device:mobile` survives a workspace reload instead of being
+    // silently dropped because `buildTagIndex` only knew about user tags.
+    const availableTags = new Set(
+      buildCombinedTagIndex(workspace).tags.map((entry) => entry.tag),
+    );
     selectedTagFilters = selectedTagFilters.filter((tag) => availableTags.has(tag));
   };
 
@@ -769,7 +835,11 @@ export function createApp(root: HTMLElement): void {
 
   const refreshNotesPanel = (): void => {
     syncSelectedTagFilters();
-    const visibleActiveNote = ensureVisibleActiveNoteSelection(workspace, selectedTagFilters);
+    const visibleActiveNote = ensureVisibleActiveNoteSelection(
+      workspace,
+      selectedTagFilters,
+      filterMode,
+    );
     workspace = visibleActiveNote.workspace;
     if (visibleActiveNote.shouldPersistWorkspace) {
       persistLocalWorkspace(workspace);
@@ -782,8 +852,10 @@ export function createApp(root: HTMLElement): void {
     currentPanel.replaceWith(
       buildNotesPanel({
         workspace,
-        currentNoteId: resolveDisplayedNote(workspace, selectedTagFilters)?.id ?? "",
+        currentNoteId:
+          resolveDisplayedNote(workspace, selectedTagFilters, filterMode)?.id ?? "",
         selectedTagFilters,
+        filterMode,
         notesViewMode,
         onChangeNotesView: (mode) => {
           if (mode === notesViewMode) return;
@@ -805,7 +877,11 @@ export function createApp(root: HTMLElement): void {
           selectedTagFilters = selectedTagFilters.includes(tag)
             ? selectedTagFilters.filter((entry) => entry !== tag)
             : [...selectedTagFilters, tag];
-          const nextVisibleNote = ensureVisibleActiveNoteSelection(workspace, selectedTagFilters);
+          const nextVisibleNote = ensureVisibleActiveNoteSelection(
+            workspace,
+            selectedTagFilters,
+            filterMode,
+          );
           workspace = nextVisibleNote.workspace;
           if (nextVisibleNote.shouldPersistWorkspace) {
             persistLocalWorkspace(workspace);
@@ -835,6 +911,7 @@ export function createApp(root: HTMLElement): void {
       lastError,
       workspace,
       selectedTagFilters,
+      filterMode,
       profile,
     });
   };
@@ -848,13 +925,18 @@ export function createApp(root: HTMLElement): void {
       persistLocalWorkspace(workspace);
     }
     if (detailNoteId === null) {
-      const visibleActiveNote = ensureVisibleActiveNoteSelection(workspace, selectedTagFilters);
+      const visibleActiveNote = ensureVisibleActiveNoteSelection(
+        workspace,
+        selectedTagFilters,
+        filterMode,
+      );
       workspace = visibleActiveNote.workspace;
       if (visibleActiveNote.shouldPersistWorkspace) {
         persistLocalWorkspace(workspace);
       }
     }
     syncTagFiltersToLocation(selectedTagFilters);
+    syncFilterModeToLocation(filterMode);
     syncActivePageToLocation(activeMenuItem, detailNoteId, appBasePath);
     syncNotesViewToLocation(activeMenuItem, detailNoteId, notesViewMode);
 
@@ -864,7 +946,7 @@ export function createApp(root: HTMLElement): void {
         ? (workspace.notes.find((note) => note.id === detailNoteId) ?? null)
         : null;
     const displayedNote =
-      detailNote ?? resolveDisplayedNote(workspace, selectedTagFilters);
+      detailNote ?? resolveDisplayedNote(workspace, selectedTagFilters, filterMode);
     const callbacks = createRenderCallbacks({
       auth,
       appRootUrl,
@@ -891,6 +973,10 @@ export function createApp(root: HTMLElement): void {
       getSelectedTagFilters: () => selectedTagFilters,
       setSelectedTagFilters: (nextSelectedTagFilters) => {
         selectedTagFilters = nextSelectedTagFilters;
+      },
+      getFilterMode: () => filterMode,
+      setFilterMode: (nextFilterMode) => {
+        filterMode = nextFilterMode;
       },
       getActiveMenuItem: () => activeMenuItem,
       setActiveMenuItem: (nextActiveMenuItem) => {
@@ -923,6 +1009,7 @@ export function createApp(root: HTMLElement): void {
       workspace,
       currentNoteId: displayedNote?.id ?? "",
       selectedTagFilters,
+      filterMode,
       note: displayedNote,
       currentNote: detailNote ?? currentNote,
       syncState,
@@ -931,6 +1018,7 @@ export function createApp(root: HTMLElement): void {
         lastError,
         workspace,
         selectedTagFilters,
+        filterMode,
         profile,
       }),
       profile,

@@ -1,15 +1,26 @@
-import { buildTagIndex, filterNotesByAllTags, filterTagSuggestions } from "../../../lib/notebook";
+import {
+  buildCombinedTagIndex,
+  filterNotesByTags,
+  filterTagSuggestions,
+} from "../../../lib/notebook";
 import { buildNoteMetadata } from "../../logic/note-metadata";
 import type { NotesViewMode } from "../../logic/notes-view";
-import type { SutraPadDocument, SutraPadTagEntry, SutraPadWorkspace } from "../../../types";
+import type {
+  SutraPadDocument,
+  SutraPadTagEntry,
+  SutraPadTagFilterMode,
+  SutraPadWorkspace,
+} from "../../../types";
 import type { SyncState } from "../../session/workspace-sync";
 import { buildNotesList } from "../shared/notes-list";
 import { buildSelectedFiltersBar } from "../shared/selected-filters-bar";
+import { appendTagChipContent } from "../shared/tag-chip-content";
 
 export interface NotesPanelOptions {
   workspace: SutraPadWorkspace;
   currentNoteId: string;
   selectedTagFilters: string[];
+  filterMode: SutraPadTagFilterMode;
   notesViewMode: NotesViewMode;
   onSelectNote: (noteId: string) => void;
   onToggleTagFilter: (tag: string) => void;
@@ -51,6 +62,7 @@ export function buildNotesPanel({
   workspace,
   currentNoteId,
   selectedTagFilters,
+  filterMode,
   notesViewMode,
   onSelectNote,
   onToggleTagFilter,
@@ -61,8 +73,12 @@ export function buildNotesPanel({
   const notesPanel = document.createElement("aside");
   notesPanel.className = "notes-panel";
 
-  const filteredNotes = filterNotesByAllTags(workspace.notes, selectedTagFilters);
-  const tagIndex = buildTagIndex(workspace);
+  const filteredNotes = filterNotesByTags(
+    workspace.notes,
+    selectedTagFilters,
+    filterMode,
+  );
+  const combinedIndex = buildCombinedTagIndex(workspace);
 
   const notesHeader = document.createElement("div");
   notesHeader.className = "notes-panel-header";
@@ -86,7 +102,7 @@ export function buildNotesPanel({
   notesHeader.append(headerActions);
   notesPanel.append(notesHeader);
 
-  if (tagIndex.tags.length > 0) {
+  if (combinedIndex.tags.length > 0) {
     const filterSection = document.createElement("section");
     filterSection.className = "tag-filter-card";
 
@@ -111,11 +127,18 @@ export function buildNotesPanel({
     const cloud = document.createElement("div");
     cloud.className = "tag-filter-cloud";
 
-    for (const entry of tagIndex.tags) {
+    for (const entry of combinedIndex.tags) {
       const chip = document.createElement("button");
       chip.type = "button";
-      chip.className = `tag-filter-chip${selectedTagFilters.includes(entry.tag) ? " is-active" : ""}`;
-      chip.textContent = `${entry.tag} · ${entry.count}`;
+      const isAuto = entry.kind === "auto";
+      chip.className = [
+        "tag-filter-chip",
+        isAuto ? "is-auto" : "",
+        selectedTagFilters.includes(entry.tag) ? "is-active" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      appendTagChipContent(chip, entry.tag, isAuto, ` · ${entry.count}`);
       chip.addEventListener("click", () => onToggleTagFilter(entry.tag));
       cloud.append(chip);
     }
@@ -125,10 +148,11 @@ export function buildNotesPanel({
     if (selectedTagFilters.length > 0) {
       const filterHint = document.createElement("p");
       filterHint.className = "tag-filter-hint";
+      const modePhrase = filterMode === "any" ? "any selected tag" : "every selected tag";
       filterHint.textContent =
         filteredNotes.length === 0
-          ? "No notes match all selected tags."
-          : `Showing ${filteredNotes.length} note${filteredNotes.length === 1 ? "" : "s"} that match every selected tag.`;
+          ? `No notes match ${modePhrase}.`
+          : `Showing ${filteredNotes.length} note${filteredNotes.length === 1 ? "" : "s"} that match ${modePhrase}.`;
       filterSection.append(filterHint);
     }
 
@@ -371,6 +395,8 @@ export interface EditorCardOptions {
   note: SutraPadDocument | null;
   currentNote: SutraPadDocument;
   selectedTagFilters: string[];
+  filterMode: SutraPadTagFilterMode;
+  autoTagLookup: ReadonlySet<string>;
   availableTagSuggestions: readonly SutraPadTagEntry[];
   syncState: SyncState;
   statusText: string;
@@ -386,6 +412,8 @@ export function buildEditorCard({
   note,
   currentNote,
   selectedTagFilters,
+  filterMode,
+  autoTagLookup,
   availableTagSuggestions,
   syncState,
   statusText,
@@ -412,7 +440,12 @@ export function buildEditorCard({
   status.className = `status status-${syncState}`;
   status.textContent = statusText;
 
-  const selectedFiltersBar = buildSelectedFiltersBar(selectedTagFilters, onRemoveSelectedFilter);
+  const selectedFiltersBar = buildSelectedFiltersBar({
+    selectedTagFilters,
+    filterMode,
+    autoTagLookup,
+    onRemoveSelectedFilter,
+  });
 
   if (!note && selectedTagFilters.length > 0) {
     const emptyEditor = document.createElement("div");
