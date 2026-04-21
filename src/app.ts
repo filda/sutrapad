@@ -50,6 +50,7 @@ import {
 } from "./app/session/workspace-sync";
 import { loadLocalWorkspace, persistLocalWorkspace } from "./app/storage/local-workspace";
 import { renderAppPage } from "./app/view/render-app";
+import { syncPillLabel } from "./app/view/chrome/topbar";
 import { buildNotesPanel } from "./app/view/pages/notes-page";
 import { isMenuActionItemId, type MenuItemId } from "./app/logic/menu";
 import {
@@ -944,13 +945,7 @@ export function createApp(root: HTMLElement): void {
   };
 
   const refreshStatus = (): void => {
-    const status = root.querySelector(".status");
-    if (!(status instanceof HTMLParagraphElement)) {
-      return;
-    }
-
-    status.className = `status status-${syncState}`;
-    status.textContent = getAppStatusText({
+    const statusText = getAppStatusText({
       syncState,
       lastError,
       workspace,
@@ -958,6 +953,26 @@ export function createApp(root: HTMLElement): void {
       filterMode,
       profile,
     });
+
+    const status = root.querySelector(".status");
+    if (status instanceof HTMLParagraphElement) {
+      status.className = `status status-${syncState}`;
+      status.textContent = statusText;
+    }
+
+    // Keep the topbar sync pill in sync with background saves — a full
+    // `render()` always rebuilds it, but background-save triggers only this
+    // lightweight path, so we update the pill in place here too.
+    const pill = root.querySelector(".sync-pill");
+    if (pill instanceof HTMLElement) {
+      pill.className = `sync-pill is-${syncState}`;
+      pill.title = statusText;
+      pill.setAttribute("aria-label", statusText);
+      const label = pill.querySelector(".sync-pill-label");
+      if (label instanceof HTMLElement) {
+        label.textContent = syncPillLabel(syncState);
+      }
+    }
   };
 
   const render = (): void => {

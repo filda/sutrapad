@@ -26,6 +26,61 @@
   --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --handwritten: "Caveat", "Kalam", cursive;
+
+  /*
+   * Shared tokens from docs/design_handoff_sutrapad/src/tokens.css. Each
+   * per-theme block may override these; the fallbacks here lean on each
+   * theme's existing --primary-rgb / --accent-rgb / --muted so non-parchment
+   * palettes get a sensible topbar + card without a full token rewrite.
+   */
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 22px;
+  --r-xl: 32px;
+
+  /* Severity colours used by the sync pill and callouts. Parchment-anchored
+     hues that read well on both light and dark surfaces; themes can override
+     if a palette clashes. */
+  --ok: #3f7a55;
+  --warn: #b9802b;
+  --err: #a93a2b;
+
+  /* Ink = foreground ramp (900 strong → 300 faint). Derived from the theme's
+     --primary-rgb so dark themes see a light ramp automatically. */
+  --ink-900: var(--primary);
+  --ink-700: rgba(var(--primary-rgb), 0.82);
+  --ink-500: var(--muted);
+  --ink-400: rgba(var(--primary-rgb), 0.5);
+  --ink-300: rgba(var(--primary-rgb), 0.32);
+
+  /* Line strengths. --line is still declared per-theme (the alpha there is
+     tuned per palette); --line-strong bumps the same hue for stronger edges. */
+  --line-strong: rgba(var(--primary-rgb), 0.22);
+
+  /* Paper ramp = backgrounds from lightest surface to boldest card tint.
+     Falls back to the existing --surface-* aliases; parchment replaces with
+     concrete hex values. */
+  --paper-0: var(--surface-tint);
+  --paper-1: var(--surface-soft);
+  --paper-2: var(--surface-active);
+  --paper-3: var(--surface-active);
+
+  /* Surface aliases — tuned mapping onto the pre-existing --bg / --surface-* set. */
+  --surface: var(--bg);
+  --surface-strong: var(--surface-subtle);
+  --surface-inset: rgba(var(--primary-rgb), 0.035);
+
+  /* Secondary + tertiary accents. Non-parchment themes alias back to --accent
+     so existing rules keep rendering unchanged; parchment sets olive/plum. */
+  --accent-2: var(--accent);
+  --accent-3: var(--accent);
+
+  /* Card shadow — inset highlight reads well on light surfaces; parchment
+     redeclares with richer paper-tinted shadow tuned for the redesign. */
+  --shadow-card:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 14px 36px -14px rgba(0, 0, 0, 0.18),
+    0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
 /*
@@ -227,8 +282,15 @@
   --ink-400: #8a7c6c;
   --ink-300: #b8ac98;
   --line-strong: rgba(27, 23, 20, 0.18);
-  --accent-olive: #8a6f2a;
-  --accent-plum: #6d4d7d;
+  --accent-2: #8a6f2a;
+  --accent-3: #6d4d7d;
+  --surface: rgba(255, 252, 246, 0.82);
+  --surface-strong: #fffdf8;
+  --surface-inset: rgba(27, 23, 20, 0.035);
+  --shadow-card:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 14px 36px -14px rgba(58, 44, 28, 0.22),
+    0 2px 6px rgba(58, 44, 28, 0.08);
   --serif: "Newsreader", "Cormorant Garamond", Georgia, serif;
   --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -275,8 +337,15 @@
   --ink-400: #786d5c;
   --ink-300: #544b3f;
   --line-strong: rgba(241, 232, 215, 0.2);
-  --accent-olive: #c4a864;
-  --accent-plum: #b08ab8;
+  --accent-2: #c4a864;
+  --accent-3: #b08ab8;
+  --surface: rgba(32, 28, 22, 0.82);
+  --surface-strong: #1c1915;
+  --surface-inset: rgba(241, 232, 215, 0.05);
+  --shadow-card:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 42px -20px rgba(0, 0, 0, 0.6),
+    0 2px 6px rgba(0, 0, 0, 0.3);
   --serif: "Newsreader", "Cormorant Garamond", Georgia, serif;
   --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -325,42 +394,6 @@ button {
   margin-bottom: 24px;
 }
 
-.eyebrow {
-  margin: 0 0 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.8rem;
-  color: var(--accent);
-}
-
-button.eyebrow {
-  appearance: none;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font: inherit;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.8rem;
-  color: var(--accent);
-  cursor: pointer;
-  transition: opacity 150ms ease;
-}
-
-button.eyebrow:hover {
-  opacity: 0.75;
-}
-
-button.eyebrow:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.65);
-  outline-offset: 4px;
-  border-radius: 4px;
-}
-
-button.eyebrow.is-active {
-  color: var(--accent);
-}
-
 h1 {
   margin: 0;
   max-width: 11ch;
@@ -405,18 +438,242 @@ a {
   border-radius: 4px;
 }
 
-.hero-top-row {
-  grid-column: 1 / -1;
+/*
+ * ============ TOPBAR (sticky) ============
+ * Lifted from docs/design_handoff_sutrapad/src/tokens.css. The topbar sits
+ * above the scroll container as a direct child of #app and remains visible
+ * as the page scrolls. Brand + Add CTA + nav-tabs + sync-pill + avatar.
+ */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 12px 20px;
-  margin: 0 0 8px;
+  gap: 14px;
+  padding: 10px clamp(16px, 3.5vw, 28px);
+  background:
+    linear-gradient(180deg, var(--surface-strong), var(--surface));
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  flex-wrap: wrap;
+  row-gap: 10px;
 }
 
-.hero.hero-top-only {
-  display: block;
-  margin-bottom: 24px;
+/* Brand = gradient mark + serif wordmark, doubles as Home link. */
+.brand {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-900);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: background 120ms ease;
+}
+
+.brand:hover {
+  background: var(--surface-inset);
+}
+
+.brand:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.65);
+  outline-offset: 2px;
+}
+
+.brand.is-active {
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+.brand-mark {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: radial-gradient(circle at 30% 30%, #e58a55, var(--accent) 55%, #7b3d1e 120%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 2px 6px -2px rgba(58, 44, 28, 0.35);
+}
+
+.brand-wordmark {
+  font-family: var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+/* Add = primary pill CTA. Sits between brand and nav-tabs. */
+.nav-tab-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 8px 10px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--ink-900);
+  color: var(--on-primary);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+  flex-shrink: 0;
+}
+
+.nav-tab-add:hover {
+  background: var(--accent);
+}
+
+.nav-tab-add:active {
+  transform: translateY(1px);
+}
+
+.nav-tab-add:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.65);
+  outline-offset: 2px;
+}
+
+.nav-tab-add.is-active {
+  background: var(--accent);
+  box-shadow: 0 4px 14px -6px color-mix(in oklab, var(--accent) 60%, transparent);
+}
+
+.nav-tab-add-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+/* Nav tabs = pill group, inset surface, active item lifted. */
+.nav-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--paper-1);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 2px rgba(var(--primary-rgb), 0.05);
+  flex-wrap: wrap;
+}
+
+.nav-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-500);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.nav-tab:hover {
+  color: var(--ink-900);
+  background: color-mix(in oklab, var(--paper-2) 60%, transparent);
+}
+
+.nav-tab:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.65);
+  outline-offset: 2px;
+}
+
+.nav-tab.is-active {
+  color: var(--ink-900);
+  background: var(--surface-strong);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35) inset,
+    0 1px 2px rgba(var(--primary-rgb), 0.1);
+}
+
+/* Actions = sync pill + avatar, pushed to the end. */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-500);
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--ok) 18%, transparent);
+}
+
+.sync-pill.is-loading .sync-dot,
+.sync-pill.is-saving .sync-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--warn) 18%, transparent);
+  animation: sync-pill-pulse 1.4s ease-in-out infinite;
+}
+
+.sync-pill.is-error .sync-dot {
+  background: var(--err);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--err) 18%, transparent);
+}
+
+.sync-pill.is-error {
+  color: var(--err);
+  border-color: color-mix(in oklab, var(--err) 30%, var(--line));
+}
+
+@keyframes sync-pill-pulse {
+  50% {
+    transform: scale(1.35);
+    opacity: 0.6;
+  }
+}
+
+/* Narrower viewports: sync pill label collapses to the dot only. */
+@media (max-width: 900px) {
+  .sync-pill-label {
+    display: none;
+  }
+  .nav-tabs {
+    order: 10;
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+  .topbar-actions {
+    margin-left: auto;
+  }
 }
 
 .home-page {
@@ -427,54 +684,6 @@ a {
 
 .home-page .hero-intro {
   max-width: 72ch;
-}
-
-.hero-top-row .eyebrow {
-  margin: 0;
-}
-
-.app-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 10px 28px rgba(var(--primary-rgb), 0.06);
-}
-
-.app-nav-item {
-  appearance: none;
-  border: 0;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 0.92rem;
-  letter-spacing: 0.01em;
-  transition:
-    color 150ms ease,
-    background 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.app-nav-item:hover {
-  color: var(--primary);
-  background: rgba(var(--accent-rgb), 0.1);
-}
-
-.app-nav-item:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.65);
-  outline-offset: 2px;
-}
-
-.app-nav-item.is-active {
-  color: var(--on-primary);
-  background: var(--primary);
-  box-shadow: 0 6px 18px rgba(var(--primary-rgb), 0.18);
 }
 
 .page-placeholder {

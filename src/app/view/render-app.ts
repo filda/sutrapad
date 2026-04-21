@@ -10,8 +10,7 @@ import {
 } from "../logic/persona";
 import type { SutraPadTagFilterMode, UserProfile } from "../../types";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
-import { buildAppNav } from "./chrome/app-nav";
-import { buildAccountBar } from "./chrome/account-bar";
+import { buildTopbar } from "./chrome/topbar";
 import { buildHomePage } from "./pages/home-page";
 import { buildTagsPage } from "./pages/tags-page";
 import { buildLinksPage } from "./pages/links-page";
@@ -128,37 +127,23 @@ export function renderAppPage({
       }
     : undefined;
 
-  const page = document.createElement("main");
-  page.className = "page";
-
-  const hero = document.createElement("section");
-  hero.className = "hero hero-top-only";
-
-  const topRow = document.createElement("div");
-  topRow.className = "hero-top-row";
-
-  const eyebrow = document.createElement("button");
-  eyebrow.type = "button";
-  eyebrow.className = `eyebrow eyebrow-home${activeMenuItem === "home" ? " is-active" : ""}`;
-  eyebrow.textContent = "SutraPad";
-  eyebrow.setAttribute("aria-label", "Go to SutraPad home");
-  eyebrow.setAttribute(
-    "aria-current",
-    activeMenuItem === "home" ? "page" : "false",
-  );
-  eyebrow.addEventListener("click", () => onSelectMenuItem("home"));
-  topRow.append(eyebrow);
-  topRow.append(buildAppNav(activeMenuItem, onSelectMenuItem));
-  topRow.append(
-    buildAccountBar({
+  // Topbar lives as a direct child of #app (outside .page) so that
+  // `position: sticky` pins against the viewport rather than the page column,
+  // and scrolling content glides underneath the blurred surface.
+  root.append(
+    buildTopbar({
+      activeMenuItem,
       profile,
+      syncState,
+      statusText,
+      onSelectMenuItem,
       onSignIn,
       onSignOut,
     }),
   );
-  hero.append(topRow);
 
-  page.append(hero);
+  const page = document.createElement("main");
+  page.className = "page";
 
   const footer = document.createElement("footer");
   footer.className = "footer";
