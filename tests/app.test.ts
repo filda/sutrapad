@@ -679,15 +679,21 @@ describe("fresh note details", () => {
       locale: "en-US",
     });
 
-    await expect(
-      generateFreshNoteDetails(
-        localNoon,
-        resolveCoordinates,
-        reverseGeocode,
-        buildCaptureContext,
-      ),
-    ).resolves.toEqual({
-      title: "13/04/2026 · high noon · Prague",
+    const result = await generateFreshNoteDetails(
+      localNoon,
+      resolveCoordinates,
+      reverseGeocode,
+      buildCaptureContext,
+    );
+
+    // Title date is locale-formatted; assert the structure and the non-date parts
+    // rather than an exact day/month/year ordering (which depends on the runtime locale).
+    expect(result.title).toContain("2026");
+    expect(result.title).toContain("13");
+    expect(result.title).toContain("4");
+    expect(result.title.endsWith(" · high noon · Prague")).toBe(true);
+
+    expect(result).toMatchObject({
       location: "Prague",
       coordinates: {
         latitude: 50.0755,

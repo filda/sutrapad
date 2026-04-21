@@ -1,5 +1,5 @@
 export function formatDate(isoDate: string): string {
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(isoDate));
@@ -10,7 +10,7 @@ export function formatBuildStamp(
   commitHash: string,
   buildTime: string,
 ): string {
-  const builtAt = new Intl.DateTimeFormat("en-GB", {
+  const builtAt = new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(buildTime));

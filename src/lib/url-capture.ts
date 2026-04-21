@@ -172,7 +172,7 @@ export function formatCoordinates(coordinates: Coordinates): string {
 }
 
 export function buildNoteCaptureTitle(date: Date, place?: string): string {
-  const formattedDate = new Intl.DateTimeFormat("en-GB", {
+  const formattedDate = new Intl.DateTimeFormat(undefined, {
     day: "numeric",
     month: "numeric",
     year: "numeric",

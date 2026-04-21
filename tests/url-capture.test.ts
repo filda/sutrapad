@@ -270,15 +270,24 @@ describe("url capture helpers", () => {
   });
 
   it("builds a note capture title from date and place", () => {
-    expect(buildNoteCaptureTitle(new Date("2026-04-14T00:15:00"), "LibeÅˆ")).toBe(
-      "14/04/2026 · midnight · LibeÅˆ",
+    // The numeric date is locale-formatted, so we assert on the structure rather
+    // than a specific ordering of day/month/year.
+    const title = buildNoteCaptureTitle(
+      new Date("2026-04-14T00:15:00"),
+      "LibeÅˆ",
     );
+    expect(title).toContain("2026");
+    expect(title).toContain("14");
+    expect(title).toContain("4");
+    expect(title.endsWith(" · midnight · LibeÅˆ")).toBe(true);
   });
 
   it("builds a note capture title without a place when none is provided", () => {
-    expect(buildNoteCaptureTitle(new Date("2026-04-14T12:00:00"))).toBe(
-      "14/04/2026 · high noon",
-    );
+    const title = buildNoteCaptureTitle(new Date("2026-04-14T12:00:00"));
+    expect(title).toContain("2026");
+    expect(title).toContain("14");
+    expect(title).toContain("4");
+    expect(title.endsWith(" · high noon")).toBe(true);
   });
 
   it("detects dayparts and formats coordinates", () => {
