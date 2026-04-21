@@ -4,6 +4,7 @@ import {
   buildLinkIndex,
   buildTagIndex,
   areWorkspacesEqual,
+  canonicalizeUrl,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
   createTextNoteWorkspace,
@@ -617,6 +618,52 @@ describe("notebook helpers: workspace merging and equality", () => {
 
     it("ignores strings that look like urls but are not actually parseable", () => {
       expect(extractUrlsFromText("Visit https://:::broken:::")).toEqual([]);
+    });
+
+    it("strips utm_* parameters when canonicalising", () => {
+      expect(
+        canonicalizeUrl(
+          "https://example.com/article?utm_source=newsletter&utm_medium=email&utm_campaign=spring",
+        ),
+      ).toBe("https://example.com/article");
+    });
+
+    it("strips named tracking parameters including Seznam Sklik dop_* variants", () => {
+      expect(
+        canonicalizeUrl(
+          "https://example.com/post?fbclid=abc&gclid=xyz&dop_ab_variant=B&dop_source_zone_name=feed",
+        ),
+      ).toBe("https://example.com/post");
+    });
+
+    it("preserves non-tracking query parameters and their order", () => {
+      expect(
+        canonicalizeUrl("https://example.com/search?q=typescript&page=2&utm_source=twitter"),
+      ).toBe("https://example.com/search?q=typescript&page=2");
+    });
+
+    it("preserves path and fragment during canonicalisation", () => {
+      expect(
+        canonicalizeUrl("https://example.com/docs/guide?utm_campaign=x#section-3"),
+      ).toBe("https://example.com/docs/guide#section-3");
+    });
+
+    it("returns the input unchanged when it cannot be parsed as a URL", () => {
+      expect(canonicalizeUrl("not-a-url")).toBe("not-a-url");
+    });
+
+    it("removes every occurrence when a tracking parameter appears more than once", () => {
+      expect(
+        canonicalizeUrl("https://example.com/?utm_source=a&utm_source=b&id=42"),
+      ).toBe("https://example.com/?id=42");
+    });
+
+    it("dedupes urls that differ only by tracking parameters when extracting from text", () => {
+      expect(
+        extractUrlsFromText(
+          "Compare https://example.com/post?utm_source=twitter with https://example.com/post?utm_source=newsletter and https://example.com/post?fbclid=xyz",
+        ),
+      ).toEqual(["https://example.com/post"]);
     });
 
     it("detects when two workspaces are equivalent", () => {

@@ -78,6 +78,92 @@ export function buildAvailableTagIndex(
   return buildTagIndex({ ...workspace, notes: filteredNotes }, savedAt);
 }
 
+/**
+ * Query parameters stripped from URLs before they are indexed in `note.urls[]`.
+ * The list is deliberately conservative — only parameters that are purely
+ * promotional or analytics, never parameters that can identify the resource
+ * itself. Names like `ref`, `source`, `id`, or `q` are NOT included because on
+ * many sites they carry real meaning (a GitHub ref, a search query, a product
+ * id), and a quiet strip would change which page the link actually points to.
+ *
+ * In addition to this exact-match set, every parameter whose name starts with
+ * `utm_` is stripped — Google Analytics reserves the whole prefix, so a
+ * prefix rule here is safer than trying to enumerate every `utm_*` variant.
+ *
+ * Storage model this list serves:
+ *   - The note **body** is never rewritten. Whatever the user pasted or
+ *     captured stays verbatim, so clicking the link in the editor always
+ *     opens the exact page they saved (including A/B variant, source zone,
+ *     referral credit, etc.).
+ *   - `note.urls[]` — which feeds the link index on the Links page — stores
+ *     the **canonical form** produced by `canonicalizeUrl`. This is what
+ *     lets the index dedupe two pastes of the same article that differ only
+ *     by UTM/source tracking.
+ *   - `captureContext.page.canonicalUrl` is captured from `<link rel="canonical">`
+ *     when available, but is deliberately NOT applied automatically here.
+ *     Publishers set it wrong often enough (AMP pages pointing to desktop,
+ *     product variants pointing to parent, misconfigured homes-as-canonical)
+ *     that silently redirecting saved links would surprise users. Any
+ *     "promote to publisher canonical" UI should be an explicit, assisted
+ *     action, not a silent transform.
+ */
+export const TRACKING_QUERY_PARAMS: ReadonlySet<string> = new Set([
+  // Google / DoubleClick click identifiers
+  "gclid",
+  "gclsrc",
+  "dclid",
+  // Facebook
+  "fbclid",
+  // Microsoft / Bing
+  "msclkid",
+  // Yandex
+  "yclid",
+  // Mailchimp campaign / recipient ids
+  "mc_cid",
+  "mc_eid",
+  // HubSpot tracking cookies/ids surfaced in URLs
+  "_hsenc",
+  "_hsmi",
+  "__hstc",
+  "__hssc",
+  "__hsfp",
+  // Instagram share id
+  "igshid",
+  // Spotify / YouTube share id (only appears on share-link variants)
+  "si",
+  // Seznam Sklik — recommended-placement A/B tracking (Czech ad network)
+  "dop_ab_variant",
+  "dop_source_zone_name",
+  "dop_source_id",
+  "dop_req_id",
+]);
+
+/**
+ * Returns the URL with known tracking parameters stripped. Preserves path,
+ * fragment, and every non-tracking query parameter in its original order.
+ * Invalid URL strings are returned unchanged — the caller is responsible for
+ * validating upstream if it needs to reject junk.
+ */
+export function canonicalizeUrl(urlString: string): string {
+  let url: URL;
+  try {
+    url = new URL(urlString);
+  } catch {
+    return urlString;
+  }
+
+  // `searchParams.keys()` yields duplicates when the same name appears more
+  // than once; collect uniques first so the `delete` pass runs each name once.
+  const uniqueNames = new Set(url.searchParams.keys());
+  for (const name of uniqueNames) {
+    if (name.startsWith("utm_") || TRACKING_QUERY_PARAMS.has(name)) {
+      url.searchParams.delete(name);
+    }
+  }
+
+  return url.toString();
+}
+
 export function extractUrlsFromText(text: string): string[] {
   const matches = text.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
   const normalizedUrls: string[] = [];
@@ -86,14 +172,19 @@ export function extractUrlsFromText(text: string): string[] {
   for (const match of matches) {
     const trimmedCandidate = match.replace(/[),.!?:;]+$/g, "");
 
+    // Validate before canonicalizing so URL-like fragments (e.g. `https://:::`)
+    // don't slip into the index — `canonicalizeUrl` echoes unparseable input
+    // back verbatim by design, which is the wrong behaviour for this path.
     try {
-      const normalizedUrl = new URL(trimmedCandidate).toString();
-      if (!seen.has(normalizedUrl)) {
-        seen.add(normalizedUrl);
-        normalizedUrls.push(normalizedUrl);
-      }
+      new URL(trimmedCandidate);
     } catch {
-      // Ignore invalid URL-like fragments and keep scanning the text.
+      continue;
+    }
+
+    const canonicalUrl = canonicalizeUrl(trimmedCandidate);
+    if (!seen.has(canonicalUrl)) {
+      seen.add(canonicalUrl);
+      normalizedUrls.push(canonicalUrl);
     }
   }
 
