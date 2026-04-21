@@ -3,16 +3,12 @@ import type { UserProfile } from "../../../types";
 export interface AccountBarOptions {
   profile: UserProfile | null;
   onSignIn: () => void;
-  onLoadNotebook: () => void;
-  onSaveNotebook: () => void;
   onSignOut: () => void;
 }
 
 export function buildAccountBar({
   profile,
   onSignIn,
-  onLoadNotebook,
-  onSaveNotebook,
   onSignOut,
 }: AccountBarOptions): HTMLElement {
   const bar = document.createElement("div");
@@ -27,22 +23,6 @@ export function buildAccountBar({
     bar.append(signInButton);
     return bar;
   }
-
-  const loadButton = document.createElement("button");
-  loadButton.type = "button";
-  loadButton.className = "button account-action";
-  loadButton.textContent = "Load";
-  loadButton.title = "Load notebook from Google Drive";
-  loadButton.setAttribute("aria-label", "Load notebook");
-  loadButton.addEventListener("click", onLoadNotebook);
-
-  const saveButton = document.createElement("button");
-  saveButton.type = "button";
-  saveButton.className = "button button-primary account-action";
-  saveButton.textContent = "Save";
-  saveButton.title = "Save notebook to Google Drive";
-  saveButton.setAttribute("aria-label", "Save notebook");
-  saveButton.addEventListener("click", onSaveNotebook);
 
   const menu = document.createElement("div");
   menu.className = "account-menu";
@@ -89,6 +69,6 @@ export function buildAccountBar({
   panel.append(profileInfo, signOutButton);
   menu.append(trigger, panel);
 
-  bar.append(loadButton, saveButton, menu);
+  bar.append(menu);
   return bar;
 }

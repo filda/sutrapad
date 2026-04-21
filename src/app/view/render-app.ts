@@ -121,8 +121,6 @@ export function renderAppPage({
     buildAccountBar({
       profile,
       onSignIn,
-      onLoadNotebook,
-      onSaveNotebook,
       onSignOut,
     }),
   );
@@ -192,7 +190,11 @@ export function renderAppPage({
       page.append(
         buildSettingsPage({
           currentTheme,
+          profile,
           onChangeTheme,
+          onLoadNotebook,
+          onSaveNotebook,
+          onSignIn,
         }),
       );
     } else {
