@@ -4,6 +4,8 @@ import {
   TAG_CLASS_IDS,
   classifyAutoTag,
   classifyTag,
+  classifyTagEntry,
+  groupTagsByClass,
   metaForClass,
   parseTagName,
   type TagClassId,
@@ -252,5 +254,92 @@ describe("metaForClass", () => {
     for (const id of TAG_CLASS_IDS) {
       expect(metaForClass(id)).toBe(TAG_CLASSES[id]);
     }
+  });
+});
+
+describe("classifyTagEntry", () => {
+  it("reads tag + kind off the entry and delegates to classifyTag", () => {
+    expect(classifyTagEntry({ tag: "coffee", kind: "user" })).toBe<TagClassId>(
+      "topic",
+    );
+    expect(
+      classifyTagEntry({ tag: "location:prague", kind: "auto" }),
+    ).toBe<TagClassId>("place");
+    expect(
+      classifyTagEntry({ tag: "date:today", kind: "auto" }),
+    ).toBe<TagClassId>("when");
+  });
+
+  it("honours the legacy missing-kind convention (→ topic)", () => {
+    expect(classifyTagEntry({ tag: "legacy" })).toBe<TagClassId>("topic");
+  });
+
+  it("ignores extra fields on the entry (structural typing)", () => {
+    // Real SutraPadTagEntry has count/noteIds too; helper must not care.
+    const entry = {
+      tag: "weather:rain",
+      kind: "auto" as const,
+      count: 3,
+      noteIds: ["a", "b", "c"],
+    };
+    expect(classifyTagEntry(entry)).toBe<TagClassId>("weather");
+  });
+});
+
+describe("groupTagsByClass", () => {
+  it("buckets entries into every class key, empty arrays included", () => {
+    // Every class must be present in the result even when empty, so callers
+    // can iterate TAG_CLASS_IDS without defensively checking existence.
+    const groups = groupTagsByClass([]);
+    for (const id of TAG_CLASS_IDS) {
+      expect(groups[id]).toEqual([]);
+    }
+  });
+
+  it("classifies and preserves input order within each class", () => {
+    const entries = [
+      { tag: "coffee", kind: "user" as const },
+      { tag: "writing", kind: "user" as const },
+      { tag: "location:prague", kind: "auto" as const },
+      { tag: "date:today", kind: "auto" as const },
+      { tag: "weather:rain", kind: "auto" as const },
+      { tag: "date:yesterday", kind: "auto" as const },
+      { tag: "location:berlin", kind: "auto" as const },
+      { tag: "author:jan-novak", kind: "auto" as const },
+    ];
+    const groups = groupTagsByClass(entries);
+
+    expect(groups.topic.map((e) => e.tag)).toEqual(["coffee", "writing"]);
+    expect(groups.when.map((e) => e.tag)).toEqual([
+      "date:today",
+      "date:yesterday",
+    ]);
+    expect(groups.place.map((e) => e.tag)).toEqual([
+      "location:prague",
+      "location:berlin",
+    ]);
+    expect(groups.weather.map((e) => e.tag)).toEqual(["weather:rain"]);
+    expect(groups.people.map((e) => e.tag)).toEqual(["author:jan-novak"]);
+    expect(groups.source).toEqual([]);
+    expect(groups.device).toEqual([]);
+  });
+
+  it("routes unknown auto-facets into source per classifyTag fallback", () => {
+    const groups = groupTagsByClass([
+      { tag: "mystery:value", kind: "auto" as const },
+      { tag: "rogue", kind: "auto" as const },
+    ]);
+    expect(groups.source.map((e) => e.tag)).toEqual([
+      "mystery:value",
+      "rogue",
+    ]);
+  });
+
+  it("retains reference identity — entries are the original objects, not copies", () => {
+    // The palette + Tags page use `===` to compare entries across renders;
+    // cloning would silently break selection state.
+    const entry = { tag: "coffee", kind: "user" as const };
+    const groups = groupTagsByClass([entry]);
+    expect(groups.topic[0]).toBe(entry);
   });
 });

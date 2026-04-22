@@ -216,3 +216,46 @@ export function classifyAutoTag(tag: string): TagClassId {
 export function metaForClass(classId: TagClassId): TagClassMeta {
   return TAG_CLASSES[classId];
 }
+
+/**
+ * Convenience for callers holding a `SutraPadTagEntry`. Imported here
+ * (rather than in `src/lib/notebook.ts`) so the taxonomy module stays
+ * independent of the tag-index shape — we only depend on the two fields
+ * we actually read. Typed structurally so future entry shapes compile as
+ * long as they expose `tag` + `kind`.
+ */
+export function classifyTagEntry(entry: {
+  tag: string;
+  kind?: "user" | "auto";
+}): TagClassId {
+  return classifyTag(entry.tag, entry.kind);
+}
+
+/**
+ * Bucket a list of tag entries by class, preserving each class's internal
+ * order. The Tags-page constellation (handoff §"TAGS SCREEN") renders
+ * each class as its own section; the palette and filter-bar retrofit use
+ * the same grouping to style chips without re-parsing every tag string.
+ *
+ * Classes with zero entries still appear in the returned record with an
+ * empty array, so callers can iterate `TAG_CLASS_IDS` and decide per
+ * class whether to render a header/section. (Hiding empty classes is a
+ * view-layer decision, not a logic-layer one.)
+ */
+export function groupTagsByClass<T extends { tag: string; kind?: "user" | "auto" }>(
+  entries: readonly T[],
+): Record<TagClassId, T[]> {
+  const groups: Record<TagClassId, T[]> = {
+    topic: [],
+    place: [],
+    when: [],
+    source: [],
+    device: [],
+    weather: [],
+    people: [],
+  };
+  for (const entry of entries) {
+    groups[classifyTagEntry(entry)].push(entry);
+  }
+  return groups;
+}
