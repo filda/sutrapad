@@ -64,6 +64,7 @@ export function buildTopbar({
   actions.className = "topbar-actions";
   actions.append(buildCaptureChip(() => onSelectMenuItem("capture")));
   actions.append(buildSyncPill(syncState, statusText));
+  actions.append(buildSettingsGear(() => onSelectMenuItem("settings")));
   actions.append(
     buildAccountBar({
       profile,
@@ -208,6 +209,34 @@ function captureChipLabel(count: number): string {
  */
 function captureChipAriaLabel(count: number): string {
   return `Capture · ${captureChipLabel(count)}`;
+}
+
+/**
+ * Small ghost gear button that routes to the Settings page. Per handoff v2
+ * Settings no longer lives in the nav-tabs pill-group — it's a quiet icon
+ * tucked between the sync pill and the avatar, so the primary nav stays
+ * focused on content pages (Add · Notes · Links · Tasks · Tags) and
+ * preferences get out of the way.
+ *
+ * SVG path taken verbatim from `docs/design_handoff_sutrapad2/src/icons.jsx`
+ * (`ICONS.cog`) so the silhouette matches the handoff exactly. Rendered via
+ * `innerHTML` to stay in line with the rest of the icon-free codebase (we
+ * don't pull in a vDOM or `createElementNS` helpers just for one glyph).
+ */
+function buildSettingsGear(onOpenSettings: () => void): HTMLElement {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "settings-gear";
+  button.setAttribute("aria-label", "Settings");
+  button.title = "Settings";
+  button.innerHTML = `
+    <svg class="settings-gear-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>
+    </svg>
+  `;
+  button.addEventListener("click", onOpenSettings);
+  return button;
 }
 
 function buildSyncPill(syncState: SyncState, statusText: string): HTMLElement {

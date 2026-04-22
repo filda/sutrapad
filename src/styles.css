@@ -328,7 +328,10 @@ button {
 }
 
 .page {
-  width: min(1120px, calc(100% - 32px));
+  /* 1280px matches handoff v2 `.main` (docs/design_handoff_sutrapad2/src/tokens.css
+     line 637). The slightly wider canvas is what lets the editor right-rail
+     breathe next to the main paper without squeezing body copy. */
+  width: min(1280px, calc(100% - 32px));
   margin: 0 auto;
   padding: 32px 0 48px;
 }
@@ -809,6 +812,46 @@ a {
     transform: scale(1.35);
     opacity: 0.6;
   }
+}
+
+/* Small ghost gear that routes to the Settings page. Intentionally quiet
+ * — Settings is not a primary nav destination in handoff v2, so the
+ * button leans on tonal muted colours and only reveals an outlined
+ * surface on hover/focus. Size tuned to sit between the sync-pill and
+ * the avatar without pushing the actions cluster out of alignment. */
+.settings-gear {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-500);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease,
+    background 120ms ease;
+}
+
+.settings-gear:hover,
+.settings-gear:focus-visible {
+  color: var(--primary);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface));
+  outline: none;
+}
+
+.settings-gear-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* Narrower viewports: sync pill label collapses to the dot only. */

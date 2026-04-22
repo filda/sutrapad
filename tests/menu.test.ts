@@ -10,15 +10,17 @@ import {
 } from "../src/app/logic/menu";
 
 describe("menu items", () => {
-  it("exposes the seven menu entries in the expected order", () => {
+  it("exposes the five primary-nav entries in the expected order", () => {
+    // Capture + Settings are intentionally *not* rendered in the nav-tabs
+    // pill group per handoff v2 — they live in the topbar-actions cluster
+    // (capture-chip and settings-gear respectively). They're still valid
+    // MenuItemIds and routable via onSelectMenuItem, just not here.
     expect(MENU_ITEMS.map((item) => item.id)).toEqual([
       "add",
       "notes",
       "links",
       "tasks",
       "tags",
-      "capture",
-      "settings",
     ]);
   });
 
@@ -29,8 +31,6 @@ describe("menu items", () => {
       "Links",
       "Tasks",
       "Tags",
-      "Capture",
-      "Settings",
     ]);
   });
 
@@ -48,6 +48,11 @@ describe("menu items", () => {
     expect(MENU_ITEMS.some((item) => item.id === HOME_MENU_ITEM.id)).toBe(false);
     expect(HOME_MENU_ITEM).toEqual({ id: "home", label: "Home" });
   });
+
+  it("keeps capture + settings out of the primary nav (they live in topbar-actions)", () => {
+    expect(MENU_ITEMS.some((item) => item.id === "capture")).toBe(false);
+    expect(MENU_ITEMS.some((item) => item.id === "settings")).toBe(false);
+  });
 });
 
 describe("isMenuItemId", () => {
@@ -60,6 +65,11 @@ describe("isMenuItemId", () => {
   it("accepts the home id even though it is not rendered in the primary nav", () => {
     expect(isMenuItemId(HOME_MENU_ITEM.id)).toBe(true);
     expect(isMenuItemId("home")).toBe(true);
+  });
+
+  it("still accepts capture + settings ids (routable via topbar-actions)", () => {
+    expect(isMenuItemId("capture")).toBe(true);
+    expect(isMenuItemId("settings")).toBe(true);
   });
 
   it("rejects unknown values", () => {

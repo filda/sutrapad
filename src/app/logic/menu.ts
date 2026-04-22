@@ -17,6 +17,11 @@ export interface MenuItem {
  * Items rendered in the primary navigation pill. The "home" view is reachable
  * via the clickable SutraPad eyebrow in the top row, so it is intentionally
  * left out of this list.
+ *
+ * Per handoff v2: Capture + Settings are *not* nav tabs — Capture sits in
+ * the right-actions cluster as the `capture-chip`, and Settings sits there
+ * as a gear icon. Both are still valid `MenuItemId`s and therefore still
+ * reachable via `onSelectMenuItem`; they're just not rendered here.
  */
 export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "add", label: "Add" },
@@ -24,20 +29,25 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "links", label: "Links" },
   { id: "tasks", label: "Tasks" },
   { id: "tags", label: "Tags" },
-  // "capture" sits next to "settings" because it's a setup/install surface
-  // — users looking for "how do I get things into SutraPad?" reach for it
-  // at the same time they'd reach for Settings.
-  { id: "capture", label: "Capture" },
-  { id: "settings", label: "Settings" },
 ];
 
 export const HOME_MENU_ITEM: MenuItem = { id: "home", label: "Home" };
 
 export const DEFAULT_MENU_ITEM: MenuItemId = "notes";
 
+/**
+ * Ids reachable via `onSelectMenuItem` but not rendered in the primary nav.
+ * Capture and Settings both live in the topbar-actions cluster (chip + gear)
+ * per handoff v2, so they don't appear in `MENU_ITEMS` — but they still need
+ * to be accepted by `isMenuItemId` so routing + persisted-last-page paths
+ * don't drop them.
+ */
+const OFF_NAV_MENU_ITEM_IDS: readonly MenuItemId[] = ["capture", "settings"];
+
 const ALL_MENU_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>([
   HOME_MENU_ITEM.id,
   ...MENU_ITEMS.map((item) => item.id),
+  ...OFF_NAV_MENU_ITEM_IDS,
 ]);
 
 /**
@@ -63,8 +73,22 @@ export function isMenuActionItemId(id: MenuItemId): boolean {
   return MENU_ACTION_ITEM_IDS.has(id);
 }
 
+/**
+ * Labels for ids that exist but aren't rendered in the primary nav (Capture,
+ * Settings). Keeps `getMenuItemLabel` lookup-complete so placeholder pages
+ * and aria-labels don't fall through to the raw id string.
+ */
+const OFF_NAV_MENU_ITEM_LABELS: Readonly<Record<"capture" | "settings", string>> = {
+  capture: "Capture",
+  settings: "Settings",
+};
+
 export function getMenuItemLabel(id: MenuItemId): string {
   if (id === HOME_MENU_ITEM.id) return HOME_MENU_ITEM.label;
   const match = MENU_ITEMS.find((item) => item.id === id);
-  return match?.label ?? id;
+  if (match) return match.label;
+  if (id === "capture" || id === "settings") {
+    return OFF_NAV_MENU_ITEM_LABELS[id];
+  }
+  return id;
 }
