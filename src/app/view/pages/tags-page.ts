@@ -13,7 +13,6 @@ import {
   type NotesListPersonaOptions,
 } from "../shared/notes-list";
 import { buildPageHeader } from "../shared/page-header";
-import { buildSelectedFiltersBar } from "../shared/selected-filters-bar";
 import { appendTagChipContent } from "../shared/tag-chip-content";
 
 export interface TagsPageOptions {
@@ -26,7 +25,6 @@ export interface TagsPageOptions {
   onToggleTagFilter: (tag: string) => void;
   onClearTagFilters: () => void;
   onChangeFilterMode: (mode: SutraPadTagFilterMode) => void;
-  onRemoveSelectedFilter: (tag: string) => void;
   onOpenNote: (noteId: string) => void;
 }
 
@@ -96,7 +94,6 @@ export function buildTagsPage({
   onToggleTagFilter,
   onClearTagFilters,
   onChangeFilterMode,
-  onRemoveSelectedFilter,
   onOpenNote,
 }: TagsPageOptions): HTMLElement {
   const section = document.createElement("section");
@@ -187,14 +184,6 @@ export function buildTagsPage({
 
   const matches = document.createElement("section");
   matches.className = "tags-page-matches";
-
-  const selectedFiltersBar = buildSelectedFiltersBar({
-    selectedTagFilters,
-    filterMode,
-    autoTagLookup: new Set(autoEntries.map((entry) => entry.tag)),
-    onRemoveSelectedFilter,
-  });
-  matches.append(selectedFiltersBar);
 
   const filteredNotes = filterNotesByTags(
     workspace.notes,

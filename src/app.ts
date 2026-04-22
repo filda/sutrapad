@@ -750,7 +750,7 @@ function handleNewNoteCreation({
   })();
 }
 
-interface RegisterPaletteShortcutOptions {
+interface WirePaletteAccessOptions {
   host: HTMLElement;
   getWorkspace: () => SutraPadWorkspace;
   setWorkspace: (next: SutraPadWorkspace) => void;
@@ -758,9 +758,16 @@ interface RegisterPaletteShortcutOptions {
   setDetailNoteId: (next: string | null) => void;
   getSelectedTagFilters: () => string[];
   setSelectedTagFilters: (next: string[]) => void;
+  getFilterMode: () => SutraPadTagFilterMode;
   persistWorkspace: (workspace: SutraPadWorkspace) => void;
-  setPaletteHandle: (next: PaletteHandle | null) => void;
   render: () => void;
+}
+
+export interface PaletteAccess {
+  /** Opens the palette programmatically (click path — keydown handler uses the same closure). */
+  open: () => void;
+  /** Called from render() so the palette's visible list follows the workspace + filter state. */
+  refresh: (workspace: SutraPadWorkspace, selectedTagFilters: readonly string[]) => void;
 }
 
 /**
@@ -774,24 +781,27 @@ interface RegisterPaletteShortcutOptions {
  * what was chosen, matching a list click. Tag picks *toggle* membership in
  * the current filter set (cumulative), matching how tag chips behave on the
  * notes list and making the per-row "Add" / "Remove" chip label literal.
+ *
+ * Returns an `openPalette` opener so non-keyboard callers (the topbar's
+ * tag-filter strip clicks into this) can share the same open/close
+ * bookkeeping as the `/` keydown listener — no second `isOpen` flag, no
+ * parallel teardown path.
  */
-function registerPaletteShortcut(options: RegisterPaletteShortcutOptions): void {
-  // Local open/close flag so a second `/` keystroke while the palette is
-  // already mounted is a no-op. createApp still holds the handle itself
-  // (needed so its render() can push fresh groups via `update(...)`), but
-  // the shortcut doesn't need to ask createApp back for that — tracking
-  // open-ness here keeps the options bag smaller.
-  let isOpen = false;
-  const openPalette = (): void => {
-    if (isOpen) return;
-    isOpen = true;
-    const handle = mountPalette({
+function wirePaletteAccess(options: WirePaletteAccessOptions): PaletteAccess {
+  // Local handle + open flag let the topbar "+ tag" click and the `/` keydown
+  // share the same bookkeeping without either side having to know about the
+  // other. `refresh` pushes the latest workspace + filters into the mounted
+  // palette (called by render()); `open` mounts a fresh one if none is
+  // currently open.
+  let handle: PaletteHandle | null = null;
+  const open = (): void => {
+    if (handle !== null) return;
+    handle = mountPalette({
       host: options.host,
       groups: buildPaletteEntries(options.getWorkspace()),
       selectedTagFilters: options.getSelectedTagFilters(),
       onSelectEntry: (entry) => {
-        isOpen = false;
-        options.setPaletteHandle(null);
+        handle = null;
         if (entry.payload.kind === "note") {
           const nextWorkspace: SutraPadWorkspace = {
             ...options.getWorkspace(),
@@ -801,21 +811,35 @@ function registerPaletteShortcut(options: RegisterPaletteShortcutOptions): void 
           options.persistWorkspace(nextWorkspace);
           options.setActiveMenuItem("notes");
           options.setDetailNoteId(entry.payload.noteId);
-        } else {
-          options.setActiveMenuItem("notes");
-          options.setDetailNoteId(null);
-          options.setSelectedTagFilters(
-            togglePaletteTagFilter(options.getSelectedTagFilters(), entry.payload.tag),
-          );
+          options.render();
+          return;
         }
+        // Route to notes list first so the filter change lands on a surface
+        // that honours it — filtering from home / capture / settings would
+        // otherwise toggle invisibly. The toggle mirrors the notes-page
+        // chip-click path (persist + URL + visible-active-note reconciliation).
+        options.setActiveMenuItem("notes");
+        options.setDetailNoteId(null);
+        const nextFilters = togglePaletteTagFilter(
+          options.getSelectedTagFilters(),
+          entry.payload.tag,
+        );
+        options.setSelectedTagFilters(nextFilters);
+        options.setWorkspace(
+          applyVisibleActiveNoteSelection(
+            options.getWorkspace(),
+            nextFilters,
+            options.getFilterMode(),
+            options.persistWorkspace,
+          ),
+        );
+        syncTagFiltersToLocation(nextFilters);
         options.render();
       },
       onClose: () => {
-        isOpen = false;
-        options.setPaletteHandle(null);
+        handle = null;
       },
     });
-    options.setPaletteHandle(handle);
   };
 
   window.addEventListener("keydown", (event) => {
@@ -823,8 +847,15 @@ function registerPaletteShortcut(options: RegisterPaletteShortcutOptions): void 
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (!shouldOpenPaletteForSlash(event.target)) return;
     event.preventDefault();
-    openPalette();
+    open();
   });
+
+  return {
+    open,
+    refresh: (workspace, selectedTagFilters) => {
+      handle?.update(buildPaletteEntries(workspace), selectedTagFilters);
+    },
+  };
 }
 
 export function createApp(root: HTMLElement): void {
@@ -866,11 +897,33 @@ export function createApp(root: HTMLElement): void {
   // picks its own on/off stance, nothing flows through URL or Drive so a
   // shared link can't force a decorative view on the recipient.
   let personaPreference: PersonaPreference = resolveInitialPersonaPreference();
-  let paletteHandle: PaletteHandle | null = null;
+  // Filled in once `wirePaletteAccess` has mounted the `/` keybinding (near
+  // the bottom of createApp). render() and the topbar's "+ tag" trigger both
+  // reach the palette through this single reference, so the keyboard path
+  // and the click path share the same open/close bookkeeping with no parallel
+  // `isOpen` flag. Null until wiring completes, then stable for the session.
+  let paletteAccess: PaletteAccess | null = null;
   // When the user picked "auto", the concrete palette depends on the OS
   // light/dark preference. Subscribe once so a system switch during a live
   // session re-applies the theme without a reload.
   watchAutoTheme(() => currentTheme);
+
+  // Tiny typed setters for the mutable state above. Hoisted this high so the
+  // helpers below (handleNewNote, palette wiring, Drive lifecycle, renderer
+  // callbacks) can all pass `setWorkspaceState` instead of re-writing an
+  // inline `(next) => { workspace = next; }` each time.
+  const setWorkspaceState = (next: SutraPadWorkspace): void => { workspace = next; };
+  const setSyncStateValue = (next: SyncState): void => { syncState = next; };
+  const setLastErrorValue = (next: string): void => { lastError = next; };
+  const setProfileState = (next: UserProfile | null): void => { profile = next; };
+  const setSelectedTagFiltersState = (next: string[]): void => { selectedTagFilters = next; };
+  const setFilterModeState = (next: SutraPadTagFilterMode): void => { filterMode = next; };
+  const setActiveMenuItemState = (next: MenuItemId): void => { activeMenuItem = next; };
+  const setDetailNoteIdState = (next: string | null): void => { detailNoteId = next; };
+  const setNotesViewModeState = (next: NotesViewMode): void => { notesViewMode = next; };
+  const setCurrentThemeState = (next: ThemeChoice): void => { currentTheme = next; };
+  const setPersonaPreferenceState = (next: PersonaPreference): void => { personaPreference = next; };
+  const setBookmarkletMessageState = (next: string): void => { bookmarkletMessage = next; };
 
   const scheduleAutoSave = (): void => {
     if (!profile) return;
@@ -903,22 +956,12 @@ export function createApp(root: HTMLElement): void {
     handleNewNoteCreation({
       root,
       getWorkspace: () => workspace,
-      setWorkspace: (nextWorkspace) => {
-        workspace = nextWorkspace;
-      },
+      setWorkspace: setWorkspaceState,
       getDetailNoteId: () => detailNoteId,
-      setDetailNoteId: (nextDetailNoteId) => {
-        detailNoteId = nextDetailNoteId;
-      },
-      setActiveMenuItem: (nextActiveMenuItem) => {
-        activeMenuItem = nextActiveMenuItem;
-      },
-      setSyncState: (nextSyncState) => {
-        syncState = nextSyncState;
-      },
-      setLastError: (nextLastError) => {
-        lastError = nextLastError;
-      },
+      setDetailNoteId: setDetailNoteIdState,
+      setActiveMenuItem: setActiveMenuItemState,
+      setSyncState: setSyncStateValue,
+      setLastError: setLastErrorValue,
       persistWorkspace: persistLocalWorkspace,
       scheduleAutoSave,
       render,
@@ -1101,7 +1144,7 @@ export function createApp(root: HTMLElement): void {
       render,
       refreshNotesPanel,
     });
-    paletteHandle?.update(buildPaletteEntries(workspace), selectedTagFilters);
+    paletteAccess?.refresh(workspace, selectedTagFilters);
     renderAppPage({
       root,
       workspace,
@@ -1129,6 +1172,7 @@ export function createApp(root: HTMLElement): void {
       notesViewMode,
       currentTheme,
       personaPreference,
+      onOpenPalette: () => paletteAccess?.open(),
       ...callbacks,
     });
   };
@@ -1148,22 +1192,6 @@ export function createApp(root: HTMLElement): void {
       profile = refreshedProfile;
     },
   };
-
-  // Tiny typed setters for the mutable state that multiple helpers (Drive
-  // lifecycle, renderer callbacks, bootstrap) all need to write to. Hoisting
-  // them out of the option bags keeps the call sites to one-liners.
-  const setWorkspaceState = (next: SutraPadWorkspace): void => { workspace = next; };
-  const setSyncStateValue = (next: SyncState): void => { syncState = next; };
-  const setLastErrorValue = (next: string): void => { lastError = next; };
-  const setProfileState = (next: UserProfile | null): void => { profile = next; };
-  const setSelectedTagFiltersState = (next: string[]): void => { selectedTagFilters = next; };
-  const setFilterModeState = (next: SutraPadTagFilterMode): void => { filterMode = next; };
-  const setActiveMenuItemState = (next: MenuItemId): void => { activeMenuItem = next; };
-  const setDetailNoteIdState = (next: string | null): void => { detailNoteId = next; };
-  const setNotesViewModeState = (next: NotesViewMode): void => { notesViewMode = next; };
-  const setCurrentThemeState = (next: ThemeChoice): void => { currentTheme = next; };
-  const setPersonaPreferenceState = (next: PersonaPreference): void => { personaPreference = next; };
-  const setBookmarkletMessageState = (next: string): void => { bookmarkletMessage = next; };
 
   const loadWorkspace = async (): Promise<void> =>
     runWorkspaceLoad({
@@ -1195,17 +1223,13 @@ export function createApp(root: HTMLElement): void {
       persistLocalWorkspace: () => persistLocalWorkspace(workspace),
       saveRemoteWorkspace: () =>
         withAuthRetry(() => getStore().saveWorkspace(workspace), retryContext),
-      setSyncState: (state) => {
-        syncState = state;
-      },
-      setLastError: (message) => {
-        lastError = message;
-      },
+      setSyncState: setSyncStateValue,
+      setLastError: setLastErrorValue,
       render,
       refreshStatus,
     });
 
-  registerPaletteShortcut({
+  paletteAccess = wirePaletteAccess({
     host: document.body,
     getWorkspace: () => workspace,
     setWorkspace: setWorkspaceState,
@@ -1213,8 +1237,8 @@ export function createApp(root: HTMLElement): void {
     setDetailNoteId: setDetailNoteIdState,
     getSelectedTagFilters: () => selectedTagFilters,
     setSelectedTagFilters: setSelectedTagFiltersState,
+    getFilterMode: () => filterMode,
     persistWorkspace: persistLocalWorkspace,
-    setPaletteHandle: (next) => { paletteHandle = next; },
     render,
   });
 

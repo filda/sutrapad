@@ -2,9 +2,9 @@ import { formatAutoTagDisplay } from "../../../lib/auto-tag-display";
 
 /**
  * Fills a chip button/span with either `[icon] [label]` (auto-tag) or the
- * plain tag text (user tag, or any unknown-namespace fallback). Keeps all
- * three chip renderers — Tags page cloud, Notes page cloud, selected-filters
- * bar — consistent without repeating the `formatAutoTagDisplay` null-check
+ * plain tag text (user tag, or any unknown-namespace fallback). Keeps the
+ * chip renderers — Tags page cloud, Notes page cloud, topbar tag-filter
+ * strip — consistent without repeating the `formatAutoTagDisplay` null-check
  * dance in each one.
  *
  * The suffix argument exists for the tag cloud chips that append "· <count>"

@@ -2,15 +2,21 @@ import type { SyncState } from "../../session/workspace-sync";
 import type { UserProfile } from "../../../types";
 import { MENU_ITEMS, type MenuItemId } from "../../logic/menu";
 import { buildAccountBar } from "./account-bar";
+import { buildTagFilterBar } from "./tag-filter-bar";
 
 export interface TopbarOptions {
   activeMenuItem: MenuItemId;
   profile: UserProfile | null;
   syncState: SyncState;
   statusText: string;
+  selectedTagFilters: readonly string[];
+  autoTagLookup: ReadonlySet<string>;
   onSelectMenuItem: (id: MenuItemId) => void;
   onSignIn: () => void;
   onSignOut: () => void;
+  onRemoveFilter: (tag: string) => void;
+  onClearFilters: () => void;
+  onOpenPalette: () => void;
 }
 
 /**
@@ -24,9 +30,14 @@ export function buildTopbar({
   profile,
   syncState,
   statusText,
+  selectedTagFilters,
+  autoTagLookup,
   onSelectMenuItem,
   onSignIn,
   onSignOut,
+  onRemoveFilter,
+  onClearFilters,
+  onOpenPalette,
 }: TopbarOptions): HTMLElement {
   const topbar = document.createElement("header");
   topbar.className = "topbar";
@@ -34,6 +45,20 @@ export function buildTopbar({
   topbar.append(buildBrand(activeMenuItem, onSelectMenuItem));
   topbar.append(buildAddPill(activeMenuItem, onSelectMenuItem));
   topbar.append(buildNavTabs(activeMenuItem, onSelectMenuItem));
+
+  // Filter strip sits between the nav tabs and the right-aligned actions so
+  // the active filters are always in the chrome, regardless of which page
+  // is mounted. Clicking the trigger (or the `/` hint) opens the palette —
+  // that's the single suggestion engine for tag selection.
+  topbar.append(
+    buildTagFilterBar({
+      selectedTagFilters,
+      autoTagLookup,
+      onRemoveFilter,
+      onClearFilters,
+      onOpenPalette,
+    }),
+  );
 
   const actions = document.createElement("div");
   actions.className = "topbar-actions";

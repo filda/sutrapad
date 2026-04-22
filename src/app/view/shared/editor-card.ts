@@ -1,23 +1,22 @@
 import { buildNoteMetadata } from "../../logic/note-metadata";
-import type {
-  SutraPadDocument,
-  SutraPadTagEntry,
-  SutraPadTagFilterMode,
-} from "../../../types";
+import type { SutraPadDocument, SutraPadTagEntry } from "../../../types";
 import type { SyncState } from "../../session/workspace-sync";
-import { buildSelectedFiltersBar } from "./selected-filters-bar";
 import { buildTagInput } from "./tag-input";
 
 export interface EditorCardOptions {
   note: SutraPadDocument | null;
   currentNote: SutraPadDocument;
+  /**
+   * Active filters are only consulted to pick the right empty state copy:
+   * when there's no match, we tell the user a filter is the reason rather
+   * than falling through to the blank writing surface. The filter *chips*
+   * themselves live in the topbar tag-filter strip now, so the editor card
+   * no longer owns their presentation.
+   */
   selectedTagFilters: string[];
-  filterMode: SutraPadTagFilterMode;
-  autoTagLookup: ReadonlySet<string>;
   availableTagSuggestions: readonly SutraPadTagEntry[];
   syncState: SyncState;
   statusText: string;
-  onRemoveSelectedFilter: (tag: string) => void;
   onTitleInput: (value: string) => void;
   onBodyInput: (value: string) => void;
   onAddTag: (value: string) => void;
@@ -28,12 +27,9 @@ export function buildEditorCard({
   note,
   currentNote,
   selectedTagFilters,
-  filterMode,
-  autoTagLookup,
   availableTagSuggestions,
   syncState,
   statusText,
-  onRemoveSelectedFilter,
   onTitleInput,
   onBodyInput,
   onAddTag,
@@ -46,13 +42,6 @@ export function buildEditorCard({
   status.className = `status status-${syncState}`;
   status.textContent = statusText;
 
-  const selectedFiltersBar = buildSelectedFiltersBar({
-    selectedTagFilters,
-    filterMode,
-    autoTagLookup,
-    onRemoveSelectedFilter,
-  });
-
   if (!note && selectedTagFilters.length > 0) {
     const emptyEditor = document.createElement("div");
     emptyEditor.className = "empty-editor-state";
@@ -60,7 +49,7 @@ export function buildEditorCard({
       <h2>No notebook matches this filter.</h2>
       <p>Try removing one of the selected tags or clear the filter to see all notes again.</p>
     `;
-    editor.append(status, selectedFiltersBar, emptyEditor);
+    editor.append(status, emptyEditor);
     return editor;
   }
 
@@ -84,7 +73,6 @@ export function buildEditorCard({
 
   editor.append(
     status,
-    selectedFiltersBar,
     titleInput,
     buildTagInput(displayedNote, availableTagSuggestions, onAddTag, onRemoveTag),
     bodyInput,

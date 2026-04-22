@@ -22,12 +22,11 @@ import { buildSettingsPage } from "./pages/settings-page";
 import { buildDetailTopbar } from "./shared/detail-topbar";
 import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
 
-// The editor-card builder needs the list of available tag suggestions and the
-// set of auto-tags for chip styling, but callers don't have to supply either
-// — both are derived here from the workspace that NotesPanelOptions already
-// requires.
+// The editor-card builder needs the list of available tag suggestions, but
+// callers don't have to supply it — it's derived here from the workspace
+// that NotesPanelOptions already requires.
 interface RenderAppOptions
-  extends Omit<EditorCardOptions, "availableTagSuggestions" | "autoTagLookup">,
+  extends Omit<EditorCardOptions, "availableTagSuggestions">,
     NotesPanelOptions {
   root: HTMLElement;
   profile: UserProfile | null;
@@ -64,6 +63,22 @@ interface RenderAppOptions
   onChangeTheme: (choice: ThemeChoice) => void;
   onChangePersonaPreference: (preference: PersonaPreference) => void;
   onChangeFilterMode: (mode: SutraPadTagFilterMode) => void;
+  /**
+   * Removes a single active filter — hooked up to the `×` affordance inside
+   * each chip of the topbar tag-filter strip. Kept here (rather than on
+   * EditorCardOptions, where it previously lived via the now-retired
+   * selected-filters bar) because the chip row has moved permanently into
+   * the chrome.
+   */
+  onRemoveSelectedFilter: (tag: string) => void;
+  /**
+   * Invoked by the topbar's tag-filter strip when the user clicks the
+   * "+ Filter by tag…" trigger (or the `/` keyboard-hint pill). The strip
+   * itself is purely presentational — the palette is the single suggestion
+   * engine — so this just forwards into the same opener the `/` shortcut
+   * uses.
+   */
+  onOpenPalette: () => void;
   /**
    * "← Back to notes" click handler — consumed by the detail-topbar that sits
    * above the editor card on the note detail route. Kept here (rather than on
@@ -114,6 +129,7 @@ export function renderAppPage({
   onToggleTask,
   onChangeTheme,
   onChangePersonaPreference,
+  onOpenPalette,
 }: RenderAppOptions): void {
   root.innerHTML = "";
 
@@ -128,6 +144,15 @@ export function renderAppPage({
       }
     : undefined;
 
+  // Auto-tag lookup is also consumed below by the editor-card on the detail
+  // route, but the topbar needs it for chip styling too, so we build it once
+  // at the top of the render pass and hand both surfaces the same Set.
+  const autoTagLookup = new Set(
+    buildCombinedTagIndex(workspace).tags
+      .filter((entry) => entry.kind === "auto")
+      .map((entry) => entry.tag),
+  );
+
   // Topbar lives as a direct child of #app (outside .page) so that
   // `position: sticky` pins against the viewport rather than the page column,
   // and scrolling content glides underneath the blurred surface.
@@ -137,9 +162,14 @@ export function renderAppPage({
       profile,
       syncState,
       statusText,
+      selectedTagFilters,
+      autoTagLookup,
       onSelectMenuItem,
       onSignIn,
       onSignOut,
+      onRemoveFilter: onRemoveSelectedFilter,
+      onClearFilters: onClearTagFilters,
+      onOpenPalette,
     }),
   );
 
@@ -186,7 +216,6 @@ export function renderAppPage({
           onToggleTagFilter,
           onClearTagFilters,
           onChangeFilterMode,
-          onRemoveSelectedFilter,
           onOpenNote: openNoteInEditor,
         }),
       );
@@ -256,14 +285,6 @@ export function renderAppPage({
     return;
   }
 
-  // Auto-tag values are cached from the full combined index so the editor's
-  // selected-filters bar can style chips without re-deriving per-note tags.
-  const autoTagLookup = new Set(
-    buildCombinedTagIndex(workspace).tags
-      .filter((entry) => entry.kind === "auto")
-      .map((entry) => entry.tag),
-  );
-
   page.append(
     buildDetailTopbar({
       note: note ?? (selectedTagFilters.length > 0 ? null : currentNote),
@@ -276,12 +297,9 @@ export function renderAppPage({
       note,
       currentNote,
       selectedTagFilters,
-      filterMode,
-      autoTagLookup,
       availableTagSuggestions: buildTagIndex(workspace).tags,
       syncState,
       statusText,
-      onRemoveSelectedFilter,
       onTitleInput,
       onBodyInput,
       onAddTag,

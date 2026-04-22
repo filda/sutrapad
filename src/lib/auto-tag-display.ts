@@ -7,8 +7,8 @@
  * only the value as text.
  *
  * This module is the single source of truth for that split: every chip
- * renderer (tag cloud on the Tags page and Notes page, selected-filters bar)
- * runs its auto-tag strings through `formatAutoTagDisplay` to get
+ * renderer (tag cloud on the Tags page and Notes page, topbar tag-filter
+ * strip) runs its auto-tag strings through `formatAutoTagDisplay` to get
  * `{ icon, label }` and composes the chip from those two parts.
  *
  * The function is deliberately dumb: no date parsing, no locale-aware casing,

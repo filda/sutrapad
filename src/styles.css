@@ -554,6 +554,159 @@ a {
   flex-shrink: 0;
 }
 
+/*
+ * Topbar tag-filter strip (ported from docs/design_handoff_sutrapad/src/tokens.css
+ * — the handoff's `.tag-filter-bar` + `.tfb-*` set). Ours is purely
+ * presentational: no inline input, no typeahead dropdown. The trigger and
+ * `/` kbd hint both open the palette, which is the single suggestion engine
+ * for tag selection, so the dropdown styles from the handoff are
+ * intentionally omitted.
+ */
+.tag-filter-bar {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 520px;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-700, var(--primary));
+  font-family: var(--sans);
+  font-size: 13px;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.tag-filter-bar.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+  background: var(--paper-0, var(--surface));
+}
+
+.tfb-icon {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.tfb-chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.tfb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 9px;
+  background: rgba(var(--accent-rgb), 0.13);
+  border: 1px solid rgba(var(--accent-rgb), 0.32);
+  border-radius: 999px;
+  color: var(--primary);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.tfb-chip:hover {
+  background: rgba(var(--accent-rgb), 0.22);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+
+.tfb-chip.is-auto {
+  background: var(--paper-1, rgba(var(--primary-rgb), 0.06));
+  border-color: var(--line);
+  color: var(--ink-700, var(--primary));
+}
+
+.tfb-chip-remove {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding-left: 2px;
+}
+
+.tfb-chip:hover .tfb-chip-remove {
+  color: var(--danger, var(--primary));
+}
+
+.tfb-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+
+.tfb-trigger:hover {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--primary);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.tfb-trigger-label {
+  line-height: 1.4;
+}
+
+.tfb-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.tfb-clear:hover {
+  color: var(--primary);
+  background: var(--paper-1, rgba(var(--primary-rgb), 0.06));
+}
+
+.tfb-kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper-1, rgba(var(--primary-rgb), 0.04));
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tfb-kbd:hover {
+  color: var(--primary);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+
+
 .sync-pill {
   display: inline-flex;
   align-items: center;
@@ -609,6 +762,15 @@ a {
     order: 10;
     flex: 1 1 100%;
     justify-content: flex-start;
+  }
+  .tag-filter-bar {
+    /* At narrow viewports let the bar take the full remaining row instead
+     * of squeezing in between the nav tabs and the actions — the nav-tabs
+     * wrap to a new row (order: 10), so the bar follows underneath. */
+    order: 11;
+    flex: 1 1 100%;
+    max-width: none;
+    margin-left: 0;
   }
   .topbar-actions {
     margin-left: auto;
@@ -2718,39 +2880,6 @@ a {
 
 .status-error {
   color: var(--danger);
-}
-
-.selected-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin: 0 0 14px;
-}
-
-.selected-filters-label {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.selected-filter-chip {
-  border: 1px solid rgba(var(--accent-rgb), 0.28);
-  background: rgba(var(--accent-rgb), 0.12);
-  color: var(--primary);
-  border-radius: 999px;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.82rem;
-}
-
-/*
- * Mirror the auto-chip treatment used in the tag cloud so a selected auto
- * filter (e.g. `device:mobile`) reads the same way in both places. The icon
- * comes from the `.tag-chip-icon` span, not a pseudo-element.
- */
-.selected-filter-chip.is-auto {
-  border-color: rgba(var(--primary-rgb), 0.22);
-  background: rgba(var(--primary-rgb), 0.06);
-  color: var(--muted);
 }
 
 .empty-editor-state {
