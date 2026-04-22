@@ -81,6 +81,12 @@ import {
   type PersonaPreference,
 } from "./app/logic/persona";
 import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
+import { buildPaletteEntries, togglePaletteTagFilter } from "./app/logic/palette";
+import {
+  mountPalette,
+  shouldOpenPaletteForSlash,
+  type PaletteHandle,
+} from "./app/view/palette";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
 export { resolveDisplayedNote } from "./app/logic/displayed-note";
@@ -377,12 +383,6 @@ interface RenderCallbackOptions {
   refreshNotesPanel: () => void;
 }
 
-function toggleSelectedTagFilter(selectedTagFilters: string[], tag: string): string[] {
-  return selectedTagFilters.includes(tag)
-    ? selectedTagFilters.filter((entry) => entry !== tag)
-    : [...selectedTagFilters, tag];
-}
-
 function applyVisibleActiveNoteSelection(
   workspace: SutraPadWorkspace,
   selectedTagFilters: string[],
@@ -518,7 +518,7 @@ function createRenderCallbacks({
       render();
     },
     onToggleTagFilter: (tag: string) => {
-      const nextSelectedTagFilters = toggleSelectedTagFilter(getSelectedTagFilters(), tag);
+      const nextSelectedTagFilters = togglePaletteTagFilter(getSelectedTagFilters(), tag);
       setSelectedTagFilters(nextSelectedTagFilters);
       setWorkspace(
         applyVisibleActiveNoteSelection(
@@ -750,6 +750,83 @@ function handleNewNoteCreation({
   })();
 }
 
+interface RegisterPaletteShortcutOptions {
+  host: HTMLElement;
+  getWorkspace: () => SutraPadWorkspace;
+  setWorkspace: (next: SutraPadWorkspace) => void;
+  setActiveMenuItem: (next: MenuItemId) => void;
+  setDetailNoteId: (next: string | null) => void;
+  getSelectedTagFilters: () => string[];
+  setSelectedTagFilters: (next: string[]) => void;
+  persistWorkspace: (workspace: SutraPadWorkspace) => void;
+  setPaletteHandle: (next: PaletteHandle | null) => void;
+  render: () => void;
+}
+
+/**
+ * Attaches the global `/` shortcut (GitHub-style: active anywhere outside an
+ * editable target) and wires the palette's entry selections back into app
+ * state. Kept at module scope so `createApp` stays a wiring function and so
+ * the keyboard + selection logic is unit-testable in isolation from the rest
+ * of the app.
+ *
+ * Note picks jump to the detail editor and keep `activeNoteId` in sync with
+ * what was chosen, matching a list click. Tag picks *toggle* membership in
+ * the current filter set (cumulative), matching how tag chips behave on the
+ * notes list and making the per-row "Add" / "Remove" chip label literal.
+ */
+function registerPaletteShortcut(options: RegisterPaletteShortcutOptions): void {
+  // Local open/close flag so a second `/` keystroke while the palette is
+  // already mounted is a no-op. createApp still holds the handle itself
+  // (needed so its render() can push fresh groups via `update(...)`), but
+  // the shortcut doesn't need to ask createApp back for that — tracking
+  // open-ness here keeps the options bag smaller.
+  let isOpen = false;
+  const openPalette = (): void => {
+    if (isOpen) return;
+    isOpen = true;
+    const handle = mountPalette({
+      host: options.host,
+      groups: buildPaletteEntries(options.getWorkspace()),
+      selectedTagFilters: options.getSelectedTagFilters(),
+      onSelectEntry: (entry) => {
+        isOpen = false;
+        options.setPaletteHandle(null);
+        if (entry.payload.kind === "note") {
+          const nextWorkspace: SutraPadWorkspace = {
+            ...options.getWorkspace(),
+            activeNoteId: entry.payload.noteId,
+          };
+          options.setWorkspace(nextWorkspace);
+          options.persistWorkspace(nextWorkspace);
+          options.setActiveMenuItem("notes");
+          options.setDetailNoteId(entry.payload.noteId);
+        } else {
+          options.setActiveMenuItem("notes");
+          options.setDetailNoteId(null);
+          options.setSelectedTagFilters(
+            togglePaletteTagFilter(options.getSelectedTagFilters(), entry.payload.tag),
+          );
+        }
+        options.render();
+      },
+      onClose: () => {
+        isOpen = false;
+        options.setPaletteHandle(null);
+      },
+    });
+    options.setPaletteHandle(handle);
+  };
+
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "/") return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!shouldOpenPaletteForSlash(event.target)) return;
+    event.preventDefault();
+    openPalette();
+  });
+}
+
 export function createApp(root: HTMLElement): void {
   const auth = new GoogleAuthService();
   const iosShortcutUrl = "https://www.icloud.com/shortcuts/969e1b627e4a46deae3c690ef0c9ca84";
@@ -789,6 +866,7 @@ export function createApp(root: HTMLElement): void {
   // picks its own on/off stance, nothing flows through URL or Drive so a
   // shared link can't force a decorative view on the recipient.
   let personaPreference: PersonaPreference = resolveInitialPersonaPreference();
+  let paletteHandle: PaletteHandle | null = null;
   // When the user picked "auto", the concrete palette depends on the OS
   // light/dark preference. Subscribe once so a system switch during a live
   // session re-applies the theme without a reload.
@@ -1023,6 +1101,7 @@ export function createApp(root: HTMLElement): void {
       render,
       refreshNotesPanel,
     });
+    paletteHandle?.update(buildPaletteEntries(workspace), selectedTagFilters);
     renderAppPage({
       root,
       workspace,
@@ -1125,6 +1204,19 @@ export function createApp(root: HTMLElement): void {
       render,
       refreshStatus,
     });
+
+  registerPaletteShortcut({
+    host: document.body,
+    getWorkspace: () => workspace,
+    setWorkspace: setWorkspaceState,
+    setActiveMenuItem: setActiveMenuItemState,
+    setDetailNoteId: setDetailNoteIdState,
+    getSelectedTagFilters: () => selectedTagFilters,
+    setSelectedTagFilters: setSelectedTagFiltersState,
+    persistWorkspace: persistLocalWorkspace,
+    setPaletteHandle: (next) => { paletteHandle = next; },
+    render,
+  });
 
   void runAppBootstrap({
     auth,
