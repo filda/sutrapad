@@ -1,6 +1,7 @@
 import { buildLinkIndex } from "../../../lib/notebook";
 import { formatDate } from "../../logic/formatting";
 import type { SutraPadWorkspace } from "../../../types";
+import { buildPageHeader } from "../shared/page-header";
 
 export interface LinksPageOptions {
   workspace: SutraPadWorkspace;
@@ -11,17 +12,19 @@ export function buildLinksPage({ workspace, onOpenNote }: LinksPageOptions): HTM
   const section = document.createElement("section");
   section.className = "links-page";
 
-  const header = document.createElement("header");
-  header.className = "links-page-header";
-  header.innerHTML = `
-    <p class="panel-eyebrow">Links</p>
-    <h2>All links across your notebooks</h2>
-  `;
-  section.append(header);
-
   const linkIndex = buildLinkIndex(workspace);
+  const linkCount = linkIndex.links.length;
 
-  if (linkIndex.links.length === 0) {
+  section.append(
+    buildPageHeader({
+      eyebrow: `Links · ${linkCount}`,
+      titleHtml: "A <em>library</em> of what caught your eye.",
+      subtitle:
+        "Every URL you've captured into a note, gathered here with the notebooks they first appeared in.",
+    }),
+  );
+
+  if (linkCount === 0) {
     const empty = document.createElement("p");
     empty.className = "links-page-empty";
     empty.textContent =

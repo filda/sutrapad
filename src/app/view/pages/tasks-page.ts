@@ -5,6 +5,7 @@ import type {
   SutraPadTaskEntry,
   SutraPadWorkspace,
 } from "../../../types";
+import { buildPageHeader } from "../shared/page-header";
 
 export interface TasksPageOptions {
   workspace: SutraPadWorkspace;
@@ -31,15 +32,21 @@ export function buildTasksPage({
   const section = document.createElement("section");
   section.className = "tasks-page";
 
-  const header = document.createElement("header");
-  header.className = "tasks-page-header";
-  header.innerHTML = `
-    <p class="panel-eyebrow">Tasks</p>
-    <h2>Checkboxes pulled from your notebooks</h2>
-  `;
-  section.append(header);
-
   const taskIndex = buildTaskIndex(workspace);
+  const groups = groupTasksByNote(taskIndex.tasks, workspace);
+  const groupsWithOpen = groups.filter((group) => group.open.length > 0);
+  const groupsWithDone = groups.filter((group) => group.done.length > 0);
+  const totalOpen = groups.reduce((sum, group) => sum + group.open.length, 0);
+  const totalDone = groups.reduce((sum, group) => sum + group.done.length, 0);
+
+  section.append(
+    buildPageHeader({
+      eyebrow: `Tasks · ${totalOpen} open · ${totalDone} done`,
+      titleHtml: "Loose <em>threads</em>.",
+      subtitle:
+        "Every “- [ ]” in a note shows up here, in the context it came from. No artificial buckets — a task is as urgent as the note you wrote it in.",
+    }),
+  );
 
   if (taskIndex.tasks.length === 0) {
     const empty = document.createElement("p");
@@ -49,11 +56,6 @@ export function buildTasksPage({
     section.append(empty);
     return section;
   }
-
-  const groups = groupTasksByNote(taskIndex.tasks, workspace);
-  const groupsWithOpen = groups.filter((group) => group.open.length > 0);
-  const groupsWithDone = groups.filter((group) => group.done.length > 0);
-  const totalDone = groups.reduce((sum, group) => sum + group.done.length, 0);
 
   // Open and completed live in two separate card containers so the
   // "Show completed" toggle can sit visually between them as a divider.

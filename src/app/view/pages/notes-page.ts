@@ -17,6 +17,7 @@ import {
   buildNotesList,
   type NotesListPersonaOptions,
 } from "../shared/notes-list";
+import { buildPageHeader } from "../shared/page-header";
 import { buildSelectedFiltersBar } from "../shared/selected-filters-bar";
 import { appendTagChipContent } from "../shared/tag-chip-content";
 
@@ -180,14 +181,6 @@ function buildNotesPageHeader({
   filterCount,
   onNewNote,
 }: NotesPageHeaderOptions): HTMLElement {
-  const header = document.createElement("div");
-  header.className = "page-header";
-
-  const block = document.createElement("div");
-  block.className = "page-header-text";
-
-  const eyebrow = document.createElement("p");
-  eyebrow.className = "page-eyebrow";
   const countPart =
     filterCount === 0
       ? `${totalNotes} note${totalNotes === 1 ? "" : "s"}`
@@ -196,34 +189,20 @@ function buildNotesPageHeader({
     filterCount === 0
       ? ""
       : ` · filtered by ${filterCount} tag${filterCount === 1 ? "" : "s"}`;
-  eyebrow.textContent = `Notebook · ${countPart}${filterPart}`;
-  block.append(eyebrow);
-
-  const title = document.createElement("h1");
-  title.className = "page-title";
-  title.innerHTML = "Your <em>notebook</em>.";
-  block.append(title);
-
-  const subtitle = document.createElement("p");
-  subtitle.className = "page-subtitle";
-  subtitle.textContent =
-    "Every note is a page. Pick one up — it opens full-width so you have room to read, edit and see its context.";
-  block.append(subtitle);
-
-  header.append(block);
-
-  const actions = document.createElement("div");
-  actions.className = "page-header-actions";
 
   const newNoteButton = document.createElement("button");
   newNoteButton.type = "button";
   newNoteButton.className = "button button-accent";
   newNoteButton.textContent = "+ New note";
   newNoteButton.addEventListener("click", onNewNote);
-  actions.append(newNoteButton);
 
-  header.append(actions);
-  return header;
+  return buildPageHeader({
+    eyebrow: `Notebook · ${countPart}${filterPart}`,
+    titleHtml: "Your <em>notebook</em>.",
+    subtitle:
+      "Every note is a page. Pick one up — it opens full-width so you have room to read, edit and see its context.",
+    actions: newNoteButton,
+  });
 }
 
 interface NotesToolbarOptions {

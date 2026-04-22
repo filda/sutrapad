@@ -976,20 +976,9 @@ a {
 }
 
 .links-page {
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  background: var(--bg);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 22px 50px rgba(var(--primary-rgb), 0.08);
-  padding: 24px 28px;
   margin-bottom: 20px;
   display: grid;
   gap: 18px;
-}
-
-.links-page-header h2 {
-  margin: 4px 0 0;
-  font-size: 1.5rem;
 }
 
 .links-page-empty {
@@ -1088,20 +1077,9 @@ a {
 }
 
 .tasks-page {
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  background: var(--bg);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 22px 50px rgba(var(--primary-rgb), 0.08);
-  padding: 24px 28px;
   margin-bottom: 20px;
   display: grid;
   gap: 18px;
-}
-
-.tasks-page-header h2 {
-  margin: 4px 0 0;
-  font-size: 1.5rem;
 }
 
 .tasks-page-empty,
