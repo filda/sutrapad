@@ -20,14 +20,16 @@ function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
   };
 }
 
-describe("groupNotesByRecency", () => {
-  // Tests use a fixed "now" and local dates so day-boundary rules are
-  // deterministic regardless of the machine running the suite.
-  const now = new Date(2026, 3, 21, 14, 0, 0); // 2026-04-21 14:00 local
+// Tests use a fixed "now" and local dates so day-boundary rules are
+// deterministic regardless of the machine running the suite. `localIso`
+// lives at module scope — lint flagged it as not capturing outer variables,
+// and hoisting is also nicer for reuse across describe blocks.
+function localIso(year: number, month: number, day: number, hour: number): string {
+  return new Date(year, month - 1, day, hour, 0, 0).toISOString();
+}
 
-  function localIso(year: number, month: number, day: number, hour: number): string {
-    return new Date(year, month - 1, day, hour, 0, 0).toISOString();
-  }
+describe("groupNotesByRecency", () => {
+  const now = new Date(2026, 3, 21, 14, 0, 0); // 2026-04-21 14:00 local
 
   it("puts notes updated today into the today bucket", () => {
     const n = makeNote({ id: "a", updatedAt: localIso(2026, 4, 21, 9) });

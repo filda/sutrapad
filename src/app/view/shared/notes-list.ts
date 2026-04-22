@@ -7,6 +7,7 @@ import { formatDate } from "../../logic/formatting";
 import type { NotesViewMode } from "../../logic/notes-view";
 import { describeTaskChip } from "../../logic/task-chip";
 import type { SutraPadDocument } from "../../../types";
+import { applyPersonaStyles, appendPersonaStickers } from "./persona-decor";
 
 export interface NotesListPersonaOptions {
   /**
@@ -79,7 +80,7 @@ function buildCardItem(
   button.className = `note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
   button.type = "button";
 
-  if (persona) decorateButtonWithPersona(button, persona);
+  if (persona) applyPersonaStyles(button, persona);
 
   const excerpt = note.body.trim() || "Empty note";
   // Branching/labelling lives in describeTaskChip so the UI stays purely
@@ -132,7 +133,7 @@ function buildRowItem(
   button.className = `notebook-row${note.id === currentNoteId ? " is-active" : ""}${persona ? " has-persona" : ""}`;
   button.type = "button";
 
-  if (persona) decorateButtonWithPersona(button, persona);
+  if (persona) applyPersonaStyles(button, persona);
 
   const swatch = document.createElement("span");
   swatch.className = "nr-swatch";
@@ -179,47 +180,3 @@ function buildRowItem(
   return button;
 }
 
-function decorateButtonWithPersona(
-  button: HTMLButtonElement,
-  persona: NotebookPersona,
-): void {
-  // Inline style so every card can have its own paper colour + rotation
-  // without generating a rule per note. The custom properties feed into CSS
-  // rules on `.note-list-item` / `.notebook-row` (see styles.css) for
-  // ink-tinted borders and accents that track the paper palette.
-  button.style.setProperty("--nc-bg", persona.paper.bg);
-  button.style.setProperty("--nc-ink", persona.paper.ink);
-  if (persona.accent !== null) {
-    button.style.setProperty("--nc-accent", persona.accent);
-  }
-  button.style.setProperty("--nc-title-font", persona.fonts.title);
-  button.style.setProperty("--nc-body-font", persona.fonts.body);
-  button.style.setProperty("--nc-rotation", `${persona.rotation}deg`);
-  button.style.setProperty("--nc-wear", persona.wear.toFixed(3));
-
-  button.dataset.fontTier = persona.fontTier;
-  if (persona.patina.length > 0) {
-    button.dataset.patina = persona.patina.join(" ");
-  }
-}
-
-function appendPersonaStickers(
-  button: HTMLButtonElement,
-  persona: NotebookPersona,
-): void {
-  if (persona.stickers.length === 0) return;
-
-  const stickerRow = document.createElement("div");
-  stickerRow.className = "note-list-stickers";
-  stickerRow.setAttribute("aria-hidden", "true");
-
-  for (const sticker of persona.stickers) {
-    const chip = document.createElement("span");
-    chip.className = "note-list-sticker";
-    chip.dataset.sticker = sticker.kind;
-    chip.textContent = sticker.label;
-    stickerRow.append(chip);
-  }
-
-  button.append(stickerRow);
-}

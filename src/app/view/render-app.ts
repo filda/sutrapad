@@ -165,6 +165,7 @@ export function renderAppPage({
         bookmarkletHelperExpanded,
         bookmarkletMessage,
         iosShortcutUrl,
+        personaOptions,
         onToggleBookmarkletHelper,
         onCopyBookmarklet,
         onNewNote,

@@ -29,7 +29,10 @@ export function groupNotesByRecency(
   const todayKey = toLocalDateKey(now);
   const yesterdayKey = toLocalDateKey(previousDay(now));
 
-  const sorted = [...notes].sort((a, b) =>
+  // `toSorted` is non-mutating — important here because callers pass the
+  // workspace's note array directly and must not see it reordered as a
+  // side effect. `groupNotesByRecency` is unit-tested for this contract.
+  const sorted = notes.toSorted((a, b) =>
     a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0,
   );
 

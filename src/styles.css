@@ -823,6 +823,76 @@ a {
   align-self: center;
 }
 
+/* --- Home timeline persona -----------------------------------------------
+ * When the user has the persona layer enabled, timeline cards pick up the
+ * same paper palette, rotation and typography as the notes list. The
+ * rotation factor is halved in the builder (see home-page.ts) so a stacked
+ * column reads calmer than the scattered grid of notes cards — these rules
+ * only supply the colour / typography / single-sticker decoration.
+ */
+.tl-card.has-persona {
+  background: var(--nc-bg, var(--surface-subtle));
+  color: var(--nc-ink, var(--primary));
+  border-color:
+    color-mix(in oklab, var(--nc-ink, var(--primary)) 18%, transparent);
+  transform: rotate(var(--nc-rotation, 0deg));
+}
+
+.tl-card.has-persona:hover {
+  transform: rotate(var(--nc-rotation, 0deg)) translateY(-1px);
+}
+
+.tl-card.has-persona .tl-title {
+  color: var(--nc-ink, var(--primary));
+  font-family: var(--nc-title-font, var(--serif));
+}
+
+.tl-card.has-persona .tl-excerpt {
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 80%, transparent);
+  font-family: var(--nc-body-font, inherit);
+}
+
+.tl-card.has-persona .tl-time,
+.tl-card.has-persona .tl-tag-chip,
+.tl-card.has-persona .tl-tag-more {
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 62%, transparent);
+}
+
+.tl-card.has-persona .tl-tag-chip {
+  background:
+    color-mix(in oklab, var(--nc-ink, var(--primary)) 8%, transparent);
+  border-color:
+    color-mix(in oklab, var(--nc-ink, var(--primary)) 20%, transparent);
+}
+
+/* Handwritten / mono tier tweaks keep the title expressive without making
+ * the timeline feel like a different page from the notes list. */
+.tl-card.has-persona[data-font-tier="handwritten"] .tl-title {
+  font-weight: 600;
+  letter-spacing: 0;
+  font-size: 1.2rem;
+}
+
+.tl-card.has-persona[data-font-tier="mono"] .tl-title {
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+/* One sticker max (enforced in JS) — pin it to the bottom-right so it reads
+ * as a seal rather than taking up a tags-row slot. The reused
+ * `.note-list-sticker` class supplies the chip typography and all the
+ * `[data-sticker="…"]` colour variants, so this wrapper only handles
+ * placement + the isolated rotation of a single chip. */
+.tl-stickers {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.tl-stickers .note-list-sticker {
+  transform: rotate(-1.5deg);
+}
+
 .page-placeholder {
   border: 1px dashed var(--line);
   border-radius: 28px;

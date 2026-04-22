@@ -4,6 +4,7 @@ import {
   buildLinkIndex,
 } from "../../../lib/notebook";
 import { countTasksInNote } from "../../../lib/tasks";
+import { deriveNotebookPersona } from "../../../lib/notebook-persona";
 import {
   formatHomeHeaderDate,
   formatNoteTime,
@@ -17,6 +18,11 @@ import type {
   UserProfile,
 } from "../../../types";
 import { buildPageHeader } from "../shared/page-header";
+import {
+  applyPersonaStyles,
+  appendPersonaStickers,
+} from "../shared/persona-decor";
+import type { NotesListPersonaOptions } from "../shared/notes-list";
 
 interface BookmarkletCardOptions {
   appRootUrl: string;
@@ -157,6 +163,7 @@ function buildTodayStats(summary: HomeStatsSummary): HTMLElement {
 function buildTimelineItem(
   note: SutraPadDocument,
   onOpenNote: (noteId: string) => void,
+  personaOptions: NotesListPersonaOptions | undefined,
 ): HTMLElement {
   const item = document.createElement("article");
   item.className = "tl-item";
@@ -170,6 +177,22 @@ function buildTimelineItem(
   card.type = "button";
   card.className = "tl-card";
   card.addEventListener("click", () => onOpenNote(note.id));
+
+  // Persona decoration is opt-in: when the user has "Persona" enabled we
+  // derive the same paper/rotation/font identity the notes list uses, but
+  // tune it down for a stacked timeline — halved rotation so cards don't
+  // clash with the left rule, and at most one sticker so the column stays
+  // calm per the handoff's "keep it calm" note on Today.
+  const persona = personaOptions
+    ? deriveNotebookPersona(note, {
+        allNotes: personaOptions.allNotes,
+        dark: personaOptions.dark,
+      })
+    : null;
+  if (persona) {
+    card.classList.add("has-persona");
+    applyPersonaStyles(card, persona, { rotationFactor: 0.5 });
+  }
 
   const title = document.createElement("h4");
   title.className = "tl-title";
@@ -205,6 +228,19 @@ function buildTimelineItem(
     card.append(tags);
   }
 
+  // Stickers go last so they read as a subtle tag-like accent under the card
+  // content rather than competing with the title for the top edge. The chip
+  // reuses the shared `.note-list-sticker` class so every `[data-sticker]`
+  // colour rule works here too — only the row wrapper gets a timeline-specific
+  // class so we can tune margin/placement without forking the chip visuals.
+  if (persona) {
+    appendPersonaStickers(card, persona, {
+      rowClassName: "tl-stickers",
+      chipClassName: "note-list-sticker",
+      limit: 1,
+    });
+  }
+
   item.append(card);
   return item;
 }
@@ -224,6 +260,7 @@ function buildTimelineSection(
   label: string,
   notes: readonly SutraPadDocument[],
   onOpenNote: (noteId: string) => void,
+  personaOptions: NotesListPersonaOptions | undefined,
 ): HTMLElement | null {
   if (notes.length === 0) return null;
   const wrapper = document.createElement("div");
@@ -235,7 +272,7 @@ function buildTimelineSection(
   wrapper.append(divider);
 
   for (const note of notes) {
-    wrapper.append(buildTimelineItem(note, onOpenNote));
+    wrapper.append(buildTimelineItem(note, onOpenNote, personaOptions));
   }
 
   return wrapper;
@@ -244,6 +281,7 @@ function buildTimelineSection(
 function buildTimeline(
   workspace: SutraPadWorkspace,
   onOpenNote: (noteId: string) => void,
+  personaOptions: NotesListPersonaOptions | undefined,
 ): HTMLElement | null {
   const groups = groupNotesByRecency(workspace.notes, new Date());
   // If every bucket is empty we skip the timeline entirely so the empty
@@ -258,6 +296,7 @@ function buildTimeline(
 
   const timeline = document.createElement("div");
   timeline.className = "timeline";
+  if (personaOptions) timeline.classList.add("timeline--persona");
 
   const sections: Array<[string, readonly SutraPadDocument[]]> = [
     ["Today", groups.today],
@@ -266,7 +305,7 @@ function buildTimeline(
   ];
 
   for (const [label, notes] of sections) {
-    const section = buildTimelineSection(label, notes, onOpenNote);
+    const section = buildTimelineSection(label, notes, onOpenNote, personaOptions);
     if (section) timeline.append(section);
   }
 
@@ -347,6 +386,14 @@ export interface HomePageOptions {
   bookmarkletHelperExpanded: boolean;
   bookmarkletMessage: string;
   iosShortcutUrl: string;
+  /**
+   * When provided, Home timeline cards pick up the same paper palette and
+   * rotation as the notes list so the two surfaces feel like the same
+   * notebook. Omit to render the plain surface-subtle card. The home
+   * timeline dials rotation down (0.5×) and shows at most one sticker so a
+   * stacked column stays readable.
+   */
+  personaOptions?: NotesListPersonaOptions;
   onToggleBookmarkletHelper: () => void;
   onCopyBookmarklet: () => void;
   onNewNote: () => void;
@@ -360,6 +407,7 @@ export function buildHomePage({
   bookmarkletHelperExpanded,
   bookmarkletMessage,
   iosShortcutUrl,
+  personaOptions,
   onToggleBookmarkletHelper,
   onCopyBookmarklet,
   onNewNote,
@@ -383,7 +431,7 @@ export function buildHomePage({
 
   section.append(buildTodayStats(summary));
 
-  const timeline = buildTimeline(workspace, onOpenNote);
+  const timeline = buildTimeline(workspace, onOpenNote, personaOptions);
   if (timeline) section.append(timeline);
 
   section.append(
