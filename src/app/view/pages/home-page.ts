@@ -23,6 +23,7 @@ import {
   appendPersonaStickers,
 } from "../shared/persona-decor";
 import type { NotesListPersonaOptions } from "../shared/notes-list";
+import { buildTagPill } from "../shared/tag-pill";
 
 interface HomeStatsSummary {
   notes: number;
@@ -124,12 +125,12 @@ function buildTimelineItem(
     tags.className = "tl-tags";
     // Limit to six chips so a note with a lot of auto-tags doesn't wrap the
     // card into a tall strip; the overflow indicator mirrors the handoff.
+    // `note.tags` only ever contains user-authored tags (auto-tags are
+    // derived at query time and aren't persisted on the note), so every
+    // pill here lands in the `topic` class.
     const shown = note.tags.slice(0, 6);
     for (const tag of shown) {
-      const chip = document.createElement("span");
-      chip.className = "tl-tag-chip";
-      chip.textContent = tag;
-      tags.append(chip);
+      tags.append(buildTagPill({ tag, kind: "user" }));
     }
     if (note.tags.length > shown.length) {
       const more = document.createElement("span");

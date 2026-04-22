@@ -1,4 +1,4 @@
-import { appendTagChipContent } from "../shared/tag-chip-content";
+import { buildTagPill } from "../shared/tag-pill";
 
 /**
  * Topbar tag-filter strip. Ported loosely from
@@ -10,7 +10,7 @@ import { appendTagChipContent } from "../shared/tag-chip-content";
  *
  * The strip renders:
  *   1. A tag icon (decorative).
- *   2. One chip per active filter, `×` removes that filter.
+ *   2. One `.tag-pill` per active filter with an inner `×` for removal.
  *   3. A dashed "+ Filter by tag…" trigger button that opens the palette.
  *   4. A clear-all control (only when at least one filter is active).
  *   5. A `/` keyboard-hint pill matching the palette shortcut.
@@ -51,21 +51,17 @@ export function buildTagFilterBar({
   bar.append(chips);
 
   for (const tag of selectedTagFilters) {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    const isAuto = autoTagLookup.has(tag);
-    chip.className = `tfb-chip${isAuto ? " is-auto" : ""}`;
-    appendTagChipContent(chip, tag, isAuto);
-
-    const remove = document.createElement("span");
-    remove.className = "tfb-chip-remove";
-    remove.setAttribute("aria-hidden", "true");
-    remove.textContent = "×";
-    chip.append(remove);
-
-    chip.setAttribute("aria-label", `Remove filter ${tag}`);
-    chip.addEventListener("click", () => onRemoveFilter(tag));
-    chips.append(chip);
+    // `active` is true because this strip only ever shows tags already in
+    // the filter set — the pill visual should read as "selected".
+    chips.append(
+      buildTagPill({
+        tag,
+        kind: autoTagLookup.has(tag) ? "auto" : "user",
+        active: true,
+        onRemove: () => onRemoveFilter(tag),
+        removeAriaLabel: `Remove filter ${tag}`,
+      }),
+    );
   }
 
   const trigger = document.createElement("button");

@@ -65,6 +65,25 @@
     0 1px 0 rgba(255, 255, 255, 0.6) inset,
     0 14px 36px -14px rgba(0, 0, 0, 0.18),
     0 2px 6px rgba(0, 0, 0, 0.06);
+
+  /*
+   * Tag-pill colour slots. The pill renderer sets --h per tag class (hue
+   * 0–360) and then borrows these sat/light ramps to compose the full
+   * background / border / text palette with `hsl(var(--h) var(--tag-bg-sat)
+   * var(--tag-bg-light))`. Lifting the ramp into tokens means dark and
+   * parchment themes can override the feel without touching the pill CSS.
+   * Defaults here are tuned for light backgrounds; dark themes redeclare
+   * below.
+   */
+  --tag-bg-sat: 60%;
+  --tag-bg-light: 97%;
+  --tag-border-sat: 30%;
+  --tag-border-light: 80%;
+  --tag-text-sat: 45%;
+  --tag-text-light: 28%;
+  --tag-active-sat: 55%;
+  --tag-active-light: 45%;
+  --tag-active-light-dark: 40%;
 }
 
 /*
@@ -176,6 +195,19 @@
   --surface-tint: rgba(38, 44, 82, 0.85);
   --surface-ghost: rgba(35, 40, 74, 0.6);
   --surface-ghost-strong: rgba(35, 40, 74, 0.8);
+
+  /* Dark-scheme pill tokens — low-light backgrounds with a lifted text stop
+     so the class hue still reads on a dark surface. Shared across our three
+     dark themes (midnight, dark, parchment-dark). */
+  --tag-bg-sat: 40%;
+  --tag-bg-light: 14%;
+  --tag-border-sat: 40%;
+  --tag-border-light: 28%;
+  --tag-text-sat: 60%;
+  --tag-text-light: 75%;
+  --tag-active-sat: 55%;
+  --tag-active-light: 50%;
+  --tag-active-light-dark: 45%;
 }
 
 :root[data-theme="dark"] {
@@ -201,6 +233,17 @@
   --surface-tint: rgba(56, 50, 44, 0.85);
   --surface-ghost: rgba(46, 42, 38, 0.6);
   --surface-ghost-strong: rgba(46, 42, 38, 0.8);
+
+  /* Dark-scheme pill tokens — same curve as midnight. */
+  --tag-bg-sat: 40%;
+  --tag-bg-light: 14%;
+  --tag-border-sat: 40%;
+  --tag-border-light: 28%;
+  --tag-text-sat: 60%;
+  --tag-text-light: 75%;
+  --tag-active-sat: 55%;
+  --tag-active-light: 50%;
+  --tag-active-light-dark: 45%;
 }
 
 /*
@@ -253,6 +296,19 @@
   --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --handwritten: "Caveat", "Kalam", cursive;
+
+  /* Warmer parchment-specific pill ramp from handoff tokens.css "parchment"
+     scheme — lower saturation than sand so pills don't over-colour the
+     already-warm paper palette. */
+  --tag-bg-sat: 40%;
+  --tag-bg-light: 94%;
+  --tag-border-sat: 28%;
+  --tag-border-light: 75%;
+  --tag-text-sat: 40%;
+  --tag-text-light: 32%;
+  --tag-active-sat: 45%;
+  --tag-active-light: 42%;
+  --tag-active-light-dark: 36%;
 }
 
 :root[data-theme="parchment-dark"] {
@@ -297,6 +353,18 @@
   --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --handwritten: "Caveat", "Kalam", cursive;
+
+  /* Dark parchment pill ramp — deeper muted paper feel matches the warm
+     dark surfaces above without letting pills glow off the page. */
+  --tag-bg-sat: 25%;
+  --tag-bg-light: 15%;
+  --tag-border-sat: 25%;
+  --tag-border-light: 30%;
+  --tag-text-sat: 50%;
+  --tag-text-light: 72%;
+  --tag-active-sat: 45%;
+  --tag-active-light: 48%;
+  --tag-active-light-dark: 40%;
 }
 
 * {
@@ -608,41 +676,129 @@ a {
   gap: 4px 6px;
 }
 
-.tfb-chip {
+/*
+ * ================================ .tag-pill =================================
+ * Shared pill used across the editor tag row, topbar filter bar, Tags/Notes
+ * clouds and Home timeline. All pills share the same markup and a single
+ * stylesheet — the hue comes from the `--h` CSS variable that `buildTagPill`
+ * sets per class, and the sat/light ramps come from the `--tag-*-*` tokens
+ * declared per-theme up top. One pill → one palette expression, no
+ * per-surface overrides.
+ *
+ * Ported from docs/design_handoff_sutrapad2/src/screens.css lines 705–737
+ * (and tokens.css lines 559–569 for the removable `.tag-x` affordance).
+ */
+.tag-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.35;
+  font-family: var(--sans);
+  border: 1px solid hsl(var(--h, 18) var(--tag-border-sat) var(--tag-border-light) / 0.6);
+  background: hsl(var(--h, 18) var(--tag-bg-sat) var(--tag-bg-light));
+  color: hsl(var(--h, 18) var(--tag-text-sat) var(--tag-text-light));
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.12s;
+  white-space: nowrap;
+}
+
+/* Reset native <button> chrome so pills built as buttons look identical to
+   span-based ones. Only the element changes; the visuals stay in lockstep. */
+button.tag-pill {
+  font: inherit;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.tag-pill:hover {
+  transform: translateY(-1px);
+  border-color: hsl(var(--h, 18) 55% 55%);
+}
+
+.tag-pill.active {
+  background: hsl(var(--h, 18) var(--tag-active-sat) var(--tag-active-light));
+  border-color: hsl(var(--h, 18) var(--tag-active-sat) var(--tag-active-light-dark));
+  color: var(--on-primary, #fff);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px hsl(var(--h, 18) 50% 40% / 0.25);
+}
+
+.tag-pill.auto {
+  font-family: var(--sans);
+}
+
+.tag-pill.auto .tag-name {
+  font-variation-settings: "wght" 400;
+}
+
+.tag-pill.user .tag-name {
+  font-weight: 500;
+}
+
+.tag-pill.low-conf {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.tag-pill.muted {
+  opacity: 0.45;
+}
+
+.tag-pill .tag-sym {
+  opacity: 0.55;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  transform: translateY(-0.5px);
+}
+
+.tag-pill .tag-count {
+  margin-left: 3px;
+  font-size: 10.5px;
+  opacity: 0.55;
+}
+
+.tag-pill.tag-lg {
+  padding: 6px 13px;
+  font-size: 13.5px;
+}
+
+/* Removable variant — the inner × is a real <button> so it's a separate focus
+   target; the pill wrapper stays a non-interactive <span> for that case. */
+.tag-pill.removable {
+  padding-right: 3px;
+}
+
+.tag-pill .tag-x {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 4px 3px 9px;
-  background: rgba(var(--accent-rgb), 0.13);
-  border: 1px solid rgba(var(--accent-rgb), 0.32);
-  border-radius: 999px;
-  color: var(--primary);
-  font-size: 12px;
-  line-height: 1.4;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 2px;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  color: inherit;
+  opacity: 0.55;
+  transition: opacity 0.12s, background 0.12s;
 }
 
-.tfb-chip:hover {
-  background: rgba(var(--accent-rgb), 0.22);
-  border-color: rgba(var(--accent-rgb), 0.5);
+.tag-pill .tag-x:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
 }
 
-.tfb-chip.is-auto {
-  background: var(--paper-1, rgba(var(--primary-rgb), 0.06));
-  border-color: var(--line);
-  color: var(--ink-700, var(--primary));
-}
-
-.tfb-chip-remove {
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1;
-  padding-left: 2px;
-}
-
-.tfb-chip:hover .tfb-chip-remove {
-  color: var(--danger, var(--primary));
+:root[data-theme="midnight"] .tag-pill .tag-x:hover,
+:root[data-theme="dark"] .tag-pill .tag-x:hover,
+:root[data-theme="parchment-dark"] .tag-pill .tag-x:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .tfb-trigger {
@@ -1042,15 +1198,6 @@ a {
   gap: 6px;
 }
 
-.tl-tag-chip {
-  padding: 2px 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-ghost);
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
 .tl-tag-more {
   font-size: 0.72rem;
   color: var(--muted);
@@ -1087,17 +1234,14 @@ a {
 }
 
 .tl-card.has-persona .tl-time,
-.tl-card.has-persona .tl-tag-chip,
 .tl-card.has-persona .tl-tag-more {
   color: color-mix(in oklab, var(--nc-ink, var(--primary)) 62%, transparent);
 }
 
-.tl-card.has-persona .tl-tag-chip {
-  background:
-    color-mix(in oklab, var(--nc-ink, var(--primary)) 8%, transparent);
-  border-color:
-    color-mix(in oklab, var(--nc-ink, var(--primary)) 20%, transparent);
-}
+/* Note: tag pills on persona cards intentionally keep their class-hue palette
+   rather than inheriting paper-tinted text — the pill visual is meant to read
+   consistently across Home / Tags / Notes regardless of which persona skin
+   the note happens to have. */
 
 /* Handwritten / mono tier tweaks keep the title expressive without making
  * the timeline feel like a different page from the notes list. */
@@ -1363,11 +1507,6 @@ a {
   flex-wrap: wrap;
   gap: 10px;
   width: 100%;
-}
-
-.tags-cloud-wide .tag-filter-chip {
-  font-size: 0.95rem;
-  padding: 0.5rem 0.9rem;
 }
 
 .tags-page-hint {
@@ -2562,60 +2701,6 @@ a {
   gap: 8px;
 }
 
-.tag-filter-chip {
-  border: 1px solid rgba(var(--accent-rgb), 0.25);
-  background: var(--surface-ghost-strong);
-  color: var(--primary);
-  border-radius: 999px;
-  padding: 0.35rem 0.7rem;
-  font-size: 0.82rem;
-}
-
-.tag-filter-chip.is-active {
-  background: rgba(var(--accent-rgb), 0.18);
-  border-color: rgba(var(--accent-rgb), 0.5);
-}
-
-/*
- * Auto-tag chips are derived from metadata (date, device, location, …) rather
- * than typed by the user, so they're visually de-emphasised relative to user
- * tags: a neutral muted palette instead of the accent tint. The namespace
- * (`date:`, `device:`) is lifted out of the text and rendered as a small
- * category icon by `appendTagChipContent`; see `.tag-chip-icon` below.
- * Active state keeps the accent so a selected auto-filter is still unambiguous.
- */
-.tag-filter-chip.is-auto {
-  background: rgba(var(--primary-rgb), 0.05);
-  border-color: rgba(var(--primary-rgb), 0.16);
-  color: var(--muted);
-}
-
-.tag-filter-chip.is-auto.is-active {
-  background: rgba(var(--accent-rgb), 0.14);
-  border-color: rgba(var(--accent-rgb), 0.4);
-  color: var(--primary);
-}
-
-/*
- * Icon + label spans live inside every auto-tag chip. The icon is an emoji
- * glyph (e.g. 📍 for location, 💻 for device) standing in for the namespace
- * prefix that's kept in the stored tag value but hidden from the UI.
- * `display: inline-flex` on the parent is inherited from the chip; these
- * spans just keep the gap consistent and prevent the icon from reflowing
- * mid-label if the chip wraps.
- */
-.tag-chip-icon {
-  display: inline-block;
-  margin-right: 0.4em;
-  font-size: 0.95em;
-  line-height: 1;
-  vertical-align: -0.05em;
-}
-
-.tag-chip-label {
-  display: inline;
-}
-
 .notes-list {
   display: grid;
   gap: 10px;
@@ -3515,35 +3600,6 @@ a {
   color: var(--muted);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
-}
-
-.tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px 3px 11px;
-  background: rgba(var(--accent-rgb), 0.13);
-  border: 1px solid rgba(var(--accent-rgb), 0.32);
-  border-radius: 999px;
-  font-size: 0.85rem;
-  color: var(--primary);
-  line-height: 1.4;
-}
-
-.tag-chip-remove {
-  border: none;
-  background: none;
-  padding: 0;
-  margin: 0;
-  color: var(--muted);
-  font-size: 1.05rem;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 100ms ease;
-}
-
-.tag-chip-remove:hover {
-  color: var(--danger);
 }
 
 .tag-text-input {

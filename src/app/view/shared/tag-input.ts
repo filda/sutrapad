@@ -1,5 +1,6 @@
 import { filterTagSuggestions } from "../../../lib/notebook";
 import type { SutraPadDocument, SutraPadTagEntry } from "../../../types";
+import { buildTagPill } from "./tag-pill";
 
 /**
  * Combobox-style tag entry: a chip row that doubles as the input field, with
@@ -212,24 +213,16 @@ export function buildTagInput(
     while (row.firstChild) row.removeChild(row.firstChild);
 
     for (const tag of note.tags) {
-      const chip = document.createElement("span");
-      chip.className = "tag-chip";
-
-      const label = document.createElement("span");
-      label.textContent = tag;
-
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "tag-chip-remove";
-      removeBtn.setAttribute("aria-label", `Remove tag ${tag}`);
-      removeBtn.textContent = "×";
-      // onRemoveTag triggers a full app render (app.ts refocuses the new tag
-      // input), so no local DOM updates are needed here.
-      removeBtn.addEventListener("click", () => {
-        onRemoveTag(tag);
+      // Note tags are always user-authored (topic class). The pill's inner
+      // × fires onRemoveTag; that triggers a full app render which
+      // `renderPreservingTagInputFocus` in app.ts hands focus back to the
+      // new input, so we don't need any local DOM bookkeeping.
+      const chip = buildTagPill({
+        tag,
+        kind: "user",
+        onRemove: () => onRemoveTag(tag),
+        removeAriaLabel: `Remove tag ${tag}`,
       });
-
-      chip.append(label, removeBtn);
       row.append(chip);
     }
 

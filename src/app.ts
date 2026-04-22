@@ -689,10 +689,14 @@ function createRenderCallbacks({
  */
 function renderPreservingTagInputFocus(render: () => void): void {
   const active = document.activeElement;
+  // `.tag-x` now appears on the topbar filter bar too, so scope the lookup
+  // to the editor card — otherwise removing a topbar filter would yank
+  // focus into the editor every time.
   const shouldRefocus =
     active instanceof HTMLElement &&
+    active.closest(".editor-card") !== null &&
     (active.classList.contains("tag-text-input") ||
-      active.classList.contains("tag-chip-remove") ||
+      active.classList.contains("tag-x") ||
       active.classList.contains("tag-suggestion"));
 
   render();

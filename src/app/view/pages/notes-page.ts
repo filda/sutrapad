@@ -14,7 +14,7 @@ import {
 } from "../shared/notes-list";
 import { buildNewNoteButton } from "../shared/new-note-button";
 import { buildPageHeader } from "../shared/page-header";
-import { appendTagChipContent } from "../shared/tag-chip-content";
+import { buildTagPill } from "../shared/tag-pill";
 
 export interface NotesPanelOptions {
   workspace: SutraPadWorkspace;
@@ -137,19 +137,17 @@ export function buildNotesPanel({
     cloud.className = "tag-filter-cloud";
 
     for (const entry of combinedIndex.tags) {
-      const chip = document.createElement("button");
-      chip.type = "button";
-      const isAuto = entry.kind === "auto";
-      chip.className = [
-        "tag-filter-chip",
-        isAuto ? "is-auto" : "",
-        selectedTagFilters.includes(entry.tag) ? "is-active" : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-      appendTagChipContent(chip, entry.tag, isAuto, ` · ${entry.count}`);
-      chip.addEventListener("click", () => onToggleTagFilter(entry.tag));
-      cloud.append(chip);
+      // Same pill shape as the Tags-page cloud so a tag looks identical on
+      // both screens — class hue + symbol + count + active state.
+      cloud.append(
+        buildTagPill({
+          tag: entry.tag,
+          kind: entry.kind,
+          count: `· ${entry.count}`,
+          active: selectedTagFilters.includes(entry.tag),
+          onClick: () => onToggleTagFilter(entry.tag),
+        }),
+      );
     }
 
     filterSection.append(filterHeader, cloud);
