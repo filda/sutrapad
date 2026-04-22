@@ -159,6 +159,7 @@ export function renderAppPage({
   if (activeMenuItem === "home") {
     page.append(
       buildHomePage({
+        workspace,
         profile,
         appRootUrl,
         bookmarkletHelperExpanded,
@@ -166,6 +167,8 @@ export function renderAppPage({
         iosShortcutUrl,
         onToggleBookmarkletHelper,
         onCopyBookmarklet,
+        onNewNote,
+        onOpenNote: onSelectNote,
       }),
     );
     page.append(footer);
