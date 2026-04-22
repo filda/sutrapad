@@ -1370,7 +1370,6 @@ a {
   padding: 0.5rem 0.9rem;
 }
 
-.tags-page-empty,
 .tags-page-hint {
   margin: 0;
   color: var(--muted);
@@ -1394,12 +1393,6 @@ a {
   margin-bottom: 20px;
   display: grid;
   gap: 18px;
-}
-
-.links-page-empty {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.95rem;
 }
 
 .links-list {
@@ -1497,7 +1490,6 @@ a {
   gap: 18px;
 }
 
-.tasks-page-empty,
 .tasks-all-done {
   margin: 0;
   color: var(--muted);
@@ -2450,14 +2442,6 @@ a {
   }
 }
 
-.notes-list-empty {
-  margin: 0;
-  padding: 14px 16px;
-  border: 1px dashed rgba(var(--primary-rgb), 0.14);
-  border-radius: 18px;
-  color: var(--muted);
-  background: var(--surface-soft);
-}
 
 .note-list-item {
   width: 100%;
@@ -3015,22 +2999,142 @@ a {
   color: var(--danger);
 }
 
-.empty-editor-state {
-  padding: 18px;
-  border: 1px dashed rgba(var(--primary-rgb), 0.14);
-  border-radius: 18px;
-  background: var(--surface-soft);
+/* ---------- Empty states (handoff v2) ----------
+ * Two shells, one illustration set.
+ *
+ * `.empty-scene` is the full-bleed first-run treatment: centered, plenty
+ * of air, 130px ink illustration, serif title, warm sub-copy, optional
+ * CTA + secondary.
+ *
+ * `.empty-state` is the compact inline filter-miss card: dashed border
+ * on `--paper-1`, 28px glyph, smaller title. The editor-canvas variant
+ * (`.empty-editor-state`) is a simple width modifier.
+ *
+ * The illustrations themselves are hard-coded ink-on-paper tones (see
+ * `src/app/view/shared/empty-state.ts`) — they don't theme because the
+ * whole pitch is that they look hand-drawn on actual paper. */
+.empty-scene {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 80px 32px 96px;
+  max-width: 520px;
+  margin: 0 auto;
 }
 
-.empty-editor-state h2 {
-  margin: 0 0 8px;
-  font-size: 1.05rem;
+.empty-scene-ink {
+  width: 130px;
+  height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28px;
+  opacity: 0.92;
+  transform: rotate(-2deg);
 }
 
-.empty-editor-state p {
+.empty-scene-title {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 32px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+  color: var(--ink-900);
+}
+
+.empty-scene-sub {
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink-500);
+  margin: 0 0 24px;
+  max-width: 420px;
+  text-wrap: pretty;
+}
+
+.empty-scene-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 24px;
+  background: var(--paper-1);
+  border: 1px dashed var(--line);
+  border-radius: var(--r-lg);
+  color: var(--ink-500);
+  gap: 6px;
+}
+
+.empty-state .empty-glyph {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.empty-state h3 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 20px;
   margin: 0;
-  color: var(--muted);
+  color: var(--ink-900);
+}
+
+.empty-state p {
+  margin: 0;
+  max-width: 340px;
+  font-size: 14px;
   line-height: 1.5;
+}
+
+.empty-state-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+/* Editor-column variant of the inline shell. The notes list already shows
+ * an `.empty-state` card; this one sits next to it, so it just has to
+ * stretch to the column width — the base styling carries everything else. */
+.empty-editor-state {
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .empty-scene {
+    padding: 48px 20px 64px;
+  }
+  .empty-scene-ink {
+    width: 100px;
+    height: 100px;
+    margin-bottom: 20px;
+  }
+  .empty-scene-ink svg {
+    width: 100px;
+    height: 100px;
+  }
+  .empty-scene-title {
+    font-size: 26px;
+  }
+  .empty-scene-sub {
+    font-size: 14px;
+  }
 }
 
 .tags-field {

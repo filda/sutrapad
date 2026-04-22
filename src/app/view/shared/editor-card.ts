@@ -2,6 +2,7 @@ import { buildNoteMetadata } from "../../logic/note-metadata";
 import { detectKind } from "../../../lib/detect-kind";
 import type { SutraPadDocument, SutraPadTagEntry } from "../../../types";
 import type { SyncState } from "../../session/workspace-sync";
+import { EMPTY_COPY, buildEmptyState } from "./empty-state";
 import { buildKindChipForNote } from "./kind-chip";
 import { buildTagInput } from "./tag-input";
 
@@ -54,12 +55,12 @@ export function buildEditorCard({
   status.textContent = statusText;
 
   if (!note && selectedTagFilters.length > 0) {
-    const emptyEditor = document.createElement("div");
-    emptyEditor.className = "empty-editor-state";
-    emptyEditor.innerHTML = `
-      <h2>No notebook matches this filter.</h2>
-      <p>Try removing one of the selected tags or clear the filter to see all notes again.</p>
-    `;
+    // Inline filter-miss in the editor column. We reuse the shared
+    // `.empty-state` shell so the look matches the notes-list miss on
+    // the same screen — two empty cards side-by-side would otherwise
+    // feel inconsistent.
+    const emptyEditor = buildEmptyState({ ...EMPTY_COPY.notes_filtered });
+    emptyEditor.classList.add("empty-editor-state");
     editor.append(status, emptyEditor);
     return editor;
   }

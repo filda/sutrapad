@@ -7,6 +7,7 @@ import { formatDate } from "../../logic/formatting";
 import type { NotesViewMode } from "../../logic/notes-view";
 import { describeTaskChip } from "../../logic/task-chip";
 import type { SutraPadDocument } from "../../../types";
+import { EMPTY_COPY, buildEmptyState } from "./empty-state";
 import { applyPersonaStyles, appendPersonaStickers } from "./persona-decor";
 
 export interface NotesListPersonaOptions {
@@ -43,10 +44,15 @@ export function buildNotesList(
       : `notes-list notes-list--${viewMode}${personaClass}`;
 
   if (notes.length === 0) {
-    const emptyState = document.createElement("p");
-    emptyState.className = "notes-list-empty";
-    emptyState.textContent = "No notes match the current tag filter.";
-    notesList.append(emptyState);
+    // Inline filter-miss: data exists somewhere, just not under the active
+    // filter. The topbar tag-filter-bar already offers a Clear action, so
+    // the inline card doesn't need to duplicate it — keeping it copy-only
+    // avoids a second "Clear filter" button competing for attention.
+    notesList.append(
+      buildEmptyState({
+        ...EMPTY_COPY.notes_filtered,
+      }),
+    );
     return notesList;
   }
 

@@ -7,6 +7,7 @@ import type {
   SutraPadTagFilterMode,
   SutraPadWorkspace,
 } from "../../../types";
+import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
 import {
   buildNotesList,
   type NotesListPersonaOptions,
@@ -95,6 +96,20 @@ export function buildNotesPanel({
       onNewNote,
     }),
   );
+
+  if (workspace.notes.length === 0) {
+    // First-run: no notebooks anywhere in the workspace. Show the
+    // full-bleed scene with the "Write your first note" CTA instead of
+    // rendering the filter + toolbar + inline miss — the user has
+    // nothing to filter and the toolbar's view-toggle would be moot.
+    notesPanel.append(
+      buildEmptyScene({
+        ...EMPTY_COPY.notes,
+        onCta: onNewNote,
+      }),
+    );
+    return notesPanel;
+  }
 
   if (combinedIndex.tags.length > 0) {
     const filterSection = document.createElement("section");

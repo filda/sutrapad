@@ -8,6 +8,7 @@ import type {
   SutraPadTagFilterMode,
   SutraPadWorkspace,
 } from "../../../types";
+import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
 import {
   buildNotesList,
   type NotesListPersonaOptions,
@@ -129,11 +130,10 @@ export function buildTagsPage({
   );
 
   if (fullIndex.tags.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "tags-page-empty";
-    empty.textContent =
-      "No tags yet. Add tags to your notes, or capture a page to auto-tag it by device, date, and location.";
-    section.append(empty);
+    // First-run full-bleed scene. No CTA — the sub-copy already promises
+    // that tags appear on their own, so asking the user to do something
+    // here would contradict the message.
+    section.append(buildEmptyScene({ ...EMPTY_COPY.tags }));
     return section;
   }
 

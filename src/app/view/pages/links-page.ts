@@ -1,14 +1,25 @@
 import { buildLinkIndex } from "../../../lib/notebook";
 import { formatDate } from "../../logic/formatting";
 import type { SutraPadWorkspace } from "../../../types";
+import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
 import { buildPageHeader } from "../shared/page-header";
 
 export interface LinksPageOptions {
   workspace: SutraPadWorkspace;
   onOpenNote: (noteId: string) => void;
+  /**
+   * Routes to the Capture page. Wired here because the first-run empty
+   * state pitches the bookmarklet as the fastest way to accumulate links,
+   * and the bookmarklet instructions live on Capture.
+   */
+  onOpenCapture: () => void;
 }
 
-export function buildLinksPage({ workspace, onOpenNote }: LinksPageOptions): HTMLElement {
+export function buildLinksPage({
+  workspace,
+  onOpenNote,
+  onOpenCapture,
+}: LinksPageOptions): HTMLElement {
   const section = document.createElement("section");
   section.className = "links-page";
 
@@ -25,11 +36,15 @@ export function buildLinksPage({ workspace, onOpenNote }: LinksPageOptions): HTM
   );
 
   if (linkCount === 0) {
-    const empty = document.createElement("p");
-    empty.className = "links-page-empty";
-    empty.textContent =
-      "No links yet. Paste a URL into a notebook and it will appear here.";
-    section.append(empty);
+    // First-run full-bleed scene. CTA routes to the Capture page since
+    // the handoff copy explicitly pitches the bookmarklet as the way to
+    // start saving links.
+    section.append(
+      buildEmptyScene({
+        ...EMPTY_COPY.links,
+        onCta: onOpenCapture,
+      }),
+    );
     return section;
   }
 

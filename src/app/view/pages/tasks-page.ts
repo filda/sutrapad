@@ -5,6 +5,7 @@ import type {
   SutraPadTaskEntry,
   SutraPadWorkspace,
 } from "../../../types";
+import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
 import { buildPageHeader } from "../shared/page-header";
 
 export interface TasksPageOptions {
@@ -49,11 +50,11 @@ export function buildTasksPage({
   );
 
   if (taskIndex.tasks.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "tasks-page-empty";
-    empty.textContent =
-      "No tasks yet. Start a line in any note with `[ ]` or `- [ ]` and it will show up here.";
-    section.append(empty);
+    // First-run: no tasks exist anywhere. Full-bleed scene with the handoff's
+    // poetic copy — the "write `[ ]` to make a task" hint is embedded in the
+    // sub so we don't need a CTA. Keeps the page calm when there's nothing
+    // to do, consistent with the rest of the app's ink-on-paper voice.
+    section.append(buildEmptyScene({ ...EMPTY_COPY.tasks }));
     return section;
   }
 

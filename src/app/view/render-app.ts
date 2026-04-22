@@ -234,6 +234,7 @@ export function renderAppPage({
         buildLinksPage({
           workspace,
           onOpenNote: openNoteInEditor,
+          onOpenCapture,
         }),
       );
     } else if (activeMenuItem === "tasks") {
