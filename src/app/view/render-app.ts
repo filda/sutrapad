@@ -16,6 +16,7 @@ import { buildTagsPage } from "./pages/tags-page";
 import { buildLinksPage } from "./pages/links-page";
 import { buildTasksPage } from "./pages/tasks-page";
 import {
+  buildDetailTopbar,
   buildEditorCard,
   buildNotesPanel,
   type EditorCardOptions,
@@ -68,6 +69,13 @@ interface RenderAppOptions
   onChangeTheme: (choice: ThemeChoice) => void;
   onChangePersonaPreference: (preference: PersonaPreference) => void;
   onChangeFilterMode: (mode: SutraPadTagFilterMode) => void;
+  /**
+   * "← Back to notes" click handler — consumed by the detail-topbar that sits
+   * above the editor card on the note detail route. Kept here (rather than on
+   * EditorCardOptions) because the editor card is now a pure writing surface
+   * and shouldn't own route-level navigation affordances.
+   */
+  onBackToNotes: () => void;
 }
 
 export function renderAppPage({
@@ -257,6 +265,13 @@ export function renderAppPage({
   );
 
   page.append(
+    buildDetailTopbar({
+      note: note ?? (selectedTagFilters.length > 0 ? null : currentNote),
+      onBackToNotes,
+    }),
+  );
+
+  page.append(
     buildEditorCard({
       note,
       currentNote,
@@ -271,7 +286,6 @@ export function renderAppPage({
       onBodyInput,
       onAddTag,
       onRemoveTag,
-      onBackToNotes,
     }),
   );
   page.append(footer);

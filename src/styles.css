@@ -1240,7 +1240,6 @@ a {
 }
 
 .hero-card,
-.notes-panel,
 .editor-card {
   border: 1px solid var(--line);
   border-radius: 28px;
@@ -1326,9 +1325,57 @@ a {
   min-width: 0;
 }
 
+/*
+ * Paper-feel detail editor. The editor card lives inside `.page` already, so
+ * the card still sits on the page background — but we swap the roomier
+ * cloth-and-paper styling of the handoff's `.detail-editor` onto the existing
+ * surface. Generous side padding on wide screens, a subtle ruled line pattern
+ * that tracks scroll, and a cap on max-width so long paragraphs don't stretch
+ * past a comfortable measure.
+ */
+.editor-card.detail-editor {
+  padding: clamp(28px, 5vw, 56px) clamp(24px, 6vw, 72px) 36px;
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent 0 31px,
+    rgba(var(--primary-rgb), 0.04) 31px 32px
+  );
+  background-attachment: local;
+}
+
+/*
+ * Sits above the editor card on the note-detail route. Left side: the
+ * "← Back to notes" affordance. Right side: a muted breadcrumb row of stats
+ * (word count, read time, tasks, links, tags). Mirrors the handoff's
+ * `.detail-topbar` without the duplicate/export/delete action cluster.
+ */
+.detail-topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.detail-breadcrumbs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-breadcrumbs .crumb-sep {
+  color: rgba(var(--primary-rgb), 0.32);
+}
+
 .editor-back-button {
-  align-self: flex-start;
-  margin: 0 0 16px;
   padding: 6px 12px;
   font-size: 0.9rem;
   color: var(--muted);
@@ -1353,19 +1400,17 @@ a {
   outline-offset: 2px;
 }
 
+/*
+ * The notebook screen (page-header + filter card + toolbar + notes list) sits
+ * directly on the page background now, matching the handoff's open page
+ * layout. Vertical rhythm is handled by this container; the filter card, the
+ * toolbar and the notes list each handle their own interior spacing.
+ */
 .notes-panel {
-  padding: 18px;
   display: grid;
-  gap: 16px;
+  gap: 20px;
   align-self: start;
   min-width: 0;
-}
-
-.notes-panel-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: start;
 }
 
 .panel-eyebrow {
@@ -1376,17 +1421,93 @@ a {
   color: var(--accent);
 }
 
-.notes-panel-header h2 {
-  margin: 0;
-  font-size: 1.25rem;
+/*
+ * Notebook / Tags / Links page headers follow the handoff's three-line lockup:
+ * an uppercase accent eyebrow, a serif title with an italicised emphasis word,
+ * and a muted subtitle clamped at ~60ch so it stays comfortable to read. The
+ * actions column sits opposite the text block on wide screens and wraps
+ * beneath it on small viewports.
+ */
+.page-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
-.notes-panel-header-actions {
+.page-header-text {
+  min-width: 0;
+  flex: 1 1 420px;
+}
+
+.page-eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.page-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: clamp(2.05rem, 4.2vw, 3.2rem);
+  line-height: 1.04;
+  letter-spacing: -0.01em;
+  font-weight: 500;
+  color: var(--primary);
+}
+
+.page-title em {
+  font-style: italic;
+  color: var(--accent);
+  font-weight: 400;
+}
+
+.page-subtitle {
+  margin: 6px 0 0;
+  color: var(--muted);
+  max-width: 60ch;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.page-header-actions {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+/*
+ * Toolbar that sits above the notes list: filter-match hint on the left, the
+ * view toggle (list vs cards) on the right. Mirrors the handoff's
+ * `.notes-toolbar` so the switch between grid and list stays next to the
+ * content it affects rather than buried in the page header.
+ */
+.notes-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.notes-toolbar-hint {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.notes-toolbar .view-toggle {
+  margin-left: auto;
 }
 
 .view-toggle {
@@ -1509,13 +1630,6 @@ a {
   display: inline;
 }
 
-.tag-filter-hint {
-  margin: 10px 0 0;
-  color: var(--muted);
-  font-size: 0.83rem;
-  line-height: 1.4;
-}
-
 .notes-list {
   display: grid;
   gap: 10px;
@@ -1532,47 +1646,131 @@ a {
 }
 
 /*
- * List variant: compact one-liner rows — title + date on the same line, body
- * excerpt hidden. Tags stay inline so the user can still scan them, but the
- * row is much shorter than a card.
+ * List variant: horizontal rows following the handoff's `.notebook-row`. Each
+ * row renders as a flex rail — paper swatch on the left, title / excerpt
+ * column in the middle, tag strip and date pinned to the right — wrapped in a
+ * shared container card so the whole list reads as one paper tablet.
  */
 .notes-list--list {
   grid-template-columns: 1fr;
-  gap: 4px;
+  gap: 0;
+  background: var(--surface-tint);
+  border: 1px solid rgba(var(--primary-rgb), 0.1);
+  border-radius: var(--r-lg, 22px);
+  box-shadow: var(--shadow-card, 0 10px 24px rgba(0, 0, 0, 0.06));
+  overflow: hidden;
 }
 
-.notes-list--list .note-list-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  column-gap: 12px;
-  padding: 8px 14px;
-  border-radius: 12px;
+.notebook-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  border: 0;
+  border-bottom: 1px solid rgba(var(--primary-rgb), 0.08);
+  background: transparent;
+  color: var(--primary);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
-.notes-list--list .note-list-item strong {
-  margin-bottom: 0;
-  grid-column: 1;
+.notebook-row:last-child {
+  border-bottom: 0;
+}
+
+.notebook-row:hover {
+  background: rgba(var(--primary-rgb), 0.04);
+}
+
+.notebook-row.is-active {
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+.notebook-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.nr-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--nc-bg, var(--surface-ghost-strong));
+  border: 1px solid
+    color-mix(in oklab, var(--nc-ink, rgba(var(--primary-rgb), 0.3)) 25%, transparent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  flex-shrink: 0;
+}
+
+.notebook-row:not(.has-persona) .nr-swatch {
+  background: rgba(var(--accent-rgb), 0.35);
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+
+.nr-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nr-title {
+  font-family: var(--nc-title-font, var(--serif));
+  font-weight: 500;
+  font-size: 1rem;
+  letter-spacing: -0.005em;
+  color: var(--nc-ink, var(--primary));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.notes-list--list .note-list-item > .note-list-meta {
-  margin-bottom: 0;
-  grid-column: 2;
-  justify-self: end;
-  font-size: 0.78rem;
+.nr-sub {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.notes-list--list .note-list-item p {
-  display: none;
-}
-
-.notes-list--list .note-list-tags {
-  grid-column: 1 / -1;
-  margin-top: 4px;
+.nr-tags {
+  display: flex;
   gap: 4px;
+  flex-wrap: wrap;
+  max-width: 260px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.nr-date {
+  font-size: 0.76rem;
+  color: var(--muted);
+  min-width: 70px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .notebook-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .nr-tags {
+    max-width: none;
+    justify-content: flex-start;
+  }
+
+  .nr-date {
+    min-width: 0;
+    text-align: left;
+  }
 }
 
 .notes-list-empty {
@@ -2057,12 +2255,6 @@ a {
   font-size: 0.95rem;
 }
 
-.toolbar {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
 .button {
   border: 1px solid rgba(var(--primary-rgb), 0.16);
   background: var(--surface-ghost-strong);
@@ -2083,6 +2275,13 @@ a {
 .button-primary {
   background: var(--primary);
   color: var(--on-primary);
+}
+
+.button-accent {
+  background: var(--accent);
+  color: var(--on-primary);
+  border-color: color-mix(in oklab, var(--accent) 60%, #000);
+  font-weight: 500;
 }
 
 .button-ghost {
@@ -2265,25 +2464,50 @@ a {
   color: var(--muted);
 }
 
-.title-input,
-.body-input {
+/*
+ * Paper-on-paper writing surface. The inputs carry two class hooks each:
+ * `.title-input` / `.body-input` are legacy selectors used by app.ts for
+ * focus management; `.editor-title` / `.editor-body` are the handoff's
+ * semantic names and carry the visible styling. Keep the legacy classes
+ * unstyled — they're JS hooks, not CSS hooks — so the paper look comes
+ * entirely from the serif rules below.
+ */
+.editor-title,
+.editor-body {
   width: 100%;
-  border: 1px solid var(--line);
-  background: var(--surface-subtle);
-  border-radius: 18px;
+  border: 0;
+  outline: 0;
+  background: transparent;
   color: var(--primary);
+  font-family: var(--serif);
 }
 
-.title-input {
-  margin-bottom: 14px;
-  padding: 16px 18px;
-  font-size: 1.1rem;
+.editor-title {
+  font-size: clamp(1.9rem, 3.2vw, 2.5rem);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+  font-weight: 500;
+  padding: 0;
+  margin: 0 0 10px;
 }
 
-.body-input {
-  min-height: 52vh;
-  resize: vertical;
-  padding: 18px;
+.editor-title::placeholder {
+  color: color-mix(in oklab, var(--muted) 75%, transparent);
+  font-style: italic;
+}
+
+.editor-body {
+  font-size: 1.125rem;
+  line-height: 2rem;
+  min-height: 50vh;
+  resize: none;
+  padding: 0;
+  margin: 0;
+}
+
+.editor-body::placeholder {
+  color: color-mix(in oklab, var(--muted) 75%, transparent);
+  font-style: italic;
 }
 
 .note-metadata {
@@ -2325,7 +2549,7 @@ a {
     max-width: none;
   }
 
-  .body-input {
+  .editor-body {
     min-height: 42vh;
   }
 }

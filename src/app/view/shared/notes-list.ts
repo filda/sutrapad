@@ -1,5 +1,8 @@
 import { countTasksInNote } from "../../../lib/notebook";
-import { deriveNotebookPersona } from "../../../lib/notebook-persona";
+import {
+  deriveNotebookPersona,
+  type NotebookPersona,
+} from "../../../lib/notebook-persona";
 import { formatDate } from "../../logic/formatting";
 import type { NotesViewMode } from "../../logic/notes-view";
 import { describeTaskChip } from "../../logic/task-chip";
@@ -29,10 +32,10 @@ export function buildNotesList(
   personaOptions?: NotesListPersonaOptions,
 ): HTMLDivElement {
   const notesList = document.createElement("div");
-  // Callers that don't opt into a view mode (e.g. the tags page) keep the
-  // original single-column card-list styling. Notes passes the user's
-  // toggled mode through so the container picks up a grid / compact variant.
   const personaClass = personaOptions ? " notes-list--persona" : "";
+  // Callers that don't opt into a view mode (e.g. the tags page) keep the
+  // original single-column card-list styling. Notes passes the user's toggled
+  // mode through so the container picks up a grid / horizontal-list variant.
   notesList.className =
     viewMode === undefined
       ? `notes-list${personaClass}`
@@ -46,73 +49,144 @@ export function buildNotesList(
     return notesList;
   }
 
+  const renderAsRow = viewMode === "list";
+
   for (const note of notes) {
-    const button = document.createElement("button");
-    button.className = `note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
-    button.type = "button";
+    const persona = personaOptions
+      ? deriveNotebookPersona(note, {
+          allNotes: personaOptions.allNotes,
+          dark: personaOptions.dark,
+        })
+      : null;
+
+    const button = renderAsRow
+      ? buildRowItem(note, persona, currentNoteId)
+      : buildCardItem(note, persona, currentNoteId);
+
     button.addEventListener("click", () => onSelectNote(note.id));
-
-    // Apply persona decoration before innerHTML so the inline style + data
-    // attributes survive the assignment (innerHTML replaces children but not
-    // attributes on the element itself).
-    if (personaOptions) {
-      decorateWithPersona(button, note, personaOptions);
-    }
-
-    const excerpt = note.body.trim() || "Empty note";
-    // Branching/labelling lives in describeTaskChip so the UI stays purely
-    // presentational: pick the class, drop in text + aria-label, or omit.
-    const taskChip = describeTaskChip(countTasksInNote(note));
-    const taskChipHtml =
-      taskChip === null
-        ? ""
-        : `<span class="note-list-tasks${taskChip.tone === "all-done" ? " is-all-done" : ""}" aria-label="${taskChip.ariaLabel}">${taskChip.text}</span>`;
-
-    button.innerHTML = `
-      <strong>${note.title || "Untitled note"}</strong>
-      <span class="note-list-meta">
-        <span class="note-list-date">${formatDate(note.updatedAt)}</span>
-        ${taskChipHtml}
-      </span>
-      <p>${excerpt.slice(0, 72)}</p>
-    `;
-
-    if (note.tags.length > 0) {
-      const tagsRow = document.createElement("div");
-      tagsRow.className = "note-list-tags";
-      for (const tag of note.tags) {
-        const chip = document.createElement("span");
-        chip.className = "note-list-tag";
-        chip.textContent = tag;
-        tagsRow.append(chip);
-      }
-      button.append(tagsRow);
-    }
-
-    if (personaOptions) {
-      appendPersonaStickers(button, note, personaOptions);
-    }
-
     notesList.append(button);
   }
 
   return notesList;
 }
 
-function decorateWithPersona(
-  button: HTMLButtonElement,
+function buildCardItem(
   note: SutraPadDocument,
-  options: NotesListPersonaOptions,
-): void {
-  const persona = deriveNotebookPersona(note, {
-    allNotes: options.allNotes,
-    dark: options.dark,
-  });
+  persona: NotebookPersona | null,
+  currentNoteId: string,
+): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.className = `note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
+  button.type = "button";
 
+  if (persona) decorateButtonWithPersona(button, persona);
+
+  const excerpt = note.body.trim() || "Empty note";
+  // Branching/labelling lives in describeTaskChip so the UI stays purely
+  // presentational: pick the class, drop in text + aria-label, or omit.
+  const taskChip = describeTaskChip(countTasksInNote(note));
+  const taskChipHtml =
+    taskChip === null
+      ? ""
+      : `<span class="note-list-tasks${taskChip.tone === "all-done" ? " is-all-done" : ""}" aria-label="${taskChip.ariaLabel}">${taskChip.text}</span>`;
+
+  button.innerHTML = `
+    <strong>${note.title || "Untitled note"}</strong>
+    <span class="note-list-meta">
+      <span class="note-list-date">${formatDate(note.updatedAt)}</span>
+      ${taskChipHtml}
+    </span>
+    <p>${excerpt.slice(0, 72)}</p>
+  `;
+
+  if (note.tags.length > 0) {
+    const tagsRow = document.createElement("div");
+    tagsRow.className = "note-list-tags";
+    for (const tag of note.tags) {
+      const chip = document.createElement("span");
+      chip.className = "note-list-tag";
+      chip.textContent = tag;
+      tagsRow.append(chip);
+    }
+    button.append(tagsRow);
+  }
+
+  if (persona) appendPersonaStickers(button, persona);
+
+  return button;
+}
+
+/**
+ * Row renderer for "list" view — a horizontal rail modelled on the handoff's
+ * `.notebook-row`: paper swatch on the left, title + excerpt column, a
+ * right-side tag strip, then the date. When the persona layer is active the
+ * swatch takes the note's paper colour; without a persona it falls back to a
+ * neutral accent dot so the row still reads as a clickable item.
+ */
+function buildRowItem(
+  note: SutraPadDocument,
+  persona: NotebookPersona | null,
+  currentNoteId: string,
+): HTMLButtonElement {
+  const button = document.createElement("button");
+  button.className = `notebook-row${note.id === currentNoteId ? " is-active" : ""}${persona ? " has-persona" : ""}`;
+  button.type = "button";
+
+  if (persona) decorateButtonWithPersona(button, persona);
+
+  const swatch = document.createElement("span");
+  swatch.className = "nr-swatch";
+  swatch.setAttribute("aria-hidden", "true");
+  button.append(swatch);
+
+  const body = document.createElement("div");
+  body.className = "nr-body";
+
+  const title = document.createElement("span");
+  title.className = "nr-title";
+  title.textContent = note.title || "Untitled note";
+  body.append(title);
+
+  const excerpt = note.body.trim().replace(/\n+/g, " ");
+  if (excerpt.length > 0) {
+    const sub = document.createElement("span");
+    sub.className = "nr-sub";
+    sub.textContent = excerpt.slice(0, 140);
+    body.append(sub);
+  }
+
+  button.append(body);
+
+  if (note.tags.length > 0) {
+    const tagsRow = document.createElement("div");
+    tagsRow.className = "nr-tags";
+    // Cap row tag display so a long tag list doesn't push the date off the row;
+    // the full set stays discoverable once the note is opened.
+    for (const tag of note.tags.slice(0, 4)) {
+      const chip = document.createElement("span");
+      chip.className = "note-list-tag";
+      chip.textContent = tag;
+      tagsRow.append(chip);
+    }
+    button.append(tagsRow);
+  }
+
+  const date = document.createElement("span");
+  date.className = "nr-date";
+  date.textContent = formatDate(note.updatedAt);
+  button.append(date);
+
+  return button;
+}
+
+function decorateButtonWithPersona(
+  button: HTMLButtonElement,
+  persona: NotebookPersona,
+): void {
   // Inline style so every card can have its own paper colour + rotation
   // without generating a rule per note. The custom properties feed into CSS
-  // rules on `.note-list-item` (see styles.css) for ink-tinted borders and
-  // accents that track the paper palette.
+  // rules on `.note-list-item` / `.notebook-row` (see styles.css) for
+  // ink-tinted borders and accents that track the paper palette.
   button.style.setProperty("--nc-bg", persona.paper.bg);
   button.style.setProperty("--nc-ink", persona.paper.ink);
   if (persona.accent !== null) {
@@ -131,16 +205,8 @@ function decorateWithPersona(
 
 function appendPersonaStickers(
   button: HTMLButtonElement,
-  note: SutraPadDocument,
-  options: NotesListPersonaOptions,
+  persona: NotebookPersona,
 ): void {
-  // Re-derive the persona; cheap (pure + no DOM work) and lets this helper
-  // stay independent of decorateWithPersona. If this ever shows up in
-  // profiling we can pass the persona in.
-  const persona = deriveNotebookPersona(note, {
-    allNotes: options.allNotes,
-    dark: options.dark,
-  });
   if (persona.stickers.length === 0) return;
 
   const stickerRow = document.createElement("div");

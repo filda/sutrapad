@@ -4,6 +4,7 @@ import {
   filterTagSuggestions,
 } from "../../../lib/notebook";
 import { buildNoteMetadata } from "../../logic/note-metadata";
+import { computeNoteStats, type NoteStats } from "../../logic/note-stats";
 import type { NotesViewMode } from "../../logic/notes-view";
 import type {
   SutraPadDocument,
@@ -91,27 +92,14 @@ export function buildNotesPanel({
   );
   const combinedIndex = buildCombinedTagIndex(workspace);
 
-  const notesHeader = document.createElement("div");
-  notesHeader.className = "notes-panel-header";
-  notesHeader.innerHTML = `
-    <div>
-      <p class="panel-eyebrow">Notebook</p>
-      <h2>${workspace.notes.length} note${workspace.notes.length === 1 ? "" : "s"}</h2>
-    </div>
-  `;
-
-  const headerActions = document.createElement("div");
-  headerActions.className = "notes-panel-header-actions";
-  headerActions.append(buildViewToggle(notesViewMode, onChangeNotesView));
-
-  const newNoteButton = document.createElement("button");
-  newNoteButton.className = "button";
-  newNoteButton.textContent = "New note";
-  newNoteButton.addEventListener("click", onNewNote);
-  headerActions.append(newNoteButton);
-
-  notesHeader.append(headerActions);
-  notesPanel.append(notesHeader);
+  notesPanel.append(
+    buildNotesPageHeader({
+      totalNotes: workspace.notes.length,
+      filteredNotes: filteredNotes.length,
+      filterCount: selectedTagFilters.length,
+      onNewNote,
+    }),
+  );
 
   if (combinedIndex.tags.length > 0) {
     const filterSection = document.createElement("section");
@@ -155,20 +143,17 @@ export function buildNotesPanel({
     }
 
     filterSection.append(filterHeader, cloud);
-
-    if (selectedTagFilters.length > 0) {
-      const filterHint = document.createElement("p");
-      filterHint.className = "tag-filter-hint";
-      const modePhrase = filterMode === "any" ? "any selected tag" : "every selected tag";
-      filterHint.textContent =
-        filteredNotes.length === 0
-          ? `No notes match ${modePhrase}.`
-          : `Showing ${filteredNotes.length} note${filteredNotes.length === 1 ? "" : "s"} that match ${modePhrase}.`;
-      filterSection.append(filterHint);
-    }
-
     notesPanel.append(filterSection);
   }
+
+  notesPanel.append(
+    buildNotesToolbar({
+      filterCount: selectedTagFilters.length,
+      filterMode,
+      notesViewMode,
+      onChangeNotesView,
+    }),
+  );
 
   notesPanel.append(
     buildNotesList(
@@ -180,6 +165,95 @@ export function buildNotesPanel({
     ),
   );
   return notesPanel;
+}
+
+interface NotesPageHeaderOptions {
+  totalNotes: number;
+  filteredNotes: number;
+  filterCount: number;
+  onNewNote: () => void;
+}
+
+function buildNotesPageHeader({
+  totalNotes,
+  filteredNotes,
+  filterCount,
+  onNewNote,
+}: NotesPageHeaderOptions): HTMLElement {
+  const header = document.createElement("div");
+  header.className = "page-header";
+
+  const block = document.createElement("div");
+  block.className = "page-header-text";
+
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "page-eyebrow";
+  const countPart =
+    filterCount === 0
+      ? `${totalNotes} note${totalNotes === 1 ? "" : "s"}`
+      : `${filteredNotes} of ${totalNotes}`;
+  const filterPart =
+    filterCount === 0
+      ? ""
+      : ` · filtered by ${filterCount} tag${filterCount === 1 ? "" : "s"}`;
+  eyebrow.textContent = `Notebook · ${countPart}${filterPart}`;
+  block.append(eyebrow);
+
+  const title = document.createElement("h1");
+  title.className = "page-title";
+  title.innerHTML = "Your <em>notebook</em>.";
+  block.append(title);
+
+  const subtitle = document.createElement("p");
+  subtitle.className = "page-subtitle";
+  subtitle.textContent =
+    "Every note is a page. Pick one up — it opens full-width so you have room to read, edit and see its context.";
+  block.append(subtitle);
+
+  header.append(block);
+
+  const actions = document.createElement("div");
+  actions.className = "page-header-actions";
+
+  const newNoteButton = document.createElement("button");
+  newNoteButton.type = "button";
+  newNoteButton.className = "button button-accent";
+  newNoteButton.textContent = "+ New note";
+  newNoteButton.addEventListener("click", onNewNote);
+  actions.append(newNoteButton);
+
+  header.append(actions);
+  return header;
+}
+
+interface NotesToolbarOptions {
+  filterCount: number;
+  filterMode: SutraPadTagFilterMode;
+  notesViewMode: NotesViewMode;
+  onChangeNotesView: (mode: NotesViewMode) => void;
+}
+
+function buildNotesToolbar({
+  filterCount,
+  filterMode,
+  notesViewMode,
+  onChangeNotesView,
+}: NotesToolbarOptions): HTMLElement {
+  const toolbar = document.createElement("div");
+  toolbar.className = "notes-toolbar";
+
+  const hint = document.createElement("p");
+  hint.className = "notes-toolbar-hint";
+  if (filterCount === 0) {
+    hint.textContent = "Pick tags in the filter to narrow the list.";
+  } else {
+    const modePhrase = filterMode === "any" ? "any selected tag" : "every selected tag";
+    hint.textContent = `Showing notes that match ${modePhrase}.`;
+  }
+  toolbar.append(hint);
+
+  toolbar.append(buildViewToggle(notesViewMode, onChangeNotesView));
+  return toolbar;
 }
 
 function buildTagInput(
@@ -408,6 +482,102 @@ function buildTagInput(
   return wrapper;
 }
 
+export interface DetailTopbarOptions {
+  /**
+   * When present, the breadcrumb row surfaces word count / read time /
+   * tasks / links / tags for this note. Pass `null` when there is no editable
+   * note (e.g. the "no matching notebook" state after a filter wipes out the
+   * list) — in that case the breadcrumbs are omitted so the topbar collapses
+   * to just the back button.
+   */
+  note: SutraPadDocument | null;
+  onBackToNotes?: () => void;
+}
+
+/**
+ * Horizontal strip above the editor card: "← Back to notes" on the left, a
+ * compact breadcrumb row of stats (word count, read time, tasks, links, tag
+ * count) on the right. Mirrors the handoff's `.detail-topbar` but omits the
+ * duplicate/export/delete action cluster — those are out of scope here.
+ */
+export function buildDetailTopbar({
+  note,
+  onBackToNotes,
+}: DetailTopbarOptions): HTMLElement {
+  const topbar = document.createElement("div");
+  topbar.className = "detail-topbar";
+
+  if (onBackToNotes) {
+    const backButton = document.createElement("button");
+    backButton.type = "button";
+    backButton.className = "editor-back-button";
+    backButton.textContent = "← Back to notes";
+    backButton.addEventListener("click", onBackToNotes);
+    topbar.append(backButton);
+  }
+
+  if (note) {
+    topbar.append(buildDetailBreadcrumbs(computeNoteStats(note)));
+  }
+
+  return topbar;
+}
+
+function buildDetailBreadcrumbs(stats: NoteStats): HTMLElement {
+  const crumbs = document.createElement("div");
+  crumbs.className = "detail-breadcrumbs";
+
+  // Word count + read minutes are always rendered because they're meaningful
+  // even on an empty note ("0 words · 1 min read"). Tasks / links / tags are
+  // conditional — skipping them keeps the row short when the note has none.
+  appendCrumb(crumbs, `${stats.wordCount} ${stats.wordCount === 1 ? "word" : "words"}`);
+  appendCrumbSeparator(crumbs);
+  appendCrumb(crumbs, `${stats.readMinutes} min read`);
+
+  const totalTasks = stats.openTasks + stats.doneTasks;
+  if (totalTasks > 0) {
+    appendCrumbSeparator(crumbs);
+    const label =
+      stats.openTasks > 0
+        ? `${stats.openTasks}/${totalTasks} tasks open`
+        : `${totalTasks} ${totalTasks === 1 ? "task" : "tasks"} done`;
+    appendCrumb(crumbs, label);
+  }
+
+  if (stats.linkCount > 0) {
+    appendCrumbSeparator(crumbs);
+    appendCrumb(
+      crumbs,
+      `${stats.linkCount} ${stats.linkCount === 1 ? "link" : "links"}`,
+    );
+  }
+
+  if (stats.tagCount > 0) {
+    appendCrumbSeparator(crumbs);
+    appendCrumb(
+      crumbs,
+      `${stats.tagCount} ${stats.tagCount === 1 ? "tag" : "tags"}`,
+    );
+  }
+
+  return crumbs;
+}
+
+function appendCrumb(parent: HTMLElement, text: string): void {
+  const span = document.createElement("span");
+  span.className = "crumb";
+  span.textContent = text;
+  parent.append(span);
+}
+
+function appendCrumbSeparator(parent: HTMLElement): void {
+  const sep = document.createElement("span");
+  sep.className = "crumb-sep";
+  sep.setAttribute("aria-hidden", "true");
+  sep.textContent = "·";
+  parent.append(sep);
+}
+
 export interface EditorCardOptions {
   note: SutraPadDocument | null;
   currentNote: SutraPadDocument;
@@ -422,7 +592,6 @@ export interface EditorCardOptions {
   onBodyInput: (value: string) => void;
   onAddTag: (value: string) => void;
   onRemoveTag: (tag: string) => void;
-  onBackToNotes?: () => void;
 }
 
 export function buildEditorCard({
@@ -439,19 +608,9 @@ export function buildEditorCard({
   onBodyInput,
   onAddTag,
   onRemoveTag,
-  onBackToNotes,
 }: EditorCardOptions): HTMLElement {
   const editor = document.createElement("section");
-  editor.className = "editor-card";
-
-  if (onBackToNotes) {
-    const backButton = document.createElement("button");
-    backButton.type = "button";
-    backButton.className = "editor-back-button";
-    backButton.textContent = "← Back to notes";
-    backButton.addEventListener("click", onBackToNotes);
-    editor.append(backButton);
-  }
+  editor.className = "editor-card detail-editor";
 
   const status = document.createElement("p");
   status.className = `status status-${syncState}`;
@@ -478,13 +637,13 @@ export function buildEditorCard({
   const displayedNote = note ?? currentNote;
 
   const titleInput = document.createElement("input");
-  titleInput.className = "title-input";
+  titleInput.className = "title-input editor-title";
   titleInput.placeholder = "Note title";
   titleInput.value = displayedNote.title;
   titleInput.addEventListener("input", () => onTitleInput(titleInput.value));
 
   const bodyInput = document.createElement("textarea");
-  bodyInput.className = "body-input";
+  bodyInput.className = "body-input editor-body";
   bodyInput.placeholder = "Start writing...";
   bodyInput.value = displayedNote.body;
   bodyInput.addEventListener("input", () => onBodyInput(bodyInput.value));
