@@ -707,6 +707,64 @@ a {
 }
 
 
+/*
+ * Capture-sources hint chip sitting in the topbar actions strip. Visually
+ * parallels the sync-pill (pill + dot + label) but the dot carries an
+ * accent tint rather than a state colour — it's not telemetry, it's a
+ * link. The mono label `3 sources` mirrors the handoff and signals
+ * "configuration" rather than "items".
+ *
+ * The chip is a button so keyboard navigation gets first-class treatment;
+ * it's not styled as a raised button because it's secondary chrome, not a
+ * CTA.
+ */
+.capture-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-500);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease,
+    background 120ms ease;
+}
+
+.capture-chip:hover,
+.capture-chip:focus-visible {
+  color: var(--primary);
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: color-mix(in oklab, var(--accent) 6%, var(--surface));
+}
+
+.capture-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+.capture-chip-label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+}
+
+/* On narrow viewports the label is dropped — the dot + aria-label still
+ * carry enough information to get to the Capture page. Mirrors the sync
+ * pill collapse so the two chips step down together. */
+@media (max-width: 900px) {
+  .capture-chip-label {
+    display: none;
+  }
+}
+
 .sync-pill {
   display: inline-flex;
   align-items: center;

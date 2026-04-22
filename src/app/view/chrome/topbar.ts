@@ -62,6 +62,7 @@ export function buildTopbar({
 
   const actions = document.createElement("div");
   actions.className = "topbar-actions";
+  actions.append(buildCaptureChip(() => onSelectMenuItem("capture")));
   actions.append(buildSyncPill(syncState, statusText));
   actions.append(
     buildAccountBar({
@@ -150,6 +151,63 @@ function buildNavTabs(
   }
 
   return nav;
+}
+
+/**
+ * How many capture methods the app documents. Reflects the three platforms
+ * shipped on the Capture page (Chrome bookmarklet, iOS Share shortcut,
+ * Android share intent). The chip is a hint — not live telemetry — because
+ * we don't track which methods the user has actually installed.
+ *
+ * If we ever wire up per-platform install tracking (e.g. a "bookmarklet
+ * installed" boolean in profile preferences), this constant should be
+ * replaced with a live count computed at call site and the comment
+ * updated.
+ */
+const CAPTURE_METHOD_COUNT = 3;
+
+function buildCaptureChip(onOpenCapture: () => void): HTMLElement {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "capture-chip";
+  // Kept short on purpose — the chip's job is a nudge to the Capture page,
+  // not a full explainer. The long-form pitch lives on the Capture page
+  // itself.
+  chip.title = "Capture sources · how your notes get in";
+  chip.setAttribute("aria-label", captureChipAriaLabel(CAPTURE_METHOD_COUNT));
+
+  const dot = document.createElement("span");
+  dot.className = "capture-dot";
+  dot.setAttribute("aria-hidden", "true");
+  chip.append(dot);
+
+  const label = document.createElement("span");
+  label.className = "capture-chip-label";
+  label.textContent = captureChipLabel(CAPTURE_METHOD_COUNT);
+  chip.append(label);
+
+  chip.addEventListener("click", onOpenCapture);
+  return chip;
+}
+
+/**
+ * Visible chip label — `3 sources`, or `1 source` when it's singular.
+ * Pluralisation is the only reason this is a function and not an inline
+ * template: the handoff specifically calls out "pluralise accordingly"
+ * for the 1-source case.
+ */
+function captureChipLabel(count: number): string {
+  return `${count} source${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * Screen-reader label for the chip. The visible label reads `3 sources`
+ * which is fine for sighted users; a screen reader benefits from the
+ * extra "Capture" context so the count doesn't sound like a notification
+ * badge.
+ */
+function captureChipAriaLabel(count: number): string {
+  return `Capture · ${captureChipLabel(count)}`;
 }
 
 function buildSyncPill(syncState: SyncState, statusText: string): HTMLElement {
