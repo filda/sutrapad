@@ -11,6 +11,7 @@ import {
   buildNotesList,
   type NotesListPersonaOptions,
 } from "../shared/notes-list";
+import { buildNewNoteButton } from "../shared/new-note-button";
 import { buildPageHeader } from "../shared/page-header";
 import { appendTagChipContent } from "../shared/tag-chip-content";
 
@@ -183,11 +184,7 @@ function buildNotesPageHeader({
       ? ""
       : ` · filtered by ${filterCount} tag${filterCount === 1 ? "" : "s"}`;
 
-  const newNoteButton = document.createElement("button");
-  newNoteButton.type = "button";
-  newNoteButton.className = "button button-accent";
-  newNoteButton.textContent = "+ New note";
-  newNoteButton.addEventListener("click", onNewNote);
+  const newNoteButton = buildNewNoteButton(onNewNote);
 
   return buildPageHeader({
     eyebrow: `Notebook · ${countPart}${filterPart}`,

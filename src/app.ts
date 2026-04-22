@@ -82,11 +82,14 @@ import {
 } from "./app/logic/persona";
 import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
 import { buildPaletteEntries, togglePaletteTagFilter } from "./app/logic/palette";
+import { mountPalette, type PaletteHandle } from "./app/view/palette";
 import {
-  mountPalette,
-  shouldOpenPaletteForSlash,
-  type PaletteHandle,
-} from "./app/view/palette";
+  initialShortcutState,
+  isEditingTarget,
+  reduceShortcut,
+  type ShortcutAction,
+  type ShortcutState,
+} from "./lib/keyboard-shortcuts";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
 export { resolveDisplayedNote } from "./app/logic/displayed-note";
@@ -517,6 +520,14 @@ function createRenderCallbacks({
       setDetailNoteId(null);
       render();
     },
+    onOpenCapture: () => {
+      // Mirrors `onBackToNotes`'s shape: clear the detail context first,
+      // then flip the active menu item. Order matters so the next render
+      // pass doesn't see a detail-editor route on the capture page.
+      setDetailNoteId(null);
+      setActiveMenuItem("capture");
+      render();
+    },
     onToggleTagFilter: (tag: string) => {
       const nextSelectedTagFilters = togglePaletteTagFilter(getSelectedTagFilters(), tag);
       setSelectedTagFilters(nextSelectedTagFilters);
@@ -845,7 +856,7 @@ function wirePaletteAccess(options: WirePaletteAccessOptions): PaletteAccess {
   window.addEventListener("keydown", (event) => {
     if (event.key !== "/") return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (!shouldOpenPaletteForSlash(event.target)) return;
+    if (isEditingTarget(event.target)) return;
     event.preventDefault();
     open();
   });
@@ -856,6 +867,71 @@ function wirePaletteAccess(options: WirePaletteAccessOptions): PaletteAccess {
       handle?.update(buildPaletteEntries(workspace), selectedTagFilters);
     },
   };
+}
+
+interface WireKeyboardShortcutsOptions {
+  getActiveMenuItem: () => MenuItemId;
+  getDetailNoteId: () => string | null;
+  setActiveMenuItem: (next: MenuItemId) => void;
+  setDetailNoteId: (next: string | null) => void;
+  handleNewNote: () => void;
+  render: () => void;
+}
+
+/**
+ * Attaches the global keyboard shortcuts (`N`, `G T/N/L/K`, `Esc` on
+ * detail). Sibling of `wirePaletteAccess` — the `/` shortcut lives there
+ * because it needs the palette handle. Kept at module scope so the
+ * dispatch logic can be re-read without pulling `createApp` into every
+ * context; the sequence-state reducer itself is already exercised in
+ * `tests/keyboard-shortcuts.test.ts`.
+ *
+ * `goto` mirrors the topbar's `onSelectMenuItem` path (no-op if already
+ * there, otherwise switch menu + clear detail + render) so hitting
+ * `G N` while already on the notes *detail* route still bounces back
+ * to the list — same affordance as clicking the Notes tab.
+ */
+function wireKeyboardShortcuts(options: WireKeyboardShortcutsOptions): void {
+  let state: ShortcutState = initialShortcutState;
+
+  const dispatch = (action: ShortcutAction): void => {
+    if (action.kind === "new-note") {
+      options.handleNewNote();
+      return;
+    }
+    if (action.kind === "goto") {
+      if (
+        options.getActiveMenuItem() === action.menu &&
+        options.getDetailNoteId() === null
+      ) {
+        return;
+      }
+      options.setActiveMenuItem(action.menu);
+      options.setDetailNoteId(null);
+      options.render();
+      return;
+    }
+    // action.kind === "escape" — only emitted when isDetailRoute was true
+    options.setDetailNoteId(null);
+    options.render();
+  };
+
+  window.addEventListener("keydown", (event) => {
+    const result = reduceShortcut(state, {
+      key: event.key,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+      altKey: event.altKey,
+      isEditingTarget: isEditingTarget(event.target),
+      isDetailRoute:
+        options.getActiveMenuItem() === "notes" &&
+        options.getDetailNoteId() !== null,
+      now: Date.now(),
+    });
+    state = result.state;
+    if (result.preventDefault) event.preventDefault();
+    if (result.action !== null) dispatch(result.action);
+  });
 }
 
 export function createApp(root: HTMLElement): void {
@@ -1239,6 +1315,15 @@ export function createApp(root: HTMLElement): void {
     setSelectedTagFilters: setSelectedTagFiltersState,
     getFilterMode: () => filterMode,
     persistWorkspace: persistLocalWorkspace,
+    render,
+  });
+
+  wireKeyboardShortcuts({
+    getActiveMenuItem: () => activeMenuItem,
+    getDetailNoteId: () => detailNoteId,
+    setActiveMenuItem: setActiveMenuItemState,
+    setDetailNoteId: setDetailNoteIdState,
+    handleNewNote,
     render,
   });
 

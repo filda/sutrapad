@@ -16,6 +16,7 @@ import type {
   SutraPadWorkspace,
   UserProfile,
 } from "../../../types";
+import { buildNewNoteButton } from "../shared/new-note-button";
 import { buildPageHeader } from "../shared/page-header";
 import {
   applyPersonaStyles,
@@ -252,11 +253,7 @@ function buildHomeHeader(
   // the greeting feels specific even before the eye scans the grid.
   const subtitle = summaryPhrase(summary);
 
-  const newNoteButton = document.createElement("button");
-  newNoteButton.type = "button";
-  newNoteButton.className = "button button-accent";
-  newNoteButton.textContent = "+ New note";
-  newNoteButton.addEventListener("click", onNewNote);
+  const newNoteButton = buildNewNoteButton(onNewNote);
 
   return buildPageHeader({
     eyebrow: formatHomeHeaderDate(now),

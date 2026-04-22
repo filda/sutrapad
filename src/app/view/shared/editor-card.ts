@@ -1,6 +1,8 @@
 import { buildNoteMetadata } from "../../logic/note-metadata";
+import { detectKind } from "../../../lib/detect-kind";
 import type { SutraPadDocument, SutraPadTagEntry } from "../../../types";
 import type { SyncState } from "../../session/workspace-sync";
+import { buildKindChipForNote } from "./kind-chip";
 import { buildTagInput } from "./tag-input";
 
 export interface EditorCardOptions {
@@ -21,6 +23,14 @@ export interface EditorCardOptions {
   onBodyInput: (value: string) => void;
   onAddTag: (value: string) => void;
   onRemoveTag: (tag: string) => void;
+  /**
+   * Called after every title/body keystroke with the current (not yet
+   * persisted) values. Used by the right-rail sidebar to update its
+   * Stats card live without going through the outer render cycle —
+   * which is intentionally skipped between keystrokes to preserve
+   * textarea caret/IME state.
+   */
+  onInputsChange?: (title: string, body: string) => void;
 }
 
 export function buildEditorCard({
@@ -34,6 +44,7 @@ export function buildEditorCard({
   onBodyInput,
   onAddTag,
   onRemoveTag,
+  onInputsChange,
 }: EditorCardOptions): HTMLElement {
   const editor = document.createElement("section");
   editor.className = "editor-card detail-editor";
@@ -55,17 +66,40 @@ export function buildEditorCard({
 
   const displayedNote = note ?? currentNote;
 
+  const kindChip = buildKindChipForNote(displayedNote.title, displayedNote.body);
+
   const titleInput = document.createElement("input");
   titleInput.className = "title-input editor-title";
   titleInput.placeholder = "Note title";
   titleInput.value = displayedNote.title;
-  titleInput.addEventListener("input", () => onTitleInput(titleInput.value));
 
   const bodyInput = document.createElement("textarea");
   bodyInput.className = "body-input editor-body";
   bodyInput.placeholder = "Start writing...";
   bodyInput.value = displayedNote.body;
-  bodyInput.addEventListener("input", () => onBodyInput(bodyInput.value));
+
+  // After any keystroke we need to (a) recompute the kind chip and
+  // (b) let the sidebar's live-stats card re-read the numbers. Both
+  // happen via in-place DOM mutation rather than an outer render pass,
+  // because the outer pass is deliberately skipped on most keystrokes
+  // (it would thrash the textarea's caret / IME state). `setKind` /
+  // the sidebar's update handler both no-op when their displayed
+  // values haven't changed, so the DOM stays still unless something
+  // actually crossed a threshold.
+  const refreshLiveDerived = (): void => {
+    const title = titleInput.value;
+    const body = bodyInput.value;
+    kindChip.setKind(detectKind({ title, body }));
+    onInputsChange?.(title, body);
+  };
+  titleInput.addEventListener("input", () => {
+    onTitleInput(titleInput.value);
+    refreshLiveDerived();
+  });
+  bodyInput.addEventListener("input", () => {
+    onBodyInput(bodyInput.value);
+    refreshLiveDerived();
+  });
 
   const noteMetadata = document.createElement("p");
   noteMetadata.className = "note-metadata";
@@ -73,6 +107,7 @@ export function buildEditorCard({
 
   editor.append(
     status,
+    kindChip.element,
     titleInput,
     buildTagInput(displayedNote, availableTagSuggestions, onAddTag, onRemoveTag),
     bodyInput,

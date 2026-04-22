@@ -2864,6 +2864,38 @@ a {
   background: transparent;
 }
 
+/*
+ * When a button carries an inline keyboard-shortcut hint (e.g. "+ New
+ * note" + `N`), `.button-with-kbd` flips the padding/layout so the
+ * kbd pill can sit on the right without disturbing the label's
+ * rhythm. The pill itself is cosmetic — clicking anywhere on the
+ * button still fires the click handler.
+ */
+.button-with-kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  /* Slightly tighter right padding gives the pill room without
+   * making the button feel longer than the plain version. */
+  padding-right: 0.7rem;
+}
+
+.button-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.18);
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .status {
   margin: 0 0 16px;
   font-size: 0.95rem;
@@ -3004,6 +3036,86 @@ a {
 }
 
 .tag-text-input::placeholder {
+  color: var(--muted);
+}
+
+/*
+ * Kind chip — live classifier of the current body as one of note / link /
+ * links / tasks / quote / longform / fleeting. Updates in-place via JS
+ * (see shared/kind-chip.ts), so CSS here only carries the static
+ * presentation. The `data-kind` attribute toggles the per-kind accent
+ * tint below.
+ */
+.kind-chip {
+  /* `display: flex` + `width: fit-content` keeps the chip on its own
+     line (it's the sibling between the status row and the title input)
+     while shrinking to content width — no need for the parent to be a
+     flex container. */
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  margin: 0 0 14px;
+  border: 1px solid rgba(var(--accent-rgb), 0.32);
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--primary);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+
+.kind-chip-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.kind-chip-label {
+  font-weight: 600;
+}
+
+.kind-chip-sep {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.kind-chip-subtitle {
+  color: var(--muted);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+/*
+ * Per-kind accent overrides. Each variant tweaks the border + background
+ * tint only — the icon carries the semantic signal, so the colour lift
+ * here is just a gentle reinforcement, not load-bearing UI.
+ */
+.kind-chip[data-kind="link"],
+.kind-chip[data-kind="links"] {
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--line) 65%);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+}
+
+.kind-chip[data-kind="tasks"] {
+  border-color: color-mix(in oklab, var(--ok, #3f7a55) 45%, var(--line) 55%);
+  background: color-mix(in oklab, var(--ok, #3f7a55) 10%, transparent);
+}
+
+.kind-chip[data-kind="quote"] {
+  border-color: color-mix(in oklab, var(--accent-3, #6d4d7d) 45%, var(--line) 55%);
+  background: color-mix(in oklab, var(--accent-3, #6d4d7d) 10%, transparent);
+}
+
+.kind-chip[data-kind="longform"] {
+  border-color: var(--line-strong, rgba(27, 23, 20, 0.18));
+  background: color-mix(in oklab, var(--primary) 6%, transparent);
+}
+
+.kind-chip[data-kind="fleeting"] {
+  border-color: var(--line);
+  background: color-mix(in oklab, var(--muted) 10%, transparent);
   color: var(--muted);
 }
 
@@ -3407,4 +3519,197 @@ a {
   color: var(--muted);
   font-size: 13px;
   text-align: center;
+}
+
+/*
+ * Footer strip inside the palette listing the global keyboard
+ * shortcuts. Purely informational — the palette's own input handles
+ * Enter/Esc; every other key is routed through the shortcut reducer
+ * *outside* the palette (the palette itself eats keystrokes while
+ * open, which is intentional — users are typing a query, not trying
+ * to fire shortcuts).
+ *
+ * Laid out as a wrapped row of `<kbd> <kbd> label` triples. The row
+ * gap is chunkier than the key gap so the eye can separate "one
+ * shortcut" from "the next one" without a divider.
+ */
+.palette-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.palette-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.palette-hint-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper-1, rgba(var(--primary-rgb), 0.05));
+  color: var(--primary);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.palette-hint-label {
+  margin-left: 4px;
+}
+
+/*
+ * Detail route layout: editor card + right-rail sidebar.
+ *
+ * Two-column grid with an intentionally narrow sidebar so the editor
+ * column keeps prose at a comfortable measure. Below 900 px the grid
+ * collapses to a single column and the sidebar flows *underneath* the
+ * editor — reversing the order would push the writing surface off the
+ * top of the viewport on narrow tablets.
+ *
+ * The sidebar is sticky-anchored within the page column so it doesn't
+ * scroll away while the user is drafting a long note, but we leave
+ * enough top offset to clear both the app topbar and the detail
+ * topbar above the editor.
+ */
+.editor-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 28px;
+  align-items: start;
+}
+
+/* Filter miss → editor-card shows an empty-state notice and we drop
+ * the sidebar entirely. Collapse the grid so the notice doesn't sit
+ * in a two-column layout with a blank right half. */
+.editor-stage.editor-stage-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .editor-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.editor-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: sticky;
+  /* Clears the app topbar (~56) + detail topbar (~40) + breathing room. */
+  top: 120px;
+}
+
+@media (max-width: 900px) {
+  .editor-sidebar {
+    position: static;
+  }
+}
+
+.editor-sidebar-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-1);
+}
+
+.editor-sidebar-eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.editor-sidebar-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+}
+
+.editor-sidebar-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.editor-sidebar-stat-num {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--primary);
+  line-height: 1.1;
+}
+
+.editor-sidebar-stat-label {
+  color: var(--muted);
+  font-size: 11.5px;
+  text-transform: lowercase;
+}
+
+.editor-sidebar-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--primary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.editor-sidebar-steps p {
+  margin: 0;
+}
+
+.editor-sidebar-link {
+  /*
+   * Rendered as a button so the single-action behaviour survives
+   * keyboard traversal; the visual chrome deliberately looks like a
+   * sidebar row, not a primary button.
+   */
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.editor-sidebar-link:hover,
+.editor-sidebar-link:focus-visible {
+  background: rgba(var(--accent-rgb), 0.08);
+  border-color: rgba(var(--accent-rgb), 0.4);
+}
+
+.editor-sidebar-link strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.editor-sidebar-link span {
+  color: var(--muted);
+  font-size: 12px;
 }

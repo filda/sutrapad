@@ -83,6 +83,14 @@ export function mountPalette(options: PaletteMountOptions): PaletteHandle {
   results.className = "palette-results";
   palette.append(results);
 
+  // Discoverability strip at the bottom of the palette. The palette is
+  // where keyboard-curious users already are, so listing the rest of
+  // the global shortcuts here piggybacks on existing attention rather
+  // than needing its own help surface. Pills are decorative — the
+  // palette's own input handles Enter / Esc, and all other keys are
+  // routed through the global shortcut reducer from outside.
+  palette.append(buildPaletteShortcutHints());
+
   const renderResults = (): void => {
     const filtered = filterPaletteEntries(currentGroups, currentQuery);
     const flat = flattenPaletteGroups(filtered);
@@ -270,12 +278,6 @@ export function mountPalette(options: PaletteMountOptions): PaletteHandle {
   };
 }
 
-/**
- * Decides whether a `/` keystroke should be treated as "open palette" or as
- * a regular character destined for whatever the user is typing into. Used
- * by the global key listener in app.ts so the shortcut never steals a slash
- * from a note body or a tag input.
- */
 function renderGroupHeader(label: string): HTMLElement {
   const header = document.createElement("p");
   header.className = "pr-group";
@@ -283,12 +285,48 @@ function renderGroupHeader(label: string): HTMLElement {
   return header;
 }
 
-export function shouldOpenPaletteForSlash(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return true;
-  if (target.isContentEditable) return false;
-  const tag = target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-    return false;
+/**
+ * Decorative row of kbd pills summarising the app's global shortcuts.
+ * Paired labels — "G T Today", "G N Notes", … — mirror the reducer in
+ * `src/lib/keyboard-shortcuts.ts`. If the set there changes, change
+ * the list here too: this is the only user-facing surface that names
+ * them, so drift would be silent.
+ */
+function buildPaletteShortcutHints(): HTMLElement {
+  const footer = document.createElement("div");
+  footer.className = "palette-hints";
+
+  // Rendered as `<kbd>…</kbd> label` pairs. The first entry opens the
+  // create flow; the `G …` pairs are the goto sequences — shown
+  // with a joining character rather than two separate keycaps to
+  // reinforce the "press them in order" feel.
+  const HINTS: readonly { keys: readonly string[]; label: string }[] = [
+    { keys: ["N"], label: "New note" },
+    { keys: ["G", "T"], label: "Today" },
+    { keys: ["G", "N"], label: "Notes" },
+    { keys: ["G", "L"], label: "Links" },
+    { keys: ["G", "K"], label: "Tasks" },
+    { keys: ["Esc"], label: "Close" },
+  ];
+
+  for (const hint of HINTS) {
+    const row = document.createElement("span");
+    row.className = "palette-hint";
+
+    for (let i = 0; i < hint.keys.length; i += 1) {
+      const kbd = document.createElement("kbd");
+      kbd.className = "palette-hint-key";
+      kbd.textContent = hint.keys[i];
+      row.append(kbd);
+    }
+
+    const label = document.createElement("span");
+    label.className = "palette-hint-label";
+    label.textContent = hint.label;
+    row.append(label);
+
+    footer.append(row);
   }
-  return true;
+
+  return footer;
 }

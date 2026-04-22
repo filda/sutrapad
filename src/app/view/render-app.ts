@@ -21,6 +21,7 @@ import { buildPagePlaceholder } from "./pages/placeholder-page";
 import { buildSettingsPage } from "./pages/settings-page";
 import { buildDetailTopbar } from "./shared/detail-topbar";
 import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
+import { buildEditorSidebar } from "./shared/editor-sidebar";
 
 // The editor-card builder needs the list of available tag suggestions, but
 // callers don't have to supply it — it's derived here from the workspace
@@ -86,6 +87,14 @@ interface RenderAppOptions
    * and shouldn't own route-level navigation affordances.
    */
   onBackToNotes: () => void;
+  /**
+   * Opens the Capture page — wired into the right-rail sidebar's
+   * "Other ways to capture" card. Kept as a dedicated callback (rather
+   * than reusing `onSelectMenuItem("capture")` at the call site) so
+   * app.ts can also clear `detailNoteId` in the same transition, matching
+   * the behaviour of `onBackToNotes`.
+   */
+  onOpenCapture: () => void;
 }
 
 export function renderAppPage({
@@ -130,6 +139,7 @@ export function renderAppPage({
   onChangeTheme,
   onChangePersonaPreference,
   onOpenPalette,
+  onOpenCapture,
 }: RenderAppOptions): void {
   root.innerHTML = "";
 
@@ -292,7 +302,26 @@ export function renderAppPage({
     }),
   );
 
-  page.append(
+  // Editor + right-rail sidebar share a grid row so the sidebar's
+  // sticky positioning anchors to the page column (not the viewport
+  // margin). We only build the sidebar on the detail route — every
+  // other route keeps the editor card full-width.
+  const editorStage = document.createElement("div");
+  editorStage.className = "editor-stage";
+
+  // When no note matches the active filter, editor-card shows an
+  // empty-state notice instead of the writing surface — the sidebar
+  // would just display stats for some unrelated note, so skip it.
+  const showSidebar = !(note === null && selectedTagFilters.length > 0);
+
+  const sidebar = showSidebar
+    ? buildEditorSidebar({
+        currentNote: note ?? currentNote,
+        onOpenCapture,
+      })
+    : null;
+
+  editorStage.append(
     buildEditorCard({
       note,
       currentNote,
@@ -304,8 +333,21 @@ export function renderAppPage({
       onBodyInput,
       onAddTag,
       onRemoveTag,
+      onInputsChange: sidebar
+        ? (title, body) => {
+            sidebar.syncFromInputs(title, body);
+          }
+        : undefined,
     }),
   );
+
+  if (sidebar !== null) {
+    editorStage.append(sidebar.element);
+  } else {
+    editorStage.classList.add("editor-stage-solo");
+  }
+
+  page.append(editorStage);
   page.append(footer);
 
   root.append(page);
