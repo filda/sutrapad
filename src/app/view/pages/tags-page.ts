@@ -12,6 +12,7 @@ import {
   buildNotesList,
   type NotesListPersonaOptions,
 } from "../shared/notes-list";
+import { buildPageHeader } from "../shared/page-header";
 import { buildSelectedFiltersBar } from "../shared/selected-filters-bar";
 import { appendTagChipContent } from "../shared/tag-chip-content";
 
@@ -101,37 +102,35 @@ export function buildTagsPage({
   const section = document.createElement("section");
   section.className = "tags-page";
 
-  const header = document.createElement("header");
-  header.className = "tags-page-header";
+  // We build the full combined index (not the narrowed "available" one) so the
+  // empty-state decision is based on whether *any* tag exists anywhere —
+  // narrowing by the current filter would mislead a user whose selection
+  // accidentally filtered out every other tag.
+  const fullIndex = buildCombinedTagIndex(workspace);
 
-  const heading = document.createElement("div");
-  heading.innerHTML = `
-    <p class="panel-eyebrow">Tags</p>
-    <h2>Browse by tag</h2>
-  `;
-  header.append(heading);
-
-  const headerActions = document.createElement("div");
-  headerActions.className = "tags-page-header-actions";
-  headerActions.append(buildFilterModeToggle(filterMode, onChangeFilterMode));
-
+  const noteCount = workspace.notes.length;
+  const actions: HTMLElement[] = [
+    buildFilterModeToggle(filterMode, onChangeFilterMode),
+  ];
   if (selectedTagFilters.length > 0) {
     const clearButton = document.createElement("button");
     clearButton.type = "button";
     clearButton.className = "button button-ghost";
     clearButton.textContent = "Clear filters";
     clearButton.addEventListener("click", onClearTagFilters);
-    headerActions.append(clearButton);
+    actions.push(clearButton);
   }
 
-  header.append(headerActions);
-  section.append(header);
+  section.append(
+    buildPageHeader({
+      eyebrow: `Tags · ${fullIndex.tags.length} unique · ${noteCount} note${noteCount === 1 ? "" : "s"}`,
+      titleHtml: "A <em>constellation</em> of what you think about.",
+      subtitle:
+        "Click tags to filter. Combine several and we'll show the notebooks that live where they overlap — All narrows to intersection, Any expands to union.",
+      actions,
+    }),
+  );
 
-  // We build the full combined index (not the narrowed "available" one) so the
-  // empty-state decision is based on whether *any* tag exists anywhere —
-  // narrowing by the current filter would mislead a user whose selection
-  // accidentally filtered out every other tag.
-  const fullIndex = buildCombinedTagIndex(workspace);
   if (fullIndex.tags.length === 0) {
     const empty = document.createElement("p");
     empty.className = "tags-page-empty";

@@ -34,9 +34,7 @@
    * palettes get a sensible topbar + card without a full token rewrite.
    */
   --r-sm: 8px;
-  --r-md: 14px;
   --r-lg: 22px;
-  --r-xl: 32px;
 
   /* Severity colours used by the sync pill and callouts. Parchment-anchored
      hues that read well on both light and dark surfaces; themes can override
@@ -45,35 +43,21 @@
   --warn: #b9802b;
   --err: #a93a2b;
 
-  /* Ink = foreground ramp (900 strong → 300 faint). Derived from the theme's
-     --primary-rgb so dark themes see a light ramp automatically. */
+  /* Ink = foreground ramp. --ink-900 is the strong primary, --ink-500 maps to
+     the muted tone. Intermediate stops (300/400/700) are not currently
+     consumed; add them back if/when a rule needs a finer ramp. */
   --ink-900: var(--primary);
-  --ink-700: rgba(var(--primary-rgb), 0.82);
   --ink-500: var(--muted);
-  --ink-400: rgba(var(--primary-rgb), 0.5);
-  --ink-300: rgba(var(--primary-rgb), 0.32);
 
-  /* Line strengths. --line is still declared per-theme (the alpha there is
-     tuned per palette); --line-strong bumps the same hue for stronger edges. */
-  --line-strong: rgba(var(--primary-rgb), 0.22);
-
-  /* Paper ramp = backgrounds from lightest surface to boldest card tint.
-     Falls back to the existing --surface-* aliases; parchment replaces with
-     concrete hex values. */
-  --paper-0: var(--surface-tint);
+  /* Paper ramp = card surface tints. Uses 1 (soft) and 2 (active) only —
+     darker/lighter stops can be added when a rule actually calls for one. */
   --paper-1: var(--surface-soft);
   --paper-2: var(--surface-active);
-  --paper-3: var(--surface-active);
 
   /* Surface aliases — tuned mapping onto the pre-existing --bg / --surface-* set. */
   --surface: var(--bg);
   --surface-strong: var(--surface-subtle);
   --surface-inset: rgba(var(--primary-rgb), 0.035);
-
-  /* Secondary + tertiary accents. Non-parchment themes alias back to --accent
-     so existing rules keep rendering unchanged; parchment sets olive/plum. */
-  --accent-2: var(--accent);
-  --accent-3: var(--accent);
 
   /* Card shadow — inset highlight reads well on light surfaces; parchment
      redeclares with richer paper-tinted shadow tuned for the redesign. */
@@ -272,18 +256,10 @@
     rgba(255, 252, 246, 0.82);
 
   /* Design-handoff-native palette: persona styles use these directly. */
-  --paper-0: #fbf7ef;
   --paper-1: #f5eedf;
   --paper-2: #ece2cc;
-  --paper-3: #dfd1b4;
   --ink-900: #1b1714;
-  --ink-700: #3a322b;
   --ink-500: #6a5d50;
-  --ink-400: #8a7c6c;
-  --ink-300: #b8ac98;
-  --line-strong: rgba(27, 23, 20, 0.18);
-  --accent-2: #8a6f2a;
-  --accent-3: #6d4d7d;
   --surface: rgba(255, 252, 246, 0.82);
   --surface-strong: #fffdf8;
   --surface-inset: rgba(27, 23, 20, 0.035);
@@ -327,18 +303,10 @@
     rgba(28, 25, 21, 0.85);
 
   /* Design-handoff-native palette, dark variant. */
-  --paper-0: #15120f;
   --paper-1: #1c1915;
   --paper-2: #26221c;
-  --paper-3: #332d24;
   --ink-900: #f1e8d7;
-  --ink-700: #d6cab1;
   --ink-500: #9c907a;
-  --ink-400: #786d5c;
-  --ink-300: #544b3f;
-  --line-strong: rgba(241, 232, 215, 0.2);
-  --accent-2: #c4a864;
-  --accent-3: #b08ab8;
   --surface: rgba(32, 28, 22, 0.82);
   --surface-strong: #1c1915;
   --surface-inset: rgba(241, 232, 215, 0.05);
@@ -861,35 +829,9 @@ a {
 }
 
 .tags-page {
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  background: var(--bg);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 22px 50px rgba(var(--primary-rgb), 0.08);
-  padding: 24px 28px;
   margin-bottom: 20px;
   display: grid;
   gap: 18px;
-}
-
-.tags-page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.tags-page-header h2 {
-  margin: 4px 0 0;
-  font-size: 1.5rem;
-}
-
-.tags-page-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 /*

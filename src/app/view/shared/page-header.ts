@@ -28,10 +28,11 @@ export interface PageHeaderOptions {
    */
   subtitle?: string;
   /**
-   * Optional actions element (buttons, toggles) rendered opposite the
-   * text block.
+   * Optional actions — one or more buttons/toggles rendered opposite the
+   * text block. An array lets callers stack a segmented control next to a
+   * secondary button without wrapping them in an extra container.
    */
-  actions?: HTMLElement;
+  actions?: HTMLElement | HTMLElement[];
 }
 
 export function buildPageHeader({
@@ -65,10 +66,11 @@ export function buildPageHeader({
 
   header.append(block);
 
-  if (actions) {
+  const actionsList = Array.isArray(actions) ? actions : actions ? [actions] : [];
+  if (actionsList.length > 0) {
     const actionsEl = document.createElement("div");
     actionsEl.className = "page-header-actions";
-    actionsEl.append(actions);
+    for (const action of actionsList) actionsEl.append(action);
     header.append(actionsEl);
   }
 

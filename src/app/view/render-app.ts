@@ -15,15 +15,11 @@ import { buildHomePage } from "./pages/home-page";
 import { buildTagsPage } from "./pages/tags-page";
 import { buildLinksPage } from "./pages/links-page";
 import { buildTasksPage } from "./pages/tasks-page";
-import {
-  buildDetailTopbar,
-  buildEditorCard,
-  buildNotesPanel,
-  type EditorCardOptions,
-  type NotesPanelOptions,
-} from "./pages/notes-page";
+import { buildNotesPanel, type NotesPanelOptions } from "./pages/notes-page";
 import { buildPagePlaceholder } from "./pages/placeholder-page";
 import { buildSettingsPage } from "./pages/settings-page";
+import { buildDetailTopbar } from "./shared/detail-topbar";
+import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
 
 // The editor-card builder needs the list of available tag suggestions and the
 // set of auto-tags for chip styling, but callers don't have to supply either

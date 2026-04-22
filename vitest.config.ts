@@ -23,10 +23,10 @@ export default defineConfig({
       // Ratchet thresholds — set just below current values so regressions fail CI.
       // Raise these whenever the baseline climbs.
       thresholds: {
-        statements: 75,
-        branches: 67,
-        functions: 77,
-        lines: 75,
+        statements: 82,
+        branches: 76,
+        functions: 84,
+        lines: 82,
       },
     },
   },
