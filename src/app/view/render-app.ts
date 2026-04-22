@@ -8,6 +8,7 @@ import {
   isPersonaEnabled,
   type PersonaPreference,
 } from "../logic/persona";
+import type { TasksFilterId } from "../logic/tasks-filter";
 import type { SutraPadTagFilterMode, UserProfile } from "../../types";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
 import { buildTopbar } from "./chrome/topbar";
@@ -81,6 +82,19 @@ interface RenderAppOptions
    */
   onOpenPalette: () => void;
   /**
+   * Tasks screen state — lives at app-top-level (like `notesViewMode`) so
+   * toggling a task checkbox, which triggers a full re-render, doesn't wipe
+   * the chip selection, show-done toggle, or one-thing pin. Deliberately
+   * not URL-synced: these are ephemeral session preferences, not
+   * shareable view-state.
+   */
+  tasksFilter: TasksFilterId;
+  tasksShowDone: boolean;
+  tasksOneThingKey: string | null;
+  onChangeTasksFilter: (filter: TasksFilterId) => void;
+  onToggleTasksShowDone: (showDone: boolean) => void;
+  onSetOneThing: (key: string | null) => void;
+  /**
    * "← Back to notes" click handler — consumed by the detail-topbar that sits
    * above the editor card on the note detail route. Kept here (rather than on
    * EditorCardOptions) because the editor card is now a pure writing surface
@@ -140,6 +154,12 @@ export function renderAppPage({
   onChangePersonaPreference,
   onOpenPalette,
   onOpenCapture,
+  tasksFilter,
+  tasksShowDone,
+  tasksOneThingKey,
+  onChangeTasksFilter,
+  onToggleTasksShowDone,
+  onSetOneThing,
 }: RenderAppOptions): void {
   root.innerHTML = "";
 
@@ -241,8 +261,14 @@ export function renderAppPage({
       page.append(
         buildTasksPage({
           workspace,
+          tasksFilter,
+          tasksShowDone,
+          tasksOneThingKey,
           onOpenNote: openNoteInEditor,
           onToggleTask,
+          onChangeTasksFilter,
+          onToggleTasksShowDone,
+          onSetOneThing,
         }),
       );
     } else if (activeMenuItem === "capture") {

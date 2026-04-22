@@ -82,6 +82,7 @@ import {
 } from "./app/logic/persona";
 import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
 import { buildPaletteEntries, togglePaletteTagFilter } from "./app/logic/palette";
+import type { TasksFilterId } from "./app/logic/tasks-filter";
 import { mountPalette, type PaletteHandle } from "./app/view/palette";
 import {
   initialShortcutState,
@@ -371,6 +372,12 @@ interface RenderCallbackOptions {
   setDetailNoteId: (detailNoteId: string | null) => void;
   getNotesViewMode: () => NotesViewMode;
   setNotesViewMode: (notesViewMode: NotesViewMode) => void;
+  getTasksFilter: () => TasksFilterId;
+  setTasksFilter: (next: TasksFilterId) => void;
+  getTasksShowDone: () => boolean;
+  setTasksShowDone: (next: boolean) => void;
+  getTasksOneThingKey: () => string | null;
+  setTasksOneThingKey: (next: string | null) => void;
   getCurrentTheme: () => ThemeChoice;
   setCurrentTheme: (theme: ThemeChoice) => void;
   getPersonaPreference: () => PersonaPreference;
@@ -422,6 +429,12 @@ function createRenderCallbacks({
   setDetailNoteId,
   getNotesViewMode,
   setNotesViewMode,
+  getTasksFilter,
+  setTasksFilter,
+  getTasksShowDone,
+  setTasksShowDone,
+  getTasksOneThingKey,
+  setTasksOneThingKey,
   getCurrentTheme,
   setCurrentTheme,
   getPersonaPreference,
@@ -441,6 +454,21 @@ function createRenderCallbacks({
       if (mode === getNotesViewMode()) return;
       setNotesViewMode(mode);
       persistNotesView(mode);
+      render();
+    },
+    onChangeTasksFilter: (filter: TasksFilterId) => {
+      if (filter === getTasksFilter()) return;
+      setTasksFilter(filter);
+      render();
+    },
+    onToggleTasksShowDone: (showDone: boolean) => {
+      if (showDone === getTasksShowDone()) return;
+      setTasksShowDone(showDone);
+      render();
+    },
+    onSetOneThing: (key: string | null) => {
+      if (key === getTasksOneThingKey()) return;
+      setTasksOneThingKey(key);
       render();
     },
     onChangeTheme: (choice: ThemeChoice) => {
@@ -973,6 +1001,14 @@ export function createApp(root: HTMLElement): void {
   // picks its own on/off stance, nothing flows through URL or Drive so a
   // shared link can't force a decorative view on the recipient.
   let personaPreference: PersonaPreference = resolveInitialPersonaPreference();
+  // Tasks screen view state. Lives at the top level so `render()` (which
+  // is triggered by any task checkbox toggle) doesn't wipe the user's
+  // active chip, show-done stance, or "one thing" pin. Deliberately kept
+  // in-memory — these are session-scoped UI preferences, not shareable
+  // view-state, so they don't round-trip to the URL or localStorage.
+  let tasksFilter: TasksFilterId = "all";
+  let tasksShowDone = false;
+  let tasksOneThingKey: string | null = null;
   // Filled in once `wirePaletteAccess` has mounted the `/` keybinding (near
   // the bottom of createApp). render() and the topbar's "+ tag" trigger both
   // reach the palette through this single reference, so the keyboard path
@@ -1000,6 +1036,9 @@ export function createApp(root: HTMLElement): void {
   const setCurrentThemeState = (next: ThemeChoice): void => { currentTheme = next; };
   const setPersonaPreferenceState = (next: PersonaPreference): void => { personaPreference = next; };
   const setBookmarkletMessageState = (next: string): void => { bookmarkletMessage = next; };
+  const setTasksFilterState = (next: TasksFilterId): void => { tasksFilter = next; };
+  const setTasksShowDoneState = (next: boolean): void => { tasksShowDone = next; };
+  const setTasksOneThingKeyState = (next: string | null): void => { tasksOneThingKey = next; };
 
   const scheduleAutoSave = (): void => {
     if (!profile) return;
@@ -1206,6 +1245,12 @@ export function createApp(root: HTMLElement): void {
       setDetailNoteId: setDetailNoteIdState,
       getNotesViewMode: () => notesViewMode,
       setNotesViewMode: setNotesViewModeState,
+      getTasksFilter: () => tasksFilter,
+      setTasksFilter: setTasksFilterState,
+      getTasksShowDone: () => tasksShowDone,
+      setTasksShowDone: setTasksShowDoneState,
+      getTasksOneThingKey: () => tasksOneThingKey,
+      setTasksOneThingKey: setTasksOneThingKeyState,
       getCurrentTheme: () => currentTheme,
       setCurrentTheme: setCurrentThemeState,
       getPersonaPreference: () => personaPreference,
@@ -1246,6 +1291,9 @@ export function createApp(root: HTMLElement): void {
       activeMenuItem,
       detailNoteId,
       notesViewMode,
+      tasksFilter,
+      tasksShowDone,
+      tasksOneThingKey,
       currentTheme,
       personaPreference,
       onOpenPalette: () => paletteAccess?.open(),
