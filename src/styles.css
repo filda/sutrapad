@@ -101,9 +101,6 @@
   --surface-tint: rgba(255, 250, 244, 0.9);
   --surface-ghost: rgba(255, 255, 255, 0.6);
   --surface-ghost-strong: rgba(255, 255, 255, 0.76);
-  --bookmarklet-bg:
-    linear-gradient(135deg, rgba(255, 248, 239, 0.9), rgba(245, 232, 219, 0.72)),
-    rgba(255, 255, 255, 0.75);
 }
 
 :root[data-theme="paper"] {
@@ -129,9 +126,6 @@
   --surface-tint: rgba(248, 250, 252, 0.92);
   --surface-ghost: rgba(255, 255, 255, 0.7);
   --surface-ghost-strong: rgba(255, 255, 255, 0.85);
-  --bookmarklet-bg:
-    linear-gradient(135deg, rgba(239, 246, 255, 0.9), rgba(219, 234, 254, 0.6)),
-    rgba(255, 255, 255, 0.85);
 }
 
 :root[data-theme="forest"] {
@@ -157,9 +151,6 @@
   --surface-tint: rgba(240, 247, 238, 0.92);
   --surface-ghost: rgba(255, 255, 255, 0.58);
   --surface-ghost-strong: rgba(255, 255, 255, 0.78);
-  --bookmarklet-bg:
-    linear-gradient(135deg, rgba(232, 243, 228, 0.92), rgba(210, 228, 205, 0.72)),
-    rgba(255, 255, 255, 0.75);
 }
 
 :root[data-theme="midnight"] {
@@ -185,9 +176,6 @@
   --surface-tint: rgba(38, 44, 82, 0.85);
   --surface-ghost: rgba(35, 40, 74, 0.6);
   --surface-ghost-strong: rgba(35, 40, 74, 0.8);
-  --bookmarklet-bg:
-    linear-gradient(135deg, rgba(67, 56, 120, 0.65), rgba(31, 36, 70, 0.8)),
-    rgba(35, 40, 74, 0.82);
 }
 
 :root[data-theme="dark"] {
@@ -213,9 +201,6 @@
   --surface-tint: rgba(56, 50, 44, 0.85);
   --surface-ghost: rgba(46, 42, 38, 0.6);
   --surface-ghost-strong: rgba(46, 42, 38, 0.8);
-  --bookmarklet-bg:
-    linear-gradient(135deg, rgba(82, 60, 42, 0.68), rgba(45, 40, 36, 0.8)),
-    rgba(46, 42, 38, 0.85);
 }
 
 /*
@@ -251,9 +236,6 @@
   --surface-tint: rgba(255, 250, 244, 0.88);
   --surface-ghost: rgba(255, 252, 246, 0.6);
   --surface-ghost-strong: rgba(255, 252, 246, 0.8);
-  --bookmarklet-bg:
-    linear-gradient(135deg, rgba(255, 250, 240, 0.92), rgba(236, 226, 204, 0.72)),
-    rgba(255, 252, 246, 0.82);
 
   /* Design-handoff-native palette: persona styles use these directly. */
   --paper-1: #f5eedf;
@@ -298,9 +280,6 @@
   --surface-tint: rgba(32, 28, 22, 0.85);
   --surface-ghost: rgba(28, 25, 21, 0.6);
   --surface-ghost-strong: rgba(28, 25, 21, 0.82);
-  --bookmarklet-bg:
-    linear-gradient(135deg, rgba(51, 45, 36, 0.65), rgba(28, 25, 21, 0.78)),
-    rgba(28, 25, 21, 0.85);
 
   /* Design-handoff-native palette, dark variant. */
   --paper-1: #1c1915;
@@ -352,14 +331,6 @@ button {
   width: min(1120px, calc(100% - 32px));
   margin: 0 auto;
   padding: 32px 0 48px;
-}
-
-.hero {
-  display: grid;
-  gap: 24px;
-  align-items: start;
-  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
-  margin-bottom: 24px;
 }
 
 h1 {
@@ -1413,70 +1384,354 @@ a {
   gap: 18px;
 }
 
-.bookmarklet-card {
-  margin-bottom: 20px;
-  padding: 20px 24px;
-  border: 1px solid rgba(var(--primary-rgb), 0.1);
-  border-radius: 26px;
-  background: var(--bookmarklet-bg);
-  box-shadow: 0 18px 40px rgba(var(--primary-rgb), 0.06);
+/*
+ * Capture / Install page — follows the handoff's CaptureScreen pattern. The
+ * page selects between four platforms (Chrome/Safari/iOS/Android) via a
+ * pill-tab strip, and the active platform is tracked as a `data-platform`
+ * attribute on `.capture-page`. The display: none / block rules below use
+ * attribute selectors to swap step-card blocks without a re-render.
+ */
+.capture-page {
   display: grid;
-  gap: 14px;
+  gap: 20px;
+  min-width: 0;
 }
 
-.bookmarklet-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
+.capture-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 24px;
   align-items: start;
 }
 
-.bookmarklet-card h2 {
-  margin: 0;
-  font-size: 1.35rem;
+@media (max-width: 1000px) {
+  .capture-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-.bookmarklet-card p {
+/* Pill tab strip. Same visual language as the handoff's `.platform-tabs` but
+   styled against our token set — `--surface-inset` for the trough, the
+   active tab lifts onto `--surface-strong` with a subtle card shadow. */
+.platform-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-inset);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  width: max-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.platform-tab {
+  padding: 8px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.platform-tab:hover {
+  color: var(--primary);
+}
+
+.platform-tab.is-active {
+  background: var(--surface-strong);
+  color: var(--primary);
+  box-shadow: var(--shadow-card);
+}
+
+.platform-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Only the currently selected platform's step block is visible. Rendering
+   all four and hiding three keeps the DOM simple and the switch instant. */
+.capture-platform {
+  display: none;
+  gap: 14px;
+}
+
+.capture-page[data-platform="chrome"] .capture-platform[data-for="chrome"],
+.capture-page[data-platform="safari"] .capture-platform[data-for="safari"],
+.capture-page[data-platform="ios"] .capture-platform[data-for="ios"],
+.capture-page[data-platform="android"] .capture-platform[data-for="android"] {
+  display: grid;
+}
+
+.capture-steps {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.step-card {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-card);
+  display: grid;
+  gap: 12px;
+}
+
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--primary);
+}
+
+.step-num {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-primary);
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 0.88rem;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.step-head-text {
+  min-width: 0;
+}
+
+.step-text {
   margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.55;
   color: var(--muted);
 }
 
-.bookmarklet-actions {
+.step-status {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--success);
+}
+
+/* Inline keyboard-shortcut chip used by the Chrome bookmarks-bar step. */
+.kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.82em;
+  color: var(--primary);
+  background: var(--surface-inset);
+}
+
+/* Dark monospace block for the Safari bookmarklet code snippet. Uses a
+   fixed dark palette rather than theme tokens so the code block reads as a
+   terminal surface regardless of light/dark theme. */
+.code-block {
+  padding: 14px;
+  background: #1b1714;
+  color: #e9dcc4;
+  border: 1px solid rgba(241, 232, 215, 0.08);
+  border-radius: 12px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Draggable pill that lives inside step 2 of the Chrome flow. Styled as the
+   accent-filled button you'd find on the bookmarks bar. */
+.bookmarklet-drag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: var(--on-primary);
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: grab;
+  box-shadow: 0 12px 26px -10px rgba(var(--accent-rgb), 0.5);
+  width: max-content;
+  max-width: 100%;
+}
+
+.bookmarklet-drag:active {
+  cursor: grabbing;
+}
+
+.bookmarklet-drag:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Right-column preview — a browser-chrome mock showing what the bookmarklet
+   looks like on a bookmarks bar. Sticks on wide screens so it stays visible
+   as the user scrolls through platform steps. */
+.capture-preview {
+  display: grid;
+  gap: 16px;
+  position: sticky;
+  top: 96px;
+  min-width: 0;
+}
+
+@media (max-width: 1000px) {
+  .capture-preview {
+    position: static;
+  }
+}
+
+.preview-browser {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-card);
+}
+
+.pb-chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-1);
+}
+
+.pb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(var(--primary-rgb), 0.18);
+}
+
+.pb-dot:nth-child(1) {
+  background: #e06254;
+}
+.pb-dot:nth-child(2) {
+  background: #e0b04a;
+}
+.pb-dot:nth-child(3) {
+  background: #5cb27a;
+}
+
+.pb-url {
+  flex: 1;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.pb-bar {
   display: flex;
   flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.75rem;
+}
+
+.pb-bm {
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--paper-1);
+  font-size: 0.72rem;
+  color: var(--primary);
+}
+
+.pb-bm.is-glow {
+  background: var(--accent);
+  color: var(--on-primary);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.25);
+}
+
+.pb-body {
+  padding: 24px;
+  display: grid;
   gap: 10px;
 }
 
-.bookmarklet-toggle {
-  flex: 0 0 auto;
-}
-
-.bookmarklet-link {
-  flex: 0 0 auto;
-}
-
-.bookmarklet-hint {
-  width: 100%;
-  font-size: 0.92rem;
-}
-
-.bookmarklet-status {
-  width: 100%;
+.pb-eyebrow {
   margin: 0;
-  color: var(--success);
-  font-size: 0.92rem;
-}
-
-.bookmarklet-steps {
-  width: 100%;
-  margin: 0;
-  padding-left: 1.2rem;
+  font-size: 0.78rem;
   color: var(--muted);
 }
 
-.bookmarklet-steps li + li {
-  margin-top: 0.35rem;
+.pb-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.55rem;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--primary);
+}
+
+.pb-hero {
+  height: 100px;
+  border-radius: 12px;
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.45),
+    rgba(var(--primary-rgb), 0.35)
+  );
+  margin-top: 4px;
+}
+
+.pb-excerpt {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* Caption card below the mock explains what clicking the bookmarklet does. */
+.capture-caption {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-card);
+  display: grid;
+  gap: 6px;
+}
+
+.capture-caption p:not(.panel-eyebrow) {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.capture-caption strong {
+  color: var(--primary);
 }
 
 .editor-card {
@@ -2694,14 +2949,6 @@ a {
   .page {
     width: min(100% - 20px, 760px);
     padding-top: 20px;
-  }
-
-  .hero {
-    grid-template-columns: 1fr;
-  }
-
-  .bookmarklet-header {
-    flex-direction: column;
   }
 
   h1 {

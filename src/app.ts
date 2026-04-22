@@ -81,7 +81,6 @@ import {
   type PersonaPreference,
 } from "./app/logic/persona";
 import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
-const BOOKMARKLET_HELPER_KEY = "sutrapad-bookmarklet-helper-expanded";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
 export { resolveDisplayedNote } from "./app/logic/displayed-note";
@@ -352,8 +351,6 @@ interface RenderCallbackOptions {
   setWorkspace: (workspace: SutraPadWorkspace) => void;
   setSyncState: (syncState: SyncState) => void;
   setLastError: (lastError: string) => void;
-  getBookmarkletHelperExpanded: () => boolean;
-  setBookmarkletHelperExpanded: (expanded: boolean) => void;
   setBookmarkletMessage: (message: string) => void;
   getSelectedTagFilters: () => string[];
   setSelectedTagFilters: (selectedTagFilters: string[]) => void;
@@ -411,8 +408,6 @@ function createRenderCallbacks({
   setWorkspace,
   setSyncState,
   setLastError,
-  getBookmarkletHelperExpanded,
-  setBookmarkletHelperExpanded,
   setBookmarkletMessage,
   getSelectedTagFilters,
   setSelectedTagFilters,
@@ -490,15 +485,6 @@ function createRenderCallbacks({
       setProfile(null);
       setSyncState("idle");
       setLastError("");
-      render();
-    },
-    onToggleBookmarkletHelper: () => {
-      const nextExpanded = !getBookmarkletHelperExpanded();
-      setBookmarkletHelperExpanded(nextExpanded);
-      window.localStorage.setItem(
-        BOOKMARKLET_HELPER_KEY,
-        nextExpanded ? "expanded" : "collapsed",
-      );
       render();
     },
     onCopyBookmarklet: () => {
@@ -775,8 +761,6 @@ export function createApp(root: HTMLElement): void {
   let syncState: SyncState = "idle";
   let lastError = "";
   let bookmarkletMessage = "";
-  let bookmarkletHelperExpanded =
-    window.localStorage.getItem(BOOKMARKLET_HELPER_KEY) !== "collapsed";
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let selectedTagFilters: string[] = readTagFiltersFromLocation(window.location.href);
   let filterMode: SutraPadTagFilterMode = readTagFilterModeFromLocation(window.location.href);
@@ -1014,8 +998,6 @@ export function createApp(root: HTMLElement): void {
       setWorkspace: setWorkspaceState,
       setSyncState: setSyncStateValue,
       setLastError: setLastErrorValue,
-      getBookmarkletHelperExpanded: () => bookmarkletHelperExpanded,
-      setBookmarkletHelperExpanded: setBookmarkletHelperExpandedState,
       setBookmarkletMessage: setBookmarkletMessageState,
       getSelectedTagFilters: () => selectedTagFilters,
       setSelectedTagFilters: setSelectedTagFiltersState,
@@ -1060,7 +1042,6 @@ export function createApp(root: HTMLElement): void {
       }),
       profile,
       appRootUrl,
-      bookmarkletHelperExpanded,
       bookmarkletMessage,
       iosShortcutUrl,
       buildStamp: formatBuildStamp(__APP_VERSION__, __APP_COMMIT_HASH__, __APP_BUILD_TIME__),
@@ -1103,7 +1084,6 @@ export function createApp(root: HTMLElement): void {
   const setNotesViewModeState = (next: NotesViewMode): void => { notesViewMode = next; };
   const setCurrentThemeState = (next: ThemeChoice): void => { currentTheme = next; };
   const setPersonaPreferenceState = (next: PersonaPreference): void => { personaPreference = next; };
-  const setBookmarkletHelperExpandedState = (next: boolean): void => { bookmarkletHelperExpanded = next; };
   const setBookmarkletMessageState = (next: string): void => { bookmarkletMessage = next; };
 
   const loadWorkspace = async (): Promise<void> =>

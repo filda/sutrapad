@@ -5,6 +5,7 @@ export type MenuItemId =
   | "links"
   | "tags"
   | "tasks"
+  | "capture"
   | "settings";
 
 export interface MenuItem {
@@ -23,6 +24,10 @@ export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "links", label: "Links" },
   { id: "tasks", label: "Tasks" },
   { id: "tags", label: "Tags" },
+  // "capture" sits next to "settings" because it's a setup/install surface
+  // — users looking for "how do I get things into SutraPad?" reach for it
+  // at the same time they'd reach for Settings.
+  { id: "capture", label: "Capture" },
   { id: "settings", label: "Settings" },
 ];
 

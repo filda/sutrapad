@@ -10,13 +10,14 @@ import {
 } from "../src/app/logic/menu";
 
 describe("menu items", () => {
-  it("exposes the six menu entries in the expected order", () => {
+  it("exposes the seven menu entries in the expected order", () => {
     expect(MENU_ITEMS.map((item) => item.id)).toEqual([
       "add",
       "notes",
       "links",
       "tasks",
       "tags",
+      "capture",
       "settings",
     ]);
   });
@@ -28,6 +29,7 @@ describe("menu items", () => {
       "Links",
       "Tasks",
       "Tags",
+      "Capture",
       "Settings",
     ]);
   });
@@ -77,6 +79,7 @@ describe("getMenuItemLabel", () => {
     expect(getMenuItemLabel("links")).toBe("Links");
     expect(getMenuItemLabel("tags")).toBe("Tags");
     expect(getMenuItemLabel("tasks")).toBe("Tasks");
+    expect(getMenuItemLabel("capture")).toBe("Capture");
     expect(getMenuItemLabel("settings")).toBe("Settings");
   });
 });
@@ -87,7 +90,15 @@ describe("isMenuActionItemId", () => {
   });
 
   it("classifies every page-style menu id as not an action", () => {
-    const pageIds: MenuItemId[] = ["home", "notes", "links", "tags", "tasks", "settings"];
+    const pageIds: MenuItemId[] = [
+      "home",
+      "notes",
+      "links",
+      "tags",
+      "tasks",
+      "capture",
+      "settings",
+    ];
     for (const id of pageIds) {
       expect(isMenuActionItemId(id)).toBe(false);
     }

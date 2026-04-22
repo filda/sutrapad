@@ -12,6 +12,7 @@ import type { SutraPadTagFilterMode, UserProfile } from "../../types";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
 import { buildTopbar } from "./chrome/topbar";
 import { buildHomePage } from "./pages/home-page";
+import { buildCapturePage } from "./pages/capture-page";
 import { buildTagsPage } from "./pages/tags-page";
 import { buildLinksPage } from "./pages/links-page";
 import { buildTasksPage } from "./pages/tasks-page";
@@ -31,7 +32,6 @@ interface RenderAppOptions
   root: HTMLElement;
   profile: UserProfile | null;
   appRootUrl: string;
-  bookmarkletHelperExpanded: boolean;
   bookmarkletMessage: string;
   iosShortcutUrl: string;
   buildStamp: string;
@@ -59,7 +59,6 @@ interface RenderAppOptions
   onLoadNotebook: () => void;
   onSaveNotebook: () => void;
   onSignOut: () => void;
-  onToggleBookmarkletHelper: () => void;
   onCopyBookmarklet: () => void;
   onToggleTask: (noteId: string, lineIndex: number) => void;
   onChangeTheme: (choice: ThemeChoice) => void;
@@ -86,7 +85,6 @@ export function renderAppPage({
   statusText,
   profile,
   appRootUrl,
-  bookmarkletHelperExpanded,
   bookmarkletMessage,
   iosShortcutUrl,
   buildStamp,
@@ -94,7 +92,6 @@ export function renderAppPage({
   onLoadNotebook,
   onSaveNotebook,
   onSignOut,
-  onToggleBookmarkletHelper,
   onCopyBookmarklet,
   onSelectNote,
   onToggleTagFilter,
@@ -161,13 +158,7 @@ export function renderAppPage({
       buildHomePage({
         workspace,
         profile,
-        appRootUrl,
-        bookmarkletHelperExpanded,
-        bookmarkletMessage,
-        iosShortcutUrl,
         personaOptions,
-        onToggleBookmarkletHelper,
-        onCopyBookmarklet,
         onNewNote,
         onOpenNote: onSelectNote,
       }),
@@ -212,6 +203,15 @@ export function renderAppPage({
           workspace,
           onOpenNote: openNoteInEditor,
           onToggleTask,
+        }),
+      );
+    } else if (activeMenuItem === "capture") {
+      page.append(
+        buildCapturePage({
+          appRootUrl,
+          iosShortcutUrl,
+          bookmarkletMessage,
+          onCopyBookmarklet,
         }),
       );
     } else if (activeMenuItem === "settings") {
