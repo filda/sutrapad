@@ -4663,3 +4663,307 @@ button.tag-pill {
   color: var(--muted);
   font-size: 12px;
 }
+
+/*
+ * ============================================================
+ *  MOBILE — <640px phone layout
+ *  Ports docs/design_handoff_sutrapad2/src/screens.css §MOBILE.
+ *  The tabbar + FAB nodes are always rendered; visibility is
+ *  gated by media queries so a viewport resize reshuffles the
+ *  chrome without a re-render.
+ * ============================================================ */
+
+/* Bottom tabbar — hidden on desktop; paints as a pinned nav on phones. */
+.mobile-tabbar {
+  display: none;
+}
+
+.mobile-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-500);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.mobile-tab:hover,
+.mobile-tab:focus-visible {
+  color: var(--ink-900);
+  background: color-mix(in oklab, var(--paper-2) 60%, transparent);
+  outline: none;
+}
+
+.mobile-tab.is-active {
+  color: var(--primary);
+  background: color-mix(in oklab, var(--accent) 10%, transparent);
+}
+
+/* Floating action button — terracotta "+" pinned to bottom-right.
+ * Always rendered; CSS reveals it on phones and `[data-hidden=true]`
+ * suppresses it on the Add screen so we don't stack a FAB over the
+ * screen whose whole purpose it is to open. */
+.mobile-fab {
+  display: none;
+  position: fixed;
+  right: 20px;
+  bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff8ef;
+  border: 0;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.15) inset,
+    0 10px 24px -6px rgba(196, 106, 58, 0.55),
+    0 3px 8px -2px rgba(27, 23, 20, 0.2);
+  cursor: pointer;
+  z-index: 40;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.mobile-fab:active {
+  transform: scale(0.94);
+}
+
+.mobile-fab:hover,
+.mobile-fab:focus-visible {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.15) inset,
+    0 12px 28px -6px rgba(196, 106, 58, 0.7),
+    0 3px 10px -2px rgba(27, 23, 20, 0.25);
+  outline: none;
+}
+
+.mobile-fab[data-hidden="true"] {
+  display: none !important;
+}
+
+.mobile-fab-plus {
+  font-family: var(--sans);
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 400;
+}
+
+@media (max-width: 640px) {
+  /* ---------- App shell ---------- */
+  html,
+  body {
+    font-size: 15px;
+  }
+
+  .page {
+    /* Leave room for the bottom tabbar + FAB so page content doesn't
+     * disappear behind the pinned chrome. 72px tabbar + 24px gutter. */
+    width: 100%;
+    padding: 14px 16px calc(96px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* ---------- Topbar — compact ---------- */
+  .topbar {
+    padding: 8px 14px;
+    gap: 8px;
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+  }
+
+  .brand-wordmark {
+    display: none;
+  }
+
+  .brand-mark {
+    width: 26px;
+    height: 26px;
+  }
+
+  /* Add pill becomes the FAB; nav-tabs become the bottom tabbar. */
+  .nav-tab-add {
+    display: none;
+  }
+
+  .nav-tabs {
+    display: none;
+  }
+
+  /* Capture chip collapses to its dot on 900px and below already. On
+   * phones we also tighten padding so it doesn't eat the actions row. */
+  .capture-chip {
+    padding: 6px 8px;
+  }
+
+  .capture-chip .capture-chip-label {
+    display: none;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .avatar {
+    width: 30px;
+    height: 30px;
+    font-size: 11px;
+  }
+
+  .settings-gear {
+    width: 30px;
+    height: 30px;
+  }
+
+  /* Tag-filter strip below primary row; the 900px rule already wraps
+   * it, here we just tighten + let the dropdown span the viewport. */
+  .tag-filter-bar {
+    font-size: 14px;
+  }
+
+  /* ---------- Bottom tabbar ---------- */
+  .mobile-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 35;
+    align-items: stretch;
+    gap: 2px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+    background: color-mix(in oklab, var(--surface-strong) 92%, transparent);
+    border-top: 1px solid var(--line);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .mobile-fab {
+    display: inline-flex;
+  }
+
+  /* ---------- Page headers ---------- */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 16px 0 12px;
+  }
+
+  /* Desktop header uses `flex: 1 1 420px` on the text block so the actions
+   * column sits opposite it. When the header flips to a column, that 420px
+   * basis would apply on the vertical axis — pushing the actions a whole
+   * 420px below the subtitle. Reset the basis to auto so the text block
+   * takes only the space its children need. */
+  .page-header-text {
+    flex: 0 1 auto;
+    width: 100%;
+  }
+
+  .page-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .page-title {
+    /* Handoff: 48 → 34 px. */
+    font-size: 34px;
+    line-height: 1.1;
+  }
+
+  .page-eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+  }
+
+  /* ---------- Today ---------- */
+  .home-page {
+    gap: 18px;
+  }
+
+  .today-stats {
+    /* Handoff: 2×2 grid on phones. The 720px rule already does this,
+     * re-asserted here so the 640px intent is self-evident. */
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .hero-card {
+    padding: 18px;
+  }
+
+  .hero-card h1 {
+    font-size: 28px;
+    line-height: 1.1;
+  }
+
+  .timeline {
+    /* Tighter indent so card bodies keep a readable measure. */
+    padding-left: 16px;
+  }
+
+  /* ---------- Notes (list + detail) ---------- */
+  .notebook-row {
+    padding: 12px 10px;
+  }
+
+  .detail-topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 0;
+  }
+
+  .editor-card {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .editor-card h1,
+  .editor-card .editor-title {
+    font-size: 28px;
+    line-height: 1.15;
+  }
+
+  .editor-card .editor-body {
+    font-size: 17px;
+    line-height: 1.6;
+  }
+
+  /* ---------- Links ---------- */
+  .links-page .link-card,
+  .link-card {
+    padding: 12px;
+  }
+
+  /* ---------- Tasks ---------- */
+  .task-group {
+    padding: 14px;
+  }
+
+  .task-row {
+    gap: 10px;
+    padding: 10px 0;
+  }
+
+  /* ---------- Tags ---------- */
+  .tags-layout {
+    /* 900px rule already collapses to one column; re-asserted for
+     * readability in this mobile block. */
+    grid-template-columns: 1fr;
+  }
+
+  .tag-class-section {
+    padding: 14px;
+  }
+
+  /* ---------- Settings ---------- */
+  .stack {
+    max-width: 100%;
+  }
+}

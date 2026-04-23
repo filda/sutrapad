@@ -14,6 +14,7 @@ import type { TasksFilterId } from "../logic/tasks-filter";
 import type { SutraPadTagFilterMode, UserProfile } from "../../types";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
 import { buildTopbar } from "./chrome/topbar";
+import { buildMobileFab, buildMobileTabbar } from "./chrome/mobile-nav";
 import { buildHomePage } from "./pages/home-page";
 import { buildCapturePage } from "./pages/capture-page";
 import { buildTagsPage } from "./pages/tags-page";
@@ -236,6 +237,18 @@ export function renderAppPage({
     }),
   );
 
+  // Mobile chrome — both nodes are always present so a viewport resize flips
+  // between desktop and mobile without a re-render. CSS owns visibility via
+  // the `@media (max-width: 640px)` block. Tabbar sits as a sibling of .page
+  // so its `position: fixed` anchors to the viewport, not the page column.
+  // FAB is appended last so it paints on top of every page's content.
+  root.append(
+    buildMobileTabbar({
+      activeMenuItem,
+      onSelectMenuItem,
+    }),
+  );
+
   const page = document.createElement("main");
   page.className = "page";
 
@@ -245,6 +258,20 @@ export function renderAppPage({
     <p>Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by <a href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OpenStreetMap</a> and <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noreferrer">Nominatim</a>.</p>
     <p class="build-stamp">${buildStamp}</p>
   `;
+
+  // Tail applied to every render path: footer → page → root → FAB (last, so
+  // the FAB paints above page content on mobile without a z-index war with
+  // every card and popover).
+  const finalize = (): void => {
+    page.append(footer);
+    root.append(page);
+    root.append(
+      buildMobileFab({
+        activeMenuItem,
+        onSelectMenuItem,
+      }),
+    );
+  };
 
   if (activeMenuItem === "home") {
     page.append(
@@ -256,8 +283,7 @@ export function renderAppPage({
         onOpenNote: onSelectNote,
       }),
     );
-    page.append(footer);
-    root.append(page);
+    finalize();
     return;
   }
 
@@ -343,8 +369,7 @@ export function renderAppPage({
     } else {
       page.append(buildPagePlaceholder(activeMenuItem));
     }
-    page.append(footer);
-    root.append(page);
+    finalize();
     return;
   }
 
@@ -364,8 +389,7 @@ export function renderAppPage({
         onChangeNotesView,
       }),
     );
-    page.append(footer);
-    root.append(page);
+    finalize();
     return;
   }
 
@@ -422,7 +446,5 @@ export function renderAppPage({
   }
 
   page.append(editorStage);
-  page.append(footer);
-
-  root.append(page);
+  finalize();
 }
