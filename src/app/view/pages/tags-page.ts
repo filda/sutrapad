@@ -3,6 +3,7 @@ import {
   buildCombinedTagIndex,
   filterNotesByTags,
 } from "../../../lib/notebook";
+import { splitGraveyard } from "../../logic/tag-graveyard";
 import type {
   SutraPadTagEntry,
   SutraPadTagFilterMode,
@@ -137,6 +138,14 @@ export function buildTagsPage({
     return section;
   }
 
+  // Graveyard membership is computed against the full index and the full
+  // workspace, so a tag stays "rare" based on its real history — not whatever
+  // subset the current filter has narrowed us to. We use the resulting set to
+  // cull the main clouds (the handoff calls this "collapsed to reduce noise")
+  // and to drive the collapsible section at the bottom.
+  const { graveyard } = splitGraveyard(fullIndex, workspace);
+  const graveyardTags = new Set(graveyard.map((entry) => entry.tag));
+
   // For the rendered cloud we use the *available* index: narrows to tags that
   // still yield results under the current selection + mode, so the next click
   // is never a dead end. When there's no active selection this collapses to
@@ -146,8 +155,11 @@ export function buildTagsPage({
     selectedTagFilters,
     filterMode,
   );
-  const userEntries = availableIndex.tags.filter((entry) => entry.kind !== "auto");
-  const autoEntries = availableIndex.tags.filter((entry) => entry.kind === "auto");
+  const livingAvailable = availableIndex.tags.filter(
+    (entry) => !graveyardTags.has(entry.tag),
+  );
+  const userEntries = livingAvailable.filter((entry) => entry.kind !== "auto");
+  const autoEntries = livingAvailable.filter((entry) => entry.kind === "auto");
 
   if (userEntries.length > 0) {
     const userHeading = document.createElement("p");
@@ -179,6 +191,17 @@ export function buildTagsPage({
     hint.textContent =
       "Select one or more tags to see matching notebooks. Use All to require every tag, Any for a union.";
     section.append(hint);
+
+    // Graveyard only appears in the no-selection view — when the user is
+    // exploring overlaps we don't want a dormant-tag pile interrupting the
+    // "show the intersection" flow. Clicking a rare pill clears back here
+    // via the normal filter toggle → the section collapses naturally.
+    if (graveyard.length > 0) {
+      section.append(
+        buildGraveyardSection(graveyard, selectedTagFilters, onToggleTagFilter),
+      );
+    }
+
     return section;
   }
 
@@ -211,4 +234,67 @@ export function buildTagsPage({
   section.append(matches);
 
   return section;
+}
+
+/**
+ * The collapsible "Rare" section at the bottom of the Tags page. Mirrors the
+ * handoff's Graveyard affordance: dormant (count==1, >90d) tags collected
+ * behind a single disclosure so the main cloud stays quiet. Clicking a pill
+ * still toggles the filter — rare tags are searchable, just not visually
+ * prominent. The `<details>` element gives us native keyboard support and an
+ * accessible expand/collapse with no JS overhead.
+ */
+function buildGraveyardSection(
+  graveyard: readonly SutraPadTagEntry[],
+  selectedTagFilters: string[],
+  onToggleTagFilter: (tag: string) => void,
+): HTMLElement {
+  const details = document.createElement("details");
+  details.className = "tags-graveyard";
+
+  const summary = document.createElement("summary");
+  summary.className = "tags-graveyard-summary";
+
+  const label = document.createElement("span");
+  label.className = "tags-graveyard-label";
+  label.textContent = "Rare";
+
+  const count = document.createElement("span");
+  count.className = "tags-graveyard-count";
+  count.textContent = `${graveyard.length}`;
+
+  const hint = document.createElement("span");
+  hint.className = "tags-graveyard-hint";
+  hint.textContent = "· used once, not touched in 90+ days";
+
+  summary.append(label, count, hint);
+  details.append(summary);
+
+  const body = document.createElement("div");
+  body.className = "tags-graveyard-body";
+
+  const copy = document.createElement("p");
+  copy.className = "tags-graveyard-copy";
+  copy.textContent =
+    "Collapsed here to reduce noise in the main cloud — still searchable.";
+  body.append(copy);
+
+  const cloud = document.createElement("div");
+  cloud.className = "tags-graveyard-cloud";
+  for (const entry of graveyard) {
+    cloud.append(
+      buildTagPill({
+        tag: entry.tag,
+        kind: entry.kind,
+        muted: true,
+        count: `· ${entry.count}`,
+        active: selectedTagFilters.includes(entry.tag),
+        onClick: () => onToggleTagFilter(entry.tag),
+      }),
+    );
+  }
+  body.append(cloud);
+  details.append(body);
+
+  return details;
 }

@@ -1528,6 +1528,94 @@ button.tag-pill {
   font-size: 0.9rem;
 }
 
+/* ---------- Graveyard ---------- */
+/* Collapsible "Rare" pile — tags with count==1 that haven't been touched
+   in 90+ days. Recedes into the page via muted colour + subtle top border
+   so it reads as an afterthought, not a feature. */
+.tags-graveyard {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+
+.tags-graveyard-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 0;
+  border-radius: 4px;
+  user-select: none;
+  list-style: none;
+}
+/* Hide the native disclosure triangle — the label already reads as a
+   summary and we draw our own caret via :marker below for consistency. */
+.tags-graveyard-summary::-webkit-details-marker { display: none; }
+.tags-graveyard-summary::marker { content: ""; }
+
+.tags-graveyard-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 2px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+.tags-graveyard[open] > .tags-graveyard-summary::before {
+  transform: rotate(90deg);
+}
+
+.tags-graveyard-summary:hover {
+  color: var(--ink);
+}
+
+.tags-graveyard-label {
+  letter-spacing: 0.08em;
+}
+
+.tags-graveyard-count {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.7;
+}
+
+.tags-graveyard-hint {
+  font-family: var(--serif, Georgia, "Times New Roman", serif);
+  font-weight: 400;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.tags-graveyard-body {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.tags-graveyard-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 60ch;
+}
+
+.tags-graveyard-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .links-page {
   margin-bottom: 20px;
   display: grid;
