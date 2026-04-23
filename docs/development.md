@@ -299,6 +299,9 @@ When the PWA is installed on Android, the app can appear in the system share she
 - shared links are routed to the existing `?url=` and `?title=` capture flow
 - shared plain text is routed to the existing `?note=` capture flow
 - the manifest `share_target` uses `GET`, so no extra service worker POST handling is needed for text and link shares
+- Android testing note: the app needs the browser's real `Install` flow, not only `Add to Home screen`
+- a home screen shortcut alone may not register SutraPad as a share target
+- verified path so far: install the PWA through Chrome on Android, then share into SutraPad from the system share sheet
 
 ## Bookmarklet And Shortcut
 

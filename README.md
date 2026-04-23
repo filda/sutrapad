@@ -55,6 +55,14 @@ You can also open SutraPad with capture parameters directly:
 - text note capture:
   - [https://filda.github.io/sutrapad/?note=Remember%20this](https://filda.github.io/sutrapad/?note=Remember%20this)
 
+## Android Share Sheet
+
+On Android, SutraPad can appear in the system share sheet after the PWA is installed.
+
+- use the browser's real `Install` action for the app
+- do not rely on `Add to Home screen` alone, because that can create only a shortcut and the app may not appear as a share target
+- verified path so far: install through Chrome on Android, then share links or text into SutraPad
+
 ## Help
 
 - iPhone Shortcut guide in Czech: [docs/navod-pro-babicku.md](docs/navod-pro-babicku.md)
