@@ -3,6 +3,23 @@ import type { UserProfile } from "../../../types";
 import { MENU_ITEMS, type MenuItemId } from "../../logic/menu";
 import { buildAccountBar } from "./account-bar";
 import { buildTagFilterBar } from "./tag-filter-bar";
+import { buildIcon, type IconName } from "../shared/icons";
+
+/**
+ * Mapping from primary-nav menu id to the glyph slot in the handoff icon set.
+ * Kept as a table rather than a switch so the mapping reads declaratively and
+ * a missing entry (e.g. a new `MenuItemId`) shows up as a type error at the
+ * `satisfies` site below rather than silently falling through.
+ *
+ * Source: `docs/design_handoff_sutrapad2/src/app.jsx` lines 14-18 (`tabs`
+ * array with `ico: ICONS.note/link/task/tag`).
+ */
+const NAV_TAB_ICONS: Partial<Record<MenuItemId, IconName>> = {
+  notes: "note",
+  links: "link",
+  tasks: "task",
+  tags: "tag",
+};
 
 export interface TopbarOptions {
   activeMenuItem: MenuItemId;
@@ -113,11 +130,10 @@ function buildAddPill(
   button.className = `nav-tab-add${activeMenuItem === "add" ? " is-active" : ""}`;
   button.setAttribute("aria-label", "Add a new note");
 
-  const plus = document.createElement("span");
-  plus.className = "nav-tab-add-plus";
-  plus.setAttribute("aria-hidden", "true");
-  plus.textContent = "+";
-  button.append(plus);
+  // Handoff renders the plus as a stroked SVG (size 14) inline with the
+  // "Add" label — no bubble. Keeping parity so the Add pill reads as a
+  // CTA, not a badge with a count.
+  button.append(buildIcon("plus", 14));
 
   const label = document.createElement("span");
   label.textContent = "Add";
@@ -142,11 +158,28 @@ function buildNavTabs(
     const button = document.createElement("button");
     button.type = "button";
     button.className = `nav-tab${item.id === activeMenuItem ? " is-active" : ""}`;
-    button.textContent = item.label;
     button.setAttribute(
       "aria-current",
       item.id === activeMenuItem ? "page" : "false",
     );
+
+    // Icon-before-label pairing matches the handoff: `.nav-ico` wraps the
+    // stroked SVG so the CSS can tune colour + opacity independently of the
+    // text label. `.nav-tab` labels live inside their own `<span>` so the
+    // mobile breakpoint can hide them without dropping the icon.
+    const iconName = NAV_TAB_ICONS[item.id];
+    if (iconName) {
+      const iconWrap = document.createElement("span");
+      iconWrap.className = "nav-ico";
+      iconWrap.append(buildIcon(iconName, 14));
+      button.append(iconWrap);
+    }
+
+    const label = document.createElement("span");
+    label.className = "nav-tab-label";
+    label.textContent = item.label;
+    button.append(label);
+
     button.addEventListener("click", () => onSelectMenuItem(item.id));
     nav.append(button);
   }
@@ -216,12 +249,8 @@ function captureChipAriaLabel(count: number): string {
  * Settings no longer lives in the nav-tabs pill-group — it's a quiet icon
  * tucked between the sync pill and the avatar, so the primary nav stays
  * focused on content pages (Add · Notes · Links · Tasks · Tags) and
- * preferences get out of the way.
- *
- * SVG path taken verbatim from `docs/design_handoff_sutrapad2/src/icons.jsx`
- * (`ICONS.cog`) so the silhouette matches the handoff exactly. Rendered via
- * `innerHTML` to stay in line with the rest of the icon-free codebase (we
- * don't pull in a vDOM or `createElementNS` helpers just for one glyph).
+ * preferences get out of the way. The gear silhouette comes from the
+ * shared icon library (`ICONS.cog` in the handoff icons file).
  */
 function buildSettingsGear(onOpenSettings: () => void): HTMLElement {
   const button = document.createElement("button");
@@ -229,12 +258,7 @@ function buildSettingsGear(onOpenSettings: () => void): HTMLElement {
   button.className = "settings-gear";
   button.setAttribute("aria-label", "Settings");
   button.title = "Settings";
-  button.innerHTML = `
-    <svg class="settings-gear-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="3"/>
-      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>
-    </svg>
-  `;
+  button.append(buildIcon("cog", 14));
   button.addEventListener("click", onOpenSettings);
   return button;
 }

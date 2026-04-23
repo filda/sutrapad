@@ -616,19 +616,6 @@ a {
   box-shadow: 0 4px 14px -6px color-mix(in oklab, var(--accent) 60%, transparent);
 }
 
-.nav-tab-add-plus {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.18);
-  font-size: 13px;
-  line-height: 1;
-  font-weight: 600;
-}
-
 /* Nav tabs = pill group, inset surface, active item lifted. */
 .nav-tabs {
   display: inline-flex;
@@ -644,6 +631,9 @@ a {
 
 .nav-tab {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border: 0;
   background: transparent;
   color: var(--ink-500);
@@ -657,6 +647,23 @@ a {
     color 120ms ease,
     background 120ms ease,
     box-shadow 120ms ease;
+}
+
+/* Glyph slot inside a nav-tab. Dim to 0.75 by default, picks up the accent
+ * on the active tab so the hue cue lands on the icon rather than the label —
+ * matches handoff screens.css:409-410. */
+.nav-tab .nav-ico {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.nav-tab.is-active .nav-ico {
+  color: var(--accent);
+  opacity: 1;
 }
 
 .nav-tab:hover {
@@ -1074,15 +1081,22 @@ button.tag-pill {
   outline: none;
 }
 
-.settings-gear-icon {
-  width: 14px;
-  height: 14px;
+/* Shared stroked-icon baseline. Every SVG built by `buildIcon` picks up these
+ * defaults; per-size modifiers live as `.i-12` / `.i-14` / `.i-20`. Stroke
+ * width, linecap and linejoin match the handoff `.i` rule so the silhouettes
+ * read with the same weight regardless of the context they land in. */
+.i {
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.7;
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.i-12 { width: 12px; height: 12px; }
+.i-14 { width: 14px; height: 14px; }
+.i-20 { width: 20px; height: 20px; }
 
 /* Narrower viewports: sync pill label collapses to the dot only. */
 @media (max-width: 900px) {
