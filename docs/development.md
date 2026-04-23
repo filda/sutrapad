@@ -292,6 +292,14 @@ The app can enrich note titles with:
 - reverse geocoded place labels via Nominatim
 - cached location labels in `localStorage`
 
+### Android share sheet capture
+
+When the PWA is installed on Android, the app can appear in the system share sheet.
+
+- shared links are routed to the existing `?url=` and `?title=` capture flow
+- shared plain text is routed to the existing `?note=` capture flow
+- the manifest `share_target` uses `GET`, so no extra service worker POST handling is needed for text and link shares
+
 ## Bookmarklet And Shortcut
 
 The app exposes a bookmarklet link in the UI.

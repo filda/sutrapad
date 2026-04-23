@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import { defineConfig, loadEnv } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+import { buildPwaManifest } from "./src/lib/pwa-manifest";
+
 export default defineConfig(({ command, mode }) => {
   const isBuild = command === "build";
   const base = isBuild ? "/sutrapad/" : "/";
@@ -51,24 +53,7 @@ export default defineConfig(({ command, mode }) => {
         devOptions: {
           enabled: false,
         },
-        manifest: {
-          name: "SutraPad",
-          short_name: "SutraPad",
-          description: "Store and manage your Gerümpel on Google Drive — powered entirely by browser magic, questionable decisions, and multiple JSON files.",
-          start_url: base,
-          display: "standalone",
-          background_color: "#f5f0e8",
-          theme_color: "#e7dfcf",
-          lang: "en",
-          icons: [
-            {
-              src: "./icon.svg",
-              sizes: "any",
-              type: "image/svg+xml",
-              purpose: "any maskable",
-            },
-          ],
-        },
+        manifest: buildPwaManifest(base),
         workbox: {
           globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest}"],
           navigateFallback: `${base}index.html`,
