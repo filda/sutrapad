@@ -1,10 +1,13 @@
+import { confidenceForAutoTag } from "../../logic/auto-tag-confidence";
 import { buildNoteMetadata } from "../../logic/note-metadata";
+import { deriveAutoTags } from "../../../lib/auto-tags";
 import { detectKind } from "../../../lib/detect-kind";
 import type { SutraPadDocument, SutraPadTagEntry } from "../../../types";
 import type { SyncState } from "../../session/workspace-sync";
 import { EMPTY_COPY, buildEmptyState } from "./empty-state";
 import { buildKindChipForNote } from "./kind-chip";
 import { buildTagInput } from "./tag-input";
+import { buildTagPill } from "./tag-pill";
 
 export interface EditorCardOptions {
   note: SutraPadDocument | null;
@@ -111,9 +114,52 @@ export function buildEditorCard({
     kindChip.element,
     titleInput,
     buildTagInput(displayedNote, availableTagSuggestions, onAddTag, onRemoveTag),
-    bodyInput,
-    noteMetadata,
   );
 
+  const autoStrip = buildAutoDetectedStrip(displayedNote);
+  if (autoStrip) editor.append(autoStrip);
+
+  editor.append(bodyInput, noteMetadata);
+
   return editor;
+}
+
+/**
+ * "Auto-detected" strip — a read-only row of pills summarising the auto-tags
+ * the current note picks up from its metadata (`captureContext`, `createdAt`,
+ * `location`, …). Mirrors the handoff's `.suggested-strip` below the tag
+ * input, with one deliberate simplification: the pills are derived, not
+ * stored, so there's no accept/dismiss affordance — the user can't "commit"
+ * an auto-tag into `note.tags` because it's already available anywhere
+ * auto-tags are rendered (Tags page, topbar filter bar). The strip exists
+ * purely to surface *which* auto-tags are attached and flag low-confidence
+ * reads with a `NN%` badge.
+ *
+ * Returns `null` when the note has no auto-tags (empty notes on the Home
+ * page, drafts without capture context). That keeps the editor quiet for
+ * notes where the eyebrow would mean nothing.
+ */
+function buildAutoDetectedStrip(note: SutraPadDocument): HTMLElement | null {
+  const autoTags = deriveAutoTags(note);
+  if (autoTags.length === 0) return null;
+
+  const strip = document.createElement("div");
+  strip.className = "editor-auto-tags";
+
+  const eyebrow = document.createElement("span");
+  eyebrow.className = "editor-auto-tags-label";
+  eyebrow.textContent = "Auto-detected";
+  strip.append(eyebrow);
+
+  for (const tag of autoTags) {
+    strip.append(
+      buildTagPill({
+        tag,
+        kind: "auto",
+        confidence: confidenceForAutoTag(tag),
+      }),
+    );
+  }
+
+  return strip;
 }

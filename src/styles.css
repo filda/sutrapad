@@ -762,6 +762,19 @@ button.tag-pill {
   opacity: 0.55;
 }
 
+/* Confidence badge — shown on auto-tag pills when the score is below the
+ * display threshold (see `LOW_CONFIDENCE_THRESHOLD` in auto-tag-confidence.ts).
+ * Paired with `.low-conf`'s dashed border, the two together read as "we're
+ * telling you this tag exists but we're not sure". The mono font keeps the
+ * digits compact and aligns them with the `.tag-sym` sigil's visual weight. */
+.tag-pill .tag-conf {
+  margin-left: 3px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
 .tag-pill.tag-lg {
   padding: 6px 13px;
   font-size: 13.5px;
@@ -3914,6 +3927,31 @@ button.tag-pill {
 .tags-field {
   position: relative;
   margin-bottom: 14px;
+}
+
+/* "Auto-detected" strip — sits directly below `.tags-field` in the editor,
+ * summarising the auto-tags the note already picks up from its capture
+ * metadata. A dashed divider across the top separates it from the editable
+ * tag row above; the eyebrow label is mono-uppercase to match the handoff's
+ * `.suggested-strip`. Pills inside are read-only (no onClick/onRemove) — the
+ * strip exists to *show* what's attached, not to let the user curate it. */
+.editor-auto-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 16px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.editor-auto-tags-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 4px;
 }
 
 .tags-row {

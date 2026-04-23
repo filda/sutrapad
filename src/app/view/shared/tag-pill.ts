@@ -1,3 +1,4 @@
+import { LOW_CONFIDENCE_THRESHOLD } from "../../logic/auto-tag-confidence";
 import {
   classifyTag,
   metaForClass,
@@ -48,8 +49,22 @@ export interface TagPillOptions {
   active?: boolean;
   /** Greys the pill out without changing its class. Used by the palette "inactive" rows. */
   muted?: boolean;
-  /** Dashed border for low-confidence auto-tags. Off by default. */
+  /**
+   * Dashed border for low-confidence auto-tags. Off by default. Setting
+   * `confidence` below `LOW_CONFIDENCE_THRESHOLD` implicitly turns this on,
+   * so callers normally pass `confidence` and let the helper decide; pass
+   * `lowConf: true` directly when you want the visual treatment without
+   * committing to a numeric score (e.g. stand-in pills in the graveyard).
+   */
   lowConf?: boolean;
+  /**
+   * Confidence score for an auto-derived tag (0..1). When the pill
+   * classifies as an auto class and the score is below
+   * `LOW_CONFIDENCE_THRESHOLD`, the pill renders a small `NN%` badge after
+   * the name and auto-applies the `low-conf` treatment. Ignored on
+   * user-authored (topic) pills — those are always 1.0 by definition.
+   */
+  confidence?: number;
   /**
    * Optional counter rendered after the name (`· 12`). Accepts a number or a
    * pre-formatted string (`"· 12"`) — the callers pass the string form because
@@ -68,6 +83,122 @@ export interface TagPillOptions {
   removeAriaLabel?: string;
   /** aria-label override for the whole pill (defaults to the tag string). */
   ariaLabel?: string;
+}
+
+/**
+ * Builds the small `NN%` badge rendered on low-confidence auto pills. Split
+ * out so `buildTagPill` stays under the complexity budget; everything that
+ * knows about percentage formatting and the aria label lives here.
+ */
+function buildConfidenceBadge(confidence: number): HTMLSpanElement {
+  const percent = Math.round(confidence * 100);
+  const badge = document.createElement("span");
+  badge.className = "tag-conf mono";
+  badge.textContent = `${percent}%`;
+  badge.setAttribute("aria-label", `confidence ${percent} percent`);
+  return badge;
+}
+
+/**
+ * Builds the inner `×` remove affordance. Factored out (alongside the icon
+ * SVG below) so the main pill builder reads as a straight-line sequence of
+ * appends rather than nested branches.
+ */
+function buildRemoveButton(
+  onRemove: () => void,
+  ariaLabel: string,
+): HTMLButtonElement {
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "tag-x";
+  removeBtn.setAttribute("aria-label", ariaLabel);
+  removeBtn.addEventListener("click", (event) => {
+    // The remove button is nested inside chips that sometimes sit in
+    // clickable contexts (palette row, toolbar). Stopping the bubble keeps
+    // removal from accidentally double-firing a parent handler.
+    event.stopPropagation();
+    onRemove();
+  });
+  removeBtn.append(buildRemoveIcon());
+  return removeBtn;
+}
+
+/**
+ * Decides whether a pill should flip into the low-confidence display state —
+ * dashed border plus a `NN%` badge. Only auto-role pills are eligible: user-
+ * authored tags are authoritative by definition, so even if a caller passes
+ * a numeric `confidence` for a topic tag it's ignored here.
+ */
+function shouldShowConfidenceBadge(
+  role: "auto" | "user",
+  confidence: number | undefined,
+): boolean {
+  if (role !== "auto") return false;
+  if (typeof confidence !== "number") return false;
+  return confidence < LOW_CONFIDENCE_THRESHOLD;
+}
+
+/**
+ * Creates the right host element — `<button>` when the whole pill is the
+ * interactive surface, `<span>` when it's either display-only or the outer
+ * wrapper for a nested remove button. Wrapping the element+type-set in a
+ * helper keeps the conditional out of `buildTagPill`'s top-level flow.
+ */
+function createPillHost(useButton: boolean): HTMLElement {
+  if (useButton) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    return btn;
+  }
+  return document.createElement("span");
+}
+
+/**
+ * Assembles the pill's class list. All the modifier decisions (size, active,
+ * low-conf, muted, removable) live here so `buildTagPill` can stay focused on
+ * the DOM shape — pushing the branches down keeps the caller's cyclomatic
+ * budget sane.
+ */
+function buildPillClassName(options: {
+  classId: TagClassId;
+  role: "auto" | "user";
+  size: "sm" | "lg";
+  active: boolean;
+  lowConf: boolean;
+  muted: boolean;
+  removable: boolean;
+}): string {
+  const tokens = ["tag-pill", `tag-${options.classId}`, options.role];
+  if (options.size === "lg") tokens.push("tag-lg");
+  if (options.active) tokens.push("active");
+  if (options.lowConf) tokens.push("low-conf");
+  if (options.muted) tokens.push("muted");
+  if (options.removable) tokens.push("removable");
+  return tokens.join(" ");
+}
+
+/**
+ * Renders the optional class-symbol prefix (`#`/`@`/`~`/…). Pulled out so the
+ * main builder body is a flat sequence of `pill.append(...)` calls rather
+ * than an inline createElement+setAttribute block.
+ */
+function buildSymbolSpan(symbol: string): HTMLSpanElement {
+  const sym = document.createElement("span");
+  sym.className = "tag-sym";
+  sym.setAttribute("aria-hidden", "true");
+  sym.textContent = symbol;
+  return sym;
+}
+
+/**
+ * Renders the "12" / "· 12" count tail. Accepts either a number (stringified
+ * as-is) or a pre-formatted string from callers that want a separator glyph.
+ */
+function buildCountSpan(count: number | string): HTMLSpanElement {
+  const countEl = document.createElement("span");
+  countEl.className = "tag-count mono";
+  countEl.textContent = typeof count === "number" ? String(count) : count;
+  return countEl;
 }
 
 /**
@@ -99,6 +230,7 @@ export function buildTagPill(options: TagPillOptions): HTMLElement {
     active = false,
     muted = false,
     lowConf = false,
+    confidence,
     count,
     size = "sm",
     showSymbol = true,
@@ -119,69 +251,53 @@ export function buildTagPill(options: TagPillOptions): HTMLElement {
   const meta = metaForClass(classId);
   const displayValue = parseTagName(tag).value || tag;
 
+  // The threshold check gates both the dashed-border treatment and the
+  // `NN%` badge so a pill never shows the badge without the border, or vice
+  // versa. `effectiveLowConf` also respects an explicit `lowConf: true` from
+  // callers that want the dashed border without committing to a score.
+  const role: "auto" | "user" = meta.role === "auto" ? "auto" : "user";
+  const showConfidenceBadge = shouldShowConfidenceBadge(role, confidence);
+  const effectiveLowConf = lowConf || showConfidenceBadge;
+
   // `<button>` when the whole pill is clickable and has no inner button,
   // `<span>` otherwise (display-only or container-for-remove). The branching
   // keeps the HTML valid and native keyboard handling "just works" for the
   // common "click pill to toggle filter" case.
-  const usesButtonElement = Boolean(onClick) && !onRemove;
-  const pill = document.createElement(usesButtonElement ? "button" : "span");
-  if (pill instanceof HTMLButtonElement) pill.type = "button";
+  const pill = createPillHost(Boolean(onClick) && !onRemove);
 
-  const classTokens = [
-    "tag-pill",
-    `tag-${classId}`,
-    meta.role === "auto" ? "auto" : "user",
-  ];
-  if (size === "lg") classTokens.push("tag-lg");
-  if (active) classTokens.push("active");
-  if (lowConf) classTokens.push("low-conf");
-  if (muted) classTokens.push("muted");
-  if (onRemove) classTokens.push("removable");
-  pill.className = classTokens.join(" ");
+  pill.className = buildPillClassName({
+    classId,
+    role,
+    size,
+    active,
+    lowConf: effectiveLowConf,
+    muted,
+    removable: Boolean(onRemove),
+  });
 
   pill.style.setProperty("--h", String(meta.hue));
   if (ariaLabel !== undefined) pill.setAttribute("aria-label", ariaLabel);
 
-  if (showSymbol) {
-    const sym = document.createElement("span");
-    sym.className = "tag-sym";
-    sym.setAttribute("aria-hidden", "true");
-    sym.textContent = meta.symbol;
-    pill.append(sym);
-  }
+  if (showSymbol) pill.append(buildSymbolSpan(meta.symbol));
 
   const name = document.createElement("span");
   name.className = "tag-name";
   name.textContent = displayValue;
   pill.append(name);
 
-  if (count !== undefined) {
-    const countEl = document.createElement("span");
-    countEl.className = "tag-count mono";
-    countEl.textContent =
-      typeof count === "number" ? String(count) : count;
-    pill.append(countEl);
+  // Confidence badge sits between the name and the optional count — count
+  // is a "how many notes use this tag" affordance (filter contexts), conf is
+  // a "how sure are we" affordance (editor contexts); they never both apply
+  // in practice, but putting conf before count keeps the pill readable if
+  // they do.
+  if (showConfidenceBadge && typeof confidence === "number") {
+    pill.append(buildConfidenceBadge(confidence));
   }
 
-  if (onClick) {
-    pill.addEventListener("click", onClick);
-  }
+  if (count !== undefined) pill.append(buildCountSpan(count));
 
-  if (onRemove) {
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "tag-x";
-    removeBtn.setAttribute("aria-label", removeAriaLabel);
-    removeBtn.addEventListener("click", (event) => {
-      // The remove button is nested inside chips that sometimes sit in
-      // clickable contexts (palette row, toolbar). Stopping the bubble keeps
-      // removal from accidentally double-firing a parent handler.
-      event.stopPropagation();
-      onRemove();
-    });
-    removeBtn.append(buildRemoveIcon());
-    pill.append(removeBtn);
-  }
+  if (onClick) pill.addEventListener("click", onClick);
+  if (onRemove) pill.append(buildRemoveButton(onRemove, removeAriaLabel));
 
   return pill;
 }
