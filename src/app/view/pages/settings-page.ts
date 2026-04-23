@@ -1,34 +1,49 @@
 import type { UserProfile } from "../../../types";
 import { type PersonaPreference } from "../../logic/persona";
+import type { AliasSuggestion } from "../../logic/tag-aliases";
 import { THEMES, type ThemeChoice } from "../../logic/theme";
+import { buildTagPill } from "../shared/tag-pill";
 
 export interface SettingsPageOptions {
   currentTheme: ThemeChoice;
   personaPreference: PersonaPreference;
   profile: UserProfile | null;
+  /**
+   * Deduplication suggestions computed over the current workspace, with
+   * the user's dismissed pairs already filtered out. Empty array collapses
+   * the hygiene card into a one-liner "nothing to clean up" state.
+   */
+  tagAliasSuggestions: readonly AliasSuggestion[];
   onChangeTheme: (choice: ThemeChoice) => void;
   onChangePersonaPreference: (preference: PersonaPreference) => void;
   onLoadNotebook: () => void;
   onSaveNotebook: () => void;
   onSignIn: () => void;
+  /** Collapses a suggestion into `canonical` across every note that carries an alias. */
+  onMergeTagAlias: (from: string, to: string) => void;
+  /** Marks the canonical↔alias pair as "keep separate" so future renders skip it. */
+  onDismissTagAlias: (canonical: string, alias: string) => void;
 }
 
 /**
  * Settings page. Each concern lives in its own card inside the page wrapper:
  * appearance (per-device theme), notebook persona (decorative card layer),
- * and backup (manual Google Drive load/save). Further device-local or
- * account-level preferences slot in as additional cards in the same
- * container.
+ * tag hygiene (alias / merge suggestions), and backup (manual Google Drive
+ * load/save). Further device-local or account-level preferences slot in as
+ * additional cards in the same container.
  */
 export function buildSettingsPage({
   currentTheme,
   personaPreference,
   profile,
+  tagAliasSuggestions,
   onChangeTheme,
   onChangePersonaPreference,
   onLoadNotebook,
   onSaveNotebook,
   onSignIn,
+  onMergeTagAlias,
+  onDismissTagAlias,
 }: SettingsPageOptions): HTMLElement {
   const page = document.createElement("section");
   page.className = "settings-page";
@@ -36,6 +51,13 @@ export function buildSettingsPage({
   page.append(buildAppearanceCard({ currentTheme, onChangeTheme }));
   page.append(
     buildPersonaCard({ personaPreference, onChangePersonaPreference }),
+  );
+  page.append(
+    buildTagHygieneCard({
+      tagAliasSuggestions,
+      onMergeTagAlias,
+      onDismissTagAlias,
+    }),
   );
   page.append(
     buildBackupCard({ profile, onLoadNotebook, onSaveNotebook, onSignIn }),
@@ -195,6 +217,195 @@ function buildPersonaCard({
 
   card.append(group);
   return card;
+}
+
+interface TagHygieneCardOptions {
+  tagAliasSuggestions: readonly AliasSuggestion[];
+  onMergeTagAlias: (from: string, to: string) => void;
+  onDismissTagAlias: (canonical: string, alias: string) => void;
+}
+
+/**
+ * Tag hygiene card. Surfaces alias/merge suggestions the heuristic in
+ * `src/app/logic/tag-aliases.ts` flagged — pairs of topic tags that look
+ * like spellings of the same thing.
+ *
+ * One card per canonical tag, with a pill row of the alias candidates,
+ * the reason the heuristic picked them, and two actions:
+ *
+ *   - **Merge** — per-alias affordance (the button is rendered beside each
+ *     alias pill). One click rewrites every note that carries that alias
+ *     over to the canonical string and bumps its `updatedAt`. We keep the
+ *     action per-alias rather than "merge all" because a cluster of three
+ *     can mix a real duplicate with a false positive, and the user should
+ *     get to pick without re-entering the flow.
+ *   - **Keep separate** — per-alias too, for the same reason. Dismissing
+ *     one alias in a three-way cluster doesn't hide the card; only when
+ *     every alias has been either merged or dismissed does the whole
+ *     suggestion drop off the list on the next render.
+ *
+ * The handoff put this in a right-panel hygiene view on the Tags page; we
+ * moved it here because the Tags page's hygiene toggle was removed when
+ * #84 (Constellation → list) landed and the card reads fine alongside
+ * the other Settings cards.
+ */
+function buildTagHygieneCard({
+  tagAliasSuggestions,
+  onMergeTagAlias,
+  onDismissTagAlias,
+}: TagHygieneCardOptions): HTMLElement {
+  const card = document.createElement("section");
+  card.className = "settings-card tag-hygiene-card";
+
+  const header = document.createElement("header");
+  header.className = "settings-card-header";
+  header.innerHTML = `
+    <p class="panel-eyebrow">Notebook</p>
+    <h2>Tag hygiene</h2>
+  `;
+  card.append(header);
+
+  const hint = document.createElement("p");
+  hint.className = "settings-card-hint";
+  hint.textContent =
+    "Tags that look like different spellings of the same thing. Merging keeps every note's history — the notes just get relabeled to the canonical tag.";
+  card.append(hint);
+
+  if (tagAliasSuggestions.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "settings-card-note";
+    empty.textContent = "Nothing to clean up right now.";
+    card.append(empty);
+    return card;
+  }
+
+  const list = document.createElement("div");
+  list.className = "tag-hygiene-list";
+
+  for (const suggestion of tagAliasSuggestions) {
+    list.append(
+      buildHygieneSuggestion({
+        suggestion,
+        onMergeTagAlias,
+        onDismissTagAlias,
+      }),
+    );
+  }
+
+  card.append(list);
+  return card;
+}
+
+interface HygieneSuggestionOptions {
+  suggestion: AliasSuggestion;
+  onMergeTagAlias: (from: string, to: string) => void;
+  onDismissTagAlias: (canonical: string, alias: string) => void;
+}
+
+function buildHygieneSuggestion({
+  suggestion,
+  onMergeTagAlias,
+  onDismissTagAlias,
+}: HygieneSuggestionOptions): HTMLElement {
+  const row = document.createElement("article");
+  row.className = "hygiene-card";
+  row.setAttribute("data-canonical", suggestion.canonical);
+
+  const hed = document.createElement("div");
+  hed.className = "hygiene-hed";
+
+  const canonical = buildTagPill({
+    tag: suggestion.canonical,
+    kind: "user",
+    size: "lg",
+  });
+  canonical.classList.add("hygiene-canonical");
+  hed.append(canonical);
+
+  const arrow = document.createElement("span");
+  arrow.className = "hygiene-arrow";
+  arrow.setAttribute("aria-hidden", "true");
+  arrow.textContent = "←";
+  hed.append(arrow);
+
+  const count = document.createElement("span");
+  count.className = "hygiene-candidate-count mono";
+  const plural = suggestion.aliases.length === 1 ? "" : "s";
+  count.textContent = `${suggestion.aliases.length} candidate${plural}`;
+  hed.append(count);
+
+  row.append(hed);
+
+  const aliasList = document.createElement("div");
+  aliasList.className = "hygiene-alias-list";
+  for (const alias of suggestion.aliases) {
+    aliasList.append(
+      buildHygieneAliasRow({
+        canonical: suggestion.canonical,
+        alias,
+        onMergeTagAlias,
+        onDismissTagAlias,
+      }),
+    );
+  }
+  row.append(aliasList);
+
+  const reason = document.createElement("p");
+  reason.className = "hygiene-reason";
+  reason.textContent = suggestion.reason;
+  row.append(reason);
+
+  return row;
+}
+
+interface HygieneAliasRowOptions {
+  canonical: string;
+  alias: string;
+  onMergeTagAlias: (from: string, to: string) => void;
+  onDismissTagAlias: (canonical: string, alias: string) => void;
+}
+
+function buildHygieneAliasRow({
+  canonical,
+  alias,
+  onMergeTagAlias,
+  onDismissTagAlias,
+}: HygieneAliasRowOptions): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "hygiene-alias-row";
+
+  const pill = buildTagPill({ tag: alias, kind: "user", size: "lg" });
+  row.append(pill);
+
+  const actions = document.createElement("div");
+  actions.className = "hygiene-alias-actions";
+
+  const mergeBtn = document.createElement("button");
+  mergeBtn.type = "button";
+  mergeBtn.className = "button button-primary hygiene-action";
+  mergeBtn.textContent = "Merge";
+  mergeBtn.setAttribute(
+    "aria-label",
+    `Merge ${alias} into ${canonical}`,
+  );
+  mergeBtn.addEventListener("click", () => onMergeTagAlias(alias, canonical));
+  actions.append(mergeBtn);
+
+  const dismissBtn = document.createElement("button");
+  dismissBtn.type = "button";
+  dismissBtn.className = "button hygiene-action";
+  dismissBtn.textContent = "Keep separate";
+  dismissBtn.setAttribute(
+    "aria-label",
+    `Keep ${canonical} and ${alias} separate`,
+  );
+  dismissBtn.addEventListener("click", () =>
+    onDismissTagAlias(canonical, alias),
+  );
+  actions.append(dismissBtn);
+
+  row.append(actions);
+  return row;
 }
 
 interface BackupCardOptions {

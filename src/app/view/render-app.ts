@@ -9,6 +9,7 @@ import {
   type PersonaPreference,
 } from "../logic/persona";
 import type { TagClassId } from "../logic/tag-class";
+import { suggestTagAliases } from "../logic/tag-aliases";
 import type { TasksFilterId } from "../logic/tasks-filter";
 import type { SutraPadTagFilterMode, UserProfile } from "../../types";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
@@ -117,6 +118,16 @@ interface RenderAppOptions
   onToggleTagClass: (classId: TagClassId) => void;
   onChangeTagsSearchQuery: (query: string) => void;
   /**
+   * Dismissed alias pairs — excluded from the hygiene card's suggestions.
+   * Passed through as a Set so render-app can feed it straight into
+   * `suggestTagAliases` without converting back from a serialized form.
+   */
+  dismissedTagAliases: ReadonlySet<string>;
+  /** Merge handler for the Settings → Tag hygiene card. */
+  onMergeTagAlias: (from: string, to: string) => void;
+  /** Dismiss handler for the Settings → Tag hygiene card. */
+  onDismissTagAlias: (canonical: string, alias: string) => void;
+  /**
    * Opens the Capture page — wired into the right-rail sidebar's
    * "Other ways to capture" card. Kept as a dedicated callback (rather
    * than reusing `onSelectMenuItem("capture")` at the call site) so
@@ -179,6 +190,9 @@ export function renderAppPage({
   tagsSearchQuery,
   onToggleTagClass,
   onChangeTagsSearchQuery,
+  dismissedTagAliases,
+  onMergeTagAlias,
+  onDismissTagAlias,
 }: RenderAppOptions): void {
   root.innerHTML = "";
 
@@ -304,16 +318,26 @@ export function renderAppPage({
         }),
       );
     } else if (activeMenuItem === "settings") {
+      // Suggestions are recomputed from the live workspace on every
+      // Settings render. Cheap at our note counts and keeps the card
+      // honest after a merge: the pair that was just collapsed disappears
+      // without a separate "invalidate" step.
+      const tagAliasSuggestions = suggestTagAliases(buildTagIndex(workspace), {
+        dismissed: dismissedTagAliases,
+      });
       page.append(
         buildSettingsPage({
           currentTheme,
           personaPreference,
           profile,
+          tagAliasSuggestions,
           onChangeTheme,
           onChangePersonaPreference,
           onLoadNotebook,
           onSaveNotebook,
           onSignIn,
+          onMergeTagAlias,
+          onDismissTagAlias,
         }),
       );
     } else {

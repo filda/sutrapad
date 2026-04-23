@@ -235,7 +235,7 @@ describe("splitGraveyard", () => {
 
     const { graveyard } = splitGraveyard(idx, ws, NOW);
     // Both tags are solo + old → both sunset.
-    expect(graveyard.map((e) => e.tag).sort()).toEqual([
+    expect(graveyard.map((e) => e.tag).toSorted()).toEqual([
       "bauhaus",
       "source:text-capture",
     ]);

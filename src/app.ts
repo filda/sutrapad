@@ -86,6 +86,12 @@ import {
   resolveInitialVisibleTagClasses,
   toggleTagClassVisibility,
 } from "./app/logic/visible-tag-classes";
+import {
+  addDismissedTagAlias,
+  mergeTagInWorkspace,
+  persistDismissedTagAliases,
+  resolveInitialDismissedTagAliases,
+} from "./app/logic/tag-aliases";
 import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
 import { buildPaletteEntries, togglePaletteTagFilter } from "./app/logic/palette";
 import type { TasksFilterId } from "./app/logic/tasks-filter";
@@ -388,6 +394,8 @@ interface RenderCallbackOptions {
   setVisibleTagClasses: (next: Set<TagClassId>) => void;
   getTagsSearchQuery: () => string;
   setTagsSearchQuery: (next: string) => void;
+  getDismissedTagAliases: () => ReadonlySet<string>;
+  setDismissedTagAliases: (next: Set<string>) => void;
   getCurrentTheme: () => ThemeChoice;
   setCurrentTheme: (theme: ThemeChoice) => void;
   getPersonaPreference: () => PersonaPreference;
@@ -449,6 +457,8 @@ function createRenderCallbacks({
   setVisibleTagClasses,
   getTagsSearchQuery,
   setTagsSearchQuery,
+  getDismissedTagAliases,
+  setDismissedTagAliases,
   getCurrentTheme,
   setCurrentTheme,
   getPersonaPreference,
@@ -508,6 +518,36 @@ function createRenderCallbacks({
         const end = nextInput.value.length;
         nextInput.setSelectionRange(end, end);
       }
+    },
+    onMergeTagAlias: (from: string, to: string) => {
+      if (from === to) return;
+      const current = getWorkspace();
+      const next = mergeTagInWorkspace(current, from, to);
+      if (next === current) return;
+      setWorkspace(next);
+      // Keep the active filter strip consistent: if the user was filtered
+      // on `from`, carry them onto `to`. If they already had `to` selected
+      // too, the duplicate is dropped. Anything else is left alone.
+      const filters = getSelectedTagFilters();
+      if (filters.includes(from)) {
+        const rewritten = filters
+          .map((tag) => (tag === from ? to : tag))
+          .filter((tag, index, all) => all.indexOf(tag) === index);
+        setSelectedTagFilters(rewritten);
+      }
+      persistWorkspace(next);
+      scheduleAutoSave();
+      render();
+    },
+    onDismissTagAlias: (canonical: string, alias: string) => {
+      const next = addDismissedTagAlias(
+        getDismissedTagAliases(),
+        canonical,
+        alias,
+      );
+      setDismissedTagAliases(next);
+      persistDismissedTagAliases(next);
+      render();
     },
     onChangeTheme: (choice: ThemeChoice) => {
       if (choice === getCurrentTheme()) return;
@@ -1058,6 +1098,11 @@ export function createApp(root: HTMLElement): void {
   // not persisted: it's in-progress typing, not a saved stance.
   let visibleTagClasses: Set<TagClassId> = resolveInitialVisibleTagClasses();
   let tagsSearchQuery = "";
+  // Dismissed tag-alias pairs — the Settings hygiene card's "Keep separate"
+  // action appends here. Persisted per-device to localStorage via
+  // `persistDismissedTagAliases`; never round-trips to Drive because it's a
+  // cleanup preference, not notebook content.
+  let dismissedTagAliases: Set<string> = resolveInitialDismissedTagAliases();
   // Filled in once `wirePaletteAccess` has mounted the `/` keybinding (near
   // the bottom of createApp). render() and the topbar's "+ tag" trigger both
   // reach the palette through this single reference, so the keyboard path
@@ -1090,6 +1135,7 @@ export function createApp(root: HTMLElement): void {
   const setTasksOneThingKeyState = (next: string | null): void => { tasksOneThingKey = next; };
   const setVisibleTagClassesState = (next: Set<TagClassId>): void => { visibleTagClasses = next; };
   const setTagsSearchQueryState = (next: string): void => { tagsSearchQuery = next; };
+  const setDismissedTagAliasesState = (next: Set<string>): void => { dismissedTagAliases = next; };
 
   const scheduleAutoSave = (): void => {
     if (!profile) return;
@@ -1306,6 +1352,8 @@ export function createApp(root: HTMLElement): void {
       setVisibleTagClasses: setVisibleTagClassesState,
       getTagsSearchQuery: () => tagsSearchQuery,
       setTagsSearchQuery: setTagsSearchQueryState,
+      getDismissedTagAliases: () => dismissedTagAliases,
+      setDismissedTagAliases: setDismissedTagAliasesState,
       getCurrentTheme: () => currentTheme,
       setCurrentTheme: setCurrentThemeState,
       getPersonaPreference: () => personaPreference,
@@ -1351,6 +1399,7 @@ export function createApp(root: HTMLElement): void {
       tasksOneThingKey,
       visibleTagClasses,
       tagsSearchQuery,
+      dismissedTagAliases,
       currentTheme,
       personaPreference,
       onOpenPalette: () => paletteAccess?.open(),

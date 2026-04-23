@@ -55,8 +55,8 @@ describe("isTagClassId", () => {
 
 describe("defaultVisibleTagClasses", () => {
   it("returns all seven classes", () => {
-    expect([...defaultVisibleTagClasses()].sort()).toEqual(
-      [...TAG_CLASS_IDS].sort(),
+    expect([...defaultVisibleTagClasses()].toSorted()).toEqual(
+      [...TAG_CLASS_IDS].toSorted(),
     );
   });
 
@@ -154,7 +154,7 @@ describe("persistVisibleTagClasses", () => {
 describe("resolveInitialVisibleTagClasses", () => {
   it("falls back to the default 'all visible' set when nothing is stored", () => {
     const resolved = resolveInitialVisibleTagClasses(createStorage());
-    expect([...resolved].sort()).toEqual([...TAG_CLASS_IDS].sort());
+    expect([...resolved].toSorted()).toEqual([...TAG_CLASS_IDS].toSorted());
   });
 
   it("honours a persisted empty set (user explicitly hid everything)", () => {

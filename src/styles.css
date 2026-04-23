@@ -1375,6 +1375,81 @@ button.tag-pill {
   line-height: 1;
 }
 
+/* Tag hygiene card — alias / merge suggestions.
+   Each .hygiene-card is one candidate cluster; aliases render as rows
+   pairing a tag pill with per-alias Merge / Keep-separate buttons. */
+.tag-hygiene-list {
+  display: grid;
+  gap: 14px;
+}
+
+.hygiene-card {
+  border: 1px solid rgba(var(--primary-rgb), 0.12);
+  border-radius: 20px;
+  background: var(--surface-soft);
+  padding: 14px 18px;
+  display: grid;
+  gap: 10px;
+}
+
+.hygiene-hed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hygiene-canonical {
+  flex: 0 0 auto;
+}
+
+.hygiene-arrow {
+  font-family: var(--mono, monospace);
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.hygiene-candidate-count {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.hygiene-alias-list {
+  display: grid;
+  gap: 8px;
+}
+
+.hygiene-alias-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: var(--bg);
+  border: 1px solid rgba(var(--primary-rgb), 0.08);
+}
+
+.hygiene-alias-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hygiene-action {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.hygiene-reason {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 .theme-grid {
   display: grid;
   gap: 12px;
