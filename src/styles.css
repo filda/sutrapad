@@ -3090,6 +3090,19 @@ button.tag-pill {
   line-height: 1.4;
 }
 
+/* Inline `/` hint rendered inside the toolbar copy. Kept small and outlined
+ * so it reads as a key-cap without interrupting the sentence rhythm — matches
+ * the handoff's inline-styled kbd. */
+.notes-toolbar-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 10.5px;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
 .notes-toolbar .view-toggle {
   margin-left: auto;
 }
@@ -3124,40 +3137,6 @@ button.tag-pill {
 .view-toggle-button.is-active {
   background: rgba(var(--accent-rgb), 0.18);
   color: var(--primary);
-}
-
-.tag-filter-card {
-  padding: 14px;
-  border: 1px solid rgba(var(--primary-rgb), 0.09);
-  border-radius: 18px;
-  background: var(--surface-tint);
-}
-
-.tag-filter-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.tag-filter-header .panel-eyebrow {
-  margin: 0;
-}
-
-.tag-filter-clear {
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  padding: 0;
-  font: inherit;
-  cursor: pointer;
-}
-
-.tag-filter-cloud {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 .notes-list {

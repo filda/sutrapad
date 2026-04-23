@@ -1235,27 +1235,6 @@ export function createApp(root: HTMLElement): void {
           persistLocalWorkspace(workspace);
           render();
         },
-        onToggleTagFilter: (tag) => {
-          selectedTagFilters = selectedTagFilters.includes(tag)
-            ? selectedTagFilters.filter((entry) => entry !== tag)
-            : [...selectedTagFilters, tag];
-          const nextVisibleNote = ensureVisibleActiveNoteSelection(
-            workspace,
-            selectedTagFilters,
-            filterMode,
-          );
-          workspace = nextVisibleNote.workspace;
-          if (nextVisibleNote.shouldPersistWorkspace) {
-            persistLocalWorkspace(workspace);
-          }
-          syncTagFiltersToLocation(selectedTagFilters);
-          render();
-        },
-        onClearTagFilters: () => {
-          selectedTagFilters = [];
-          syncTagFiltersToLocation(selectedTagFilters);
-          render();
-        },
         onNewNote: handleNewNote,
       }),
     );

@@ -77,6 +77,17 @@ interface RenderAppOptions
    */
   onRemoveSelectedFilter: (tag: string) => void;
   /**
+   * Tag-filter callbacks — still needed at the app-chrome level even though
+   * the Notes page no longer exposes its own tag-filter-card (per handoff v2:
+   * filtering on Notes is driven exclusively from the topbar + `/` palette).
+   *
+   * - `onClearTagFilters` feeds the topbar's tag-filter-bar "clear all" chip.
+   * - `onToggleTagFilter` is consumed by the Tags page so a tag tile can be
+   *   lit/unlit from there.
+   */
+  onToggleTagFilter: (tag: string) => void;
+  onClearTagFilters: () => void;
+  /**
    * Invoked by the topbar's tag-filter strip when the user clicks the
    * "+ Filter by tag…" trigger (or the `/` keyboard-hint pill). The strip
    * itself is purely presentational — the palette is the single suggestion
@@ -383,8 +394,6 @@ export function renderAppPage({
         notesViewMode,
         personaOptions,
         onSelectNote,
-        onToggleTagFilter,
-        onClearTagFilters,
         onNewNote,
         onChangeNotesView,
       }),

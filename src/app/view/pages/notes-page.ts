@@ -1,7 +1,4 @@
-import {
-  buildCombinedTagIndex,
-  filterNotesByTags,
-} from "../../../lib/notebook";
+import { filterNotesByTags } from "../../../lib/notebook";
 import type { NotesViewMode } from "../../logic/notes-view";
 import type {
   SutraPadTagFilterMode,
@@ -14,7 +11,6 @@ import {
 } from "../shared/notes-list";
 import { buildNewNoteButton } from "../shared/new-note-button";
 import { buildPageHeader } from "../shared/page-header";
-import { buildTagPill } from "../shared/tag-pill";
 
 export interface NotesPanelOptions {
   workspace: SutraPadWorkspace;
@@ -30,8 +26,6 @@ export interface NotesPanelOptions {
    */
   personaOptions?: NotesListPersonaOptions;
   onSelectNote: (noteId: string) => void;
-  onToggleTagFilter: (tag: string) => void;
-  onClearTagFilters: () => void;
   onNewNote: () => void;
   onChangeNotesView: (mode: NotesViewMode) => void;
 }
@@ -65,6 +59,18 @@ function buildViewToggle(
   return group;
 }
 
+/**
+ * Notes screen. Per handoff v2 (`docs/design_handoff_sutrapad2/src/screen_notes.jsx`)
+ * there is deliberately no in-page tag cloud here — filtering is driven from
+ * the topbar tag-filter-bar (`/` opens the palette) so the Notes surface
+ * stays focused on the notebook grid/list. The page therefore renders just
+ * four stacked pieces:
+ *
+ *   1. Page header (eyebrow with filtered/total counts + "New note" CTA)
+ *   2. Toolbar (muted hint about where filtering lives, view-toggle)
+ *   3. Empty state, when filters match nothing or the workspace is blank
+ *   4. Notes list (cards or rows, depending on `notesViewMode`)
+ */
 export function buildNotesPanel({
   workspace,
   currentNoteId,
@@ -73,8 +79,6 @@ export function buildNotesPanel({
   notesViewMode,
   personaOptions,
   onSelectNote,
-  onToggleTagFilter,
-  onClearTagFilters,
   onNewNote,
   onChangeNotesView,
 }: NotesPanelOptions): HTMLElement {
@@ -86,7 +90,6 @@ export function buildNotesPanel({
     selectedTagFilters,
     filterMode,
   );
-  const combinedIndex = buildCombinedTagIndex(workspace);
 
   notesPanel.append(
     buildNotesPageHeader({
@@ -100,8 +103,8 @@ export function buildNotesPanel({
   if (workspace.notes.length === 0) {
     // First-run: no notebooks anywhere in the workspace. Show the
     // full-bleed scene with the "Write your first note" CTA instead of
-    // rendering the filter + toolbar + inline miss — the user has
-    // nothing to filter and the toolbar's view-toggle would be moot.
+    // rendering the toolbar + inline miss — the user has nothing to
+    // filter and the toolbar's view-toggle would be moot.
     notesPanel.append(
       buildEmptyScene({
         ...EMPTY_COPY.notes,
@@ -109,49 +112,6 @@ export function buildNotesPanel({
       }),
     );
     return notesPanel;
-  }
-
-  if (combinedIndex.tags.length > 0) {
-    const filterSection = document.createElement("section");
-    filterSection.className = "tag-filter-card";
-
-    const filterHeader = document.createElement("div");
-    filterHeader.className = "tag-filter-header";
-
-    const filterTitle = document.createElement("p");
-    filterTitle.className = "panel-eyebrow";
-    filterTitle.textContent =
-      selectedTagFilters.length > 0 ? `Filter (${selectedTagFilters.length})` : "Filter";
-    filterHeader.append(filterTitle);
-
-    if (selectedTagFilters.length > 0) {
-      const clearFiltersButton = document.createElement("button");
-      clearFiltersButton.type = "button";
-      clearFiltersButton.className = "tag-filter-clear";
-      clearFiltersButton.textContent = "Clear";
-      clearFiltersButton.addEventListener("click", onClearTagFilters);
-      filterHeader.append(clearFiltersButton);
-    }
-
-    const cloud = document.createElement("div");
-    cloud.className = "tag-filter-cloud";
-
-    for (const entry of combinedIndex.tags) {
-      // Same pill shape as the Tags-page cloud so a tag looks identical on
-      // both screens — class hue + symbol + count + active state.
-      cloud.append(
-        buildTagPill({
-          tag: entry.tag,
-          kind: entry.kind,
-          count: `· ${entry.count}`,
-          active: selectedTagFilters.includes(entry.tag),
-          onClick: () => onToggleTagFilter(entry.tag),
-        }),
-      );
-    }
-
-    filterSection.append(filterHeader, cloud);
-    notesPanel.append(filterSection);
   }
 
   notesPanel.append(
@@ -215,6 +175,34 @@ interface NotesToolbarOptions {
   onChangeNotesView: (mode: NotesViewMode) => void;
 }
 
+/**
+ * Builds the hint element for the notes toolbar. Wraps plain text around an
+ * inline `<kbd>` when pointing the user at the `/` palette shortcut, so the
+ * key hint renders as a rounded kbd chip rather than a raw character — the
+ * handoff spells this out in its filter-by-bar copy.
+ */
+function buildNotesToolbarHint(
+  filterCount: number,
+  filterMode: SutraPadTagFilterMode,
+): HTMLElement {
+  const hint = document.createElement("p");
+  hint.className = "notes-toolbar-hint muted";
+
+  if (filterCount === 0) {
+    hint.append(document.createTextNode("Filter by tag from the bar above, or type "));
+    const kbd = document.createElement("kbd");
+    kbd.className = "mono";
+    kbd.textContent = "/";
+    hint.append(kbd);
+    hint.append(document.createTextNode(" to focus it."));
+    return hint;
+  }
+
+  const modePhrase = filterMode === "any" ? "any selected tag" : "every selected tag";
+  hint.textContent = `Showing notes that match ${modePhrase}.`;
+  return hint;
+}
+
 function buildNotesToolbar({
   filterCount,
   filterMode,
@@ -224,16 +212,7 @@ function buildNotesToolbar({
   const toolbar = document.createElement("div");
   toolbar.className = "notes-toolbar";
 
-  const hint = document.createElement("p");
-  hint.className = "notes-toolbar-hint";
-  if (filterCount === 0) {
-    hint.textContent = "Pick tags in the filter to narrow the list.";
-  } else {
-    const modePhrase = filterMode === "any" ? "any selected tag" : "every selected tag";
-    hint.textContent = `Showing notes that match ${modePhrase}.`;
-  }
-  toolbar.append(hint);
-
+  toolbar.append(buildNotesToolbarHint(filterCount, filterMode));
   toolbar.append(buildViewToggle(notesViewMode, onChangeNotesView));
   return toolbar;
 }
