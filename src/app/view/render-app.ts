@@ -8,6 +8,7 @@ import {
   isPersonaEnabled,
   type PersonaPreference,
 } from "../logic/persona";
+import type { TagClassId } from "../logic/tag-class";
 import type { TasksFilterId } from "../logic/tasks-filter";
 import type { SutraPadTagFilterMode, UserProfile } from "../../types";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
@@ -102,6 +103,20 @@ interface RenderAppOptions
    */
   onBackToNotes: () => void;
   /**
+   * Tags-page view state. Both live at app-top-level so a full re-render
+   * (e.g. toggling a filter) preserves the class-visibility stance and
+   * in-progress search query.
+   *
+   * `visibleTagClasses` is device-local + persisted (localStorage) — see
+   * `src/app/logic/visible-tag-classes.ts`. `tagsSearchQuery` is volatile
+   * session state; we never round-trip it to storage or the URL because
+   * it's the kind of input users are actively typing, not a saved stance.
+   */
+  visibleTagClasses: ReadonlySet<TagClassId>;
+  tagsSearchQuery: string;
+  onToggleTagClass: (classId: TagClassId) => void;
+  onChangeTagsSearchQuery: (query: string) => void;
+  /**
    * Opens the Capture page — wired into the right-rail sidebar's
    * "Other ways to capture" card. Kept as a dedicated callback (rather
    * than reusing `onSelectMenuItem("capture")` at the call site) so
@@ -160,6 +175,10 @@ export function renderAppPage({
   onChangeTasksFilter,
   onToggleTasksShowDone,
   onSetOneThing,
+  visibleTagClasses,
+  tagsSearchQuery,
+  onToggleTagClass,
+  onChangeTagsSearchQuery,
 }: RenderAppOptions): void {
   root.innerHTML = "";
 
@@ -243,9 +262,13 @@ export function renderAppPage({
           filterMode,
           currentNoteId,
           personaOptions,
+          visibleTagClasses,
+          tagsSearchQuery,
           onToggleTagFilter,
           onClearTagFilters,
           onChangeFilterMode,
+          onToggleTagClass,
+          onChangeTagsSearchQuery,
           onOpenNote: openNoteInEditor,
         }),
       );

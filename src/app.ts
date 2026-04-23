@@ -80,6 +80,12 @@ import {
   resolveInitialPersonaPreference,
   type PersonaPreference,
 } from "./app/logic/persona";
+import type { TagClassId } from "./app/logic/tag-class";
+import {
+  persistVisibleTagClasses,
+  resolveInitialVisibleTagClasses,
+  toggleTagClassVisibility,
+} from "./app/logic/visible-tag-classes";
 import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
 import { buildPaletteEntries, togglePaletteTagFilter } from "./app/logic/palette";
 import type { TasksFilterId } from "./app/logic/tasks-filter";
@@ -378,6 +384,10 @@ interface RenderCallbackOptions {
   setTasksShowDone: (next: boolean) => void;
   getTasksOneThingKey: () => string | null;
   setTasksOneThingKey: (next: string | null) => void;
+  getVisibleTagClasses: () => ReadonlySet<TagClassId>;
+  setVisibleTagClasses: (next: Set<TagClassId>) => void;
+  getTagsSearchQuery: () => string;
+  setTagsSearchQuery: (next: string) => void;
   getCurrentTheme: () => ThemeChoice;
   setCurrentTheme: (theme: ThemeChoice) => void;
   getPersonaPreference: () => PersonaPreference;
@@ -435,6 +445,10 @@ function createRenderCallbacks({
   setTasksShowDone,
   getTasksOneThingKey,
   setTasksOneThingKey,
+  getVisibleTagClasses,
+  setVisibleTagClasses,
+  getTagsSearchQuery,
+  setTagsSearchQuery,
   getCurrentTheme,
   setCurrentTheme,
   getPersonaPreference,
@@ -470,6 +484,30 @@ function createRenderCallbacks({
       if (key === getTasksOneThingKey()) return;
       setTasksOneThingKey(key);
       render();
+    },
+    onToggleTagClass: (classId: TagClassId) => {
+      const next = toggleTagClassVisibility(getVisibleTagClasses(), classId);
+      setVisibleTagClasses(next);
+      persistVisibleTagClasses(next);
+      render();
+    },
+    onChangeTagsSearchQuery: (query: string) => {
+      if (query === getTagsSearchQuery()) return;
+      setTagsSearchQuery(query);
+      // Full re-render is fine: the list view is modest and the Active-
+      // filters / Classes blocks on the left panel need to stay in sync
+      // with whatever state changed alongside this. The input itself
+      // re-mounts, but we restore focus + caret below — same pattern
+      // `renderPreservingBodyInputFocus` uses for the note body textarea.
+      render();
+      const nextInput = document.querySelector<HTMLInputElement>(
+        ".tags-search-input",
+      );
+      if (nextInput && document.activeElement !== nextInput) {
+        nextInput.focus();
+        const end = nextInput.value.length;
+        nextInput.setSelectionRange(end, end);
+      }
     },
     onChangeTheme: (choice: ThemeChoice) => {
       if (choice === getCurrentTheme()) return;
@@ -1013,6 +1051,13 @@ export function createApp(root: HTMLElement): void {
   let tasksFilter: TasksFilterId = "all";
   let tasksShowDone = false;
   let tasksOneThingKey: string | null = null;
+  // Tags page: which of the seven classes contribute tags to the list view,
+  // and the (volatile) search query typed into the left-panel Search input.
+  // Visibility persists to localStorage — device-local, so a shared link
+  // never forces the recipient's class toggles. The query is intentionally
+  // not persisted: it's in-progress typing, not a saved stance.
+  let visibleTagClasses: Set<TagClassId> = resolveInitialVisibleTagClasses();
+  let tagsSearchQuery = "";
   // Filled in once `wirePaletteAccess` has mounted the `/` keybinding (near
   // the bottom of createApp). render() and the topbar's "+ tag" trigger both
   // reach the palette through this single reference, so the keyboard path
@@ -1043,6 +1088,8 @@ export function createApp(root: HTMLElement): void {
   const setTasksFilterState = (next: TasksFilterId): void => { tasksFilter = next; };
   const setTasksShowDoneState = (next: boolean): void => { tasksShowDone = next; };
   const setTasksOneThingKeyState = (next: string | null): void => { tasksOneThingKey = next; };
+  const setVisibleTagClassesState = (next: Set<TagClassId>): void => { visibleTagClasses = next; };
+  const setTagsSearchQueryState = (next: string): void => { tagsSearchQuery = next; };
 
   const scheduleAutoSave = (): void => {
     if (!profile) return;
@@ -1255,6 +1302,10 @@ export function createApp(root: HTMLElement): void {
       setTasksShowDone: setTasksShowDoneState,
       getTasksOneThingKey: () => tasksOneThingKey,
       setTasksOneThingKey: setTasksOneThingKeyState,
+      getVisibleTagClasses: () => visibleTagClasses,
+      setVisibleTagClasses: setVisibleTagClassesState,
+      getTagsSearchQuery: () => tagsSearchQuery,
+      setTagsSearchQuery: setTagsSearchQueryState,
       getCurrentTheme: () => currentTheme,
       setCurrentTheme: setCurrentThemeState,
       getPersonaPreference: () => personaPreference,
@@ -1298,6 +1349,8 @@ export function createApp(root: HTMLElement): void {
       tasksFilter,
       tasksShowDone,
       tasksOneThingKey,
+      visibleTagClasses,
+      tagsSearchQuery,
       currentTheme,
       personaPreference,
       onOpenPalette: () => paletteAccess?.open(),

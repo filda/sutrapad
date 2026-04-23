@@ -3,10 +3,18 @@ import {
   buildCombinedTagIndex,
   filterNotesByTags,
 } from "../../../lib/notebook";
+import {
+  TAG_CLASS_IDS,
+  classifyTagEntry,
+  metaForClass,
+  parseTagName,
+  type TagClassId,
+} from "../../logic/tag-class";
 import { splitGraveyard } from "../../logic/tag-graveyard";
 import type {
   SutraPadTagEntry,
   SutraPadTagFilterMode,
+  SutraPadTagIndex,
   SutraPadWorkspace,
 } from "../../../types";
 import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
@@ -24,9 +32,26 @@ export interface TagsPageOptions {
   currentNoteId: string;
   /** See NotesPanelOptions.personaOptions — same contract, off when absent. */
   personaOptions?: NotesListPersonaOptions;
+  /**
+   * Which of the seven tag classes should contribute tags to the main list.
+   * The set is owned by `app.ts` so it survives re-renders triggered by
+   * task toggles, filter changes, etc. — the Tags page is a pure view over
+   * this snapshot.
+   */
+  visibleTagClasses: ReadonlySet<TagClassId>;
+  /**
+   * Narrows the rendered list to entries whose value contains this substring
+   * (case-insensitive). Kept separate from `selectedTagFilters` so typing in
+   * the search field filters the list inline without committing to a real
+   * filter — the palette (opened via `/`) remains the canonical way to
+   * commit a tag into the filter set.
+   */
+  tagsSearchQuery: string;
   onToggleTagFilter: (tag: string) => void;
   onClearTagFilters: () => void;
   onChangeFilterMode: (mode: SutraPadTagFilterMode) => void;
+  onToggleTagClass: (classId: TagClassId) => void;
+  onChangeTagsSearchQuery: (query: string) => void;
   onOpenNote: (noteId: string) => void;
 }
 
@@ -64,17 +89,294 @@ function buildFilterModeToggle(
   return group;
 }
 
-function appendTagChips(
-  cloud: HTMLElement,
-  entries: readonly SutraPadTagEntry[],
+/**
+ * Per-class counts across the full index. Used by the Classes panel so each
+ * row shows the total population of that class — the panel itself is a
+ * visibility toggle, not a filter, so counts come from the unfiltered index
+ * and stay stable as the user selects filter tags.
+ */
+function countsByClass(
+  index: SutraPadTagIndex,
+): Readonly<Record<TagClassId, number>> {
+  const counts: Record<TagClassId, number> = {
+    topic: 0,
+    place: 0,
+    when: 0,
+    source: 0,
+    device: 0,
+    weather: 0,
+    people: 0,
+  };
+  for (const entry of index.tags) {
+    counts[classifyTagEntry(entry)] += 1;
+  }
+  return counts;
+}
+
+/**
+ * Case-insensitive substring match against a tag's display value (the part
+ * after the `facet:` prefix for auto-tags). Matching against the display
+ * value — not the raw string — means typing "today" finds `date:today`
+ * without the user having to know the internal namespace.
+ */
+function matchesSearch(entry: SutraPadTagEntry, query: string): boolean {
+  if (query === "") return true;
+  const needle = query.toLowerCase();
+  const { value } = parseTagName(entry.tag);
+  return (value || entry.tag).toLowerCase().includes(needle);
+}
+
+/**
+ * Active-filter pill row on the left panel. Each pill has an inline `×` that
+ * removes just that tag from the filter set — removing through `onRemove`
+ * rather than a whole-pill click keeps the class colour readable (a
+ * `removable` pill is still hue-painted) and matches the topbar chip row's
+ * affordance so the mental model stays consistent across surfaces.
+ */
+function buildActiveFiltersBlock(
+  selectedTagFilters: string[],
+  fullIndex: SutraPadTagIndex,
+  onToggleTagFilter: (tag: string) => void,
+  onClearTagFilters: () => void,
+): HTMLElement {
+  const block = document.createElement("div");
+  block.className = "tags-left-block";
+
+  const heading = document.createElement("h5");
+  heading.textContent = "Active filters";
+  block.append(heading);
+
+  const list = document.createElement("div");
+  list.className = "tags-active";
+
+  if (selectedTagFilters.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "tags-active-empty";
+    empty.textContent = "Click any tag to narrow.";
+    list.append(empty);
+  } else {
+    // We look each active tag up in the full index so we can recover its
+    // `kind` for correct class-hue styling. Filters committed via the
+    // palette from a previous session might reference a tag that's since
+    // been renamed/deleted — `kindFor` falls back to `user` (topic hue)
+    // which matches the rest of the codebase's "missing kind = user" rule.
+    const kindByTag = new Map(
+      fullIndex.tags.map((entry) => [entry.tag, entry.kind] as const),
+    );
+    for (const tag of selectedTagFilters) {
+      list.append(
+        buildTagPill({
+          tag,
+          kind: kindByTag.get(tag),
+          active: true,
+          onRemove: () => onToggleTagFilter(tag),
+          removeAriaLabel: `Remove filter ${tag}`,
+        }),
+      );
+    }
+  }
+  block.append(list);
+
+  if (selectedTagFilters.length > 0) {
+    const clearButton = document.createElement("button");
+    clearButton.type = "button";
+    clearButton.className = "tags-clear-filters";
+    clearButton.textContent = "Clear all";
+    clearButton.setAttribute("aria-label", "Clear all active filters");
+    clearButton.addEventListener("click", onClearTagFilters);
+    block.append(clearButton);
+  }
+
+  return block;
+}
+
+/**
+ * Plain search input — narrows the list view inline without committing to a
+ * filter. We deliberately don't render a suggestion dropdown here: the
+ * palette (opened via the `/` shortcut or the topbar trigger) is the one
+ * tag-commit surface in the app, and the list below the input already shows
+ * matching tags organised by class, which is a richer answer than a
+ * dropdown would be.
+ */
+function buildSearchBlock(
+  tagsSearchQuery: string,
+  onChangeTagsSearchQuery: (query: string) => void,
+): HTMLElement {
+  const block = document.createElement("div");
+  block.className = "tags-left-block";
+
+  const heading = document.createElement("h5");
+  heading.textContent = "Search";
+  block.append(heading);
+
+  const input = document.createElement("input");
+  input.type = "search";
+  input.className = "tags-search-input";
+  input.placeholder = "coffee, vinohrady, morning…";
+  input.value = tagsSearchQuery;
+  input.setAttribute("aria-label", "Filter tags by name");
+  input.addEventListener("input", () => {
+    onChangeTagsSearchQuery(input.value);
+  });
+  block.append(input);
+
+  return block;
+}
+
+/**
+ * Classes panel — clickable rows with a class-hue swatch, label, symbol
+ * sigil and population count. Hidden classes get an `.off` modifier so the
+ * swatch dims and the row visibly recedes; clicking toggles the stored
+ * visibility set. No ripple/animation — consistent with the rest of the
+ * app's dry ink-on-paper styling.
+ */
+function buildClassesBlock(
+  visibleTagClasses: ReadonlySet<TagClassId>,
+  classCounts: Readonly<Record<TagClassId, number>>,
+  onToggleTagClass: (classId: TagClassId) => void,
+): HTMLElement {
+  const block = document.createElement("div");
+  block.className = "tags-left-block";
+
+  const heading = document.createElement("h5");
+  heading.textContent = "Classes";
+  block.append(heading);
+
+  for (const classId of TAG_CLASS_IDS) {
+    const meta = metaForClass(classId);
+    const count = classCounts[classId];
+    const isOn = visibleTagClasses.has(classId);
+
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `tag-class-row${isOn ? "" : " off"}`;
+    row.style.setProperty("--h", String(meta.hue));
+    row.setAttribute("aria-pressed", isOn ? "true" : "false");
+    row.setAttribute(
+      "aria-label",
+      `${isOn ? "Hide" : "Show"} ${meta.label.toLowerCase()} tags`,
+    );
+    row.addEventListener("click", () => onToggleTagClass(classId));
+
+    const swatch = document.createElement("span");
+    swatch.className = "tag-class-swatch";
+    swatch.setAttribute("aria-hidden", "true");
+    row.append(swatch);
+
+    const label = document.createElement("span");
+    label.className = "tag-class-label";
+    label.textContent = meta.label;
+    row.append(label);
+
+    const symbol = document.createElement("span");
+    symbol.className = "tag-class-symbol mono";
+    symbol.setAttribute("aria-hidden", "true");
+    symbol.textContent = meta.symbol;
+    row.append(symbol);
+
+    const countEl = document.createElement("span");
+    countEl.className = "tag-class-count mono";
+    countEl.textContent = String(count);
+    row.append(countEl);
+
+    block.append(row);
+  }
+
+  return block;
+}
+
+/**
+ * Assembles the left sidebar: Active filters + Search + Classes. Extracted
+ * so the main builder reads as a coarse layout outline rather than a wall
+ * of block construction.
+ */
+function buildLeftPanel(options: {
+  selectedTagFilters: string[];
+  fullIndex: SutraPadTagIndex;
+  tagsSearchQuery: string;
+  visibleTagClasses: ReadonlySet<TagClassId>;
+  classCounts: Readonly<Record<TagClassId, number>>;
+  onToggleTagFilter: (tag: string) => void;
+  onClearTagFilters: () => void;
+  onToggleTagClass: (classId: TagClassId) => void;
+  onChangeTagsSearchQuery: (query: string) => void;
+}): HTMLElement {
+  const {
+    selectedTagFilters,
+    fullIndex,
+    tagsSearchQuery,
+    visibleTagClasses,
+    classCounts,
+    onToggleTagFilter,
+    onClearTagFilters,
+    onToggleTagClass,
+    onChangeTagsSearchQuery,
+  } = options;
+
+  const panel = document.createElement("aside");
+  panel.className = "tags-left-panel";
+  panel.setAttribute("aria-label", "Tag filters");
+
+  panel.append(
+    buildActiveFiltersBlock(
+      selectedTagFilters,
+      fullIndex,
+      onToggleTagFilter,
+      onClearTagFilters,
+    ),
+    buildSearchBlock(tagsSearchQuery, onChangeTagsSearchQuery),
+    buildClassesBlock(visibleTagClasses, classCounts, onToggleTagClass),
+  );
+
+  return panel;
+}
+
+/**
+ * One grouped row per class: `<section>` with an `<h4>` header (hue swatch,
+ * label, count, description) followed by the class's pill cloud. Headers
+ * never show for empty / hidden classes — we'd rather collapse than print
+ * "Weather · 0 tags" with nothing underneath.
+ */
+function buildClassGroup(
+  classId: TagClassId,
+  entries: SutraPadTagEntry[],
   selectedTagFilters: string[],
   onToggleTagFilter: (tag: string) => void,
-): void {
+): HTMLElement {
+  const meta = metaForClass(classId);
+  const section = document.createElement("section");
+  section.className = "tags-list-group";
+  section.style.setProperty("--h", String(meta.hue));
+
+  const heading = document.createElement("h4");
+  heading.className = "tags-list-heading";
+
+  const swatch = document.createElement("span");
+  swatch.className = "tags-list-swatch";
+  swatch.setAttribute("aria-hidden", "true");
+  heading.append(swatch);
+
+  const label = document.createElement("span");
+  label.className = "tags-list-label";
+  label.textContent = meta.label;
+  heading.append(label);
+
+  const count = document.createElement("span");
+  count.className = "tags-list-count mono";
+  count.textContent = `${entries.length}`;
+  heading.append(count);
+
+  const desc = document.createElement("span");
+  desc.className = "tags-list-desc";
+  desc.textContent = `· ${meta.desc}`;
+  heading.append(desc);
+
+  section.append(heading);
+
+  const row = document.createElement("div");
+  row.className = "tags-list-row";
   for (const entry of entries) {
-    // Large size + counter ("· 12") to match the Tags-page cloud density.
-    // Active state is driven by the current filter selection so the pill
-    // visual and the filter set never drift.
-    cloud.append(
+    row.append(
       buildTagPill({
         tag: entry.tag,
         kind: entry.kind,
@@ -85,6 +387,72 @@ function appendTagChips(
       }),
     );
   }
+  section.append(row);
+  return section;
+}
+
+/**
+ * Main list area: grouped-by-class sections in the canonical `TAG_CLASS_IDS`
+ * order. The header and class groups that make it here have already been
+ * narrowed by visibility + search; this helper is pure composition.
+ */
+function buildListView(
+  livingEntries: readonly SutraPadTagEntry[],
+  visibleTagClasses: ReadonlySet<TagClassId>,
+  tagsSearchQuery: string,
+  selectedTagFilters: string[],
+  onToggleTagFilter: (tag: string) => void,
+): HTMLElement {
+  const container = document.createElement("div");
+  container.className = "tags-list-view";
+
+  // Group once in a single pass so we don't pay an O(classes × entries)
+  // scan per class.
+  const groups: Record<TagClassId, SutraPadTagEntry[]> = {
+    topic: [],
+    place: [],
+    when: [],
+    source: [],
+    device: [],
+    weather: [],
+    people: [],
+  };
+  for (const entry of livingEntries) {
+    if (!matchesSearch(entry, tagsSearchQuery)) continue;
+    const classId = classifyTagEntry(entry);
+    if (!visibleTagClasses.has(classId)) continue;
+    groups[classId].push(entry);
+  }
+
+  let renderedAny = false;
+  for (const classId of TAG_CLASS_IDS) {
+    const entries = groups[classId];
+    if (entries.length === 0) continue;
+    container.append(
+      buildClassGroup(
+        classId,
+        entries,
+        selectedTagFilters,
+        onToggleTagFilter,
+      ),
+    );
+    renderedAny = true;
+  }
+
+  if (!renderedAny) {
+    // Inline miss state rather than a full-bleed scene — the left panel
+    // (still populated) makes the page feel "alive", so the miss copy can
+    // stay quiet. Three likely causes in order of likelihood: search
+    // typo → classes toggled off → selected filter narrowed everything.
+    const miss = document.createElement("p");
+    miss.className = "tags-list-miss";
+    miss.textContent = tagsSearchQuery
+      ? `No tags match "${tagsSearchQuery}". Try a shorter query, or check whether a class is hidden.`
+      : "No tags match the current visibility. Toggle a class back on in the panel to the left.";
+    container.append(miss);
+  }
+
+  return container;
 }
 
 export function buildTagsPage({
@@ -93,18 +461,24 @@ export function buildTagsPage({
   filterMode,
   currentNoteId,
   personaOptions,
+  visibleTagClasses,
+  tagsSearchQuery,
   onToggleTagFilter,
   onClearTagFilters,
   onChangeFilterMode,
+  onToggleTagClass,
+  onChangeTagsSearchQuery,
   onOpenNote,
 }: TagsPageOptions): HTMLElement {
   const section = document.createElement("section");
   section.className = "tags-page";
 
-  // We build the full combined index (not the narrowed "available" one) so the
-  // empty-state decision is based on whether *any* tag exists anywhere —
+  // We build the full combined index (not the narrowed "available" one) so
+  // the empty-state decision is based on whether *any* tag exists anywhere —
   // narrowing by the current filter would mislead a user whose selection
-  // accidentally filtered out every other tag.
+  // accidentally filtered out every other tag. The left-panel Classes row
+  // counts also read from this index so the population never shifts as the
+  // user toggles classes off.
   const fullIndex = buildCombinedTagIndex(workspace);
 
   const noteCount = workspace.notes.length;
@@ -125,7 +499,7 @@ export function buildTagsPage({
       eyebrow: `Tags · ${fullIndex.tags.length} unique · ${noteCount} note${noteCount === 1 ? "" : "s"}`,
       titleHtml: "A <em>constellation</em> of what you think about.",
       subtitle:
-        "Click tags to filter. Combine several and we'll show the notebooks that live where they overlap — All narrows to intersection, Any expands to union.",
+        "Each class of tag has its own colour. Click to filter; toggle classes left to focus. All narrows to intersection, Any expands to union.",
       actions,
     }),
   );
@@ -140,16 +514,16 @@ export function buildTagsPage({
 
   // Graveyard membership is computed against the full index and the full
   // workspace, so a tag stays "rare" based on its real history — not whatever
-  // subset the current filter has narrowed us to. We use the resulting set to
-  // cull the main clouds (the handoff calls this "collapsed to reduce noise")
-  // and to drive the collapsible section at the bottom.
+  // subset the current filter has narrowed us to. The resulting set culls
+  // the main list and feeds the collapsible section at the bottom.
   const { graveyard } = splitGraveyard(fullIndex, workspace);
   const graveyardTags = new Set(graveyard.map((entry) => entry.tag));
 
-  // For the rendered cloud we use the *available* index: narrows to tags that
-  // still yield results under the current selection + mode, so the next click
-  // is never a dead end. When there's no active selection this collapses to
-  // the full index, preserving the original "show everything" behaviour.
+  // For the rendered list we use the *available* index: narrows to tags
+  // that still yield results under the current selection + mode, so the
+  // next click is never a dead end. When there's no active selection this
+  // collapses to the full index, preserving the original "show everything"
+  // behaviour.
   const availableIndex = buildAvailableCombinedTagIndex(
     workspace,
     selectedTagFilters,
@@ -158,32 +532,40 @@ export function buildTagsPage({
   const livingAvailable = availableIndex.tags.filter(
     (entry) => !graveyardTags.has(entry.tag),
   );
-  const userEntries = livingAvailable.filter((entry) => entry.kind !== "auto");
-  const autoEntries = livingAvailable.filter((entry) => entry.kind === "auto");
 
-  if (userEntries.length > 0) {
-    const userHeading = document.createElement("p");
-    userHeading.className = "tags-cloud-heading";
-    userHeading.textContent = "Your tags";
-    section.append(userHeading);
+  const classCounts = countsByClass(fullIndex);
 
-    const userCloud = document.createElement("div");
-    userCloud.className = "tags-cloud-wide";
-    appendTagChips(userCloud, userEntries, selectedTagFilters, onToggleTagFilter);
-    section.append(userCloud);
-  }
+  const layout = document.createElement("div");
+  layout.className = "tags-layout";
 
-  if (autoEntries.length > 0) {
-    const autoHeading = document.createElement("p");
-    autoHeading.className = "tags-cloud-heading is-auto";
-    autoHeading.textContent = "Auto tags";
-    section.append(autoHeading);
+  layout.append(
+    buildLeftPanel({
+      selectedTagFilters,
+      fullIndex,
+      tagsSearchQuery,
+      visibleTagClasses,
+      classCounts,
+      onToggleTagFilter,
+      onClearTagFilters,
+      onToggleTagClass,
+      onChangeTagsSearchQuery,
+    }),
+  );
 
-    const autoCloud = document.createElement("div");
-    autoCloud.className = "tags-cloud-wide";
-    appendTagChips(autoCloud, autoEntries, selectedTagFilters, onToggleTagFilter);
-    section.append(autoCloud);
-  }
+  const main = document.createElement("div");
+  main.className = "tags-main";
+  main.append(
+    buildListView(
+      livingAvailable,
+      visibleTagClasses,
+      tagsSearchQuery,
+      selectedTagFilters,
+      onToggleTagFilter,
+    ),
+  );
+  layout.append(main);
+
+  section.append(layout);
 
   if (selectedTagFilters.length === 0) {
     const hint = document.createElement("p");

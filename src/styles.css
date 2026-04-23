@@ -1488,25 +1488,234 @@ button.tag-pill {
 }
 
 /*
- * Headings that separate user tags from auto tags on the Tags page. They sit
- * directly above their respective clouds, so margins are asymmetric to tighten
- * the visual coupling.
+ * Two-column Tags page layout — sticky left panel (Active filters, Search,
+ * Classes visibility toggles) + main list area grouped by class. The SVG
+ * constellation from the handoff is deliberately not ported: the list view
+ * carries the same class-clustering intent with far less visual weight,
+ * which is closer to the rest of the app's ink-on-paper voice.
  */
-.tags-cloud-heading {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+.tags-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
 }
 
+.tags-left-panel {
+  position: sticky;
+  top: 92px; /* clears the sticky topbar + tag-filter strip */
+  align-self: start;
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-subtle);
+}
 
-.tags-cloud-wide {
+.tags-left-block {
+  display: grid;
+  gap: 8px;
+}
+
+.tags-left-block h5 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tags-active {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 6px;
+  min-height: 22px;
+  align-items: center;
+}
+
+.tags-active-empty {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-style: italic;
+  font-family: var(--serif, Georgia, "Times New Roman", serif);
+}
+
+.tags-clear-filters {
+  justify-self: start;
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.tags-clear-filters:hover {
+  color: var(--ink);
+}
+
+.tags-search-input {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--surface-strong, var(--surface));
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 0.9rem;
+  font-family: inherit;
   width: 100%;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.tags-search-input::placeholder {
+  color: var(--muted);
+}
+.tags-search-input:focus-visible {
+  outline: none;
+  border-color: rgba(var(--accent-rgb), 0.55);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+}
+
+/* Class visibility toggle rows. Each row carries `--h` inline so the swatch
+ * reuses the same hue the pills do — clicking a row dims the swatch via the
+ * `.off` modifier rather than swapping colours outright, preserving the
+ * "this is the topic class" association even when hidden. */
+.tag-class-row {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 4px 2px;
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  border-radius: 6px;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+.tag-class-row:hover {
+  background: var(--surface-ghost, rgba(var(--primary-rgb), 0.04));
+}
+.tag-class-row.off {
+  opacity: 0.42;
+}
+.tag-class-row:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.55);
+  outline-offset: 2px;
+}
+
+.tag-class-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: hsl(var(--h, 18) 55% 55%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.tag-class-row.off .tag-class-swatch {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--line);
+}
+
+.tag-class-label {
+  font-size: 0.9rem;
+}
+
+.tag-class-symbol {
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0;
+}
+
+.tag-class-count {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+/* Main list area — groups are spaced generously to read as distinct
+ * regions; within a group, the heading is tight to its pill row. */
+.tags-main {
+  min-width: 0;
+}
+
+.tags-list-view {
+  display: grid;
+  gap: 22px;
+}
+
+.tags-list-group {
+  display: grid;
+  gap: 8px;
+}
+
+.tags-list-heading {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tags-list-swatch {
+  align-self: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: hsl(var(--h, 18) 55% 55%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.tags-list-label {
+  letter-spacing: 0.01em;
+}
+
+.tags-list-count {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.tags-list-desc {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 400;
+  font-style: italic;
+  font-family: var(--serif, Georgia, "Times New Roman", serif);
+}
+
+.tags-list-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tags-list-miss {
+  margin: 0;
+  padding: 20px 4px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* Collapse the layout to a single column on narrower viewports. The left
+ * panel loses its sticky behaviour because the main area becomes the
+ * dominant scrollable region below it. */
+@media (max-width: 900px) {
+  .tags-layout {
+    grid-template-columns: 1fr;
+  }
+  .tags-left-panel {
+    position: static;
+  }
 }
 
 .tags-page-hint {
