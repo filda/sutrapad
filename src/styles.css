@@ -34,7 +34,9 @@
    * palettes get a sensible topbar + card without a full token rewrite.
    */
   --r-sm: 8px;
+  --r-md: 14px;
   --r-lg: 22px;
+  --r-xl: 32px;
 
   /* Severity colours used by the sync pill and callouts. Parchment-anchored
      hues that read well on both light and dark surfaces; themes can override
@@ -44,15 +46,41 @@
   --err: #a93a2b;
 
   /* Ink = foreground ramp. --ink-900 is the strong primary, --ink-500 maps to
-     the muted tone. Intermediate stops (300/400/700) are not currently
-     consumed; add them back if/when a rule needs a finer ramp. */
+     the muted tone. Intermediate stops (300/400/700) are computed against
+     --primary-rgb / --muted so generic themes degrade sensibly; parchment
+     overrides below with the handoff's exact paper-tuned values. */
   --ink-900: var(--primary);
+  --ink-700: var(--primary);
   --ink-500: var(--muted);
+  --ink-400: var(--muted);
+  --ink-300: rgba(var(--primary-rgb), 0.3);
 
-  /* Paper ramp = card surface tints. Uses 1 (soft) and 2 (active) only —
-     darker/lighter stops can be added when a rule actually calls for one. */
+  /* Paper ramp = card surface tints. Handoff spec has 4 stops (0 brightest
+     → 3 darkest). Generic themes reuse the existing surface* aliases;
+     parchment redeclares with the handoff's exact parchment tones. */
+  --paper-0: var(--surface-subtle);
   --paper-1: var(--surface-soft);
   --paper-2: var(--surface-active);
+  --paper-3: var(--surface-active);
+
+  /* Stronger border variant for emphasised dividers (dashed eyebrow rules,
+     hover borders). Parchment overrides with a rubbed-ink tone. */
+  --line-strong: rgba(var(--primary-rgb), 0.18);
+
+  /* Accent trio from handoff: terracotta / olive / plum. Generic themes
+     fall back to the single --accent so accent-2/-3 usages don't visually
+     collapse; parchment redeclares the triad per the handoff palette. */
+  --accent-2: var(--accent);
+  --accent-3: #6d4d7d;
+
+  /* Backdrop radials + paper-grain frequency — handoff decorative
+     tokens used by the body::before / body::after layers. Generic themes
+     leave them neutral; parchment redeclares with the warm terracotta +
+     plum radials from tokens.css. */
+  --bg-radial-a: rgba(var(--accent-rgb), 0.1);
+  --bg-radial-b: rgba(var(--accent-rgb), 0.06);
+  --paper-grain-alpha: 0.035;
+  --paper-grain-freq: 0.9;
 
   /* Surface aliases — tuned mapping onto the pre-existing --bg / --surface-* set. */
   --surface: var(--bg);
@@ -280,11 +308,22 @@
   --surface-ghost: rgba(255, 252, 246, 0.6);
   --surface-ghost-strong: rgba(255, 252, 246, 0.8);
 
-  /* Design-handoff-native palette: persona styles use these directly. */
+  /* Design-handoff-native palette: persona styles use these directly. Full
+     4-stop paper + 5-stop ink ramp from design_handoff_sutrapad2/tokens.css. */
+  --paper-0: #fbf7ef;
   --paper-1: #f5eedf;
   --paper-2: #ece2cc;
+  --paper-3: #dfd1b4;
   --ink-900: #1b1714;
+  --ink-700: #3a322b;
   --ink-500: #6a5d50;
+  --ink-400: #8a7c6c;
+  --ink-300: #b8ac98;
+  --line-strong: rgba(27, 23, 20, 0.18);
+  --accent-2: #8a6f2a;
+  --accent-3: #6d4d7d;
+  --bg-radial-a: rgba(196, 106, 58, 0.1);
+  --bg-radial-b: rgba(109, 77, 125, 0.08);
   --surface: rgba(255, 252, 246, 0.82);
   --surface-strong: #fffdf8;
   --surface-inset: rgba(27, 23, 20, 0.035);
@@ -337,11 +376,22 @@
   --surface-ghost: rgba(28, 25, 21, 0.6);
   --surface-ghost-strong: rgba(28, 25, 21, 0.82);
 
-  /* Design-handoff-native palette, dark variant. */
+  /* Design-handoff-native palette, dark variant. Full ramp from
+     design_handoff_sutrapad2/tokens.css .theme-dark block. */
+  --paper-0: #15120f;
   --paper-1: #1c1915;
   --paper-2: #26221c;
+  --paper-3: #332d24;
   --ink-900: #f1e8d7;
+  --ink-700: #d6cab1;
   --ink-500: #9c907a;
+  --ink-400: #786d5c;
+  --ink-300: #544b3f;
+  --line-strong: rgba(241, 232, 215, 0.2);
+  --accent-2: #b38732;
+  --accent-3: #8aa2c8;
+  --bg-radial-a: rgba(232, 154, 90, 0.12);
+  --bg-radial-b: rgba(176, 138, 184, 0.1);
   --surface: rgba(32, 28, 22, 0.82);
   --surface-strong: #1c1915;
   --surface-inset: rgba(241, 232, 215, 0.05);
@@ -501,13 +551,24 @@ a {
 
 .brand-mark {
   display: inline-block;
+  position: relative;
   width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border-radius: 7px;
   background: radial-gradient(circle at 30% 30%, #e58a55, var(--accent) 55%, #7b3d1e 120%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 2px 6px -2px rgba(58, 44, 28, 0.35);
+    0 4px 10px -4px rgba(196, 106, 58, 0.6);
+}
+
+/* Inner ring — the little bullseye the handoff brand-mark wears. Kept as
+   ::after so the element itself stays a single clean gradient surface. */
+.brand-mark::after {
+  content: "";
+  position: absolute;
+  inset: 5.5px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
 }
 
 .brand-wordmark {
@@ -646,7 +707,7 @@ a {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--ink-700, var(--primary));
+  color: var(--ink-700);
   font-family: var(--sans);
   font-size: 13px;
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
@@ -655,7 +716,7 @@ a {
 .tag-filter-bar.is-active {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
-  background: var(--paper-0, var(--surface));
+  background: var(--paper-0);
 }
 
 .tfb-icon {
@@ -1164,7 +1225,7 @@ button.tag-pill {
   padding: 16px 18px;
   background: var(--surface-subtle);
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: var(--r-md);
   box-shadow: 0 10px 24px rgba(var(--primary-rgb), 0.05);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   cursor: pointer;
@@ -2010,11 +2071,10 @@ button.tag-pill {
 
 /*
  * ---------- Tasks screen ----------
- * Ported from docs/design_handoff_sutrapad2/src/screens.css §1176–1385
- * with fallbacks for the ink-ramp/paper-ramp stops we haven't defined
- * yet (--ink-300/400/700, --paper-0, --line-strong, --accent-3, --r-md).
- * Once those ramps land globally (#79 neighbourhood) the fallbacks can
- * be removed.
+ * Ported from docs/design_handoff_sutrapad2/src/screens.css §1176–1385.
+ * Pulls from the full handoff token set (ink-300/400/700, paper-0,
+ * line-strong, accent-3, r-md) now that those ramps are defined at
+ * :root with sensible generic defaults + parchment overrides.
  */
 .tasks-page {
   margin-bottom: 20px;
@@ -2028,12 +2088,12 @@ button.tag-pill {
   width: 18px;
   height: 18px;
   border-radius: 5px;
-  border: 1.5px solid var(--ink-300, rgba(var(--primary-rgb), 0.3));
+  border: 1.5px solid var(--ink-300);
   background: var(--surface-strong);
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  color: var(--paper-0, var(--surface));
+  color: var(--paper-0);
   cursor: pointer;
   padding: 0;
   transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
@@ -2078,7 +2138,7 @@ button.tag-pill {
   align-items: center;
   cursor: pointer;
   padding: 14px 18px;
-  color: var(--ink-700, var(--primary));
+  color: var(--ink-700);
   font-weight: 500;
   font-size: 14px;
   gap: 12px;
@@ -2138,9 +2198,9 @@ button.tag-pill {
   margin-top: 4px;
 }
 .one-thing-meta a {
-  color: var(--ink-700, var(--primary));
+  color: var(--ink-700);
   text-decoration: underline;
-  text-decoration-color: var(--line-strong, rgba(var(--primary-rgb), 0.18));
+  text-decoration-color: var(--line-strong);
   text-underline-offset: 2px;
 }
 .one-thing-meta a:hover {
@@ -2152,7 +2212,7 @@ button.tag-pill {
   height: 24px;
   border: none;
   background: transparent;
-  color: var(--ink-400, var(--muted));
+  color: var(--ink-400);
   border-radius: 6px;
   display: grid;
   place-items: center;
@@ -2178,7 +2238,7 @@ button.tag-pill {
   padding: 6px;
   background: var(--paper-1);
   border: 1px solid var(--line);
-  border-radius: var(--r-md, 14px);
+  border-radius: var(--r-md);
 }
 .task-filters-spacer {
   flex: 1;
@@ -2194,7 +2254,7 @@ button.tag-pill {
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
-  color: var(--ink-700, var(--primary));
+  color: var(--ink-700);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
@@ -2216,7 +2276,7 @@ button.tag-pill {
 }
 .task-filter .c {
   font-size: 11px;
-  color: var(--ink-400, var(--muted));
+  color: var(--ink-400);
   padding: 0 5px;
   border-radius: 4px;
   background: var(--surface-inset);
@@ -2288,12 +2348,12 @@ button.tag-pill {
   margin-top: 4px;
 }
 .task-card-sub .sep {
-  color: var(--ink-300, rgba(var(--primary-rgb), 0.3));
+  color: var(--ink-300);
 }
 .task-card-pin {
   display: inline-flex;
   align-items: center;
-  color: var(--ink-400, var(--muted));
+  color: var(--ink-400);
 }
 .stale-badge {
   display: inline-block;
@@ -2312,7 +2372,7 @@ button.tag-pill {
   height: 26px;
   border: none;
   background: transparent;
-  color: var(--ink-400, var(--muted));
+  color: var(--ink-400);
   border-radius: 6px;
   display: grid;
   place-items: center;
@@ -2360,9 +2420,9 @@ button.tag-pill {
   word-break: break-word;
 }
 .task-item.done .t {
-  color: var(--ink-400, var(--muted));
+  color: var(--ink-400);
   text-decoration: line-through;
-  text-decoration-color: var(--ink-300, rgba(var(--primary-rgb), 0.3));
+  text-decoration-color: var(--ink-300);
 }
 
 .mini-tag {
@@ -2378,7 +2438,7 @@ button.tag-pill {
 }
 .mini-tag.waiting {
   background: rgba(109, 77, 125, 0.12);
-  color: var(--accent-3, #6d4d7d);
+  color: var(--accent-3);
 }
 
 .task-promote {
@@ -2389,7 +2449,7 @@ button.tag-pill {
   border-radius: 6px;
   display: grid;
   place-items: center;
-  color: var(--ink-400, var(--muted));
+  color: var(--ink-400);
   background: transparent;
   cursor: pointer;
   padding: 0;
@@ -2422,7 +2482,7 @@ button.tag-pill {
 .task-card-add {
   border: 1px solid var(--line);
   background: transparent;
-  color: var(--ink-700, var(--primary));
+  color: var(--ink-700);
   border-radius: 8px;
   padding: 4px 10px;
   font-family: inherit;
@@ -4092,12 +4152,12 @@ button.tag-pill {
 }
 
 .kind-chip[data-kind="quote"] {
-  border-color: color-mix(in oklab, var(--accent-3, #6d4d7d) 45%, var(--line) 55%);
-  background: color-mix(in oklab, var(--accent-3, #6d4d7d) 10%, transparent);
+  border-color: color-mix(in oklab, var(--accent-3) 45%, var(--line) 55%);
+  background: color-mix(in oklab, var(--accent-3) 10%, transparent);
 }
 
 .kind-chip[data-kind="longform"] {
-  border-color: var(--line-strong, rgba(27, 23, 20, 0.18));
+  border-color: var(--line-strong);
   background: color-mix(in oklab, var(--primary) 6%, transparent);
 }
 
