@@ -9,6 +9,7 @@ import {
   buildNotesList,
   type NotesListPersonaOptions,
 } from "../shared/notes-list";
+import { buildIcon, type IconName } from "../shared/icons";
 import { buildNewNoteButton } from "../shared/new-note-button";
 import { buildPageHeader } from "../shared/page-header";
 
@@ -30,9 +31,24 @@ export interface NotesPanelOptions {
   onChangeNotesView: (mode: NotesViewMode) => void;
 }
 
-const VIEW_TOGGLE_OPTIONS: ReadonlyArray<{ mode: NotesViewMode; label: string }> = [
-  { mode: "list", label: "List" },
-  { mode: "cards", label: "Cards" },
+/**
+ * Order is `[Cards, List]` everywhere — matches the default mode first
+ * and the Links page's same toggle. See `docs/conventions.md` →
+ * "Cross-page consistency" for the rule.
+ *
+ * Icon names map to handoff v2 (`docs/design_handoff_sutrapad2/src/screen_notes.jsx`
+ * line 305): "cards" → `menu` (stacked content blocks), "list" →
+ * `list` (bulleted lines). The semantic mismatch in the icon name
+ * (`menu` for cards) is carried over from the handoff verbatim — see
+ * the comment on `ICON_SHAPES.menu` in `shared/icons.ts`.
+ */
+const VIEW_TOGGLE_OPTIONS: ReadonlyArray<{
+  mode: NotesViewMode;
+  label: string;
+  icon: IconName;
+}> = [
+  { mode: "cards", label: "Cards", icon: "menu" },
+  { mode: "list", label: "List", icon: "list" },
 ];
 
 function buildViewToggle(
@@ -48,8 +64,12 @@ function buildViewToggle(
     const button = document.createElement("button");
     button.type = "button";
     button.className = `view-toggle-button${option.mode === active ? " is-active" : ""}`;
-    button.textContent = option.label;
+    // Tooltip + aria-label preserve the verbal name; the visible
+    // glyph stays icon-only per handoff.
+    button.title = option.label;
+    button.setAttribute("aria-label", option.label);
     button.setAttribute("aria-pressed", option.mode === active ? "true" : "false");
+    button.append(buildIcon(option.icon, 14));
     button.addEventListener("click", () => {
       if (option.mode !== active) onChange(option.mode);
     });

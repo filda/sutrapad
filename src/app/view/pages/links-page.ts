@@ -11,6 +11,7 @@ import {
   resolveOgImageForUrl,
   type CachedOgImageEntry,
 } from "../../logic/og-image";
+import { buildIcon, type IconName } from "../shared/icons";
 import {
   loadOgImageCache,
   persistOgImageCache,
@@ -38,9 +39,20 @@ export interface LinksPageOptions {
   onChangeLinksView: (mode: LinksViewMode) => void;
 }
 
-const VIEW_TOGGLE_OPTIONS: ReadonlyArray<{ mode: LinksViewMode; label: string }> = [
-  { mode: "cards", label: "Cards" },
-  { mode: "list", label: "List" },
+/**
+ * Order is `[Cards, List]` everywhere — matches the default-first rule
+ * in `docs/conventions.md` → "Cross-page consistency". Icon names map
+ * to handoff v2 (`screen_notes.jsx`): "cards" → `menu`, "list" →
+ * `list`. The Notes page uses the same mapping; if it ever drifts,
+ * fix here AND there.
+ */
+const VIEW_TOGGLE_OPTIONS: ReadonlyArray<{
+  mode: LinksViewMode;
+  label: string;
+  icon: IconName;
+}> = [
+  { mode: "cards", label: "Cards", icon: "menu" },
+  { mode: "list", label: "List", icon: "list" },
 ];
 
 export function buildLinksPage({
@@ -183,8 +195,10 @@ function buildViewToggle(
     const button = document.createElement("button");
     button.type = "button";
     button.className = `view-toggle-button${option.mode === active ? " is-active" : ""}`;
-    button.textContent = option.label;
+    button.title = option.label;
+    button.setAttribute("aria-label", option.label);
     button.setAttribute("aria-pressed", option.mode === active ? "true" : "false");
+    button.append(buildIcon(option.icon, 14));
     button.addEventListener("click", () => {
       if (option.mode !== active) onChange(option.mode);
     });

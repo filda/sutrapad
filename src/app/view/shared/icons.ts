@@ -30,7 +30,9 @@ export type IconName =
   | "today"
   | "search"
   | "check"
-  | "close";
+  | "close"
+  | "menu"
+  | "list";
 
 type IconShape =
   | { kind: "paths"; paths: readonly string[] }
@@ -100,6 +102,24 @@ const ICON_SHAPES: Readonly<Record<IconName, IconShape>> = {
   },
   check: { kind: "paths", paths: ["m5 12 5 5L20 7"] },
   close: { kind: "paths", paths: ["M6 6l12 12M18 6 6 18"] },
+  // The handoff names this `menu` (3 full-width horizontal lines) and uses
+  // it for the *grid* / *cards* toggle button — semantic naming carried
+  // verbatim from `docs/design_handoff_sutrapad2/src/icons.jsx`. It reads
+  // as "stacked content blocks" in context, even though the name evokes
+  // a hamburger.
+  menu: { kind: "paths", paths: ["M4 6h16M4 12h16M4 18h16"] },
+  // Bulleted-list silhouette: three lines indented past leading dot
+  // markers. Used for the *list* toggle button. Lifted from the handoff
+  // verbatim.
+  list: {
+    kind: "mixed",
+    children: [
+      { tag: "path", d: "M8 6h13M8 12h13M8 18h13" },
+      { tag: "circle", cx: 4, cy: 6, r: 1 },
+      { tag: "circle", cx: 4, cy: 12, r: 1 },
+      { tag: "circle", cx: 4, cy: 18, r: 1 },
+    ],
+  },
 };
 
 export type IconSize = 12 | 14 | 16 | 20;

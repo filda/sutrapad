@@ -3390,12 +3390,20 @@ button.tag-pill {
 }
 
 .view-toggle-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 0.82rem;
-  padding: 0.3rem 0.85rem;
+  /* Icon-only square targets per handoff. The pill ramp keeps the
+   * surrounding `.view-toggle` chrome legible on small toolbars; a
+   * 28×28 hit-box stays comfortable on touch without ballooning the
+   * toolbar height. */
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border-radius: 999px;
   cursor: pointer;
   transition:
