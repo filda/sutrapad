@@ -597,6 +597,62 @@ export function createNewNoteWorkspace(
   };
 }
 
+/**
+ * Returns true when `note` has no user-authored content — empty body and
+ * no user-added tags. Called by the empty-draft purge so the user's
+ * "hit N, changed my mind" path doesn't leave orphan notes cluttering
+ * the timeline, filling Drive, or inflating the tag index.
+ *
+ * The title is *deliberately* not part of the check. Two reasons:
+ *
+ *   1. Async `applyFreshNoteDetails` backfills the title from
+ *      location + time-of-day (e.g. "Tuesday afternoon in Prague")
+ *      without bumping user-content signals. Including the title in
+ *      the emptiness check would force us to either skip that nice
+ *      cosmetic backfill or track an "auto-titled" side-set — both
+ *      heavier than the problem warrants.
+ *   2. A title alone, with no body and no tags, isn't actually useful
+ *      as a note — there's nothing to come back to. Treating a
+ *      title-only stub as savable would just leak a second variety
+ *      of empty note into Drive.
+ *
+ * Auto-populated metadata (location, coordinates, captureContext) is
+ * similarly ignored — those resolve async from browser APIs and say
+ * nothing about whether the user typed anything.
+ */
+export function isEmptyDraftNote(note: SutraPadDocument): boolean {
+  if (note.body.trim() !== "") return false;
+  if (note.tags.length > 0) return false;
+  return true;
+}
+
+/**
+ * Returns the workspace with every empty-draft note removed. If the
+ * active note pointed at a removed draft, `activeNoteId` is cleared so
+ * downstream code doesn't try to resolve a dangling reference.
+ *
+ * Pure — the caller owns persistence (localStorage + Drive) and re-selecting
+ * a new active note if needed. Used in two places in app.ts:
+ *
+ *   - On navigation away from a detail route: so the user's "hit N, nav
+ *     away" flow doesn't leave the draft in the notebook.
+ *   - Before pushing to Drive: so an empty draft that briefly existed
+ *     in-memory never becomes a permanent cloud artefact.
+ */
+export function stripEmptyDraftNotes(
+  workspace: SutraPadWorkspace,
+): SutraPadWorkspace {
+  const kept = workspace.notes.filter((note) => !isEmptyDraftNote(note));
+  if (kept.length === workspace.notes.length) return workspace;
+  const activeStillLives =
+    workspace.activeNoteId !== null &&
+    kept.some((note) => note.id === workspace.activeNoteId);
+  return {
+    notes: kept,
+    activeNoteId: activeStillLives ? workspace.activeNoteId : null,
+  };
+}
+
 export function createCapturedNoteWorkspace(
   workspace: SutraPadWorkspace,
   capture: { title: string; url: string; captureContext?: SutraPadDocument["captureContext"] },

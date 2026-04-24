@@ -8,7 +8,9 @@ import {
   DEFAULT_NOTE_TITLE,
   extractUrlsFromText,
   filterNotesByTags,
+  isEmptyDraftNote,
   mergeHashtagsIntoTags,
+  stripEmptyDraftNotes,
   toggleTaskInBody,
   upsertNote,
 } from "./lib/notebook";
@@ -408,6 +410,14 @@ interface RenderCallbackOptions {
   getPersonaPreference: () => PersonaPreference;
   setPersonaPreference: (preference: PersonaPreference) => void;
   handleNewNote: () => void;
+  /**
+   * Discards the active note if it's an empty draft (user hit "+ Add"
+   * then walked away without typing). Returns true when a purge
+   * happened. Callers should invoke this *before* every navigation so a
+   * freshly-spawned-but-untouched note doesn't linger in the workspace
+   * or get pushed to Drive.
+   */
+  purgeEmptyDraftNotes: () => boolean;
   loadWorkspace: () => Promise<void>;
   saveWorkspace: () => Promise<void>;
   restoreWorkspaceAfterSignIn: () => Promise<void>;
@@ -473,6 +483,7 @@ function createRenderCallbacks({
   getPersonaPreference,
   setPersonaPreference,
   handleNewNote,
+  purgeEmptyDraftNotes,
   loadWorkspace,
   saveWorkspace,
   restoreWorkspaceAfterSignIn,
@@ -577,6 +588,9 @@ function createRenderCallbacks({
         return;
       }
       if (getActiveMenuItem() === id && getDetailNoteId() === null) return;
+      // Drop the untouched draft (if any) on nav away so an accidental
+      // "+ Add" click doesn't leave an Untitled stub behind.
+      purgeEmptyDraftNotes();
       setActiveMenuItem(id);
       setDetailNoteId(null);
       render();
@@ -621,6 +635,10 @@ function createRenderCallbacks({
       })();
     },
     onSelectNote: (noteId: string) => {
+      // Leaving the current detail (possibly an untouched fresh draft)
+      // for another note — drop the draft before rebinding active, so
+      // it doesn't keep occupying the workspace once we've moved on.
+      purgeEmptyDraftNotes();
       setActiveMenuItem("notes");
       setDetailNoteId(noteId);
       const workspace = {
@@ -632,6 +650,10 @@ function createRenderCallbacks({
       render();
     },
     onBackToNotes: () => {
+      // "← Back to notes" from the detail topbar. Same untouched-draft
+      // sweep as the other nav paths — the user is explicitly leaving
+      // the editor, so a blank note doesn't get a free ride to Drive.
+      purgeEmptyDraftNotes();
       setDetailNoteId(null);
       render();
     },
@@ -639,6 +661,7 @@ function createRenderCallbacks({
       // Mirrors `onBackToNotes`'s shape: clear the detail context first,
       // then flip the active menu item. Order matters so the next render
       // pass doesn't see a detail-editor route on the capture page.
+      purgeEmptyDraftNotes();
       setDetailNoteId(null);
       setActiveMenuItem("capture");
       render();
@@ -884,13 +907,24 @@ function handleNewNoteCreation({
     const latestWorkspace = getWorkspace();
     const currentNote = latestWorkspace.notes.find((note) => note.id === newNoteId);
     if (!currentNote) return;
+    // Always let the cosmetic title/location/captureContext backfill run
+    // — the prettified "Úterý odpoledne v Praze" title is a feature, and
+    // local persist keeps it around so a mid-compose refresh still shows
+    // the nice label. What we *don't* do is schedule a Drive push: an
+    // empty draft (no body, no user tags) has no business arriving on
+    // Drive just because geolocation resolved two seconds after the
+    // click. The nav-away purge evicts the note locally if the user
+    // walks away, and `saveRemoteWorkspace` also strips empty drafts
+    // before push as a belt-and-braces guard.
     const patchedNote = applyFreshNoteDetails(currentNote, details);
     if (patchedNote === currentNote) return;
 
     const patchedWorkspace = upsertNote(latestWorkspace, newNoteId, () => patchedNote);
     setWorkspace(patchedWorkspace);
     persistWorkspace(patchedWorkspace);
-    scheduleAutoSave();
+    if (!isEmptyDraftNote(patchedNote)) {
+      scheduleAutoSave();
+    }
 
     if (getDetailNoteId() === newNoteId) {
       const titleInput = root.querySelector<HTMLInputElement>(".title-input");
@@ -918,6 +952,14 @@ interface WirePaletteAccessOptions {
   setSelectedTagFilters: (next: string[]) => void;
   getFilterMode: () => SutraPadTagFilterMode;
   persistWorkspace: (workspace: SutraPadWorkspace) => void;
+  /**
+   * Called before the palette navigates away from the current view so an
+   * untouched fresh draft doesn't linger in the workspace. Mirrors the
+   * callback-level `purgeEmptyDraftNotes` used by `onSelectMenuItem` /
+   * `onSelectNote` / `onBackToNotes` — the palette is just another nav
+   * surface and needs the same sweep.
+   */
+  purgeEmptyDraftNotes: () => void;
   render: () => void;
 }
 
@@ -960,6 +1002,10 @@ function wirePaletteAccess(options: WirePaletteAccessOptions): PaletteAccess {
       selectedTagFilters: options.getSelectedTagFilters(),
       onSelectEntry: (entry) => {
         handle = null;
+        // The palette is a navigation surface — sweep any dangling draft
+        // before leaving the current view so it isn't left behind when
+        // the user jumps to a different note or applies a tag filter.
+        options.purgeEmptyDraftNotes();
         if (entry.payload.kind === "note") {
           const nextWorkspace: SutraPadWorkspace = {
             ...options.getWorkspace(),
@@ -1022,6 +1068,12 @@ interface WireKeyboardShortcutsOptions {
   setActiveMenuItem: (next: MenuItemId) => void;
   setDetailNoteId: (next: string | null) => void;
   handleNewNote: () => void;
+  /**
+   * Called before `G T/N/L/K` goto shortcuts and before `Esc` leaves a
+   * detail route, so an untouched draft doesn't survive keyboard nav
+   * the same way it wouldn't survive a click-based nav.
+   */
+  purgeEmptyDraftNotes: () => void;
   render: () => void;
 }
 
@@ -1053,12 +1105,17 @@ function wireKeyboardShortcuts(options: WireKeyboardShortcutsOptions): void {
       ) {
         return;
       }
+      options.purgeEmptyDraftNotes();
       options.setActiveMenuItem(action.menu);
       options.setDetailNoteId(null);
       options.render();
       return;
     }
-    // action.kind === "escape" — only emitted when isDetailRoute was true
+    // action.kind === "escape" — only emitted when isDetailRoute was true.
+    // Escape from a fresh "+ Add" / `N` draft that was never typed into
+    // should dispose the draft rather than leave it pinned to the notes
+    // list, so the purge runs here too.
+    options.purgeEmptyDraftNotes();
     options.setDetailNoteId(null);
     options.render();
   };
@@ -1220,7 +1277,38 @@ export function createApp(root: HTMLElement): void {
     selectedTagFilters = selectedTagFilters.filter((tag) => availableTags.has(tag));
   };
 
-  const handleNewNote = (): void =>
+  /**
+   * Removes in-memory empty-draft notes (from a "+ Add" / `N` spawn the
+   * user never typed into) and commits the cleaned workspace to local
+   * storage. Called from every navigation path that could leave the user
+   * on a non-detail route with a dangling untouched draft — and also
+   * before `handleNewNote` spawns a new draft, so the "hit N twice in a
+   * row" case doesn't leave an orphaned stub behind.
+   *
+   * Returns true when a purge actually happened, false when the workspace
+   * was already clean. Callers use the return value to decide whether to
+   * re-render (no visible change means no render needed).
+   */
+  const purgeEmptyDraftNotes = (): boolean => {
+    const cleaned = stripEmptyDraftNotes(workspace);
+    if (cleaned === workspace) return false;
+    workspace = cleaned;
+    persistLocalWorkspace(workspace);
+    // If the detail route was pinned to the discarded draft, drop the
+    // pin so `render()` doesn't try to resolve a dangling id. The
+    // `ensureVisibleActiveNoteSelection` pass inside `render()` will
+    // rebind `activeNoteId` to the next visible note.
+    if (detailNoteId !== null && !workspace.notes.some((note) => note.id === detailNoteId)) {
+      detailNoteId = null;
+    }
+    return true;
+  };
+
+  const handleNewNote = (): void => {
+    // Mash the "+ Add" / `N` repeatedly without typing and we'd otherwise
+    // leave a chain of identical Untitled stubs in the workspace. Sweeping
+    // first keeps the list honest: at most one active draft at a time.
+    purgeEmptyDraftNotes();
     handleNewNoteCreation({
       root,
       getWorkspace: () => workspace,
@@ -1235,6 +1323,7 @@ export function createApp(root: HTMLElement): void {
       render,
       refreshNotesPanel,
     });
+  };
 
   /**
    * Resolves the persona render-time options from the current preference and
@@ -1396,6 +1485,7 @@ export function createApp(root: HTMLElement): void {
       getPersonaPreference: () => personaPreference,
       setPersonaPreference: setPersonaPreferenceState,
       handleNewNote,
+      purgeEmptyDraftNotes,
       loadWorkspace,
       saveWorkspace: () => saveWorkspace(),
       restoreWorkspaceAfterSignIn,
@@ -1494,11 +1584,22 @@ export function createApp(root: HTMLElement): void {
       // We forward the save mode into `withAuthRetry` so a 401 during autosave
       // propagates unchanged (surfaces as syncState = "error") and waits for
       // the user's next interactive save / load to drive the refresh.
+      //
+      // Strip empty drafts before the remote push so a note the user
+      // spawned-then-cleared doesn't land on Drive: e.g. user hits N,
+      // types one character (scheduling autosave), deletes it, and the
+      // 2-second timer fires before they click away. We only filter
+      // at the *remote* edge — the local copy is still there so the
+      // user can keep typing, and the next nav-away purge sweeps it
+      // normally.
       saveRemoteWorkspace: () =>
-        withAuthRetry(() => getStore().saveWorkspace(workspace), {
-          ...retryContext,
-          mode,
-        }),
+        withAuthRetry(
+          () => getStore().saveWorkspace(stripEmptyDraftNotes(workspace)),
+          {
+            ...retryContext,
+            mode,
+          },
+        ),
       setSyncState: setSyncStateValue,
       setLastError: setLastErrorValue,
       render,
@@ -1515,6 +1616,7 @@ export function createApp(root: HTMLElement): void {
     setSelectedTagFilters: setSelectedTagFiltersState,
     getFilterMode: () => filterMode,
     persistWorkspace: persistLocalWorkspace,
+    purgeEmptyDraftNotes,
     render,
   });
 
@@ -1524,6 +1626,7 @@ export function createApp(root: HTMLElement): void {
     setActiveMenuItem: setActiveMenuItemState,
     setDetailNoteId: setDetailNoteIdState,
     handleNewNote,
+    purgeEmptyDraftNotes,
     render,
   });
 

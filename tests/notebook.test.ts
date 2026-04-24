@@ -12,13 +12,16 @@ import {
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
+  DEFAULT_NOTE_TITLE,
   extractHashtagsFromText,
   extractUrlsFromText,
   filterNotesByTags,
+  isEmptyDraftNote,
   isPristineWorkspace,
   mergeHashtagsIntoTags,
   mergeWorkspaces,
   sortNotes,
+  stripEmptyDraftNotes,
   upsertNote,
 } from "../src/lib/notebook";
 import type { SutraPadDocument } from "../src/types";
@@ -1158,5 +1161,186 @@ describe("mergeHashtagsIntoTags", () => {
 
   it("normalises parsed hashtags to lowercase before comparing with existing tags", () => {
     expect(mergeHashtagsIntoTags(["idea"], "#IDEA once more.")).toEqual(["idea"]);
+  });
+});
+
+describe("isEmptyDraftNote", () => {
+  it("classifies a freshly created untitled note as an empty draft", () => {
+    // This is the "hit N, didn't type anything" case — default title,
+    // empty body, no tags. Represents the exact state we want to
+    // discard silently rather than save.
+    const note = makeNote({
+      id: "a",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: DEFAULT_NOTE_TITLE,
+    });
+    expect(isEmptyDraftNote(note)).toBe(true);
+  });
+
+  it("classifies a note with any body content as not empty", () => {
+    const note = makeNote({
+      id: "b",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: DEFAULT_NOTE_TITLE,
+      body: "a thought",
+    });
+    expect(isEmptyDraftNote(note)).toBe(false);
+  });
+
+  it("classifies a note with any tag as not empty", () => {
+    // The user explicitly attached a tag — that's user intent, not noise.
+    const note = makeNote({
+      id: "d",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: DEFAULT_NOTE_TITLE,
+      tags: ["work"],
+    });
+    expect(isEmptyDraftNote(note)).toBe(false);
+  });
+
+  it("treats whitespace-only body as empty", () => {
+    // A textarea with just spaces/newlines is still "nothing typed" from
+    // the user's perspective.
+    const note = makeNote({
+      id: "e",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: DEFAULT_NOTE_TITLE,
+      body: "   \n\n\t  ",
+    });
+    expect(isEmptyDraftNote(note)).toBe(true);
+  });
+
+  it("still classifies as empty when the async backfill replaced the default title", () => {
+    // `applyFreshNoteDetails` swaps `DEFAULT_NOTE_TITLE` for a cosmetic
+    // generated label (e.g. "Tuesday afternoon in Prague") on every
+    // fresh `+ Add` / `N` spawn. That title change is NOT user content —
+    // the user never typed it. A note where the title has been
+    // prettified but body + tags are still empty must still sweep on
+    // nav, otherwise Filip's "don't save when I haven't written
+    // anything" contract breaks the moment geolocation resolves.
+    const note = makeNote({
+      id: "x",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: "Tuesday afternoon in Prague",
+    });
+    expect(isEmptyDraftNote(note)).toBe(true);
+  });
+
+  it("classifies a title-only note (no body, no tags) as empty", () => {
+    // Deliberate trade-off: a title alone is useless as a note — there's
+    // nothing to come back to. Including title in the check would force
+    // us to disambiguate "user typed this title" from "async backfill
+    // put it there", which needs an in-memory side-tracker. Not worth
+    // the complexity for a workflow (title-only stub) that has almost
+    // no real-world use.
+    const note = makeNote({
+      id: "c",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: "Thing to remember",
+    });
+    expect(isEmptyDraftNote(note)).toBe(true);
+  });
+
+  it("ignores location/coordinates/captureContext when judging emptiness", () => {
+    // Metadata fields are auto-populated by the async
+    // `generateFreshNoteDetails` path after a note is spawned. If they
+    // counted against emptiness, a user who hits N and walks away would
+    // have their note classified as non-empty the moment geolocation
+    // resolves — defeating the whole point of the purge.
+    const note = makeNote({
+      id: "g",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: DEFAULT_NOTE_TITLE,
+      location: "Praha",
+      coordinates: { latitude: 50.08, longitude: 14.43 },
+      captureContext: { source: "new-note" },
+    });
+    expect(isEmptyDraftNote(note)).toBe(true);
+  });
+});
+
+describe("stripEmptyDraftNotes", () => {
+  it("returns the same workspace reference when nothing to strip", () => {
+    // Referential equality lets the caller skip an unnecessary persist
+    // round-trip when the sweep is a no-op.
+    const note = makeNote({
+      id: "a",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      body: "hello",
+    });
+    const workspace = { notes: [note], activeNoteId: note.id };
+    expect(stripEmptyDraftNotes(workspace)).toBe(workspace);
+  });
+
+  it("removes a single empty draft from notes", () => {
+    const draft = makeNote({
+      id: "draft",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: DEFAULT_NOTE_TITLE,
+    });
+    const kept = makeNote({
+      id: "kept",
+      updatedAt: "2026-04-24T09:00:00.000Z",
+      body: "real content",
+    });
+    const workspace = { notes: [draft, kept], activeNoteId: kept.id };
+    const result = stripEmptyDraftNotes(workspace);
+    expect(result.notes.map((n) => n.id)).toEqual(["kept"]);
+    expect(result.activeNoteId).toBe("kept");
+  });
+
+  it("removes multiple empty drafts in one pass", () => {
+    const d1 = makeNote({ id: "d1", updatedAt: "2026-04-24T10:00:00.000Z", title: DEFAULT_NOTE_TITLE });
+    const d2 = makeNote({ id: "d2", updatedAt: "2026-04-24T10:01:00.000Z", title: DEFAULT_NOTE_TITLE });
+    const kept = makeNote({ id: "kept", updatedAt: "2026-04-24T09:00:00.000Z", body: "x" });
+    const workspace = { notes: [d1, kept, d2], activeNoteId: kept.id };
+    expect(stripEmptyDraftNotes(workspace).notes.map((n) => n.id)).toEqual(["kept"]);
+  });
+
+  it("nulls activeNoteId when it pointed at a removed empty draft", () => {
+    // After the purge, app.ts rebinds activeNoteId to the next visible
+    // note via `ensureVisibleActiveNoteSelection`. We just need the field
+    // to be honest about "the previous active note is gone."
+    const draft = makeNote({
+      id: "draft",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: DEFAULT_NOTE_TITLE,
+    });
+    const kept = makeNote({
+      id: "kept",
+      updatedAt: "2026-04-24T09:00:00.000Z",
+      body: "hi",
+    });
+    const workspace = { notes: [draft, kept], activeNoteId: draft.id };
+    const result = stripEmptyDraftNotes(workspace);
+    expect(result.activeNoteId).toBeNull();
+  });
+
+  it("preserves activeNoteId when it still resolves after the strip", () => {
+    const draft = makeNote({
+      id: "draft",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: DEFAULT_NOTE_TITLE,
+    });
+    const kept = makeNote({
+      id: "kept",
+      updatedAt: "2026-04-24T09:00:00.000Z",
+      body: "hi",
+    });
+    const workspace = { notes: [draft, kept], activeNoteId: kept.id };
+    expect(stripEmptyDraftNotes(workspace).activeNoteId).toBe("kept");
+  });
+
+  it("handles an all-empty-drafts workspace without throwing", () => {
+    // Edge case: the user hit N several times in a row without typing.
+    // The purge should clear them all and return an empty-but-valid
+    // workspace — the caller's ensure-visible-active-note pass will take
+    // it from there.
+    const d1 = makeNote({ id: "d1", updatedAt: "2026-04-24T10:00:00.000Z", title: DEFAULT_NOTE_TITLE });
+    const d2 = makeNote({ id: "d2", updatedAt: "2026-04-24T10:01:00.000Z", title: DEFAULT_NOTE_TITLE });
+    const workspace = { notes: [d1, d2], activeNoteId: d2.id };
+    const result = stripEmptyDraftNotes(workspace);
+    expect(result.notes).toEqual([]);
+    expect(result.activeNoteId).toBeNull();
   });
 });
