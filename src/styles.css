@@ -2074,11 +2074,40 @@ button.tag-pill {
 
 .link-item {
   display: grid;
-  gap: 8px;
+  grid-template-columns: 20px 1fr;
+  grid-column-gap: 12px;
+  grid-row-gap: 8px;
+  align-items: start;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--surface-ghost);
+}
+
+/*
+ * Favicon lede — inline 20 px icon pinned to the first grid column.
+ * `align-items: start` keeps the icon top-aligned with the URL on
+ * the first row; subsequent rows (timestamp, notebook chips) span
+ * column 2 so the icon doesn't push them rightwards.
+ */
+.link-favicon {
+  grid-column: 1;
+  grid-row: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--paper-1);
+  /* A missing favicon renders the service's neutral globe, which
+   * tends to be slightly desaturated against our paper palette. A
+   * tiny outline keeps the bounding box crisp at 20 px. */
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
+}
+
+.link-url,
+.link-last-added,
+.link-notebooks {
+  grid-column: 2;
 }
 
 .link-url {
@@ -2151,6 +2180,180 @@ button.tag-pill {
 .link-notebook-chip:focus-visible {
   outline: 2px solid rgba(var(--accent-rgb), 0.65);
   outline-offset: 2px;
+}
+
+/*
+ * ---------- Links cards ----------
+ * Ported from docs/design_handoff_sutrapad2/src/screen_rest.jsx (the
+ * LinksScreen grid) and screens.css (`.links-grid`, `.link-card`,
+ * `.link-thumb`, `.link-body`). Grid auto-fits so the layout densifies
+ * naturally at wide viewports without us picking a breakpoint table.
+ */
+.links-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.links-toolbar-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.links-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.link-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper-0);
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.link-card:hover {
+  border-color: color-mix(in oklab, var(--accent) 40%, var(--line));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+/*
+ * Gradient thumb — the hue is set inline per card (hashed off the
+ * hostname by `hashStringToHue`), so the same domain always wears
+ * the same colour. The stripe overlay is baked into the inline
+ * `background` too so both layers move together if the thumb
+ * resizes. Height is fixed to keep the grid's card heights visually
+ * aligned even when the body text varies.
+ */
+.link-thumb {
+  position: relative;
+  height: 88px;
+  display: flex;
+  align-items: flex-end;
+  padding: 10px 12px;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.link-thumb-domain {
+  letter-spacing: 0.03em;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * Once the og:image lands, we overlay it on top of the gradient
+ * (see `applyOgImageToThumb` in links-page.ts) and nudge the domain
+ * chip into a more legible background pill. The image handles visual
+ * identification; the domain chip is belt + braces for sites whose
+ * og:image doesn't clearly carry the brand.
+ */
+.link-thumb.has-og-image .link-thumb-domain {
+  background: rgba(0, 0, 0, 0.55);
+  padding: 2px 8px;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+}
+
+.link-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 14px;
+  flex: 1;
+}
+
+.link-card-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink-900, var(--ink-700));
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.link-card-desc {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.link-card-url {
+  color: var(--primary);
+  font-size: 11.5px;
+  font-family: var(--mono);
+  text-decoration: none;
+  word-break: break-all;
+  opacity: 0.85;
+  /* URL line is a secondary signal in the card layout — the title
+   * already sells the why, the hostname on the thumb sells the where.
+   * The raw URL is here for the middle-click-to-open affordance more
+   * than visual weight. */
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.link-card-url:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.link-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.link-card-saved {
+  font-variant-numeric: tabular-nums;
+}
+
+.link-card-source {
+  font: inherit;
+  color: var(--primary);
+  background: rgba(var(--accent-rgb), 0.10);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  border-radius: 999px;
+  padding: 2px 8px;
+  cursor: pointer;
+  max-width: 70%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.link-card-source:hover {
+  background: rgba(var(--accent-rgb), 0.18);
+  border-color: rgba(var(--accent-rgb), 0.5);
 }
 
 /*
@@ -5097,9 +5300,15 @@ button.tag-pill {
   }
 
   /* ---------- Links ---------- */
-  .links-page .link-card,
-  .link-card {
-    padding: 12px;
+  .links-grid {
+    /* Drop the min track width on small screens so cards stack into a
+     * single column instead of getting squeezed into a 240px-but-not-
+     * quite-fitting layout. */
+    grid-template-columns: 1fr;
+  }
+
+  .link-body {
+    padding: 10px 12px 12px;
   }
 
   /* ---------- Tasks ---------- */

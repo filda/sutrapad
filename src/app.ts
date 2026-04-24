@@ -68,6 +68,12 @@ import {
   type NotesViewMode,
 } from "./app/logic/notes-view";
 import {
+  persistLinksView,
+  resolveInitialLinksView,
+  writeLinksViewToLocation,
+  type LinksViewMode,
+} from "./app/logic/links-view";
+import {
   applyThemeChoice,
   isDarkThemeId,
   persistThemeChoice,
@@ -242,24 +248,39 @@ function syncActivePageToLocation(
   }
 }
 
-function syncNotesViewToLocation(
+/**
+ * Writes the `?view=<mode>` query param for whichever page owns it at
+ * this moment — Notes list (cards/list) or Links (cards/list) — and
+ * strips it on any other route so a stale value from the previously-
+ * active page doesn't leak. Only one page owns the param at a time,
+ * so sharing the slug is safe.
+ */
+function syncViewToLocation(
   activeMenuItem: MenuItemId,
   detailNoteId: string | null,
   notesViewMode: NotesViewMode,
+  linksViewMode: LinksViewMode,
 ): void {
-  const shouldExpose = activeMenuItem === "notes" && detailNoteId === null;
-  if (!shouldExpose) {
-    const stripped = new URL(window.location.href);
-    if (stripped.searchParams.has("view")) {
-      stripped.searchParams.delete("view");
-      window.history.replaceState({}, "", stripped.toString());
+  if (activeMenuItem === "notes" && detailNoteId === null) {
+    const nextUrl = writeNotesViewToLocation(window.location.href, notesViewMode);
+    if (nextUrl !== window.location.href) {
+      window.history.replaceState({}, "", nextUrl);
     }
     return;
   }
-
-  const nextUrl = writeNotesViewToLocation(window.location.href, notesViewMode);
-  if (nextUrl !== window.location.href) {
-    window.history.replaceState({}, "", nextUrl);
+  if (activeMenuItem === "links") {
+    const nextUrl = writeLinksViewToLocation(window.location.href, linksViewMode);
+    if (nextUrl !== window.location.href) {
+      window.history.replaceState({}, "", nextUrl);
+    }
+    return;
+  }
+  // Neither page owns the slot — make sure a stale value from the
+  // previous route doesn't stick.
+  const stripped = new URL(window.location.href);
+  if (stripped.searchParams.has("view")) {
+    stripped.searchParams.delete("view");
+    window.history.replaceState({}, "", stripped.toString());
   }
 }
 
@@ -391,6 +412,8 @@ interface RenderCallbackOptions {
   setDetailNoteId: (detailNoteId: string | null) => void;
   getNotesViewMode: () => NotesViewMode;
   setNotesViewMode: (notesViewMode: NotesViewMode) => void;
+  getLinksViewMode: () => LinksViewMode;
+  setLinksViewMode: (linksViewMode: LinksViewMode) => void;
   getTasksFilter: () => TasksFilterId;
   setTasksFilter: (next: TasksFilterId) => void;
   getTasksShowDone: () => boolean;
@@ -464,6 +487,8 @@ function createRenderCallbacks({
   setDetailNoteId,
   getNotesViewMode,
   setNotesViewMode,
+  getLinksViewMode,
+  setLinksViewMode,
   getTasksFilter,
   setTasksFilter,
   getTasksShowDone,
@@ -498,6 +523,12 @@ function createRenderCallbacks({
       if (mode === getNotesViewMode()) return;
       setNotesViewMode(mode);
       persistNotesView(mode);
+      render();
+    },
+    onChangeLinksView: (mode: LinksViewMode) => {
+      if (mode === getLinksViewMode()) return;
+      setLinksViewMode(mode);
+      persistLinksView(mode);
       render();
     },
     onChangeTasksFilter: (filter: TasksFilterId) => {
@@ -1168,6 +1199,9 @@ export function createApp(root: HTMLElement): void {
   // the sender's choice, otherwise fall back to the last mode the user picked
   // on this device, otherwise the default (cards).
   let notesViewMode: NotesViewMode = resolveInitialNotesView(window.location.href);
+  // Links page layout — same resolution strategy as notesViewMode, separate
+  // storage slot so the two pages can drift independently.
+  let linksViewMode: LinksViewMode = resolveInitialLinksView(window.location.href);
   // Visual theme is explicitly device-local — no URL sync, no Drive sync. It
   // was already applied on boot by `main.ts` to prevent a flash of the wrong
   // palette; this keeps our in-memory copy in sync with what the document
@@ -1228,6 +1262,7 @@ export function createApp(root: HTMLElement): void {
   const setActiveMenuItemState = (next: MenuItemId): void => { activeMenuItem = next; };
   const setDetailNoteIdState = (next: string | null): void => { detailNoteId = next; };
   const setNotesViewModeState = (next: NotesViewMode): void => { notesViewMode = next; };
+  const setLinksViewModeState = (next: LinksViewMode): void => { linksViewMode = next; };
   const setCurrentThemeState = (next: ThemeChoice): void => { currentTheme = next; };
   const setPersonaPreferenceState = (next: PersonaPreference): void => { personaPreference = next; };
   const setBookmarkletMessageState = (next: string): void => { bookmarkletMessage = next; };
@@ -1438,7 +1473,7 @@ export function createApp(root: HTMLElement): void {
     syncTagFiltersToLocation(selectedTagFilters);
     syncFilterModeToLocation(filterMode);
     syncActivePageToLocation(activeMenuItem, detailNoteId, appBasePath);
-    syncNotesViewToLocation(activeMenuItem, detailNoteId, notesViewMode);
+    syncViewToLocation(activeMenuItem, detailNoteId, notesViewMode, linksViewMode);
 
     const currentNote = getCurrentWorkspaceNote(workspace);
     const detailNote =
@@ -1466,6 +1501,8 @@ export function createApp(root: HTMLElement): void {
       setDetailNoteId: setDetailNoteIdState,
       getNotesViewMode: () => notesViewMode,
       setNotesViewMode: setNotesViewModeState,
+      getLinksViewMode: () => linksViewMode,
+      setLinksViewMode: setLinksViewModeState,
       getTasksFilter: () => tasksFilter,
       setTasksFilter: setTasksFilterState,
       getTasksShowDone: () => tasksShowDone,
@@ -1521,6 +1558,7 @@ export function createApp(root: HTMLElement): void {
       activeMenuItem,
       detailNoteId,
       notesViewMode,
+      linksViewMode,
       tasksFilter,
       tasksShowDone,
       tasksOneThingKey,

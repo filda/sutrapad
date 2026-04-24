@@ -19,6 +19,7 @@ import { buildHomePage } from "./pages/home-page";
 import { buildCapturePage } from "./pages/capture-page";
 import { buildTagsPage } from "./pages/tags-page";
 import { buildLinksPage } from "./pages/links-page";
+import type { LinksViewMode } from "../logic/links-view";
 import { buildTasksPage } from "./pages/tasks-page";
 import { buildNotesPanel, type NotesPanelOptions } from "./pages/notes-page";
 import { buildPagePlaceholder } from "./pages/placeholder-page";
@@ -120,6 +121,13 @@ interface RenderAppOptions
   onToggleTasksShowDone: (showDone: boolean) => void;
   onSetOneThing: (key: string | null) => void;
   /**
+   * Links page layout preference — cards (default) or list. Lives at
+   * app-level so a nav away + back preserves the choice and so URL
+   * `?view=…` can seed it on initial load.
+   */
+  linksViewMode: LinksViewMode;
+  onChangeLinksView: (mode: LinksViewMode) => void;
+  /**
    * "← Back to notes" click handler — consumed by the detail-topbar that sits
    * above the editor card on the note detail route. Kept here (rather than on
    * EditorCardOptions) because the editor card is now a pure writing surface
@@ -211,6 +219,8 @@ export function renderAppPage({
   onChangeTasksFilter,
   onToggleTasksShowDone,
   onSetOneThing,
+  linksViewMode,
+  onChangeLinksView,
   visibleTagClasses,
   tagsSearchQuery,
   onToggleTagClass,
@@ -349,8 +359,10 @@ export function renderAppPage({
       page.append(
         buildLinksPage({
           workspace,
+          linksViewMode,
           onOpenNote: openNoteInEditor,
           onOpenCapture,
+          onChangeLinksView,
         }),
       );
     } else if (activeMenuItem === "tasks") {
