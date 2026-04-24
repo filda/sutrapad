@@ -347,13 +347,13 @@ function buildLinkThumb(
  */
 function applyOgImageToThumb(thumb: HTMLElement, imageUrl: string): void {
   const probe = new Image();
-  probe.onload = () => {
+  probe.addEventListener("load", () => {
     if (!thumb.isConnected) return;
     thumb.style.backgroundImage = `url("${imageUrl}"), ${thumb.style.backgroundImage}`;
     thumb.style.backgroundSize = "cover, auto, auto";
     thumb.style.backgroundPosition = "center, 0 0, 0 0";
     thumb.classList.add("has-og-image");
-  };
+  });
   probe.src = imageUrl;
 }
 
