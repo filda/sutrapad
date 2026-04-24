@@ -88,13 +88,24 @@ interface RenderAppOptions
   onToggleTagFilter: (tag: string) => void;
   onClearTagFilters: () => void;
   /**
-   * Invoked by the topbar's tag-filter strip when the user clicks the
-   * "+ Filter by tag…" trigger (or the `/` keyboard-hint pill). The strip
-   * itself is purely presentational — the palette is the single suggestion
-   * engine — so this just forwards into the same opener the `/` shortcut
-   * uses.
+   * Invoked by the topbar's tag-filter strip when the user clicks the `/`
+   * keyboard-hint pill. The strip carries its own inline tag typeahead, but
+   * the palette still provides a richer cmd-k surface that can search both
+   * notes and tags — this hands off to the same opener as the global `/`
+   * shortcut.
    */
   onOpenPalette: () => void;
+  /**
+   * Newest-first persisted recent-tag list, threaded through for the topbar
+   * typeahead's "Recently used" group.
+   */
+  recentTagFilters: readonly string[];
+  /**
+   * Called when the user commits a tag from the inline typeahead (Enter,
+   * second-Tab, or click). app.ts owns the follow-on: rotate the recent-tag
+   * list, persist it, extend the active filter set, and re-render.
+   */
+  onApplyTagFilter: (tag: string) => void;
   /**
    * Tasks screen state — lives at app-top-level (like `notesViewMode`) so
    * toggling a task checkbox, which triggers a full re-render, doesn't wipe
@@ -191,7 +202,9 @@ export function renderAppPage({
   onChangeTheme,
   onChangePersonaPreference,
   onOpenPalette,
+  onApplyTagFilter,
   onOpenCapture,
+  recentTagFilters,
   tasksFilter,
   tasksShowDone,
   tasksOneThingKey,
@@ -228,6 +241,12 @@ export function renderAppPage({
       .map((entry) => entry.tag),
   );
 
+  // Tag index for the topbar typeahead. Only the user-authored tags end up in
+  // `buildTagIndex` — auto-tags don't need to appear in the filter dropdown
+  // because they're always derived from metadata (filtering by `when:night`
+  // happens via the Tags page / palette, not the typeahead).
+  const availableTagSuggestions = buildTagIndex(workspace).tags;
+
   // Topbar lives as a direct child of #app (outside .page) so that
   // `position: sticky` pins against the viewport rather than the page column,
   // and scrolling content glides underneath the blurred surface.
@@ -238,6 +257,8 @@ export function renderAppPage({
       syncState,
       statusText,
       selectedTagFilters,
+      availableTagSuggestions,
+      recentTagFilters,
       autoTagLookup,
       onSelectMenuItem,
       onSignIn,
@@ -245,6 +266,7 @@ export function renderAppPage({
       onRemoveFilter: onRemoveSelectedFilter,
       onClearFilters: onClearTagFilters,
       onOpenPalette,
+      onApplyFilter: onApplyTagFilter,
     }),
   );
 

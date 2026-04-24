@@ -92,6 +92,11 @@ import {
   persistDismissedTagAliases,
   resolveInitialDismissedTagAliases,
 } from "./app/logic/tag-aliases";
+import {
+  loadRecentTagFilters,
+  persistRecentTagFilters,
+  pushRecentTagFilter,
+} from "./app/logic/tag-filter-typeahead";
 import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
 import { buildPaletteEntries, togglePaletteTagFilter } from "./app/logic/palette";
 import type { TasksFilterId } from "./app/logic/tasks-filter";
@@ -396,6 +401,8 @@ interface RenderCallbackOptions {
   setTagsSearchQuery: (next: string) => void;
   getDismissedTagAliases: () => ReadonlySet<string>;
   setDismissedTagAliases: (next: Set<string>) => void;
+  getRecentTagFilters: () => readonly string[];
+  setRecentTagFilters: (next: readonly string[]) => void;
   getCurrentTheme: () => ThemeChoice;
   setCurrentTheme: (theme: ThemeChoice) => void;
   getPersonaPreference: () => PersonaPreference;
@@ -459,6 +466,8 @@ function createRenderCallbacks({
   setTagsSearchQuery,
   getDismissedTagAliases,
   setDismissedTagAliases,
+  getRecentTagFilters,
+  setRecentTagFilters,
   getCurrentTheme,
   setCurrentTheme,
   getPersonaPreference,
@@ -646,6 +655,34 @@ function createRenderCallbacks({
         ),
       );
       syncTagFiltersToLocation(nextSelectedTagFilters);
+      render();
+    },
+    onApplyTagFilter: (tag: string) => {
+      // Commit path from the topbar's inline typeahead. Enter, second-Tab,
+      // and suggestion clicks all land here. The palette has its own toggle
+      // path (`onToggleTagFilter`) which can also *remove* an active filter
+      // — this one is strictly "add if not already active" so a stale
+      // suggestion click can't accidentally un-filter.
+      const selected = getSelectedTagFilters();
+      const nextSelectedTagFilters = selected.includes(tag) ? selected : [...selected, tag];
+      if (nextSelectedTagFilters !== selected) {
+        setSelectedTagFilters(nextSelectedTagFilters);
+        setWorkspace(
+          applyVisibleActiveNoteSelection(
+            getWorkspace(),
+            nextSelectedTagFilters,
+            getFilterMode(),
+            persistWorkspace,
+          ),
+        );
+        syncTagFiltersToLocation(nextSelectedTagFilters);
+      }
+      // Rotate the recent-tag list regardless of whether the filter was
+      // already active — the user just interacted with this tag, so it
+      // belongs at the top of the recents next time they open the dropdown.
+      const nextRecent = pushRecentTagFilter(getRecentTagFilters(), tag);
+      setRecentTagFilters(nextRecent);
+      persistRecentTagFilters(nextRecent);
       render();
     },
     onClearTagFilters: () => {
@@ -1103,6 +1140,13 @@ export function createApp(root: HTMLElement): void {
   // `persistDismissedTagAliases`; never round-trips to Drive because it's a
   // cleanup preference, not notebook content.
   let dismissedTagAliases: Set<string> = resolveInitialDismissedTagAliases();
+  // Recently applied tag filters — newest-first, capped at 8. Drives the
+  // "Recently used" group in the topbar's inline typeahead (see
+  // `docs/design_handoff_sutrapad2/src/tagfilter.jsx`). Device-local + persisted
+  // to `localStorage.sp_recent_tags` so the sidebar remembers between
+  // sessions, but never syncs to Drive — a shared link should not seed the
+  // recipient's typeahead with the sender's personal filter habits.
+  let recentTagFilters: string[] = loadRecentTagFilters();
   // Filled in once `wirePaletteAccess` has mounted the `/` keybinding (near
   // the bottom of createApp). render() and the topbar's "+ tag" trigger both
   // reach the palette through this single reference, so the keyboard path
@@ -1136,6 +1180,7 @@ export function createApp(root: HTMLElement): void {
   const setVisibleTagClassesState = (next: Set<TagClassId>): void => { visibleTagClasses = next; };
   const setTagsSearchQueryState = (next: string): void => { tagsSearchQuery = next; };
   const setDismissedTagAliasesState = (next: Set<string>): void => { dismissedTagAliases = next; };
+  const setRecentTagFiltersState = (next: readonly string[]): void => { recentTagFilters = [...next]; };
 
   const scheduleAutoSave = (): void => {
     if (!profile) return;
@@ -1344,6 +1389,8 @@ export function createApp(root: HTMLElement): void {
       setTagsSearchQuery: setTagsSearchQueryState,
       getDismissedTagAliases: () => dismissedTagAliases,
       setDismissedTagAliases: setDismissedTagAliasesState,
+      getRecentTagFilters: () => recentTagFilters,
+      setRecentTagFilters: setRecentTagFiltersState,
       getCurrentTheme: () => currentTheme,
       setCurrentTheme: setCurrentThemeState,
       getPersonaPreference: () => personaPreference,
@@ -1390,6 +1437,7 @@ export function createApp(root: HTMLElement): void {
       visibleTagClasses,
       tagsSearchQuery,
       dismissedTagAliases,
+      recentTagFilters,
       currentTheme,
       personaPreference,
       onOpenPalette: () => paletteAccess?.open(),

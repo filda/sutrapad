@@ -1,5 +1,5 @@
 import type { SyncState } from "../../session/workspace-sync";
-import type { UserProfile } from "../../../types";
+import type { SutraPadTagEntry, UserProfile } from "../../../types";
 import { MENU_ITEMS, type MenuItemId } from "../../logic/menu";
 import { buildAccountBar } from "./account-bar";
 import { buildTagFilterBar } from "./tag-filter-bar";
@@ -27,6 +27,16 @@ export interface TopbarOptions {
   syncState: SyncState;
   statusText: string;
   selectedTagFilters: readonly string[];
+  /**
+   * Full tag index fed into the tag-filter-bar's inline typeahead. Expected
+   * to already be count-desc + alpha sorted (as produced by `buildTagIndex`).
+   */
+  availableTagSuggestions: readonly SutraPadTagEntry[];
+  /**
+   * Newest-first persisted recent-tag list (max 8). Hydrated by app.ts from
+   * `localStorage.sp_recent_tags`.
+   */
+  recentTagFilters: readonly string[];
   autoTagLookup: ReadonlySet<string>;
   onSelectMenuItem: (id: MenuItemId) => void;
   onSignIn: () => void;
@@ -34,6 +44,7 @@ export interface TopbarOptions {
   onRemoveFilter: (tag: string) => void;
   onClearFilters: () => void;
   onOpenPalette: () => void;
+  onApplyFilter: (tag: string) => void;
 }
 
 /**
@@ -48,6 +59,8 @@ export function buildTopbar({
   syncState,
   statusText,
   selectedTagFilters,
+  availableTagSuggestions,
+  recentTagFilters,
   autoTagLookup,
   onSelectMenuItem,
   onSignIn,
@@ -55,6 +68,7 @@ export function buildTopbar({
   onRemoveFilter,
   onClearFilters,
   onOpenPalette,
+  onApplyFilter,
 }: TopbarOptions): HTMLElement {
   const topbar = document.createElement("header");
   topbar.className = "topbar";
@@ -65,15 +79,19 @@ export function buildTopbar({
 
   // Filter strip sits between the nav tabs and the right-aligned actions so
   // the active filters are always in the chrome, regardless of which page
-  // is mounted. Clicking the trigger (or the `/` hint) opens the palette —
-  // that's the single suggestion engine for tag selection.
+  // is mounted. The strip now carries its own inline typeahead input — the
+  // `/` kbd pill still opens the palette as a richer cmd-k surface that can
+  // also search notes.
   topbar.append(
     buildTagFilterBar({
       selectedTagFilters,
+      availableTagSuggestions,
+      recentTagFilters,
       autoTagLookup,
       onRemoveFilter,
       onClearFilters,
       onOpenPalette,
+      onApplyFilter,
     }),
   );
 

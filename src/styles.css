@@ -882,28 +882,98 @@ button.tag-pill {
   background: rgba(255, 255, 255, 0.12);
 }
 
-.tfb-trigger {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  border: 1px dashed var(--line);
-  border-radius: 999px;
+/*
+ * Inline typeahead (replaces the old `.tfb-trigger` open-the-palette button).
+ * The input grows to fill the chips row so the placeholder — or the
+ * user's active query — reads as part of the bar itself rather than as a
+ * separate affordance. The dropdown is a positioned panel that anchors
+ * against `.tag-filter-bar` (which is already `position: relative`).
+ *
+ * Ported from docs/design_handoff_sutrapad2/src/screens.css lines 1917–1993.
+ */
+.tfb-input {
+  flex: 1 1 120px;
+  min-width: 80px;
+  border: none;
   background: transparent;
+  outline: none;
+  font: inherit;
+  color: var(--ink-900);
+  padding: 2px 4px;
+  font-size: 13px;
+}
+
+.tfb-input::placeholder {
   color: var(--muted);
-  font-family: inherit;
-  font-size: 12px;
+}
+
+.tfb-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--paper-0, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 10px);
+  box-shadow: var(--shadow-pop, 0 12px 32px rgba(0, 0, 0, 0.18));
+  z-index: 100;
+  padding: 6px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.tfb-dropdown[hidden] {
+  display: none;
+}
+
+.tfb-group {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 10px 4px;
+}
+
+.tfb-suggest {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink-900, var(--ink-700));
+  text-align: left;
 }
 
-.tfb-trigger:hover {
-  border-color: rgba(var(--accent-rgb), 0.5);
-  color: var(--primary);
-  background: rgba(var(--accent-rgb), 0.08);
+.tfb-suggest.is-active,
+.tfb-suggest:hover {
+  background: var(--paper-1, rgba(var(--primary-rgb), 0.06));
 }
 
-.tfb-trigger-label {
-  line-height: 1.4;
+.tfb-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tfb-count {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.tfb-empty {
+  padding: 18px 14px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
 }
 
 .tfb-clear {
