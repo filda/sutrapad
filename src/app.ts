@@ -1430,8 +1430,16 @@ export function createApp(root: HTMLElement): void {
   const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> =>
     runWorkspaceSave(mode, {
       persistLocalWorkspace: () => persistLocalWorkspace(workspace),
+      // Background autosave must not trigger the GIS silent-refresh iframe —
+      // on mobile it steals focus from the active <textarea> mid-keystroke.
+      // We forward the save mode into `withAuthRetry` so a 401 during autosave
+      // propagates unchanged (surfaces as syncState = "error") and waits for
+      // the user's next interactive save / load to drive the refresh.
       saveRemoteWorkspace: () =>
-        withAuthRetry(() => getStore().saveWorkspace(workspace), retryContext),
+        withAuthRetry(() => getStore().saveWorkspace(workspace), {
+          ...retryContext,
+          mode,
+        }),
       setSyncState: setSyncStateValue,
       setLastError: setLastErrorValue,
       render,
