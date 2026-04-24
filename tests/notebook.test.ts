@@ -458,6 +458,67 @@ describe("notebook helpers: note updates and creation", () => {
       expect(updated.notes).toHaveLength(2);
     });
 
+    // Regression for the "autosave jumps to a different note and overwrites it"
+    // bug report. The previous implementation silently fell back to
+    // `workspace.notes[0]` when the target noteId was not found — so a stale
+    // noteId from a debounced edit handler would clobber an unrelated note's
+    // body. Losing a few recent characters is recoverable; overwriting a whole
+    // different note is not.
+    it("returns the workspace unchanged when the target noteId is not in the workspace", () => {
+      const alpha = makeNote({
+        id: "1",
+        title: "Alpha",
+        body: "Keep me",
+        updatedAt: "2026-04-13T10:00:00.000Z",
+      });
+      const beta = makeNote({
+        id: "2",
+        title: "Beta",
+        body: "Also keep me",
+        updatedAt: "2026-04-13T11:00:00.000Z",
+      });
+      const workspace = {
+        activeNoteId: "2",
+        notes: [alpha, beta],
+      };
+
+      const updated = upsertNote(workspace, "ghost-id-that-does-not-exist", (note) => ({
+        ...note,
+        body: "I should never land on another note",
+        updatedAt: "2026-04-13T12:00:00.000Z",
+      }));
+
+      // Neither note should have been touched — the updater's output was dropped.
+      expect(updated.notes.find((note) => note.id === "1")?.body).toBe("Keep me");
+      expect(updated.notes.find((note) => note.id === "2")?.body).toBe("Also keep me");
+      expect(updated.activeNoteId).toBe("2");
+      expect(updated.notes).toHaveLength(2);
+    });
+
+    it("does not invoke the updater when the target noteId is missing", () => {
+      const workspace = {
+        activeNoteId: "1",
+        notes: [makeNote({ id: "1", title: "Alpha", updatedAt: "2026-04-13T10:00:00.000Z" })],
+      };
+      const updater = vi.fn((note: SutraPadDocument) => note);
+
+      upsertNote(workspace, "missing", updater);
+
+      expect(updater).not.toHaveBeenCalled();
+    });
+
+    it("does not crash on an empty workspace when the target noteId is missing", () => {
+      const workspace = { activeNoteId: "none", notes: [] };
+
+      const updated = upsertNote(workspace, "anything", (note) => ({
+        ...note,
+        body: "will not happen",
+      }));
+
+      expect(updated.notes).toEqual([]);
+      expect(updated.activeNoteId).toBe("none");
+    });
+
     it("creates a new note and makes it active", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-04-13T13:00:00.000Z"));

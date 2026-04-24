@@ -555,12 +555,25 @@ export function areWorkspacesEqual(
   });
 }
 
+/**
+ * Applies `updater` to the note identified by `noteId` and returns a workspace
+ * with that note replaced. If the workspace does not contain a note with the
+ * given id the workspace is returned unchanged — we deliberately do NOT fall
+ * back to `notes[0]`, because a stale `noteId` from a debounced edit handler
+ * would otherwise silently clobber an unrelated note's body (see the autosave
+ * "jumps to a different note and overwrites it" bug report). Dropping the
+ * edit is recoverable; overwriting a different note is not.
+ */
 export function upsertNote(
   workspace: SutraPadWorkspace,
   noteId: string,
   updater: (note: SutraPadDocument) => SutraPadDocument,
 ): SutraPadWorkspace {
-  const current = workspace.notes.find((entry) => entry.id === noteId) ?? workspace.notes[0];
+  const current = workspace.notes.find((entry) => entry.id === noteId);
+  if (!current) {
+    return workspace;
+  }
+
   const next = updater(current);
 
   return {

@@ -1147,8 +1147,19 @@ export function createApp(root: HTMLElement): void {
   };
 
   const replaceCurrentNote = (updater: (note: SutraPadDocument) => SutraPadDocument): void => {
-    const current = getCurrentWorkspaceNote(workspace);
-    workspace = upsertNote(workspace, current.id, updater);
+    // Route the edit through `activeNoteId` directly rather than laundering it
+    // through `getCurrentWorkspaceNote` (which silently falls back to
+    // `notes[0]` for display purposes). If `activeNoteId` is null or no
+    // longer resolves to a real note — e.g. the note was removed during a
+    // sign-in merge while a debounced keystroke was in-flight — `upsertNote`
+    // returns the workspace unchanged and we drop the edit rather than
+    // clobber an unrelated note.
+    const activeNoteId = workspace.activeNoteId;
+    if (activeNoteId === null) return;
+
+    const previousWorkspace = workspace;
+    workspace = upsertNote(workspace, activeNoteId, updater);
+    if (workspace === previousWorkspace) return;
 
     persistLocalWorkspace(workspace);
     scheduleAutoSave();
