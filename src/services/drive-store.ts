@@ -161,41 +161,35 @@ export class GoogleDriveStore {
     };
   }
 
-  async saveWorkspace(workspace: SutraPadWorkspace): Promise<void> {
+  /**
+   * Fast path used by the silent-capture flow: appends a single new
+   * note to the user's workspace without re-uploading every other
+   * note file or rebuilding the derived tag / link / task indexes.
+   *
+   * The full `saveWorkspace` is overkill for this path — it (a) reads
+   * every note's full body via `loadWorkspace` first (so the runner
+   * can pass the merged workspace back down) and (b) re-uploads four
+   * derived index files. None of that work is necessary when adding
+   * one note: the tag/link/task indexes on Drive are write-only
+   * caches (nothing in the app reads them — `buildTagIndex` and
+   * friends rebuild from `workspace.notes` in memory on every load),
+   * so leaving them slightly stale between captures is harmless. The
+   * next main-app save refreshes them.
+   *
+   * Round-trip cost: 4-6 (workspace folder, parallel index lookup +
+   * head lookup + note upload, fetch existing index, index snapshot
+   * upload + ensure, head + cleanup in parallel) — versus 30+ for
+   * the load+save pair on a workspace with even a handful of notes.
+   */
+  async appendNoteToWorkspace(note: SutraPadDocument): Promise<void> {
     const workspaceFolder = await this.getWorkspaceFolder();
-    const existingIndexFile = await this.resolveActiveIndexFile(workspaceFolder.id);
-    const existingIndex = existingIndexFile
-      ? await this.fetchJsonFile<SutraPadIndex>(existingIndexFile.id)
-      : null;
 
-    const nextIndex = createIndex(workspace, existingIndex, existingIndexFile?.id);
-    const savedNotes = await Promise.all(
-      workspace.notes.map(async (note) => {
-        const existingSummary = existingIndex?.notes.find((entry) => entry.id === note.id);
-        const existingFileId = existingSummary?.fileId;
-
-        if (existingFileId && existingSummary?.updatedAt === note.updatedAt) {
-          return {
-            id: note.id,
-            title: note.title,
-            createdAt: note.createdAt,
-            updatedAt: note.updatedAt,
-            fileId: existingFileId,
-          } satisfies SutraPadNoteSummary;
-        }
-
-        const existingNoteFile: DriveFileRecord | null = existingFileId
-          ? await this.fetchFileMetadata(existingFileId).catch(
-              () =>
-                ({
-                  id: existingFileId,
-                  name: `note-${note.id}.json`,
-                }) as DriveFileRecord,
-            )
-          : await this.findNoteFileById(note.id, workspaceFolder.id);
-
+    // Three independent batches in parallel: upload the new note
+    // file, find the active index file, and find the head pointer.
+    // None reads from another so we save ~2×RTT here.
+    const [noteFile, existingIndexFile, existingHeadFile] = await Promise.all([
+      (async () => {
         const file = await this.uploadJsonFile({
-          fileId: existingNoteFile?.id,
           fileName: `note-${note.id}.json`,
           data: note,
           folderId: workspaceFolder.id,
@@ -205,18 +199,157 @@ export class GoogleDriveStore {
             noteId: note.id,
           },
         });
-
         await this.ensureFileInFolder(file.id, workspaceFolder.id);
+        return file;
+      })(),
+      this.resolveActiveIndexFile(workspaceFolder.id),
+      this.findHeadFile(workspaceFolder.id),
+    ]);
 
-        return {
-          id: note.id,
-          title: note.title,
-          createdAt: note.createdAt,
-          updatedAt: note.updatedAt,
-          fileId: file.id,
-        } satisfies SutraPadNoteSummary;
-      }),
+    // Load existing index after we know which file holds it. If
+    // there's no active index file (first-ever save?), start fresh
+    // with a minimal one.
+    const existingIndex = existingIndexFile
+      ? await this.fetchJsonFile<SutraPadIndex>(existingIndexFile.id)
+      : null;
+
+    const noteSummary: SutraPadNoteSummary = {
+      id: note.id,
+      title: note.title,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      fileId: noteFile.id,
+    };
+    // Replace any stale summary for the same note id (defensive — a
+    // re-save of the same note id should overwrite, not duplicate).
+    const otherSummaries = (existingIndex?.notes ?? []).filter(
+      (entry) => entry.id !== note.id,
     );
+    const savedAt = new Date().toISOString();
+    const finalIndex: SutraPadIndex = {
+      version: 1,
+      savedAt,
+      // `updatedAt` on the index tracks workspace-level last-touched
+      // — same value as `savedAt` for an append, since the act of
+      // saving counts as the last update. Keeps the index shape
+      // consistent with what `createIndex` produces in the full
+      // `saveWorkspace` path.
+      updatedAt: savedAt,
+      activeNoteId: note.id,
+      notes: [noteSummary, ...otherSummaries],
+      previousIndexId: existingIndexFile?.id,
+    };
+
+    // Snapshot upload + ensure (sequential within the chain because
+    // ensure needs the file id from upload).
+    const indexSnapshotFile = await this.uploadJsonFile({
+      fileName: this.buildIndexSnapshotFileName(savedAt),
+      data: finalIndex,
+      folderId: workspaceFolder.id,
+      appProperties: { sutrapad: "true", kind: "index" },
+    });
+    await this.ensureFileInFolder(indexSnapshotFile.id, workspaceFolder.id);
+
+    // Head update + cleanup of stale snapshots in parallel — both
+    // depend on `indexSnapshotFile.id` and are independent of each
+    // other.
+    const head: SutraPadHead = {
+      version: 1,
+      activeIndexId: indexSnapshotFile.id,
+      savedAt,
+    };
+    await Promise.all([
+      (async () => {
+        await this.uploadJsonFile({
+          fileId: existingHeadFile?.id,
+          fileName: HEAD_FILE_NAME,
+          data: head,
+          folderId: workspaceFolder.id,
+          appProperties: { sutrapad: "true", kind: "head" },
+        });
+        if (existingHeadFile) {
+          await this.ensureFileInFolder(existingHeadFile.id, workspaceFolder.id);
+        }
+      })(),
+      this.cleanupOldIndexSnapshots(workspaceFolder.id, indexSnapshotFile.id),
+    ]);
+  }
+
+  async saveWorkspace(workspace: SutraPadWorkspace): Promise<void> {
+    const workspaceFolder = await this.getWorkspaceFolder();
+    const existingIndexFile = await this.resolveActiveIndexFile(workspaceFolder.id);
+    const existingIndex = existingIndexFile
+      ? await this.fetchJsonFile<SutraPadIndex>(existingIndexFile.id)
+      : null;
+
+    const nextIndex = createIndex(workspace, existingIndex, existingIndexFile?.id);
+
+    // Notes upload + the four `find*IndexFile` lookups all need only
+    // `workspaceFolder.id` and `existingIndex` (already resolved
+    // above), so they run in a single concurrent batch instead of
+    // five sequential round-trips. On a typical capture this drops
+    // ~4×RTT off the in-flight time before we even get to the
+    // index uploads.
+    const [
+      savedNotes,
+      existingTagIndexFile,
+      existingLinkIndexFile,
+      existingTaskIndexFile,
+      existingHeadFile,
+    ] = await Promise.all([
+      Promise.all(
+        workspace.notes.map(async (note) => {
+          const existingSummary = existingIndex?.notes.find((entry) => entry.id === note.id);
+          const existingFileId = existingSummary?.fileId;
+
+          if (existingFileId && existingSummary?.updatedAt === note.updatedAt) {
+            return {
+              id: note.id,
+              title: note.title,
+              createdAt: note.createdAt,
+              updatedAt: note.updatedAt,
+              fileId: existingFileId,
+            } satisfies SutraPadNoteSummary;
+          }
+
+          const existingNoteFile: DriveFileRecord | null = existingFileId
+            ? await this.fetchFileMetadata(existingFileId).catch(
+                () =>
+                  ({
+                    id: existingFileId,
+                    name: `note-${note.id}.json`,
+                  }) as DriveFileRecord,
+              )
+            : await this.findNoteFileById(note.id, workspaceFolder.id);
+
+          const file = await this.uploadJsonFile({
+            fileId: existingNoteFile?.id,
+            fileName: `note-${note.id}.json`,
+            data: note,
+            folderId: workspaceFolder.id,
+            appProperties: {
+              sutrapad: "true",
+              kind: "note",
+              noteId: note.id,
+            },
+          });
+
+          await this.ensureFileInFolder(file.id, workspaceFolder.id);
+
+          return {
+            id: note.id,
+            title: note.title,
+            createdAt: note.createdAt,
+            updatedAt: note.updatedAt,
+            fileId: file.id,
+          } satisfies SutraPadNoteSummary;
+        }),
+      ),
+      this.findTagIndexFile(workspaceFolder.id),
+      this.findLinkIndexFile(workspaceFolder.id),
+      this.findTaskIndexFile(workspaceFolder.id),
+      this.findHeadFile(workspaceFolder.id),
+    ]);
 
     const finalIndex: SutraPadIndex = {
       ...nextIndex,
@@ -226,83 +359,80 @@ export class GoogleDriveStore {
     const linkIndex = buildLinkIndex(workspace, finalIndex.savedAt);
     const taskIndex = buildTaskIndex(workspace, finalIndex.savedAt);
 
-    const indexSnapshotFile = await this.uploadJsonFile({
-      fileName: this.buildIndexSnapshotFileName(finalIndex.savedAt),
-      data: finalIndex,
-      folderId: workspaceFolder.id,
-      appProperties: {
-        sutrapad: "true",
-        kind: "index",
-      },
-    });
+    // Each of the four index uploads is followed by an
+    // `ensureFileInFolder` to guarantee the new revision is parented
+    // under the workspace folder (Drive's REST API can detach a
+    // file's folder on multipart updates, so we re-parent
+    // defensively). Both halves are intra-chain dependencies — the
+    // ensure needs the upload's resulting file id — but the four
+    // chains are independent of each other and run concurrently.
+    const uploadAndEnsure = async (params: {
+      fileId?: string;
+      fileName: string;
+      data: unknown;
+      appProperties: Record<string, string>;
+    }): Promise<DriveFileRecord> => {
+      const file = await this.uploadJsonFile({
+        fileId: params.fileId,
+        fileName: params.fileName,
+        data: params.data,
+        folderId: workspaceFolder.id,
+        appProperties: params.appProperties,
+      });
+      await this.ensureFileInFolder(file.id, workspaceFolder.id);
+      return file;
+    };
 
-    await this.ensureFileInFolder(indexSnapshotFile.id, workspaceFolder.id);
+    const [indexSnapshotFile] = await Promise.all([
+      uploadAndEnsure({
+        fileName: this.buildIndexSnapshotFileName(finalIndex.savedAt),
+        data: finalIndex,
+        appProperties: { sutrapad: "true", kind: "index" },
+      }),
+      uploadAndEnsure({
+        fileId: existingTagIndexFile?.id,
+        fileName: TAG_INDEX_FILE_NAME,
+        data: tagIndex,
+        appProperties: { sutrapad: "true", kind: "tags" },
+      }),
+      uploadAndEnsure({
+        fileId: existingLinkIndexFile?.id,
+        fileName: LINK_INDEX_FILE_NAME,
+        data: linkIndex,
+        appProperties: { sutrapad: "true", kind: "links" },
+      }),
+      uploadAndEnsure({
+        fileId: existingTaskIndexFile?.id,
+        fileName: TASK_INDEX_FILE_NAME,
+        data: taskIndex,
+        appProperties: { sutrapad: "true", kind: "tasks" },
+      }),
+    ]);
 
-    const existingTagIndexFile = await this.findTagIndexFile(workspaceFolder.id);
-    const tagIndexFile = await this.uploadJsonFile({
-      fileId: existingTagIndexFile?.id,
-      fileName: TAG_INDEX_FILE_NAME,
-      data: tagIndex,
-      folderId: workspaceFolder.id,
-      appProperties: {
-        sutrapad: "true",
-        kind: "tags",
-      },
-    });
-
-    await this.ensureFileInFolder(tagIndexFile.id, workspaceFolder.id);
-
-    const existingLinkIndexFile = await this.findLinkIndexFile(workspaceFolder.id);
-    const linkIndexFile = await this.uploadJsonFile({
-      fileId: existingLinkIndexFile?.id,
-      fileName: LINK_INDEX_FILE_NAME,
-      data: linkIndex,
-      folderId: workspaceFolder.id,
-      appProperties: {
-        sutrapad: "true",
-        kind: "links",
-      },
-    });
-
-    await this.ensureFileInFolder(linkIndexFile.id, workspaceFolder.id);
-
-    const existingTaskIndexFile = await this.findTaskIndexFile(workspaceFolder.id);
-    const taskIndexFile = await this.uploadJsonFile({
-      fileId: existingTaskIndexFile?.id,
-      fileName: TASK_INDEX_FILE_NAME,
-      data: taskIndex,
-      folderId: workspaceFolder.id,
-      appProperties: {
-        sutrapad: "true",
-        kind: "tasks",
-      },
-    });
-
-    await this.ensureFileInFolder(taskIndexFile.id, workspaceFolder.id);
-
-    const existingHeadFile = await this.findHeadFile(workspaceFolder.id);
+    // Head update + cleanup of stale index snapshots both need
+    // `indexSnapshotFile.id` and are otherwise independent — last
+    // pair of operations runs in parallel.
     const head: SutraPadHead = {
       version: 1,
       activeIndexId: indexSnapshotFile.id,
       savedAt: finalIndex.savedAt,
     };
 
-    await this.uploadJsonFile({
-      fileId: existingHeadFile?.id,
-      fileName: HEAD_FILE_NAME,
-      data: head,
-      folderId: workspaceFolder.id,
-      appProperties: {
-        sutrapad: "true",
-        kind: "head",
-      },
-    });
-
-    if (existingHeadFile) {
-      await this.ensureFileInFolder(existingHeadFile.id, workspaceFolder.id);
-    }
-
-    await this.cleanupOldIndexSnapshots(workspaceFolder.id, indexSnapshotFile.id);
+    await Promise.all([
+      (async () => {
+        await this.uploadJsonFile({
+          fileId: existingHeadFile?.id,
+          fileName: HEAD_FILE_NAME,
+          data: head,
+          folderId: workspaceFolder.id,
+          appProperties: { sutrapad: "true", kind: "head" },
+        });
+        if (existingHeadFile) {
+          await this.ensureFileInFolder(existingHeadFile.id, workspaceFolder.id);
+        }
+      })(),
+      this.cleanupOldIndexSnapshots(workspaceFolder.id, indexSnapshotFile.id),
+    ]);
   }
 
   private buildIndexSnapshotFileName(savedAt: string): string {

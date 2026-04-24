@@ -24,10 +24,7 @@
  * can sign in / inspect / retry.
  */
 
-import {
-  createTextNoteWorkspace,
-  stripEmptyDraftNotes,
-} from "../lib/notebook";
+import { createNote, extractUrlsFromText } from "../lib/notebook";
 import { readUrlCapture } from "../lib/url-capture";
 import { GoogleAuthService } from "../services/google-auth";
 import { GoogleDriveStore } from "../services/drive-store";
@@ -253,28 +250,27 @@ export async function runSilentCapture(
     return { kind: "needs-fallback", reason: "no-auth" };
   }
 
-  // Stages 3-5 — load remote, append note, push back. We deliberately
-  // don't merge with localStorage here: this tab is fresh, its
-  // local view is empty, and the source of truth for the duration
-  // of this single capture is whatever Drive has right now.
+  // Stage 3 — append the note via the fast path. `appendNoteToWorkspace`
+  // doesn't pull every existing note's body off Drive (which is
+  // what `loadWorkspace` does and is the slowest part of the round
+  // trip), and skips the tag/link/task index updates that the app
+  // never reads back anyway. The next main-app save refreshes those
+  // caches.
   try {
     const store = new GoogleDriveStore(token);
-    splash.setStatus("Loading library\u2026");
-    const remote = await store.loadWorkspace();
+    splash.setStatus("Saving note\u2026");
     const body = buildSilentCaptureBody(selection, payload.url);
-    const next = createTextNoteWorkspace(remote, {
-      title: payload.title ?? payload.url,
-      body,
-      captureContext: payload.captureContext
+    const note = createNote(
+      payload.title ?? payload.url,
+      undefined,
+      undefined,
+      payload.captureContext
         ? { ...payload.captureContext, source: "url-capture" }
         : { source: "url-capture" },
-    });
-    // Mirror the main app's empty-draft hygiene before push so a
-    // stale Untitled stub from a different session doesn't ride
-    // along with the silent capture.
-    const cleaned = stripEmptyDraftNotes(next);
-    splash.setStatus("Saving note\u2026");
-    await store.saveWorkspace(cleaned);
+    );
+    note.body = body;
+    note.urls = extractUrlsFromText(body);
+    await store.appendNoteToWorkspace(note);
   } catch {
     splash.remove();
     return { kind: "needs-fallback", reason: "save-failed" };
