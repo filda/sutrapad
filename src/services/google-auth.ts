@@ -134,6 +134,8 @@ export class GoogleAuthService {
    * resolution.
    */
   #refreshPromise: Promise<UserProfile | null> | null = null;
+  /** Active storage-event listener for cross-tab sign-out propagation. */
+  #storageListener: ((event: StorageEvent) => void) | null = null;
 
   async initialize(): Promise<void> {
     if (this.#initPromise) return this.#initPromise;
@@ -295,6 +297,64 @@ export class GoogleAuthService {
 
   getAccessToken(): string | null {
     return this.#accessToken;
+  }
+
+  /**
+   * Subscribe to cross-tab sign-out. When another tab on the same
+   * origin removes the persisted auth session (sign-out, manual
+   * cache wipe, or the storage event fires for any reason that
+   * results in `newValue === null` for our key), this tab clears its
+   * own in-memory access token and invokes `handler` so the UI can
+   * reflect the signed-out state.
+   *
+   * Returns a teardown function that removes the listener. `app.ts`
+   * registers it from the `import.meta.hot.dispose` hook to avoid
+   * stacking listeners on HMR reloads — same pattern as
+   * `wirePaletteAccess` and `wireKeyboardShortcuts`.
+   *
+   * Storage events only fire in *other* tabs (not the one that wrote
+   * the change), so a sign-out in tab A reaches tab B but not back
+   * to tab A — exactly the propagation shape we want.
+   *
+   * `signIn` from another tab is intentionally NOT propagated here.
+   * Re-hydrating a peer tab's signed-in state from a `newValue`
+   * payload would require running `restorePersistedSession`-style
+   * logic from inside an event handler and would surprise the user
+   * who's looking at a "sign in" screen and suddenly sees their
+   * notes; sign-in is a deliberate action that should be triggered
+   * by the user reloading the tab they want to use.
+   */
+  subscribeToCrossTabSignOut(handler: () => void): () => void {
+    // Defensive teardown — in normal use the caller registers once
+    // per service instance, but the HMR-aware app.ts dispose hook
+    // can call this twice if the previous registration didn't run.
+    this.unsubscribeFromCrossTabSignOut();
+
+    const listener = (event: StorageEvent): void => {
+      // Only react to our own session key. Cross-origin storage
+      // events don't fire on this listener (browsers only notify
+      // same-origin tabs), but other localStorage slots on the same
+      // origin do — filter explicitly.
+      if (event.key !== GOOGLE_AUTH_SESSION_KEY) return;
+      // `newValue === null` means the key was removed (sign-out) or
+      // localStorage was cleared. Other transitions (sign-in,
+      // refresh-token rotation in another tab) fall through; see
+      // method-level comment for rationale.
+      if (event.newValue !== null) return;
+
+      this.#accessToken = null;
+      handler();
+    };
+
+    window.addEventListener("storage", listener);
+    this.#storageListener = listener;
+    return () => this.unsubscribeFromCrossTabSignOut();
+  }
+
+  private unsubscribeFromCrossTabSignOut(): void {
+    if (!this.#storageListener) return;
+    window.removeEventListener("storage", this.#storageListener);
+    this.#storageListener = null;
   }
 
   private async fetchUserProfile(accessToken: string): Promise<UserProfile> {

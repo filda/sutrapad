@@ -318,6 +318,133 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
   });
 });
 
+describe("GoogleAuthService.subscribeToCrossTabSignOut", () => {
+  function createWindowWithStorage(): {
+    eventListeners: Map<string, Array<EventListener>>;
+    fireStorageEvent: (key: string | null, newValue: string | null) => void;
+  } {
+    const listeners = new Map<string, Array<EventListener>>();
+    vi.stubGlobal("window", {
+      localStorage: createStorageMock(),
+      addEventListener: (type: string, listener: EventListener) => {
+        const list = listeners.get(type) ?? [];
+        list.push(listener);
+        listeners.set(type, list);
+      },
+      removeEventListener: (type: string, listener: EventListener) => {
+        const list = listeners.get(type) ?? [];
+        listeners.set(
+          type,
+          list.filter((l) => l !== listener),
+        );
+      },
+    });
+    vi.stubGlobal("localStorage", window.localStorage);
+    localStorage.clear();
+
+    return {
+      eventListeners: listeners,
+      fireStorageEvent: (key, newValue) => {
+        const event = { key, newValue, oldValue: null } as StorageEvent;
+        for (const l of listeners.get("storage") ?? []) {
+          l(event);
+        }
+      },
+    };
+  }
+
+  it("clears in-memory token and invokes the handler when peer tab removes the session key", () => {
+    const harness = createWindowWithStorage();
+    const service = new GoogleAuthService();
+    // Pre-populate restored session so there's an in-memory token
+    // to invalidate.
+    localStorage.setItem(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "live-token",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        profile: { name: "X", email: "x@x" },
+      }),
+    );
+    return service.restorePersistedSession().then(() => {
+      expect(service.getAccessToken()).toBe("live-token");
+
+      const handler = vi.fn();
+      service.subscribeToCrossTabSignOut(handler);
+
+      // Peer tab removes the session key — storage event fires with
+      // newValue === null.
+      harness.fireStorageEvent("sutrapad-google-auth-session", null);
+
+      expect(service.getAccessToken()).toBeNull();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("ignores storage events for unrelated keys", () => {
+    const harness = createWindowWithStorage();
+    const service = new GoogleAuthService();
+    const handler = vi.fn();
+    service.subscribeToCrossTabSignOut(handler);
+
+    harness.fireStorageEvent("sutrapad-local-workspace", null);
+    harness.fireStorageEvent("sutrapad-og-image-cache-v1", null);
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("ignores storage events that set a non-null value (peer sign-in)", () => {
+    // Sign-in propagation deliberately not implemented — see method
+    // doc. A peer tab updating our key with a fresh session payload
+    // should NOT silently sign-in this tab.
+    const harness = createWindowWithStorage();
+    const service = new GoogleAuthService();
+    const handler = vi.fn();
+    service.subscribeToCrossTabSignOut(handler);
+
+    harness.fireStorageEvent(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "peer-token",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        profile: { name: "Peer", email: "p@p" },
+      }),
+    );
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("removes the listener via the returned dispose function", () => {
+    const harness = createWindowWithStorage();
+    const service = new GoogleAuthService();
+    const handler = vi.fn();
+    const dispose = service.subscribeToCrossTabSignOut(handler);
+
+    dispose();
+    harness.fireStorageEvent("sutrapad-google-auth-session", null);
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("replaces an existing subscription when subscribed twice (idempotent dispose)", () => {
+    // HMR or accidentally double-wiring `createApp` could call
+    // subscribe twice. The second call should replace the first
+    // listener — otherwise we'd stack handlers and fire duplicate
+    // sign-out callbacks per peer event.
+    const harness = createWindowWithStorage();
+    const service = new GoogleAuthService();
+    const firstHandler = vi.fn();
+    const secondHandler = vi.fn();
+
+    service.subscribeToCrossTabSignOut(firstHandler);
+    service.subscribeToCrossTabSignOut(secondHandler);
+
+    harness.fireStorageEvent("sutrapad-google-auth-session", null);
+
+    expect(firstHandler).not.toHaveBeenCalled();
+    expect(secondHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("parseUserInfoResponse", () => {
   it("accepts a well-formed response with all fields", () => {
     const result = parseUserInfoResponse({

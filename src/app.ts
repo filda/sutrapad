@@ -1742,16 +1742,32 @@ export function createApp(root: HTMLElement): void {
     render,
   });
 
+  // Cross-tab sign-out: when the user signs out in another tab of
+  // the same origin, the storage event fires here and we clear the
+  // local in-memory token + flip the UI back to signed-out. Avoids
+  // the "stale tab keeps using a revoked token" footgun until the
+  // next 401 retroactively forces the issue.
+  const disposeCrossTabSignOut = auth.subscribeToCrossTabSignOut(() => {
+    setProfileState(null);
+    setSyncStateValue("idle");
+    setLastErrorValue("");
+    cancelAutoSave();
+    render();
+  });
+
   // HMR re-runs `createApp` against the same `window` on every save.
   // Without explicit teardown the `keydown` listeners from
-  // `wirePaletteAccess` and `wireKeyboardShortcuts` stack — a single
-  // `/` press would open one palette per accumulated reload. The
-  // optional `import.meta.hot` hook only exists in dev; production
-  // builds tree-shake this branch.
+  // `wirePaletteAccess` and `wireKeyboardShortcuts` plus the
+  // `storage` listener from `subscribeToCrossTabSignOut` stack — a
+  // single `/` press would open one palette per accumulated reload
+  // and one tab-level sign-out would fire N "you've been signed
+  // out" handlers. The optional `import.meta.hot` hook only exists
+  // in dev; production builds tree-shake this branch.
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
       paletteAccess?.dispose();
       disposeKeyboardShortcuts();
+      disposeCrossTabSignOut();
     });
   }
 
