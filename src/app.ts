@@ -120,7 +120,7 @@ import {
   type ShortcutAction,
   type ShortcutState,
 } from "./lib/keyboard-shortcuts";
-import { atom } from "./lib/store";
+import { atom, type Readable } from "./lib/store";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
 export { resolveDisplayedNote } from "./app/logic/displayed-note";
@@ -433,15 +433,14 @@ interface RenderCallbackOptions {
   setActiveMenuItem: (menuItemId: MenuItemId) => void;
   getDetailNoteId: () => string | null;
   setDetailNoteId: (detailNoteId: string | null) => void;
-  getNotesViewMode: () => NotesViewMode;
+  // View-mode / preference getters were dropped after the atom-store
+  // migration: handlers used them only for `if (next === getX()) return`
+  // early-outs, which the atoms' built-in `Object.is` check now handles
+  // for free. The matching setters stay because handlers still mutate.
   setNotesViewMode: (notesViewMode: NotesViewMode) => void;
-  getLinksViewMode: () => LinksViewMode;
   setLinksViewMode: (linksViewMode: LinksViewMode) => void;
-  getTasksFilter: () => TasksFilterId;
   setTasksFilter: (next: TasksFilterId) => void;
-  getTasksShowDone: () => boolean;
   setTasksShowDone: (next: boolean) => void;
-  getTasksOneThingKey: () => string | null;
   setTasksOneThingKey: (next: string | null) => void;
   getVisibleTagClasses: () => ReadonlySet<TagClassId>;
   setVisibleTagClasses: (next: Set<TagClassId>) => void;
@@ -451,9 +450,7 @@ interface RenderCallbackOptions {
   setDismissedTagAliases: (next: Set<string>) => void;
   getRecentTagFilters: () => readonly string[];
   setRecentTagFilters: (next: readonly string[]) => void;
-  getCurrentTheme: () => ThemeChoice;
   setCurrentTheme: (theme: ThemeChoice) => void;
-  getPersonaPreference: () => PersonaPreference;
   setPersonaPreference: (preference: PersonaPreference) => void;
   handleNewNote: () => void;
   /**
@@ -508,15 +505,10 @@ function createRenderCallbacks({
   setActiveMenuItem,
   getDetailNoteId,
   setDetailNoteId,
-  getNotesViewMode,
   setNotesViewMode,
-  getLinksViewMode,
   setLinksViewMode,
-  getTasksFilter,
   setTasksFilter,
-  getTasksShowDone,
   setTasksShowDone,
-  getTasksOneThingKey,
   setTasksOneThingKey,
   getVisibleTagClasses,
   setVisibleTagClasses,
@@ -526,9 +518,7 @@ function createRenderCallbacks({
   setDismissedTagAliases,
   getRecentTagFilters,
   setRecentTagFilters,
-  getCurrentTheme,
   setCurrentTheme,
-  getPersonaPreference,
   setPersonaPreference,
   handleNewNote,
   purgeEmptyDraftNotes,
@@ -542,38 +532,18 @@ function createRenderCallbacks({
   refreshNotesPanel,
 }: RenderCallbackOptions) {
   return {
-    onChangeNotesView: (mode: NotesViewMode) => {
-      if (mode === getNotesViewMode()) return;
-      setNotesViewMode(mode);
-      persistNotesView(mode);
-      render();
-    },
-    onChangeLinksView: (mode: LinksViewMode) => {
-      if (mode === getLinksViewMode()) return;
-      setLinksViewMode(mode);
-      persistLinksView(mode);
-      render();
-    },
-    onChangeTasksFilter: (filter: TasksFilterId) => {
-      if (filter === getTasksFilter()) return;
-      setTasksFilter(filter);
-      render();
-    },
-    onToggleTasksShowDone: (showDone: boolean) => {
-      if (showDone === getTasksShowDone()) return;
-      setTasksShowDone(showDone);
-      render();
-    },
-    onSetOneThing: (key: string | null) => {
-      if (key === getTasksOneThingKey()) return;
-      setTasksOneThingKey(key);
-      render();
-    },
+    // Atom Object.is already short-circuits same-value sets, and
+    // `persistNotesView` / `persistLinksView` / `persistTheme` /
+    // … are wired as subscribers on the matching atoms — handlers
+    // just call setters and rely on the atom subscriber chain to
+    // persist + re-render.
+    onChangeNotesView: (mode: NotesViewMode) => setNotesViewMode(mode),
+    onChangeLinksView: (mode: LinksViewMode) => setLinksViewMode(mode),
+    onChangeTasksFilter: (filter: TasksFilterId) => setTasksFilter(filter),
+    onToggleTasksShowDone: (showDone: boolean) => setTasksShowDone(showDone),
+    onSetOneThing: (key: string | null) => setTasksOneThingKey(key),
     onToggleTagClass: (classId: TagClassId) => {
-      const next = toggleTagClassVisibility(getVisibleTagClasses(), classId);
-      setVisibleTagClasses(next);
-      persistVisibleTagClasses(next);
-      render();
+      setVisibleTagClasses(toggleTagClassVisibility(getVisibleTagClasses(), classId));
     },
     onChangeTagsSearchQuery: (query: string) => {
       if (query === getTagsSearchQuery()) return;
@@ -583,6 +553,9 @@ function createRenderCallbacks({
       // with whatever state changed alongside this. The input itself
       // re-mounts, but we restore focus + caret below — same pattern
       // `renderPreservingBodyInputFocus` uses for the note body textarea.
+      // Synchronous render here pre-empts the atom-driven scheduleRender
+      // microtask, so the focus + caret restore below operates on the
+      // freshly-mounted input rather than the about-to-be-replaced one.
       render();
       const nextInput = document.querySelector<HTMLInputElement>(
         ".tags-search-input",
@@ -611,31 +584,15 @@ function createRenderCallbacks({
       }
       persistWorkspace(next);
       scheduleAutoSave();
-      render();
     },
     onDismissTagAlias: (canonical: string, alias: string) => {
-      const next = addDismissedTagAlias(
-        getDismissedTagAliases(),
-        canonical,
-        alias,
+      setDismissedTagAliases(
+        addDismissedTagAlias(getDismissedTagAliases(), canonical, alias),
       );
-      setDismissedTagAliases(next);
-      persistDismissedTagAliases(next);
-      render();
     },
-    onChangeTheme: (choice: ThemeChoice) => {
-      if (choice === getCurrentTheme()) return;
-      setCurrentTheme(choice);
-      persistThemeChoice(choice);
-      applyThemeChoice(choice);
-      render();
-    },
-    onChangePersonaPreference: (preference: PersonaPreference) => {
-      if (preference === getPersonaPreference()) return;
-      setPersonaPreference(preference);
-      persistPersonaPreference(preference);
-      render();
-    },
+    onChangeTheme: (choice: ThemeChoice) => setCurrentTheme(choice),
+    onChangePersonaPreference: (preference: PersonaPreference) =>
+      setPersonaPreference(preference),
     onSelectMenuItem: (id: MenuItemId) => {
       if (isMenuActionItemId(id)) {
         handleNewNote();
@@ -647,20 +604,17 @@ function createRenderCallbacks({
       purgeEmptyDraftNotes();
       setActiveMenuItem(id);
       setDetailNoteId(null);
-      render();
     },
     onSignIn: () => {
       void (async () => {
         try {
           setSyncState("loading");
           setLastError("");
-          render();
           setProfile(await auth.signIn());
           await restoreWorkspaceAfterSignIn();
         } catch (error) {
           setSyncState("error");
           setLastError(error instanceof Error ? error.message : "Sign-in failed.");
-          render();
         }
       })();
     },
@@ -671,7 +625,6 @@ function createRenderCallbacks({
       setProfile(null);
       setSyncState("idle");
       setLastError("");
-      render();
     },
     onCopyBookmarklet: () => {
       void (async () => {
@@ -691,7 +644,6 @@ function createRenderCallbacks({
             "Copy failed. In Safari, you can still drag the bookmarklet or manually copy the link target.",
           );
         }
-        render();
       })();
     },
     onSelectNote: (noteId: string) => {
@@ -707,7 +659,6 @@ function createRenderCallbacks({
       };
       setWorkspace(workspace);
       persistWorkspace(workspace);
-      render();
     },
     onBackToNotes: () => {
       // "← Back to notes" from the detail topbar. Same untouched-draft
@@ -715,7 +666,6 @@ function createRenderCallbacks({
       // the editor, so a blank note doesn't get a free ride to Drive.
       purgeEmptyDraftNotes();
       setDetailNoteId(null);
-      render();
     },
     onOpenCapture: () => {
       // Mirrors `onBackToNotes`'s shape: clear the detail context first,
@@ -724,7 +674,6 @@ function createRenderCallbacks({
       purgeEmptyDraftNotes();
       setDetailNoteId(null);
       setActiveMenuItem("capture");
-      render();
     },
     onToggleTagFilter: (tag: string) => {
       const nextSelectedTagFilters = togglePaletteTagFilter(getSelectedTagFilters(), tag);
@@ -738,7 +687,6 @@ function createRenderCallbacks({
         ),
       );
       syncTagFiltersToLocation(nextSelectedTagFilters);
-      render();
     },
     onApplyTagFilter: (tag: string) => {
       // Commit path from the topbar's inline typeahead. Enter, second-Tab,
@@ -763,15 +711,13 @@ function createRenderCallbacks({
       // Rotate the recent-tag list regardless of whether the filter was
       // already active — the user just interacted with this tag, so it
       // belongs at the top of the recents next time they open the dropdown.
-      const nextRecent = pushRecentTagFilter(getRecentTagFilters(), tag);
-      setRecentTagFilters(nextRecent);
-      persistRecentTagFilters(nextRecent);
-      render();
+      // The persist subscriber on `recentTagFilters$` writes the new list
+      // to localStorage automatically.
+      setRecentTagFilters(pushRecentTagFilter(getRecentTagFilters(), tag));
     },
     onClearTagFilters: () => {
       setSelectedTagFilters([]);
       syncTagFiltersToLocation([]);
-      render();
     },
     onChangeFilterMode: (mode: SutraPadTagFilterMode) => {
       if (mode === getFilterMode()) return;
@@ -785,7 +731,6 @@ function createRenderCallbacks({
         ),
       );
       syncFilterModeToLocation(mode);
-      render();
     },
     onNewNote: handleNewNote,
     onRemoveSelectedFilter: (tag: string) => {
@@ -800,7 +745,6 @@ function createRenderCallbacks({
         ),
       );
       syncTagFiltersToLocation(nextSelectedTagFilters);
-      render();
     },
     onTitleInput: (value: string) => {
       replaceCurrentNote((currentWorkspaceNote) => ({
@@ -849,10 +793,10 @@ function createRenderCallbacks({
         urls: extractUrlsFromText(nextBody),
         updatedAt: new Date().toISOString(),
       }));
-      setWorkspace({ ...updatedWorkspace, activeNoteId: previousActiveNoteId });
-      persistWorkspace(getWorkspace());
+      const finalWorkspace = { ...updatedWorkspace, activeNoteId: previousActiveNoteId };
+      setWorkspace(finalWorkspace);
+      persistWorkspace(finalWorkspace);
       scheduleAutoSave();
-      render();
     },
     onAddTag: (value: string) => {
       const tag = value.trim().toLowerCase();
@@ -953,7 +897,6 @@ function handleNewNoteCreation({
   setActiveMenuItem("notes");
   setSyncState("idle");
   setLastError("");
-  render();
   if (!newNoteId) return;
 
   void (async () => {
@@ -1384,6 +1327,24 @@ export function createApp(root: HTMLElement): void {
     }
   };
 
+  // Render scheduling. `render()` is the synchronous re-render entry
+  // point — handlers that need the new DOM available immediately
+  // (focus restoration, scroll preservation) keep calling it directly.
+  // `scheduleRender()` is the debounced version that atom subscribers
+  // use: a chain of N atom updates in the same handler triggers a
+  // single microtask-flushed re-render rather than N immediate ones.
+  // The flag is shared so a synchronous `render()` from a handler
+  // pre-empts any pending microtask, avoiding the "render synchronously
+  // then render again on the next tick" double-up.
+  let renderScheduled = false;
+  const scheduleRender = (): void => {
+    if (renderScheduled) return;
+    renderScheduled = true;
+    queueMicrotask(() => {
+      if (renderScheduled) render();
+    });
+  };
+
   const replaceCurrentNote = (updater: (note: SutraPadDocument) => SutraPadDocument): void => {
     // Route the edit through `activeNoteId` directly rather than laundering it
     // through `getCurrentWorkspaceNote` (which silently falls back to
@@ -1509,19 +1470,13 @@ export function createApp(root: HTMLElement): void {
         filterMode,
         notesViewMode,
         personaOptions: resolveCurrentPersonaOptions(),
-        onChangeNotesView: (mode) => {
-          if (mode === notesViewMode) return;
-          notesViewMode$.set(mode);
-          persistNotesView(mode);
-          render();
-        },
+        onChangeNotesView: (mode) => notesViewMode$.set(mode),
         onSelectNote: (noteId) => {
           activeMenuItem$.set("notes");
           detailNoteId$.set(noteId);
           const next = { ...workspace$.get(), activeNoteId: noteId };
           workspace$.set(next);
           persistLocalWorkspace(next);
-          render();
         },
         onNewNote: handleNewNote,
       }),
@@ -1561,6 +1516,11 @@ export function createApp(root: HTMLElement): void {
   };
 
   const render = (): void => {
+    // Pre-empt any pending microtask render so an atom-driven
+    // `scheduleRender` queued earlier doesn't double-fire after this
+    // synchronous call returns. See `scheduleRender` comment for the
+    // shared-flag handshake.
+    renderScheduled = false;
     syncSelectedTagFilters();
     const detailRoute = syncDetailRouteSelection(
       activeMenuItem$.get(),
@@ -1624,15 +1584,10 @@ export function createApp(root: HTMLElement): void {
       setActiveMenuItem: setActiveMenuItemState,
       getDetailNoteId: () => detailNoteId$.get(),
       setDetailNoteId: setDetailNoteIdState,
-      getNotesViewMode: () => notesViewMode$.get(),
       setNotesViewMode: setNotesViewModeState,
-      getLinksViewMode: () => linksViewMode$.get(),
       setLinksViewMode: setLinksViewModeState,
-      getTasksFilter: () => tasksFilter$.get(),
       setTasksFilter: setTasksFilterState,
-      getTasksShowDone: () => tasksShowDone$.get(),
       setTasksShowDone: setTasksShowDoneState,
-      getTasksOneThingKey: () => tasksOneThingKey$.get(),
       setTasksOneThingKey: setTasksOneThingKeyState,
       getVisibleTagClasses: () => visibleTagClasses$.get(),
       setVisibleTagClasses: setVisibleTagClassesState,
@@ -1642,9 +1597,7 @@ export function createApp(root: HTMLElement): void {
       setDismissedTagAliases: setDismissedTagAliasesState,
       getRecentTagFilters: () => recentTagFilters$.get(),
       setRecentTagFilters: setRecentTagFiltersState,
-      getCurrentTheme: () => currentTheme$.get(),
       setCurrentTheme: setCurrentThemeState,
-      getPersonaPreference: () => personaPreference$.get(),
       setPersonaPreference: setPersonaPreferenceState,
       handleNewNote,
       purgeEmptyDraftNotes,
@@ -1697,6 +1650,59 @@ export function createApp(root: HTMLElement): void {
       ...callbacks,
     });
   };
+
+  // Atom-driven render scheduling. Subscribing each UI-affecting atom
+  // means handlers can mutate state and forget about triggering
+  // re-renders explicitly — the chain `setX(value) → atom.set() →
+  // subscriber → scheduleRender → microtask → render()` runs itself.
+  // Synchronous ad-hoc `render()` calls in handlers stay valid for
+  // the few sites that need the new DOM available immediately
+  // (focus restoration, scroll preservation); the shared
+  // `renderScheduled` flag makes those calls pre-empt the microtask.
+  //
+  // `autoSaveTimer$` and `paletteAccess$` are deliberately excluded —
+  // they hold internal handles, not user-visible UI state, and
+  // re-rendering on their changes would be wasted work.
+  const renderingAtoms: Readable<unknown>[] = [
+    workspace$,
+    profile$,
+    syncState$,
+    lastError$,
+    bookmarkletMessage$,
+    selectedTagFilters$,
+    filterMode$,
+    activeMenuItem$,
+    detailNoteId$,
+    notesViewMode$,
+    linksViewMode$,
+    tasksFilter$,
+    tasksShowDone$,
+    tasksOneThingKey$,
+    visibleTagClasses$,
+    tagsSearchQuery$,
+    dismissedTagAliases$,
+    recentTagFilters$,
+    currentTheme$,
+    personaPreference$,
+  ];
+  const disposeRenderSubscriptions = renderingAtoms.map((atom$) =>
+    atom$.subscribe(scheduleRender),
+  );
+
+  // Side-effect subscribers. Each persist call used to be inlined at
+  // every handler that wrote to the corresponding atom; lifting them
+  // up here means the on-disk copy can never drift from the in-memory
+  // value, regardless of which handler did the mutation.
+  notesViewMode$.subscribe(persistNotesView);
+  linksViewMode$.subscribe(persistLinksView);
+  visibleTagClasses$.subscribe(persistVisibleTagClasses);
+  dismissedTagAliases$.subscribe(persistDismissedTagAliases);
+  recentTagFilters$.subscribe((value) => persistRecentTagFilters([...value]));
+  currentTheme$.subscribe((choice) => {
+    persistThemeChoice(choice);
+    applyThemeChoice(choice);
+  });
+  personaPreference$.subscribe(persistPersonaPreference);
 
   const getStore = (): GoogleDriveStore => {
     const token = auth.getAccessToken();
@@ -1806,7 +1812,6 @@ export function createApp(root: HTMLElement): void {
     setSyncStateValue("idle");
     setLastErrorValue("");
     cancelAutoSave();
-    render();
   });
 
   // HMR re-runs `createApp` against the same `window` on every save.
@@ -1822,6 +1827,7 @@ export function createApp(root: HTMLElement): void {
       paletteAccess$.get()?.dispose();
       disposeKeyboardShortcuts();
       disposeCrossTabSignOut();
+      for (const dispose of disposeRenderSubscriptions) dispose();
     });
   }
 
