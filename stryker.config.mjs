@@ -4,7 +4,7 @@
 const config = {
   testRunner: "vitest",
   checkers: ["typescript"],
-  tsconfigFile: "tsconfig.json",
+  tsconfigFile: "tsconfig.vitest.json",
   mutate: [
     "src/lib/**/*.ts",
     "src/app/logic/**/*.ts",
