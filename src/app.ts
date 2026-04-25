@@ -1715,6 +1715,7 @@ export function createApp(root: HTMLElement): void {
       setLastError: setLastErrorValue,
       render,
       refreshStatus,
+      cancelAutoSave,
     });
 
   paletteAccess = wirePaletteAccess({

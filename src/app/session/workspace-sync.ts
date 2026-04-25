@@ -13,11 +13,20 @@ export async function runWorkspaceSave(
     setLastError: (message: string) => void;
     render: () => void;
     refreshStatus: () => void;
+    cancelAutoSave?: () => void;
   },
 ): Promise<void> {
   const refreshUi = mode === "interactive" ? effects.render : effects.refreshStatus;
 
   try {
+    // Mode-aware cancel. An interactive save (Settings → Save) means
+    // the user explicitly asked for the write right now — any pending
+    // background autosave from the user's last keystroke is now
+    // redundant and would just duplicate the round-trip. We
+    // deliberately don't cancel from a `mode === "background"` save:
+    // that path *is* the autosave-driven write, and `scheduleAutoSave`
+    // already nulls the timer field as it fires.
+    if (mode === "interactive") effects.cancelAutoSave?.();
     effects.setSyncState("saving");
     effects.setLastError("");
     effects.persistLocalWorkspace();

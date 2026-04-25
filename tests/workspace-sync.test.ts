@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   runWorkspaceLoad,
   runWorkspaceRestoreAfterSignIn,
+  runWorkspaceSave,
 } from "../src/app/session/workspace-sync";
 import type { SutraPadWorkspace } from "../src/types";
 
@@ -133,6 +134,58 @@ describe("runWorkspaceRestoreAfterSignIn", () => {
         setSyncState: () => undefined,
         setLastError: () => undefined,
         render: () => undefined,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("runWorkspaceSave", () => {
+  it("cancels pending autosave on an interactive save", async () => {
+    // The user clicked Settings → Save Notebook explicitly. Whatever
+    // the user typed two seconds ago is about to be flushed by this
+    // call; the background autosave timer for the same workspace is
+    // now a redundant duplicate.
+    const cancelAutoSave = vi.fn();
+    await runWorkspaceSave("interactive", {
+      persistLocalWorkspace: () => undefined,
+      saveRemoteWorkspace: async () => undefined,
+      setSyncState: () => undefined,
+      setLastError: () => undefined,
+      render: () => undefined,
+      refreshStatus: () => undefined,
+      cancelAutoSave,
+    });
+    expect(cancelAutoSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT cancel the autosave on a background save", async () => {
+    // The background save *is* the autosave timer firing. Cancelling
+    // the timer from inside its own fire path would clear a `null`
+    // (already-fired) timer in app.ts, but more importantly the
+    // semantics — "interactive saves preempt autosave" — only make
+    // sense in one direction.
+    const cancelAutoSave = vi.fn();
+    await runWorkspaceSave("background", {
+      persistLocalWorkspace: () => undefined,
+      saveRemoteWorkspace: async () => undefined,
+      setSyncState: () => undefined,
+      setLastError: () => undefined,
+      render: () => undefined,
+      refreshStatus: () => undefined,
+      cancelAutoSave,
+    });
+    expect(cancelAutoSave).not.toHaveBeenCalled();
+  });
+
+  it("works without the cancelAutoSave hook (backwards compat)", async () => {
+    await expect(
+      runWorkspaceSave("interactive", {
+        persistLocalWorkspace: () => undefined,
+        saveRemoteWorkspace: async () => undefined,
+        setSyncState: () => undefined,
+        setLastError: () => undefined,
+        render: () => undefined,
+        refreshStatus: () => undefined,
       }),
     ).resolves.toBeUndefined();
   });
