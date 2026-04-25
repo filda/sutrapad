@@ -1308,8 +1308,28 @@ export function createApp(root: HTMLElement): void {
     if (autoSaveTimer) clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(() => {
       autoSaveTimer = null;
+      // Fire-time guard. The schedule-time `if (!profile)` covers
+      // "user wasn't signed in when typing"; this re-check covers
+      // the race where the user signed *out* between schedule (2 s
+      // ago) and fire. Without it, `saveWorkspace("background")`
+      // would call into Drive without a valid token and surface as
+      // a sync error pulse for an action the user never asked for.
+      if (!profile) return;
       void saveWorkspace("background");
     }, 2000);
+  };
+
+  /**
+   * Cancels any pending background autosave. Used by manual Load and
+   * sign-in restore to make sure their own write (or "no write at
+   * all" decision) is the single source of truth for the transition,
+   * rather than racing the user's last-keystroke timer.
+   */
+  const cancelAutoSave = (): void => {
+    if (autoSaveTimer) {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = null;
+    }
   };
 
   const replaceCurrentNote = (updater: (note: SutraPadDocument) => SutraPadDocument): void => {
@@ -1627,6 +1647,7 @@ export function createApp(root: HTMLElement): void {
       setSyncState: setSyncStateValue,
       setLastError: setLastErrorValue,
       render,
+      cancelAutoSave,
     });
 
   const restoreWorkspaceAfterSignIn = async (): Promise<void> =>
@@ -1641,6 +1662,7 @@ export function createApp(root: HTMLElement): void {
       setSyncState: setSyncStateValue,
       setLastError: setLastErrorValue,
       render,
+      cancelAutoSave,
     });
 
   const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> =>
