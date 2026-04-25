@@ -168,6 +168,47 @@ interface RenderAppOptions
   onOpenCapture: () => void;
 }
 
+/**
+ * Builds the page footer using DOM construction APIs instead of an
+ * `innerHTML` template literal. The previous version interpolated
+ * `buildStamp` into innerHTML — safe today (build stamps are
+ * `version • commit • timestamp`, all developer-controlled), but the
+ * pattern was the last interpolated-innerHTML site in the codebase
+ * and a tempting precedent for someone adding a user-string later.
+ *
+ * Keeping zero interpolated-innerHTML in the repo means a single
+ * grep is enough to audit the entire view layer.
+ */
+function buildFooter(buildStamp: string): HTMLElement {
+  const footer = document.createElement("footer");
+  footer.className = "footer";
+
+  const description = document.createElement("p");
+  description.append(
+    "Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by ",
+  );
+  const osmLink = document.createElement("a");
+  osmLink.href = "https://www.openstreetmap.org/";
+  osmLink.target = "_blank";
+  osmLink.rel = "noreferrer";
+  osmLink.textContent = "OpenStreetMap";
+  description.append(osmLink, " and ");
+
+  const nominatimLink = document.createElement("a");
+  nominatimLink.href = "https://nominatim.openstreetmap.org/";
+  nominatimLink.target = "_blank";
+  nominatimLink.rel = "noreferrer";
+  nominatimLink.textContent = "Nominatim";
+  description.append(nominatimLink, ".");
+
+  const stamp = document.createElement("p");
+  stamp.className = "build-stamp";
+  stamp.textContent = buildStamp;
+
+  footer.append(description, stamp);
+  return footer;
+}
+
 export function renderAppPage({
   root,
   workspace,
@@ -295,12 +336,7 @@ export function renderAppPage({
   const page = document.createElement("main");
   page.className = "page";
 
-  const footer = document.createElement("footer");
-  footer.className = "footer";
-  footer.innerHTML = `
-    <p>Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by <a href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OpenStreetMap</a> and <a href="https://nominatim.openstreetmap.org/" target="_blank" rel="noreferrer">Nominatim</a>.</p>
-    <p class="build-stamp">${buildStamp}</p>
-  `;
+  const footer = buildFooter(buildStamp);
 
   // Tail applied to every render path: footer → page → root → FAB (last, so
   // the FAB paints above page content on mobile without a z-index war with
