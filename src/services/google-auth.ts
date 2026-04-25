@@ -237,6 +237,17 @@ export class GoogleAuthService {
         this.persistSession(token, profile);
         return profile;
       } catch {
+        // Eager invalidate: when silent refresh fails, the persisted
+        // token is by definition no longer usable — Google has either
+        // revoked it (sign-out on another device, security event) or
+        // the GIS session cookie is gone (ITP, browser data clear,
+        // user signed out of Google entirely). Leaving the dead token
+        // on disk would let the next bootstrap pretend it's signed in,
+        // hand the stale token to Drive, and surface as a sync-error
+        // pulse on first save instead of a clean signed-out state.
+        // Wipe both in-memory and persisted copies immediately.
+        this.#accessToken = null;
+        this.clearStoredSession();
         return null;
       }
     })().finally(() => {

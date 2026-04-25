@@ -285,6 +285,37 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
     });
     expect(await second).not.toBeNull();
   });
+
+  it("eagerly clears the persisted session when refresh fails", async () => {
+    // Drive returned 401, silent refresh failed (ITP, cookies gone,
+    // Google sign-out elsewhere). The persisted token in localStorage
+    // is by definition dead — leaving it would fool the next
+    // bootstrap into "signed in" state and replay the same dead token
+    // against Drive. Wipe both in-memory and the on-disk copy.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    // Pre-populate localStorage with a "still valid by clock" session
+    // so we can prove eager-invalidate clears it on refresh failure.
+    localStorage.setItem(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "stale-token",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        profile: { name: "Stale", email: "s@s" },
+      }),
+    );
+
+    const service = new GoogleAuthService();
+    await service.initialize();
+    expect(localStorage.getItem("sutrapad-google-auth-session")).not.toBeNull();
+
+    const refresh = service.refreshSession();
+    await Promise.resolve();
+    pendingRequests[0].errorCallback?.();
+    expect(await refresh).toBeNull();
+
+    expect(service.getAccessToken()).toBeNull();
+    expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
+  });
 });
 
 describe("parseUserInfoResponse", () => {
