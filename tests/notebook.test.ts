@@ -739,7 +739,19 @@ describe("isPristineWorkspace and mergeWorkspaces", () => {
       expect(merged.activeNoteId).toBe("shared");
     });
 
-    it("keeps the remote copy when both sides share an identical updatedAt timestamp", () => {
+    it("keeps the local copy when both sides share an identical updatedAt timestamp", () => {
+      // ms-resolution timestamps can collide in two real scenarios:
+      //   1. `applyFreshNoteDetails` bumps metadata in the same ISO
+      //      millisecond as a user keystroke that also wrote to the
+      //      note (location backfill + body type race).
+      //   2. Multi-device sync where two clients with skewed clocks
+      //      land on the same recorded `updatedAt`.
+      // Local-wins is the safer default: the user's most recent
+      // unsynced edit lives on the local side, and a remote workspace
+      // that's about to be re-saved will have its own revision
+      // incremented on the next push. Losing a remote tie-break
+      // simply rolls forward; losing a local tie-break would discard
+      // user-typed work.
       const merged = mergeWorkspaces(
         {
           activeNoteId: "shared",
@@ -756,8 +768,8 @@ describe("isPristineWorkspace and mergeWorkspaces", () => {
       );
 
       expect(merged.notes[0]).toMatchObject({
-        title: "Remote at tie",
-        body: "remote",
+        title: "Local at tie",
+        body: "local",
       });
     });
 

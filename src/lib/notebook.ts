@@ -494,9 +494,19 @@ export function mergeWorkspaces(
 
   const notesById = new Map<string, SutraPadDocument>();
 
+  // Merge remote first, then local. The order matters for tie-breaks:
+  // when two versions of the same note share an `updatedAt` (real
+  // collision is rare but possible — `applyFreshNoteDetails` can bump
+  // metadata in the same ISO millisecond as a user keystroke, and
+  // multi-device flows have wider clock skew), the strict-greater-than
+  // check keeps whichever version we wrote *last* into the map. Local
+  // wins ties because the user's most recent unsynced edit is the more
+  // valuable side of the collision; a remote workspace that's about to
+  // be re-saved will have its own revision incremented next time
+  // anyway.
   for (const note of [...remoteWorkspace.notes, ...localWorkspace.notes]) {
     const existing = notesById.get(note.id);
-    if (!existing || note.updatedAt > existing.updatedAt) {
+    if (!existing || note.updatedAt >= existing.updatedAt) {
       notesById.set(note.id, note);
     }
   }
