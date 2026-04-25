@@ -6,12 +6,8 @@ import {
   createNewNoteWorkspace,
   createTextNoteWorkspace,
   DEFAULT_NOTE_TITLE,
-  extractUrlsFromText,
-  filterNotesByTags,
   isEmptyDraftNote,
-  mergeHashtagsIntoTags,
   stripEmptyDraftNotes,
-  toggleTaskInBody,
   upsertNote,
 } from "./lib/notebook";
 import { collectCaptureContext } from "./lib/capture-context";
@@ -27,24 +23,27 @@ import {
   buildSilentCaptureBody,
   extractSelectionFromUrl,
 } from "./app/logic/silent-capture";
-import { buildBookmarklet } from "./lib/bookmarklet";
 import type {
   SutraPadDocument,
   SutraPadTagFilterMode,
   SutraPadWorkspace,
-  UserProfile,
 } from "./types";
 import { generateFreshNoteDetails, collectNoteCaptureDetails } from "./app/capture/fresh-note";
 import { applyFreshNoteDetails } from "./app/capture/apply-fresh-note-details";
 import { resolveDisplayedNote } from "./app/logic/displayed-note";
-import { formatBuildStamp, formatDate } from "./app/logic/formatting";
+import { formatBuildStamp } from "./app/logic/formatting";
 import { buildNoteMetadata } from "./app/logic/note-metadata";
 import {
-  readTagFilterModeFromLocation,
-  readTagFiltersFromLocation,
-  writeTagFilterModeToLocation,
-  writeTagFiltersToLocation,
-} from "./app/logic/tag-filters";
+  applyVisibleActiveNoteSelection,
+  ensureVisibleActiveNoteSelection,
+  getAppStatusText,
+  getCurrentWorkspaceNote,
+  syncActivePageToLocation,
+  syncDetailRouteSelection,
+  syncFilterModeToLocation,
+  syncTagFiltersToLocation,
+  syncViewToLocation,
+} from "./app/sync-helpers";
 import { runAppBootstrap } from "./app/session/session";
 import { withAuthRetry, type AuthRetryContext } from "./app/session/auth-retry";
 import {
@@ -54,64 +53,31 @@ import {
   type SaveMode,
   type SyncState,
 } from "./app/session/workspace-sync";
-import { loadLocalWorkspace, persistLocalWorkspace } from "./app/storage/local-workspace";
+import { persistLocalWorkspace } from "./app/storage/local-workspace";
 import { renderAppPage } from "./app/view/render-app";
 import { syncPillLabel } from "./app/view/chrome/topbar";
 import { buildNotesPanel } from "./app/view/pages/notes-page";
-import { isMenuActionItemId, type MenuItemId } from "./app/logic/menu";
+import { type MenuItemId } from "./app/logic/menu";
 import {
-  readActivePageFromLocation,
-  readNoteDetailIdFromLocation,
   writeActivePageToLocation,
   writeNoteDetailIdToLocation,
 } from "./app/logic/active-page";
 import {
-  persistNotesView,
-  resolveInitialNotesView,
   writeNotesViewToLocation,
   type NotesViewMode,
 } from "./app/logic/notes-view";
 import {
-  persistLinksView,
-  resolveInitialLinksView,
-  writeLinksViewToLocation,
-  type LinksViewMode,
-} from "./app/logic/links-view";
-import {
-  applyThemeChoice,
   isDarkThemeId,
-  persistThemeChoice,
-  resolveInitialThemeChoice,
   resolveThemeId,
   watchAutoTheme,
   type ThemeChoice,
 } from "./app/logic/theme";
 import {
   isPersonaEnabled,
-  persistPersonaPreference,
-  resolveInitialPersonaPreference,
   type PersonaPreference,
 } from "./app/logic/persona";
-import type { TagClassId } from "./app/logic/tag-class";
-import {
-  persistVisibleTagClasses,
-  resolveInitialVisibleTagClasses,
-  toggleTagClassVisibility,
-} from "./app/logic/visible-tag-classes";
-import {
-  addDismissedTagAlias,
-  mergeTagInWorkspace,
-  persistDismissedTagAliases,
-  resolveInitialDismissedTagAliases,
-} from "./app/logic/tag-aliases";
-import {
-  loadRecentTagFilters,
-  persistRecentTagFilters,
-  pushRecentTagFilter,
-} from "./app/logic/tag-filter-typeahead";
 import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
 import { buildPaletteEntries, togglePaletteTagFilter } from "./app/logic/palette";
-import type { TasksFilterId } from "./app/logic/tasks-filter";
 import { mountPalette, type PaletteHandle } from "./app/view/palette";
 import {
   initialShortcutState,
@@ -120,7 +86,9 @@ import {
   type ShortcutAction,
   type ShortcutState,
 } from "./lib/keyboard-shortcuts";
-import { atom, type Readable } from "./lib/store";
+import { createAppStateStore } from "./app/state-store";
+import { createRenderCallbacks } from "./app/render-callbacks";
+import type { PaletteAccess as ExtractedPaletteAccess } from "./app/view/palette-types";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
 export { resolveDisplayedNote } from "./app/logic/displayed-note";
@@ -238,168 +206,11 @@ async function captureIncomingWorkspaceFromUrl(
   });
 }
 
-function getCurrentWorkspaceNote(workspace: SutraPadWorkspace): SutraPadDocument {
-  const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
-  return note ?? workspace.notes[0];
-}
-
-function syncTagFiltersToLocation(selectedTagFilters: string[]): void {
-  const nextUrl = writeTagFiltersToLocation(window.location.href, selectedTagFilters);
-  if (nextUrl !== window.location.href) {
-    window.history.replaceState({}, "", nextUrl);
-  }
-}
-
-function syncFilterModeToLocation(filterMode: SutraPadTagFilterMode): void {
-  const nextUrl = writeTagFilterModeToLocation(window.location.href, filterMode);
-  if (nextUrl !== window.location.href) {
-    window.history.replaceState({}, "", nextUrl);
-  }
-}
-
-function syncActivePageToLocation(
-  activeMenuItem: MenuItemId,
-  detailNoteId: string | null,
-  appBasePath: string,
-): void {
-  const nextUrl =
-    activeMenuItem === "notes" && detailNoteId !== null
-      ? writeNoteDetailIdToLocation(window.location.href, detailNoteId, appBasePath)
-      : writeActivePageToLocation(window.location.href, activeMenuItem, appBasePath);
-  if (nextUrl !== window.location.href) {
-    window.history.replaceState({}, "", nextUrl);
-  }
-}
-
-/**
- * Writes the `?view=<mode>` query param for whichever page owns it at
- * this moment — Notes list (cards/list) or Links (cards/list) — and
- * strips it on any other route so a stale value from the previously-
- * active page doesn't leak. Only one page owns the param at a time,
- * so sharing the slug is safe.
- */
-function syncViewToLocation(
-  activeMenuItem: MenuItemId,
-  detailNoteId: string | null,
-  notesViewMode: NotesViewMode,
-  linksViewMode: LinksViewMode,
-): void {
-  if (activeMenuItem === "notes" && detailNoteId === null) {
-    const nextUrl = writeNotesViewToLocation(window.location.href, notesViewMode);
-    if (nextUrl !== window.location.href) {
-      window.history.replaceState({}, "", nextUrl);
-    }
-    return;
-  }
-  if (activeMenuItem === "links") {
-    const nextUrl = writeLinksViewToLocation(window.location.href, linksViewMode);
-    if (nextUrl !== window.location.href) {
-      window.history.replaceState({}, "", nextUrl);
-    }
-    return;
-  }
-  // Neither page owns the slot — make sure a stale value from the
-  // previous route doesn't stick.
-  const stripped = new URL(window.location.href);
-  if (stripped.searchParams.has("view")) {
-    stripped.searchParams.delete("view");
-    window.history.replaceState({}, "", stripped.toString());
-  }
-}
-
-function syncDetailRouteSelection(
-  activeMenuItem: MenuItemId,
-  detailNoteId: string | null,
-  workspace: SutraPadWorkspace,
-): {
-  detailNoteId: string | null;
-  workspace: SutraPadWorkspace;
-  shouldPersistWorkspace: boolean;
-} {
-  if (detailNoteId === null) {
-    return { detailNoteId, workspace, shouldPersistWorkspace: false };
-  }
-  if (activeMenuItem !== "notes") {
-    return { detailNoteId: null, workspace, shouldPersistWorkspace: false };
-  }
-  if (!workspace.notes.some((note) => note.id === detailNoteId)) {
-    return { detailNoteId: null, workspace, shouldPersistWorkspace: false };
-  }
-  if (workspace.activeNoteId === detailNoteId) {
-    return { detailNoteId, workspace, shouldPersistWorkspace: false };
-  }
-
-  return {
-    detailNoteId,
-    workspace: {
-      ...workspace,
-      activeNoteId: detailNoteId,
-    },
-    shouldPersistWorkspace: true,
-  };
-}
-
-function ensureVisibleActiveNoteSelection(
-  workspace: SutraPadWorkspace,
-  selectedTagFilters: string[],
-  filterMode: SutraPadTagFilterMode,
-): {
-  workspace: SutraPadWorkspace;
-  shouldPersistWorkspace: boolean;
-} {
-  const filteredNotes = filterNotesByTags(
-    workspace.notes,
-    selectedTagFilters,
-    filterMode,
-  );
-  if (
-    filteredNotes.length === 0 ||
-    !workspace.activeNoteId ||
-    filteredNotes.some((note) => note.id === workspace.activeNoteId)
-  ) {
-    return { workspace, shouldPersistWorkspace: false };
-  }
-
-  return {
-    workspace: {
-      ...workspace,
-      activeNoteId: filteredNotes[0].id,
-    },
-    shouldPersistWorkspace: true,
-  };
-}
-
-function getAppStatusText({
-  syncState,
-  lastError,
-  workspace,
-  selectedTagFilters,
-  filterMode,
-  profile,
-}: {
-  syncState: SyncState;
-  lastError: string;
-  workspace: SutraPadWorkspace;
-  selectedTagFilters: string[];
-  filterMode: SutraPadTagFilterMode;
-  profile: UserProfile | null;
-}): string {
-  if (syncState === "loading") return "Loading…";
-  if (syncState === "saving") return "Saving…";
-  if (syncState === "error") return lastError || "A synchronization error occurred.";
-
-  const displayedNote = resolveDisplayedNote(workspace, selectedTagFilters, filterMode);
-  if (!displayedNote && selectedTagFilters.length > 0) {
-    return filterMode === "any"
-      ? "No notes match any selected tag."
-      : "No notes match all selected tags.";
-  }
-
-  const note = displayedNote ?? getCurrentWorkspaceNote(workspace);
-  return profile
-    ? `Notebook synced from Drive. Last change: ${formatDate(note.updatedAt)}`
-    : `Editing local notebook. Last change: ${formatDate(note.updatedAt)}`;
-}
+// `getCurrentWorkspaceNote`, `sync*ToLocation`, `ensureVisible-`,
+// `applyVisible-`, `syncDetailRouteSelection`, and `getAppStatusText`
+// were lifted into `./app/sync-helpers` so render-callbacks,
+// palette wiring, and the per-frame render() can all reach them
+// without re-entering app.ts.
 
 interface NewNoteHandlerOptions {
   root: HTMLElement;
@@ -412,468 +223,14 @@ interface NewNoteHandlerOptions {
   setLastError: (lastError: string) => void;
   persistWorkspace: (workspace: SutraPadWorkspace) => void;
   scheduleAutoSave: () => void;
-  render: () => void;
   refreshNotesPanel: () => void;
 }
 
-interface RenderCallbackOptions {
-  auth: GoogleAuthService;
-  appRootUrl: string;
-  setProfile: (profile: UserProfile | null) => void;
-  getWorkspace: () => SutraPadWorkspace;
-  setWorkspace: (workspace: SutraPadWorkspace) => void;
-  setSyncState: (syncState: SyncState) => void;
-  setLastError: (lastError: string) => void;
-  setBookmarkletMessage: (message: string) => void;
-  getSelectedTagFilters: () => string[];
-  setSelectedTagFilters: (selectedTagFilters: string[]) => void;
-  getFilterMode: () => SutraPadTagFilterMode;
-  setFilterMode: (filterMode: SutraPadTagFilterMode) => void;
-  getActiveMenuItem: () => MenuItemId;
-  setActiveMenuItem: (menuItemId: MenuItemId) => void;
-  getDetailNoteId: () => string | null;
-  setDetailNoteId: (detailNoteId: string | null) => void;
-  // View-mode / preference getters were dropped after the atom-store
-  // migration: handlers used them only for `if (next === getX()) return`
-  // early-outs, which the atoms' built-in `Object.is` check now handles
-  // for free. The matching setters stay because handlers still mutate.
-  setNotesViewMode: (notesViewMode: NotesViewMode) => void;
-  setLinksViewMode: (linksViewMode: LinksViewMode) => void;
-  setTasksFilter: (next: TasksFilterId) => void;
-  setTasksShowDone: (next: boolean) => void;
-  setTasksOneThingKey: (next: string | null) => void;
-  getVisibleTagClasses: () => ReadonlySet<TagClassId>;
-  setVisibleTagClasses: (next: Set<TagClassId>) => void;
-  getTagsSearchQuery: () => string;
-  setTagsSearchQuery: (next: string) => void;
-  getDismissedTagAliases: () => ReadonlySet<string>;
-  setDismissedTagAliases: (next: Set<string>) => void;
-  getRecentTagFilters: () => readonly string[];
-  setRecentTagFilters: (next: readonly string[]) => void;
-  setCurrentTheme: (theme: ThemeChoice) => void;
-  setPersonaPreference: (preference: PersonaPreference) => void;
-  handleNewNote: () => void;
-  /**
-   * Discards the active note if it's an empty draft (user hit "+ Add"
-   * then walked away without typing). Returns true when a purge
-   * happened. Callers should invoke this *before* every navigation so a
-   * freshly-spawned-but-untouched note doesn't linger in the workspace
-   * or get pushed to Drive.
-   */
-  purgeEmptyDraftNotes: () => boolean;
-  loadWorkspace: () => Promise<void>;
-  saveWorkspace: () => Promise<void>;
-  restoreWorkspaceAfterSignIn: () => Promise<void>;
-  replaceCurrentNote: (updater: (note: SutraPadDocument) => SutraPadDocument) => void;
-  persistWorkspace: (workspace: SutraPadWorkspace) => void;
-  scheduleAutoSave: () => void;
-  render: () => void;
-  refreshNotesPanel: () => void;
-}
-
-function applyVisibleActiveNoteSelection(
-  workspace: SutraPadWorkspace,
-  selectedTagFilters: string[],
-  filterMode: SutraPadTagFilterMode,
-  persistWorkspace: (workspace: SutraPadWorkspace) => void,
-): SutraPadWorkspace {
-  const visibleActiveNote = ensureVisibleActiveNoteSelection(
-    workspace,
-    selectedTagFilters,
-    filterMode,
-  );
-  if (visibleActiveNote.shouldPersistWorkspace) {
-    persistWorkspace(visibleActiveNote.workspace);
-  }
-  return visibleActiveNote.workspace;
-}
-
-function createRenderCallbacks({
-  auth,
-  appRootUrl,
-  setProfile,
-  getWorkspace,
-  setWorkspace,
-  setSyncState,
-  setLastError,
-  setBookmarkletMessage,
-  getSelectedTagFilters,
-  setSelectedTagFilters,
-  getFilterMode,
-  setFilterMode,
-  getActiveMenuItem,
-  setActiveMenuItem,
-  getDetailNoteId,
-  setDetailNoteId,
-  setNotesViewMode,
-  setLinksViewMode,
-  setTasksFilter,
-  setTasksShowDone,
-  setTasksOneThingKey,
-  getVisibleTagClasses,
-  setVisibleTagClasses,
-  getTagsSearchQuery,
-  setTagsSearchQuery,
-  getDismissedTagAliases,
-  setDismissedTagAliases,
-  getRecentTagFilters,
-  setRecentTagFilters,
-  setCurrentTheme,
-  setPersonaPreference,
-  handleNewNote,
-  purgeEmptyDraftNotes,
-  loadWorkspace,
-  saveWorkspace,
-  restoreWorkspaceAfterSignIn,
-  replaceCurrentNote,
-  persistWorkspace,
-  scheduleAutoSave,
-  render,
-  refreshNotesPanel,
-}: RenderCallbackOptions) {
-  return {
-    // Atom Object.is already short-circuits same-value sets, and
-    // `persistNotesView` / `persistLinksView` / `persistTheme` /
-    // … are wired as subscribers on the matching atoms — handlers
-    // just call setters and rely on the atom subscriber chain to
-    // persist + re-render.
-    onChangeNotesView: (mode: NotesViewMode) => setNotesViewMode(mode),
-    onChangeLinksView: (mode: LinksViewMode) => setLinksViewMode(mode),
-    onChangeTasksFilter: (filter: TasksFilterId) => setTasksFilter(filter),
-    onToggleTasksShowDone: (showDone: boolean) => setTasksShowDone(showDone),
-    onSetOneThing: (key: string | null) => setTasksOneThingKey(key),
-    onToggleTagClass: (classId: TagClassId) => {
-      setVisibleTagClasses(toggleTagClassVisibility(getVisibleTagClasses(), classId));
-    },
-    onChangeTagsSearchQuery: (query: string) => {
-      if (query === getTagsSearchQuery()) return;
-      setTagsSearchQuery(query);
-      // Full re-render is fine: the list view is modest and the Active-
-      // filters / Classes blocks on the left panel need to stay in sync
-      // with whatever state changed alongside this. The input itself
-      // re-mounts, but we restore focus + caret below — same pattern
-      // `renderPreservingBodyInputFocus` uses for the note body textarea.
-      // Synchronous render here pre-empts the atom-driven scheduleRender
-      // microtask, so the focus + caret restore below operates on the
-      // freshly-mounted input rather than the about-to-be-replaced one.
-      render();
-      const nextInput = document.querySelector<HTMLInputElement>(
-        ".tags-search-input",
-      );
-      if (nextInput && document.activeElement !== nextInput) {
-        nextInput.focus();
-        const end = nextInput.value.length;
-        nextInput.setSelectionRange(end, end);
-      }
-    },
-    onMergeTagAlias: (from: string, to: string) => {
-      if (from === to) return;
-      const current = getWorkspace();
-      const next = mergeTagInWorkspace(current, from, to);
-      if (next === current) return;
-      setWorkspace(next);
-      // Keep the active filter strip consistent: if the user was filtered
-      // on `from`, carry them onto `to`. If they already had `to` selected
-      // too, the duplicate is dropped. Anything else is left alone.
-      const filters = getSelectedTagFilters();
-      if (filters.includes(from)) {
-        const rewritten = filters
-          .map((tag) => (tag === from ? to : tag))
-          .filter((tag, index, all) => all.indexOf(tag) === index);
-        setSelectedTagFilters(rewritten);
-      }
-      persistWorkspace(next);
-      scheduleAutoSave();
-    },
-    onDismissTagAlias: (canonical: string, alias: string) => {
-      setDismissedTagAliases(
-        addDismissedTagAlias(getDismissedTagAliases(), canonical, alias),
-      );
-    },
-    onChangeTheme: (choice: ThemeChoice) => setCurrentTheme(choice),
-    onChangePersonaPreference: (preference: PersonaPreference) =>
-      setPersonaPreference(preference),
-    onSelectMenuItem: (id: MenuItemId) => {
-      if (isMenuActionItemId(id)) {
-        handleNewNote();
-        return;
-      }
-      if (getActiveMenuItem() === id && getDetailNoteId() === null) return;
-      // Drop the untouched draft (if any) on nav away so an accidental
-      // "+ Add" click doesn't leave an Untitled stub behind.
-      purgeEmptyDraftNotes();
-      setActiveMenuItem(id);
-      setDetailNoteId(null);
-    },
-    onSignIn: () => {
-      void (async () => {
-        try {
-          setSyncState("loading");
-          setLastError("");
-          setProfile(await auth.signIn());
-          await restoreWorkspaceAfterSignIn();
-        } catch (error) {
-          setSyncState("error");
-          setLastError(error instanceof Error ? error.message : "Sign-in failed.");
-        }
-      })();
-    },
-    onLoadNotebook: () => void loadWorkspace(),
-    onSaveNotebook: () => void saveWorkspace(),
-    onSignOut: () => {
-      auth.signOut();
-      setProfile(null);
-      setSyncState("idle");
-      setLastError("");
-    },
-    onCopyBookmarklet: () => {
-      void (async () => {
-        try {
-          await navigator.clipboard.writeText(buildBookmarklet(appRootUrl));
-          setBookmarkletMessage(
-            "Bookmarklet copied. In Safari, create any bookmark, edit it, and paste this code into its URL field.",
-          );
-        } catch (error) {
-          // The user-visible copy failure message is enough for the
-          // recovery path, but a `console.warn` keeps the underlying
-          // cause discoverable in devtools — clipboard rejections
-          // are easy to mistake for "the button is broken" without
-          // the actual permission / focus error in the log.
-          console.warn("Bookmarklet clipboard copy failed:", error);
-          setBookmarkletMessage(
-            "Copy failed. In Safari, you can still drag the bookmarklet or manually copy the link target.",
-          );
-        }
-      })();
-    },
-    onSelectNote: (noteId: string) => {
-      // Leaving the current detail (possibly an untouched fresh draft)
-      // for another note — drop the draft before rebinding active, so
-      // it doesn't keep occupying the workspace once we've moved on.
-      purgeEmptyDraftNotes();
-      setActiveMenuItem("notes");
-      setDetailNoteId(noteId);
-      const workspace = {
-        ...getWorkspace(),
-        activeNoteId: noteId,
-      };
-      setWorkspace(workspace);
-      persistWorkspace(workspace);
-    },
-    onBackToNotes: () => {
-      // "← Back to notes" from the detail topbar. Same untouched-draft
-      // sweep as the other nav paths — the user is explicitly leaving
-      // the editor, so a blank note doesn't get a free ride to Drive.
-      purgeEmptyDraftNotes();
-      setDetailNoteId(null);
-    },
-    onOpenCapture: () => {
-      // Mirrors `onBackToNotes`'s shape: clear the detail context first,
-      // then flip the active menu item. Order matters so the next render
-      // pass doesn't see a detail-editor route on the capture page.
-      purgeEmptyDraftNotes();
-      setDetailNoteId(null);
-      setActiveMenuItem("capture");
-    },
-    onToggleTagFilter: (tag: string) => {
-      const nextSelectedTagFilters = togglePaletteTagFilter(getSelectedTagFilters(), tag);
-      setSelectedTagFilters(nextSelectedTagFilters);
-      setWorkspace(
-        applyVisibleActiveNoteSelection(
-          getWorkspace(),
-          nextSelectedTagFilters,
-          getFilterMode(),
-          persistWorkspace,
-        ),
-      );
-      syncTagFiltersToLocation(nextSelectedTagFilters);
-    },
-    onApplyTagFilter: (tag: string) => {
-      // Commit path from the topbar's inline typeahead. Enter, second-Tab,
-      // and suggestion clicks all land here. The palette has its own toggle
-      // path (`onToggleTagFilter`) which can also *remove* an active filter
-      // — this one is strictly "add if not already active" so a stale
-      // suggestion click can't accidentally un-filter.
-      const selected = getSelectedTagFilters();
-      const nextSelectedTagFilters = selected.includes(tag) ? selected : [...selected, tag];
-      if (nextSelectedTagFilters !== selected) {
-        setSelectedTagFilters(nextSelectedTagFilters);
-        setWorkspace(
-          applyVisibleActiveNoteSelection(
-            getWorkspace(),
-            nextSelectedTagFilters,
-            getFilterMode(),
-            persistWorkspace,
-          ),
-        );
-        syncTagFiltersToLocation(nextSelectedTagFilters);
-      }
-      // Rotate the recent-tag list regardless of whether the filter was
-      // already active — the user just interacted with this tag, so it
-      // belongs at the top of the recents next time they open the dropdown.
-      // The persist subscriber on `recentTagFilters$` writes the new list
-      // to localStorage automatically.
-      setRecentTagFilters(pushRecentTagFilter(getRecentTagFilters(), tag));
-    },
-    onClearTagFilters: () => {
-      setSelectedTagFilters([]);
-      syncTagFiltersToLocation([]);
-    },
-    onChangeFilterMode: (mode: SutraPadTagFilterMode) => {
-      if (mode === getFilterMode()) return;
-      setFilterMode(mode);
-      setWorkspace(
-        applyVisibleActiveNoteSelection(
-          getWorkspace(),
-          getSelectedTagFilters(),
-          mode,
-          persistWorkspace,
-        ),
-      );
-      syncFilterModeToLocation(mode);
-    },
-    onNewNote: handleNewNote,
-    onRemoveSelectedFilter: (tag: string) => {
-      const nextSelectedTagFilters = getSelectedTagFilters().filter((entry) => entry !== tag);
-      setSelectedTagFilters(nextSelectedTagFilters);
-      setWorkspace(
-        applyVisibleActiveNoteSelection(
-          getWorkspace(),
-          nextSelectedTagFilters,
-          getFilterMode(),
-          persistWorkspace,
-        ),
-      );
-      syncTagFiltersToLocation(nextSelectedTagFilters);
-    },
-    onTitleInput: (value: string) => {
-      replaceCurrentNote((currentWorkspaceNote) => ({
-        ...currentWorkspaceNote,
-        title: value,
-        updatedAt: new Date().toISOString(),
-      }));
-      setSyncState("idle");
-      refreshNotesPanel();
-    },
-    onBodyInput: (value: string) => {
-      const tagsBefore = getCurrentWorkspaceNote(getWorkspace()).tags;
-      const mergedTags = mergeHashtagsIntoTags(tagsBefore, value);
-      // Only re-render the whole editor when a new hashtag actually appeared
-      // in the body — otherwise every keystroke would swap the textarea and
-      // lose caret/IME state. The notes panel still refreshes for title/body
-      // preview updates even when no new tag is added.
-      const tagsChanged = mergedTags.length !== tagsBefore.length;
-
-      replaceCurrentNote((currentWorkspaceNote) => ({
-        ...currentWorkspaceNote,
-        body: value,
-        urls: extractUrlsFromText(value),
-        tags: mergedTags,
-        updatedAt: new Date().toISOString(),
-      }));
-
-      if (tagsChanged) {
-        renderPreservingBodyInputFocus(render);
-      } else {
-        refreshNotesPanel();
-      }
-    },
-    onToggleTask: (noteId: string, lineIndex: number) => {
-      const workspace = getWorkspace();
-      const targetNote = workspace.notes.find((entry) => entry.id === noteId);
-      if (!targetNote) return;
-
-      const nextBody = toggleTaskInBody(targetNote.body, lineIndex);
-      if (nextBody === targetNote.body) return;
-
-      const previousActiveNoteId = workspace.activeNoteId;
-      const updatedWorkspace = upsertNote(workspace, noteId, (note) => ({
-        ...note,
-        body: nextBody,
-        urls: extractUrlsFromText(nextBody),
-        updatedAt: new Date().toISOString(),
-      }));
-      const finalWorkspace = { ...updatedWorkspace, activeNoteId: previousActiveNoteId };
-      setWorkspace(finalWorkspace);
-      persistWorkspace(finalWorkspace);
-      scheduleAutoSave();
-    },
-    onAddTag: (value: string) => {
-      const tag = value.trim().toLowerCase();
-      if (!tag || getCurrentWorkspaceNote(getWorkspace()).tags.includes(tag)) return;
-      replaceCurrentNote((currentWorkspaceNote) => ({
-        ...currentWorkspaceNote,
-        tags: [...currentWorkspaceNote.tags, tag],
-        updatedAt: new Date().toISOString(),
-      }));
-      setSyncState("idle");
-      renderPreservingTagInputFocus(render);
-    },
-    onRemoveTag: (tag: string) => {
-      if (!tag) return;
-      replaceCurrentNote((currentWorkspaceNote) => ({
-        ...currentWorkspaceNote,
-        tags: currentWorkspaceNote.tags.filter((entry) => entry !== tag),
-        updatedAt: new Date().toISOString(),
-      }));
-      setSyncState("idle");
-      renderPreservingTagInputFocus(render);
-    },
-  };
-}
-
-/**
- * `render()` rebuilds the editor card wholesale, so the tag <input> gets
- * replaced and its focus/caret are dropped. For tag add/remove interactions
- * the user expects to keep typing more tags, so we detect whether focus (or a
- * recent click) came from the tag row and, if so, move focus to the freshly
- * rendered input after the DOM swap.
- */
-function renderPreservingTagInputFocus(render: () => void): void {
-  const active = document.activeElement;
-  // `.tag-x` now appears on the topbar filter bar too, so scope the lookup
-  // to the editor card — otherwise removing a topbar filter would yank
-  // focus into the editor every time.
-  const shouldRefocus =
-    active instanceof HTMLElement &&
-    active.closest(".editor-card") !== null &&
-    (active.classList.contains("tag-text-input") ||
-      active.classList.contains("tag-x") ||
-      active.classList.contains("tag-suggestion"));
-
-  render();
-
-  if (shouldRefocus) {
-    const nextInput = document.querySelector<HTMLInputElement>(".editor-card .tag-text-input");
-    nextInput?.focus();
-  }
-}
-
-/**
- * Auto-parsing hashtags from the body forces a full render when a new tag
- * appears (so the tag chips update), and a full render rebuilds the <textarea>
- * — dropping focus and the caret position. We capture selection before the
- * swap and restore it on the freshly-rendered node so the user's typing flow
- * is not interrupted mid-word.
- */
-function renderPreservingBodyInputFocus(render: () => void): void {
-  const active = document.activeElement;
-  const wasBodyActive =
-    active instanceof HTMLTextAreaElement && active.classList.contains("body-input");
-  const savedStart = wasBodyActive ? active.selectionStart : 0;
-  const savedEnd = wasBodyActive ? active.selectionEnd : 0;
-
-  render();
-
-  if (wasBodyActive) {
-    const nextTextarea =
-      document.querySelector<HTMLTextAreaElement>(".editor-card .body-input");
-    if (nextTextarea) {
-      nextTextarea.focus();
-      nextTextarea.setSelectionRange(savedStart, savedEnd);
-    }
-  }
-}
+// `RenderCallbackOptions`, `createRenderCallbacks`, and the focus-
+// preserving render wrappers (`renderPreservingTagInputFocus` /
+// `renderPreservingBodyInputFocus`) were extracted into
+// `./app/render-callbacks` and `./app/render-helpers` so the wiring
+// layer here stays focused on store / lifecycle / bootstrap.
 
 function handleNewNoteCreation({
   root,
@@ -886,7 +243,6 @@ function handleNewNoteCreation({
   setLastError,
   persistWorkspace,
   scheduleAutoSave,
-  render,
   refreshNotesPanel,
 }: NewNoteHandlerOptions): void {
   const nextWorkspace = createNewNoteWorkspace(getWorkspace());
@@ -971,18 +327,15 @@ interface WirePaletteAccessOptions {
   render: () => void;
 }
 
-export interface PaletteAccess {
-  /** Opens the palette programmatically (click path — keydown handler uses the same closure). */
-  open: () => void;
-  /** Called from render() so the palette's visible list follows the workspace + filter state. */
-  refresh: (workspace: SutraPadWorkspace, selectedTagFilters: readonly string[]) => void;
-  /**
-   * Tears down the global `/` keydown listener and closes any open
-   * palette. Hooked up to `import.meta.hot?.dispose` so Vite's HMR
-   * doesn't stack a second listener on every save.
-   */
-  dispose: () => void;
-}
+/**
+ * Re-exported from `./app/view/palette-types` so existing call sites
+ * (and `RenderCallbackOptions` consumers) keep importing
+ * `PaletteAccess` from `app.ts` unchanged. The interface itself was
+ * lifted into a dedicated module so cross-cutting consumers
+ * (state-store) can refer to it without re-entering the giant
+ * `app.ts` import graph.
+ */
+export type PaletteAccess = ExtractedPaletteAccess;
 
 /**
  * Attaches the global `/` shortcut (GitHub-style: active anywhere outside an
@@ -1170,131 +523,62 @@ export function createApp(root: HTMLElement): void {
   const appBasePath = import.meta.env.BASE_URL;
   const appRootUrl = window.location.origin + appBasePath;
 
-  // Reactive state. Every slot is a `Readable<T>` (or `Atom<T>` where
-  // mutations happen): `X$.get()` reads, `X$.set(next)` writes,
-  // `X$.subscribe(fn)` registers a listener. The named setter wrappers
-  // below are byte-for-byte compatible with their old `(next) => { X
-  // = next }` shape, so call-site references threaded through
-  // `RenderCallbackOptions` and friends don't have to change in
-  // lockstep with this migration. Subscribers (computeds, render
-  // hooks) are wired in subsequent steps; this commit is the
-  // mechanical declaration switch.
-  const profile$ = atom<UserProfile | null>(null);
-  const workspace$ = atom<SutraPadWorkspace>(loadLocalWorkspace());
-  const syncState$ = atom<SyncState>("idle");
-  const lastError$ = atom("");
-  const bookmarkletMessage$ = atom("");
-  const autoSaveTimer$ = atom<ReturnType<typeof setTimeout> | null>(null);
-  const selectedTagFilters$ = atom<string[]>(
-    readTagFiltersFromLocation(window.location.href),
-  );
-  const filterMode$ = atom<SutraPadTagFilterMode>(
-    readTagFilterModeFromLocation(window.location.href),
-  );
-  const activeMenuItem$ = atom<MenuItemId>(
-    readActivePageFromLocation(window.location.href, appBasePath),
-  );
-  // When the URL points at /notes/<id> on load, remember the id so the first
-  // render lands directly on the detail page. The id is validated against the
-  // workspace in `render()`; an unknown id falls back to the list and the URL
-  // is rewritten at the next sync.
-  const detailNoteId$ = atom<string | null>(
-    activeMenuItem$.get() === "notes"
-      ? readNoteDetailIdFromLocation(window.location.href, appBasePath)
-      : null,
-  );
-  // Notebook listing layout. URL wins on initial load so a shared link honours
-  // the sender's choice, otherwise fall back to the last mode the user picked
-  // on this device, otherwise the default (cards).
-  const notesViewMode$ = atom<NotesViewMode>(
-    resolveInitialNotesView(window.location.href),
-  );
-  // Links page layout — same resolution strategy as notesViewMode, separate
-  // storage slot so the two pages can drift independently.
-  const linksViewMode$ = atom<LinksViewMode>(
-    resolveInitialLinksView(window.location.href),
-  );
-  // Visual theme is explicitly device-local — no URL sync, no Drive sync. It
-  // was already applied on boot by `main.ts` to prevent a flash of the wrong
-  // palette; this keeps our in-memory copy in sync with what the document
-  // currently shows.
-  const currentTheme$ = atom<ThemeChoice>(resolveInitialThemeChoice());
-  // Notebook persona is explicitly device-local too: each browser/device
-  // picks its own on/off stance, nothing flows through URL or Drive so a
-  // shared link can't force a decorative view on the recipient.
-  const personaPreference$ = atom<PersonaPreference>(
-    resolveInitialPersonaPreference(),
-  );
-  // Tasks screen view state. Lives at the top level so `render()` (which
-  // is triggered by any task checkbox toggle) doesn't wipe the user's
-  // active chip, show-done stance, or "one thing" pin. Deliberately kept
-  // in-memory — these are session-scoped UI preferences, not shareable
-  // view-state, so they don't round-trip to the URL or localStorage.
-  const tasksFilter$ = atom<TasksFilterId>("all");
-  const tasksShowDone$ = atom(false);
-  const tasksOneThingKey$ = atom<string | null>(null);
-  // Tags page: which of the seven classes contribute tags to the list view,
-  // and the (volatile) search query typed into the left-panel Search input.
-  // Visibility persists to localStorage — device-local, so a shared link
-  // never forces the recipient's class toggles. The query is intentionally
-  // not persisted: it's in-progress typing, not a saved stance.
-  const visibleTagClasses$ = atom<Set<TagClassId>>(
-    resolveInitialVisibleTagClasses(),
-  );
-  const tagsSearchQuery$ = atom("");
-  // Dismissed tag-alias pairs — the Settings hygiene card's "Keep separate"
-  // action appends here. Persisted per-device to localStorage via
-  // `persistDismissedTagAliases`; never round-trips to Drive because it's a
-  // cleanup preference, not notebook content.
-  const dismissedTagAliases$ = atom<Set<string>>(
-    resolveInitialDismissedTagAliases(),
-  );
-  // Recently applied tag filters — newest-first, capped at 8. Drives the
-  // "Recently used" group in the topbar's inline typeahead (see
-  // `docs/design_handoff_sutrapad2/src/tagfilter.jsx`). Device-local + persisted
-  // to `localStorage.sp_recent_tags` so the sidebar remembers between
-  // sessions, but never syncs to Drive — a shared link should not seed the
-  // recipient's typeahead with the sender's personal filter habits.
-  const recentTagFilters$ = atom<readonly string[]>(loadRecentTagFilters());
-  // Filled in once `wirePaletteAccess` has mounted the `/` keybinding (near
-  // the bottom of createApp). render() and the topbar's "+ tag" trigger both
-  // reach the palette through this single reference, so the keyboard path
-  // and the click path share the same open/close bookkeeping with no parallel
-  // `isOpen` flag. Null until wiring completes, then stable for the session.
-  const paletteAccess$ = atom<PaletteAccess | null>(null);
+  // Build the reactive state-store. The store owns every atom + its
+  // setter wrapper + persist subscribers in one place; `createApp` is
+  // a wiring layer over that. Destructure named atoms for read paths
+  // and named setters for write paths — the variable names match the
+  // legacy `let X = …` / `setXState` shape so render-callback dispatch
+  // and effects bags don't need to learn a new vocabulary.
+  const store = createAppStateStore({ appBasePath });
+  const {
+    profile$,
+    workspace$,
+    syncState$,
+    lastError$,
+    bookmarkletMessage$,
+    autoSaveTimer$,
+    selectedTagFilters$,
+    filterMode$,
+    activeMenuItem$,
+    detailNoteId$,
+    notesViewMode$,
+    linksViewMode$,
+    currentTheme$,
+    personaPreference$,
+    tasksFilter$,
+    tasksShowDone$,
+    tasksOneThingKey$,
+    visibleTagClasses$,
+    tagsSearchQuery$,
+    dismissedTagAliases$,
+    recentTagFilters$,
+    paletteAccess$,
+  } = store;
+  const setProfileState = store.setProfile;
+  const setWorkspaceState = store.setWorkspace;
+  const setSyncStateValue = store.setSyncState;
+  const setLastErrorValue = store.setLastError;
+  const setBookmarkletMessageState = store.setBookmarkletMessage;
+  const setSelectedTagFiltersState = store.setSelectedTagFilters;
+  const setFilterModeState = store.setFilterMode;
+  const setActiveMenuItemState = store.setActiveMenuItem;
+  const setDetailNoteIdState = store.setDetailNoteId;
+  const setNotesViewModeState = store.setNotesViewMode;
+  const setLinksViewModeState = store.setLinksViewMode;
+  const setCurrentThemeState = store.setCurrentTheme;
+  const setPersonaPreferenceState = store.setPersonaPreference;
+  const setTasksFilterState = store.setTasksFilter;
+  const setTasksShowDoneState = store.setTasksShowDone;
+  const setTasksOneThingKeyState = store.setTasksOneThingKey;
+  const setVisibleTagClassesState = store.setVisibleTagClasses;
+  const setTagsSearchQueryState = store.setTagsSearchQuery;
+  const setDismissedTagAliasesState = store.setDismissedTagAliases;
+  const setRecentTagFiltersState = store.setRecentTagFilters;
+
   // When the user picked "auto", the concrete palette depends on the OS
   // light/dark preference. Subscribe once so a system switch during a live
   // session re-applies the theme without a reload.
   watchAutoTheme(() => currentTheme$.get());
-
-  // Tiny typed setters for the reactive state above. Hoisted this high so the
-  // helpers below (handleNewNote, palette wiring, Drive lifecycle, renderer
-  // callbacks) can all pass `setWorkspaceState` instead of re-writing an
-  // inline `(next) => workspace$.set(next)` each time.
-  const setWorkspaceState = (next: SutraPadWorkspace): void => workspace$.set(next);
-  const setSyncStateValue = (next: SyncState): void => syncState$.set(next);
-  const setLastErrorValue = (next: string): void => lastError$.set(next);
-  const setProfileState = (next: UserProfile | null): void => profile$.set(next);
-  const setSelectedTagFiltersState = (next: string[]): void => selectedTagFilters$.set(next);
-  const setFilterModeState = (next: SutraPadTagFilterMode): void => filterMode$.set(next);
-  const setActiveMenuItemState = (next: MenuItemId): void => activeMenuItem$.set(next);
-  const setDetailNoteIdState = (next: string | null): void => detailNoteId$.set(next);
-  const setNotesViewModeState = (next: NotesViewMode): void => notesViewMode$.set(next);
-  const setLinksViewModeState = (next: LinksViewMode): void => linksViewMode$.set(next);
-  const setCurrentThemeState = (next: ThemeChoice): void => currentTheme$.set(next);
-  const setPersonaPreferenceState = (next: PersonaPreference): void => personaPreference$.set(next);
-  const setBookmarkletMessageState = (next: string): void => bookmarkletMessage$.set(next);
-  const setTasksFilterState = (next: TasksFilterId): void => tasksFilter$.set(next);
-  const setTasksShowDoneState = (next: boolean): void => tasksShowDone$.set(next);
-  const setTasksOneThingKeyState = (next: string | null): void => tasksOneThingKey$.set(next);
-  const setVisibleTagClassesState = (next: Set<TagClassId>): void => visibleTagClasses$.set(next);
-  const setTagsSearchQueryState = (next: string): void => tagsSearchQuery$.set(next);
-  const setDismissedTagAliasesState = (next: Set<string>): void => dismissedTagAliases$.set(next);
-  // Defensive copy: the legacy setter took `readonly` and snapshotted into
-  // a fresh array so the atom stayed unaliased to the caller's input. The
-  // atom-store's `Object.is` check guarantees the snapshot is referentially
-  // distinct, so subscribers fire on every legitimate update.
-  const setRecentTagFiltersState = (next: readonly string[]): void => recentTagFilters$.set([...next]);
 
   const scheduleAutoSave = (): void => {
     if (!profile$.get()) return;
@@ -1422,7 +706,6 @@ export function createApp(root: HTMLElement): void {
       setLastError: setLastErrorValue,
       persistWorkspace: persistLocalWorkspace,
       scheduleAutoSave,
-      render,
       refreshNotesPanel,
     });
   };
@@ -1651,58 +934,21 @@ export function createApp(root: HTMLElement): void {
     });
   };
 
-  // Atom-driven render scheduling. Subscribing each UI-affecting atom
-  // means handlers can mutate state and forget about triggering
-  // re-renders explicitly — the chain `setX(value) → atom.set() →
-  // subscriber → scheduleRender → microtask → render()` runs itself.
-  // Synchronous ad-hoc `render()` calls in handlers stay valid for
-  // the few sites that need the new DOM available immediately
-  // (focus restoration, scroll preservation); the shared
-  // `renderScheduled` flag makes those calls pre-empt the microtask.
+  // Atom-driven render scheduling. Subscribing every UI-affecting atom
+  // (provided by the store as `renderingAtoms`) means handlers can
+  // mutate state and forget about triggering re-renders explicitly —
+  // the chain `setX(value) → atom.set() → subscriber → scheduleRender
+  // → microtask → render()` runs itself. Synchronous ad-hoc
+  // `render()` calls in handlers stay valid for the few sites that
+  // need the new DOM available immediately (focus restoration, scroll
+  // preservation); the shared `renderScheduled` flag makes those
+  // calls pre-empt the microtask.
   //
-  // `autoSaveTimer$` and `paletteAccess$` are deliberately excluded —
-  // they hold internal handles, not user-visible UI state, and
-  // re-rendering on their changes would be wasted work.
-  const renderingAtoms: Readable<unknown>[] = [
-    workspace$,
-    profile$,
-    syncState$,
-    lastError$,
-    bookmarkletMessage$,
-    selectedTagFilters$,
-    filterMode$,
-    activeMenuItem$,
-    detailNoteId$,
-    notesViewMode$,
-    linksViewMode$,
-    tasksFilter$,
-    tasksShowDone$,
-    tasksOneThingKey$,
-    visibleTagClasses$,
-    tagsSearchQuery$,
-    dismissedTagAliases$,
-    recentTagFilters$,
-    currentTheme$,
-    personaPreference$,
-  ];
-  const disposeRenderSubscriptions = renderingAtoms.map((atom$) =>
+  // Persist side effects (theme + apply, notesView, linksView, …)
+  // already live as subscribers inside the store itself.
+  const disposeRenderSubscriptions = store.renderingAtoms.map((atom$) =>
     atom$.subscribe(scheduleRender),
   );
-
-  // Side-effect subscribers. Each persist call used to be inlined at
-  // every handler that wrote to the corresponding atom; lifting them
-  // up here means the on-disk copy can never drift from the in-memory
-  // value, regardless of which handler did the mutation.
-  notesViewMode$.subscribe(persistNotesView);
-  linksViewMode$.subscribe(persistLinksView);
-  visibleTagClasses$.subscribe(persistVisibleTagClasses);
-  dismissedTagAliases$.subscribe(persistDismissedTagAliases);
-  recentTagFilters$.subscribe((value) => persistRecentTagFilters([...value]));
-  currentTheme$.subscribe((choice) => {
-    persistThemeChoice(choice);
-    applyThemeChoice(choice);
-  });
-  personaPreference$.subscribe(persistPersonaPreference);
 
   const getStore = (): GoogleDriveStore => {
     const token = auth.getAccessToken();
@@ -1828,6 +1074,7 @@ export function createApp(root: HTMLElement): void {
       disposeKeyboardShortcuts();
       disposeCrossTabSignOut();
       for (const dispose of disposeRenderSubscriptions) dispose();
+      store.dispose();
     });
   }
 
