@@ -92,19 +92,36 @@ function buildCardItem(
   // Branching/labelling lives in describeTaskChip so the UI stays purely
   // presentational: pick the class, drop in text + aria-label, or omit.
   const taskChip = describeTaskChip(countTasksInNote(note));
-  const taskChipHtml =
-    taskChip === null
-      ? ""
-      : `<span class="note-list-tasks${taskChip.tone === "all-done" ? " is-all-done" : ""}" aria-label="${taskChip.ariaLabel}">${taskChip.text}</span>`;
 
-  button.innerHTML = `
-    <strong>${note.title || "Untitled note"}</strong>
-    <span class="note-list-meta">
-      <span class="note-list-date">${formatDate(note.updatedAt)}</span>
-      ${taskChipHtml}
-    </span>
-    <p>${excerpt.slice(0, 72)}</p>
-  `;
+  // Build the card via DOM APIs (textContent only). The previous template-
+  // literal `innerHTML` interpolation made `note.title` and `note.body`
+  // attacker-controllable XSS sinks: a bookmarklet capture from a malicious
+  // page (or a hand-crafted `?selection=…` URL) would land an active payload
+  // in the cards view that runs every time the notes list renders. See
+  // tests/notes-list-xss.test.ts for the regression.
+  const titleEl = document.createElement("strong");
+  titleEl.textContent = note.title || "Untitled note";
+
+  const meta = document.createElement("span");
+  meta.className = "note-list-meta";
+
+  const dateEl = document.createElement("span");
+  dateEl.className = "note-list-date";
+  dateEl.textContent = formatDate(note.updatedAt);
+  meta.append(dateEl);
+
+  if (taskChip !== null) {
+    const chipEl = document.createElement("span");
+    chipEl.className = `note-list-tasks${taskChip.tone === "all-done" ? " is-all-done" : ""}`;
+    chipEl.setAttribute("aria-label", taskChip.ariaLabel);
+    chipEl.textContent = taskChip.text;
+    meta.append(chipEl);
+  }
+
+  const excerptEl = document.createElement("p");
+  excerptEl.textContent = excerpt.slice(0, 72);
+
+  button.append(titleEl, meta, excerptEl);
 
   if (note.tags.length > 0) {
     const tagsRow = document.createElement("div");
