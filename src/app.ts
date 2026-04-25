@@ -23,6 +23,10 @@ import {
   resolveTitleFromUrl,
   resolveCurrentCoordinates,
 } from "./lib/url-capture";
+import {
+  buildSilentCaptureBody,
+  extractSelectionFromUrl,
+} from "./app/logic/silent-capture";
 import { buildBookmarklet } from "./lib/bookmarklet";
 import type {
   SutraPadDocument,
@@ -207,6 +211,24 @@ async function captureIncomingWorkspaceFromUrl(
     captureContextBuilder: collectCaptureContext,
     sourceSnapshot: urlPayload.captureContext,
   });
+
+  // The bookmarklet sends `?selection=` alongside `?url=` whenever the
+  // user had text selected on the source page. The silent-capture
+  // runner consumes both via `buildSilentCaptureBody`; if silent
+  // failed and we landed in the fallback flow, that selection would
+  // otherwise be silently dropped. Reusing the same builder keeps the
+  // selection-prefix-then-URL formatting identical between the two
+  // paths so the user's note doesn't read differently depending on
+  // which route ran.
+  const selection = extractSelectionFromUrl(window.location.href);
+  if (selection !== null) {
+    const note = createTextNoteWorkspace(workspace, {
+      title: resolvedTitle,
+      body: buildSilentCaptureBody(selection, urlPayload.url),
+      captureContext,
+    });
+    return note;
+  }
 
   return createCapturedNoteWorkspace(workspace, {
     title: resolvedTitle,

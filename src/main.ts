@@ -20,6 +20,16 @@ import { runSilentCapture } from "./app/silent-capture-runner";
 if (isSilentCapture(window.location.href)) {
   void runSilentCapture().then((result) => {
     if (result.kind === "needs-fallback") {
+      // The silent path failed somewhere — emit a console marker so
+      // devtools shows what class of failure we're on. The runner
+      // already logs the underlying error for the `save-failed`
+      // branch; this top-level marker tags the user-visible
+      // transition (silent → main UI fallback) with the reason
+      // (`no-auth` / `no-capture` / `save-failed`) so a single
+      // grep on "Silent capture" surfaces both halves of the story.
+      console.warn(
+        `Silent capture fell back to the main app (${result.reason}). The capture params will be processed by captureIncomingWorkspaceFromUrl on bootstrap.`,
+      );
       // Strip `silent` from the URL before bootstrap — otherwise a
       // refresh would trap the user in the silent-loop fallback again.
       // The other capture params (`url`, `title`, `capture`,
