@@ -290,6 +290,40 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
     expect(await second).not.toBeNull();
   });
 
+  it("eagerly clears state when signIn's userinfo fetch fails", async () => {
+    // Token grant succeeded but the follow-up userinfo fetch
+    // returned an error shape (or threw). Without the catch in
+    // signIn, `#accessToken` would sit set to a working Drive token
+    // while `profile === null`, leaving the app in a broken
+    // pseudo-signed-in state. Eager invalidate must wipe both
+    // in-memory and persisted copies the same way refresh does,
+    // and re-throw so the user-facing error path runs.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    // Override the fetch stub so userinfo throws.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response("internal", { status: 500 }),
+      ),
+    );
+
+    const service = new GoogleAuthService();
+    await service.initialize();
+
+    const signInPromise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "token-that-cannot-resolve-profile",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+
+    await expect(signInPromise).rejects.toThrow();
+    expect(service.getAccessToken()).toBeNull();
+    expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
+  });
+
   it("eagerly clears the persisted session when refresh fails", async () => {
     // Drive returned 401, silent refresh failed (ITP, cookies gone,
     // Google sign-out elsewhere). The persisted token in localStorage
@@ -393,6 +427,79 @@ describe("GoogleAuthService rolling idle expiry", () => {
     expect(auth.getAccessToken()).toBe("legacy");
   });
 
+  it("treats backward clock skew as zero idle (no false fresh marker)", async () => {
+    // User moved their system clock backward (manual change, NTP
+    // step). `lastUsedAt` is now in the future relative to
+    // `Date.now()`. A naive `Date.now() - lastUsedAt` would go
+    // negative and pass the idle check, treating an arbitrarily-old
+    // session as fresh. The Math.max(…, 0) clamp prevents that.
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    const oneHourFuture = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    localStorage.setItem(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "skewed",
+        expiresAt,
+        profile: { name: "X", email: "x@x" },
+        lastUsedAt: oneHourFuture,
+      }),
+    );
+
+    const auth = new GoogleAuthService();
+    // Session should still be returned (idle is clamped to 0, well
+    // under the 7-day cap), but the heartbeat should have re-anchored
+    // lastUsedAt to "now" so the future timestamp doesn't persist.
+    const profile = await auth.restorePersistedSession();
+    expect(profile).not.toBeNull();
+    const stored = JSON.parse(
+      localStorage.getItem("sutrapad-google-auth-session") as string,
+    );
+    expect(new Date(stored.lastUsedAt).getTime()).toBeLessThanOrEqual(
+      Date.now() + 1_000,
+    );
+  });
+
+  it("survives a localStorage quota error during heartbeat write", async () => {
+    // The user's localStorage is full (other apps / extensions).
+    // `setItem` throws QuotaExceededError. The read itself succeeded,
+    // so the user is signed in — degraded mode is "session works,
+    // idle clock doesn't reset". Locking the user out on quota
+    // failure would be the wrong call.
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    localStorage.setItem(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "warm",
+        expiresAt,
+        profile: { name: "X", email: "x@x" },
+        lastUsedAt: oneDayAgo,
+      }),
+    );
+
+    // Patch setItem to throw on the auth key. The pre-population
+    // above ran fine because we patched after.
+    const originalSetItem = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = (key: string, value: string) => {
+      if (key === "sutrapad-google-auth-session") {
+        throw new Error("QuotaExceededError");
+      }
+      originalSetItem(key, value);
+    };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const auth = new GoogleAuthService();
+    const profile = await auth.restorePersistedSession();
+    expect(profile).not.toBeNull();
+    expect(auth.getAccessToken()).toBe("warm");
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Failed to bump lastUsedAt on persisted session:",
+      expect.any(Error),
+    );
+
+    warnSpy.mockRestore();
+  });
+
   it("bumps lastUsedAt on each successful read", async () => {
     const expiresAt = new Date(Date.now() + 60_000).toISOString();
     const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
@@ -490,6 +597,25 @@ describe("GoogleAuthService.subscribeToCrossTabSignOut", () => {
 
     harness.fireStorageEvent("sutrapad-local-workspace", null);
     harness.fireStorageEvent("sutrapad-og-image-cache-v1", null);
+
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("ignores localStorage.clear() (event.key === null)", () => {
+    // The storage event spec dictates that `localStorage.clear()`
+    // fires an event with `key === null`. A devtools panic-clear,
+    // a misbehaving extension, or another app on the origin
+    // wiping their own slot shouldn't be treated as a SutraPad
+    // sign-out — the existing `event.key !== GOOGLE_AUTH_SESSION_KEY`
+    // filter already protects this, but pin it explicitly so a
+    // future "react to clear too" change has to remove this guard
+    // intentionally.
+    const harness = createWindowWithStorage();
+    const service = new GoogleAuthService();
+    const handler = vi.fn();
+    service.subscribeToCrossTabSignOut(handler);
+
+    harness.fireStorageEvent(null, null);
 
     expect(handler).not.toHaveBeenCalled();
   });

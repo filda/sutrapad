@@ -246,9 +246,24 @@ export class GoogleAuthService {
       "Google sign-in was cancelled or failed.",
     );
     this.#accessToken = response.access_token;
-    const profile = await this.fetchUserProfile(response.access_token);
-    this.persistSession(response, profile);
-    return profile;
+    try {
+      const profile = await this.fetchUserProfile(response.access_token);
+      this.persistSession(response, profile);
+      return profile;
+    } catch (error) {
+      // The token request succeeded but the userinfo follow-up failed
+      // (network blip, 403 on profile scope, malformed Google
+      // response). Without this catch, `#accessToken` would be set
+      // to a working Drive token but no profile would be persisted —
+      // app.ts treats `profile === null` as "signed out", so the
+      // user sees the signed-out UI while the in-memory token sits
+      // there orphaned, ready to ride along on any background save.
+      // Wipe the same way `refreshSession` does and re-throw so the
+      // caller can show the error.
+      this.#accessToken = null;
+      this.clearStoredSession();
+      throw error;
+    }
   }
 
   async refreshSession(): Promise<UserProfile | null> {
@@ -442,7 +457,16 @@ export class GoogleAuthService {
       // Subsequent `persistSession` calls (sign-in, refresh) write
       // the field for real.
       if (session.lastUsedAt) {
-        const idleMs = Date.now() - new Date(session.lastUsedAt).getTime();
+        // `Math.max(…, 0)` clamps the clock-backward case: if the
+        // user manually moves their system clock or NTP steps back,
+        // a naive `Date.now() - past` can go negative and look like
+        // "infinitely fresh", which would incorrectly keep a session
+        // that should evict. Negative idle is treated as zero — the
+        // session is *at least* freshly touched, never older.
+        const idleMs = Math.max(
+          Date.now() - new Date(session.lastUsedAt).getTime(),
+          0,
+        );
         if (idleMs > MAX_IDLE_DAYS_BEFORE_EXPIRY * MS_PER_DAY) {
           this.clearStoredSession();
           return null;
@@ -458,10 +482,22 @@ export class GoogleAuthService {
         ...session,
         lastUsedAt: new Date().toISOString(),
       };
-      window.localStorage.setItem(
-        GOOGLE_AUTH_SESSION_KEY,
-        JSON.stringify(touched),
-      );
+      try {
+        window.localStorage.setItem(
+          GOOGLE_AUTH_SESSION_KEY,
+          JSON.stringify(touched),
+        );
+      } catch (error) {
+        // localStorage quota exhausted or similar. The heartbeat
+        // didn't land, but the read itself succeeded — return the
+        // already-loaded session so the user stays signed in. The
+        // idle clock will keep ticking against the previous
+        // `lastUsedAt`, which is the right degraded behaviour: an
+        // unwriteable storage shouldn't lock the user out, just
+        // stop bumping the idle clock until quota frees up.
+        console.warn("Failed to bump lastUsedAt on persisted session:", error);
+        return session;
+      }
 
       return touched;
     } catch {
