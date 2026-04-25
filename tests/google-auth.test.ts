@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GoogleAuthService } from "../src/services/google-auth";
+import { GoogleAuthService, parseUserInfoResponse } from "../src/services/google-auth";
 
 function createStorageMock(): Storage {
   const store = new Map<string, string>();
@@ -61,6 +61,46 @@ describe("GoogleAuthService persisted session restore", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("logs but does not throw when revoke fails synchronously", () => {
+    // The Google revoke call can throw synchronously when the GIS
+    // script has been monkey-patched (e.g. an old version stuck in
+    // the cache). The user-visible signed-out state must still hold.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("window", {
+      localStorage: window.localStorage,
+      google: {
+        accounts: {
+          oauth2: {
+            initTokenClient: () => ({ requestAccessToken: () => undefined }),
+            revoke: () => {
+              throw new Error("revoke broken");
+            },
+          },
+        },
+      },
+    });
+    localStorage.setItem(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "broken-token",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        profile: { name: "X", email: "x@x" },
+      }),
+    );
+
+    const auth = new GoogleAuthService();
+    return auth.restorePersistedSession().then(() => {
+      expect(() => auth.signOut()).not.toThrow();
+      expect(auth.getAccessToken()).toBeNull();
+      expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Google token revoke failed:",
+        expect.any(Error),
+      );
+      warnSpy.mockRestore();
+    });
+  });
+
   it("drops expired persisted sessions", async () => {
     localStorage.setItem(
       "sutrapad-google-auth-session",
@@ -79,5 +119,64 @@ describe("GoogleAuthService persisted session restore", () => {
     await expect(auth.restorePersistedSession()).resolves.toBeNull();
     expect(auth.getAccessToken()).toBeNull();
     expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
+  });
+});
+
+describe("parseUserInfoResponse", () => {
+  it("accepts a well-formed response with all fields", () => {
+    const result = parseUserInfoResponse({
+      name: "Filda",
+      email: "filda@example.com",
+      picture: "https://example.com/avatar.png",
+      sub: "google-uid-ignored",
+    });
+    expect(result).toEqual({
+      name: "Filda",
+      email: "filda@example.com",
+      picture: "https://example.com/avatar.png",
+    });
+    // Unknown fields (like `sub`) must NOT leak into the persisted profile.
+    expect("sub" in result).toBe(false);
+  });
+
+  it("treats picture as optional", () => {
+    const result = parseUserInfoResponse({
+      name: "Filda",
+      email: "filda@example.com",
+    });
+    expect(result.picture).toBeUndefined();
+  });
+
+  it("ignores a non-string picture", () => {
+    const result = parseUserInfoResponse({
+      name: "Filda",
+      email: "filda@example.com",
+      picture: 42,
+    });
+    expect(result.picture).toBeUndefined();
+  });
+
+  it("rejects responses missing name", () => {
+    expect(() => parseUserInfoResponse({ email: "x@x" })).toThrow(
+      /missing required fields/,
+    );
+  });
+
+  it("rejects responses missing email", () => {
+    expect(() => parseUserInfoResponse({ name: "Filda" })).toThrow(
+      /missing required fields/,
+    );
+  });
+
+  it("rejects responses with a blank name", () => {
+    expect(() =>
+      parseUserInfoResponse({ name: "   ", email: "x@x" }),
+    ).toThrow(/missing required fields/);
+  });
+
+  it("rejects non-object inputs", () => {
+    expect(() => parseUserInfoResponse(null)).toThrow();
+    expect(() => parseUserInfoResponse("not json")).toThrow();
+    expect(() => parseUserInfoResponse(42)).toThrow();
   });
 });

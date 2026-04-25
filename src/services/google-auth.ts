@@ -49,6 +49,38 @@ interface StoredGoogleAuthSession {
   profile: UserProfile;
 }
 
+/**
+ * Validates the shape of a Google `oauth2/v3/userinfo` response.
+ * Google guarantees `name` and `email` for the `openid profile email`
+ * scope set we request, but the previous `as UserProfile` cast was a
+ * TS-level lie: an unexpected shape (Google API change, a proxy
+ * intercept, a partial response) would surface as runtime `undefined`s
+ * deep in the render layer. Exported so the validation can be tested
+ * in isolation, without standing up GIS.
+ *
+ * Throws when required fields are missing or non-string. Returns a
+ * fresh, minimal `UserProfile` so unrelated keys never leak into
+ * persisted storage.
+ */
+export function parseUserInfoResponse(raw: unknown): UserProfile {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Google profile response missing required fields.");
+  }
+  const data = raw as Record<string, unknown>;
+  if (typeof data.name !== "string" || data.name.trim() === "") {
+    throw new Error("Google profile response missing required fields.");
+  }
+  if (typeof data.email !== "string" || data.email.trim() === "") {
+    throw new Error("Google profile response missing required fields.");
+  }
+  const picture = typeof data.picture === "string" ? data.picture : undefined;
+  return {
+    name: data.name,
+    email: data.email,
+    picture,
+  };
+}
+
 let googleScriptPromise: Promise<void> | null = null;
 
 function requireGoogleOAuth(): GoogleNamespace["accounts"]["oauth2"] {
@@ -80,7 +112,7 @@ async function loadGoogleIdentityScript(): Promise<void> {
 
 export class GoogleAuthService {
   #accessToken: string | null = null;
-  #tokenClient: TokenClient | null = null;
+  #clientId: string | null = null;
 
   async initialize(): Promise<void> {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -89,38 +121,64 @@ export class GoogleAuthService {
       throw new Error("Missing VITE_GOOGLE_CLIENT_ID in .env.");
     }
 
+    this.#clientId = clientId;
     await loadGoogleIdentityScript();
-
-    this.#tokenClient = requireGoogleOAuth().initTokenClient({
-      client_id: clientId,
-      scope: GOOGLE_SCOPES,
-      callback: () => undefined,
-    });
   }
 
-  async signIn(): Promise<UserProfile> {
-    if (!this.#tokenClient) {
-      await this.initialize();
+  /**
+   * Single token-request entry point used by both `signIn` (with
+   * `prompt: "consent"`) and `refreshSession` (with `prompt: ""`).
+   *
+   * Google Identity Services binds the response callback into the
+   * token client at construction time, so each call has to spin up a
+   * fresh `initTokenClient` — there's no public API to swap the
+   * callback on an existing client. The earlier code duplicated this
+   * setup across two methods; consolidating here keeps the failure
+   * shape consistent (same `error_callback` message label, same
+   * `tokenResponse.error → Error` mapping) and makes it impossible
+   * for the two flows to drift on edge cases like missing
+   * `error_callback`.
+   *
+   * `errorMessage` is what the caller's outer promise rejects with
+   * when GIS reports a transport-level failure (popup closed,
+   * network error, scope refused). The `tokenResponse.error` path
+   * carries Google's own error code which we surface as-is.
+   */
+  private async requestToken(
+    prompt: "consent" | "",
+    errorMessage: string,
+  ): Promise<TokenResponse> {
+    if (!this.#clientId) {
+      throw new Error("Google auth has not been initialized.");
     }
+    const clientId = this.#clientId;
 
-    const response = await new Promise<TokenResponse>((resolve, reject) => {
-      this.#tokenClient = requireGoogleOAuth().initTokenClient({
-        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+    return new Promise<TokenResponse>((resolve, reject) => {
+      const tokenClient = requireGoogleOAuth().initTokenClient({
+        client_id: clientId,
         scope: GOOGLE_SCOPES,
         callback: (tokenResponse) => {
           if (tokenResponse.error) {
             reject(new Error(tokenResponse.error));
             return;
           }
-
           resolve(tokenResponse);
         },
-        error_callback: () => reject(new Error("Google sign-in was cancelled or failed.")),
+        error_callback: () => reject(new Error(errorMessage)),
       });
-
-      this.#tokenClient.requestAccessToken({ prompt: "consent" });
+      tokenClient.requestAccessToken({ prompt });
     });
+  }
 
+  async signIn(): Promise<UserProfile> {
+    if (!this.#clientId) {
+      await this.initialize();
+    }
+
+    const response = await this.requestToken(
+      "consent",
+      "Google sign-in was cancelled or failed.",
+    );
     this.#accessToken = response.access_token;
     const profile = await this.fetchUserProfile(response.access_token);
     this.persistSession(response, profile);
@@ -128,29 +186,15 @@ export class GoogleAuthService {
   }
 
   async refreshSession(): Promise<UserProfile | null> {
-    if (!this.#tokenClient) {
+    if (!this.#clientId) {
       await this.initialize();
     }
 
     try {
-      const token = await new Promise<TokenResponse>((resolve, reject) => {
-        this.#tokenClient = requireGoogleOAuth().initTokenClient({
-          client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-          scope: GOOGLE_SCOPES,
-          callback: (tokenResponse) => {
-            if (tokenResponse.error) {
-              reject(new Error(tokenResponse.error));
-              return;
-            }
-
-            resolve(tokenResponse);
-          },
-          error_callback: () => reject(new Error("Unable to refresh the Google session.")),
-        });
-
-        this.#tokenClient.requestAccessToken({ prompt: "" });
-      });
-
+      const token = await this.requestToken(
+        "",
+        "Unable to refresh the Google session.",
+      );
       this.#accessToken = token.access_token;
       const profile = await this.fetchUserProfile(token.access_token);
       this.persistSession(token, profile);
@@ -177,7 +221,17 @@ export class GoogleAuthService {
       return;
     }
 
-    window.google.accounts.oauth2.revoke(this.#accessToken, () => undefined);
+    // Best-effort revoke. We can't synchronously verify the call
+    // succeeded — `revoke` is fire-and-forget by design — but a log
+    // gives us a paper trail when devtools is open. The user-visible
+    // signed-out state is decoupled from revocation: even if revoke
+    // fails (offline, Google unreachable), the local session is gone
+    // and the persisted token is wiped.
+    try {
+      window.google.accounts.oauth2.revoke(this.#accessToken, () => undefined);
+    } catch (error) {
+      console.warn("Google token revoke failed:", error);
+    }
     this.clearStoredSession();
     this.#accessToken = null;
   }
@@ -197,12 +251,7 @@ export class GoogleAuthService {
       throw new Error("Failed to load the user profile from the Google account.");
     }
 
-    const data = (await response.json()) as UserProfile;
-    return {
-      name: data.name,
-      email: data.email,
-      picture: data.picture,
-    };
+    return parseUserInfoResponse(await response.json());
   }
 
   private persistSession(tokenResponse: TokenResponse, profile: UserProfile): void {
