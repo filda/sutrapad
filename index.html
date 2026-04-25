@@ -8,6 +8,38 @@
       name="description"
       content="Store and manage your Gerümpel on Google Drive — powered entirely by browser magic, questionable decisions, and multiple JSON files."
     />
+    <!--
+      Content Security Policy.
+
+      Defense-in-depth alongside the textContent migration in
+      buildCardItem (see commit history): even if a future regression
+      reintroduces an innerHTML interpolation, blocking inline scripts
+      stops the payload from executing. The directive list is sized to
+      every external surface we actually touch — see the comments below.
+
+      Tightening notes:
+        - `'unsafe-inline'` is intentionally kept on `style-src` because
+          we set `element.style.cssText = '…'` from JS in several
+          places (silent-capture splash, persona decorations) and add a
+          `<style>` keyframes rule from `silent-capture-runner.ts`.
+          Inline-style XSS is a much narrower threat surface than
+          inline-script XSS.
+        - `script-src` is `'self'` only — no inline, no eval, no remote
+          host. Google Identity Services loads from
+          `accounts.google.com` separately under that origin.
+        - `connect-src` lists every host we fetch from at runtime.
+          Adding a new external API requires touching this list.
+        - `img-src https:` for og:images is broad on purpose — link
+          captures can come from any domain and we resolve their og
+          thumbnails via allorigins; narrowing this would force a
+          per-image proxy rewrite.
+        - `frame-src accounts.google.com` keeps the silent
+          token-refresh iframe working.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' https://accounts.google.com https://oauth2.googleapis.com https://www.googleapis.com https://api.open-meteo.com https://nominatim.openstreetmap.org https://api.allorigins.win; frame-src https://accounts.google.com; manifest-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <title>SutraPad</title>
   </head>
