@@ -657,7 +657,13 @@ function createRenderCallbacks({
           setBookmarkletMessage(
             "Bookmarklet copied. In Safari, create any bookmark, edit it, and paste this code into its URL field.",
           );
-        } catch {
+        } catch (error) {
+          // The user-visible copy failure message is enough for the
+          // recovery path, but a `console.warn` keeps the underlying
+          // cause discoverable in devtools — clipboard rejections
+          // are easy to mistake for "the button is broken" without
+          // the actual permission / focus error in the log.
+          console.warn("Bookmarklet clipboard copy failed:", error);
           setBookmarkletMessage(
             "Copy failed. In Safari, you can still drag the bookmarklet or manually copy the link target.",
           );
@@ -931,7 +937,12 @@ function handleNewNoteCreation({
     let details: Awaited<ReturnType<typeof generateFreshNoteDetails>>;
     try {
       details = await generateFreshNoteDetails();
-    } catch {
+    } catch (error) {
+      // Geolocation / reverse-geocoding / capture-context probes can
+      // all reject (denied permission, network, AbortController
+      // abort). The new note keeps its placeholder title and lives on
+      // — log so the silent skip is at least visible in devtools.
+      console.warn("Fresh note detail backfill failed:", error);
       return;
     }
 

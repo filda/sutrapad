@@ -271,7 +271,15 @@ export async function runSilentCapture(
     note.body = body;
     note.urls = extractUrlsFromText(body);
     await store.appendNoteToWorkspace(note);
-  } catch {
+  } catch (error) {
+    // Drive failures here split between three families: a 401 (token
+    // expired post-restore — `withAuthRetry` declined to reach for the
+    // GIS iframe in the silent path on purpose), a 5xx (Drive
+    // outage), and rare client-side issues like Drive-quota errors.
+    // The user gets the "fallback to main app" UX either way; logging
+    // the underlying error keeps the silent failure debuggable in
+    // devtools so we know which class is hitting users.
+    console.warn("Silent capture save failed:", error);
     splash.remove();
     return { kind: "needs-fallback", reason: "save-failed" };
   }
