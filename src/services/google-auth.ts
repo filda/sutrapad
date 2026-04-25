@@ -122,6 +122,18 @@ export class GoogleAuthService {
    * wasteful and a code-smell. Reuse the existing promise instead.
    */
   #initPromise: Promise<void> | null = null;
+  /**
+   * Memoised in-flight refresh promise. A 401 from Drive triggers
+   * `withAuthRetry → refreshSession`; if three Drive calls run in
+   * parallel and all hit a stale token, all three would today launch
+   * their own GIS silent-refresh round-trip. Best case wastes
+   * iframes; worst case the parallel attempts race each other and
+   * one or two fail with a "popup closed" / "rate limit" error
+   * before the winner returns a fresh token. Coalesce to a single
+   * in-flight refresh and let every concurrent caller await the same
+   * resolution.
+   */
+  #refreshPromise: Promise<UserProfile | null> | null = null;
 
   async initialize(): Promise<void> {
     if (this.#initPromise) return this.#initPromise;
@@ -206,22 +218,36 @@ export class GoogleAuthService {
   }
 
   async refreshSession(): Promise<UserProfile | null> {
-    if (!this.#clientId) {
-      await this.initialize();
-    }
+    // Coalesce concurrent refresh attempts. See `#refreshPromise`
+    // doc for the rationale.
+    if (this.#refreshPromise) return this.#refreshPromise;
 
-    try {
-      const token = await this.requestToken(
-        "",
-        "Unable to refresh the Google session.",
-      );
-      this.#accessToken = token.access_token;
-      const profile = await this.fetchUserProfile(token.access_token);
-      this.persistSession(token, profile);
-      return profile;
-    } catch {
-      return null;
-    }
+    this.#refreshPromise = (async () => {
+      if (!this.#clientId) {
+        await this.initialize();
+      }
+
+      try {
+        const token = await this.requestToken(
+          "",
+          "Unable to refresh the Google session.",
+        );
+        this.#accessToken = token.access_token;
+        const profile = await this.fetchUserProfile(token.access_token);
+        this.persistSession(token, profile);
+        return profile;
+      } catch {
+        return null;
+      }
+    })().finally(() => {
+      // Clear the cache once the in-flight call settles so a later
+      // refresh attempt (next 401 round) starts fresh. We don't keep
+      // the resolved value cached — refresh is a side-effect-on-state
+      // operation, the return value is just a status hand-off.
+      this.#refreshPromise = null;
+    });
+
+    return this.#refreshPromise;
   }
 
   async restorePersistedSession(): Promise<UserProfile | null> {
