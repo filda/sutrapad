@@ -120,6 +120,7 @@ import {
   type ShortcutAction,
   type ShortcutState,
 } from "./lib/keyboard-shortcuts";
+import { atom } from "./lib/store";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
 export { resolveDisplayedNote } from "./app/logic/displayed-note";
@@ -1226,119 +1227,147 @@ export function createApp(root: HTMLElement): void {
   const appBasePath = import.meta.env.BASE_URL;
   const appRootUrl = window.location.origin + appBasePath;
 
-  let profile: UserProfile | null = null;
-  let workspace: SutraPadWorkspace = loadLocalWorkspace();
-  let syncState: SyncState = "idle";
-  let lastError = "";
-  let bookmarkletMessage = "";
-  let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
-  let selectedTagFilters: string[] = readTagFiltersFromLocation(window.location.href);
-  let filterMode: SutraPadTagFilterMode = readTagFilterModeFromLocation(window.location.href);
-  let activeMenuItem: MenuItemId = readActivePageFromLocation(
-    window.location.href,
-    appBasePath,
+  // Reactive state. Every slot is a `Readable<T>` (or `Atom<T>` where
+  // mutations happen): `X$.get()` reads, `X$.set(next)` writes,
+  // `X$.subscribe(fn)` registers a listener. The named setter wrappers
+  // below are byte-for-byte compatible with their old `(next) => { X
+  // = next }` shape, so call-site references threaded through
+  // `RenderCallbackOptions` and friends don't have to change in
+  // lockstep with this migration. Subscribers (computeds, render
+  // hooks) are wired in subsequent steps; this commit is the
+  // mechanical declaration switch.
+  const profile$ = atom<UserProfile | null>(null);
+  const workspace$ = atom<SutraPadWorkspace>(loadLocalWorkspace());
+  const syncState$ = atom<SyncState>("idle");
+  const lastError$ = atom("");
+  const bookmarkletMessage$ = atom("");
+  const autoSaveTimer$ = atom<ReturnType<typeof setTimeout> | null>(null);
+  const selectedTagFilters$ = atom<string[]>(
+    readTagFiltersFromLocation(window.location.href),
+  );
+  const filterMode$ = atom<SutraPadTagFilterMode>(
+    readTagFilterModeFromLocation(window.location.href),
+  );
+  const activeMenuItem$ = atom<MenuItemId>(
+    readActivePageFromLocation(window.location.href, appBasePath),
   );
   // When the URL points at /notes/<id> on load, remember the id so the first
   // render lands directly on the detail page. The id is validated against the
   // workspace in `render()`; an unknown id falls back to the list and the URL
   // is rewritten at the next sync.
-  let detailNoteId: string | null =
-    activeMenuItem === "notes"
+  const detailNoteId$ = atom<string | null>(
+    activeMenuItem$.get() === "notes"
       ? readNoteDetailIdFromLocation(window.location.href, appBasePath)
-      : null;
+      : null,
+  );
   // Notebook listing layout. URL wins on initial load so a shared link honours
   // the sender's choice, otherwise fall back to the last mode the user picked
   // on this device, otherwise the default (cards).
-  let notesViewMode: NotesViewMode = resolveInitialNotesView(window.location.href);
+  const notesViewMode$ = atom<NotesViewMode>(
+    resolveInitialNotesView(window.location.href),
+  );
   // Links page layout — same resolution strategy as notesViewMode, separate
   // storage slot so the two pages can drift independently.
-  let linksViewMode: LinksViewMode = resolveInitialLinksView(window.location.href);
+  const linksViewMode$ = atom<LinksViewMode>(
+    resolveInitialLinksView(window.location.href),
+  );
   // Visual theme is explicitly device-local — no URL sync, no Drive sync. It
   // was already applied on boot by `main.ts` to prevent a flash of the wrong
   // palette; this keeps our in-memory copy in sync with what the document
   // currently shows.
-  let currentTheme: ThemeChoice = resolveInitialThemeChoice();
+  const currentTheme$ = atom<ThemeChoice>(resolveInitialThemeChoice());
   // Notebook persona is explicitly device-local too: each browser/device
   // picks its own on/off stance, nothing flows through URL or Drive so a
   // shared link can't force a decorative view on the recipient.
-  let personaPreference: PersonaPreference = resolveInitialPersonaPreference();
+  const personaPreference$ = atom<PersonaPreference>(
+    resolveInitialPersonaPreference(),
+  );
   // Tasks screen view state. Lives at the top level so `render()` (which
   // is triggered by any task checkbox toggle) doesn't wipe the user's
   // active chip, show-done stance, or "one thing" pin. Deliberately kept
   // in-memory — these are session-scoped UI preferences, not shareable
   // view-state, so they don't round-trip to the URL or localStorage.
-  let tasksFilter: TasksFilterId = "all";
-  let tasksShowDone = false;
-  let tasksOneThingKey: string | null = null;
+  const tasksFilter$ = atom<TasksFilterId>("all");
+  const tasksShowDone$ = atom(false);
+  const tasksOneThingKey$ = atom<string | null>(null);
   // Tags page: which of the seven classes contribute tags to the list view,
   // and the (volatile) search query typed into the left-panel Search input.
   // Visibility persists to localStorage — device-local, so a shared link
   // never forces the recipient's class toggles. The query is intentionally
   // not persisted: it's in-progress typing, not a saved stance.
-  let visibleTagClasses: Set<TagClassId> = resolveInitialVisibleTagClasses();
-  let tagsSearchQuery = "";
+  const visibleTagClasses$ = atom<Set<TagClassId>>(
+    resolveInitialVisibleTagClasses(),
+  );
+  const tagsSearchQuery$ = atom("");
   // Dismissed tag-alias pairs — the Settings hygiene card's "Keep separate"
   // action appends here. Persisted per-device to localStorage via
   // `persistDismissedTagAliases`; never round-trips to Drive because it's a
   // cleanup preference, not notebook content.
-  let dismissedTagAliases: Set<string> = resolveInitialDismissedTagAliases();
+  const dismissedTagAliases$ = atom<Set<string>>(
+    resolveInitialDismissedTagAliases(),
+  );
   // Recently applied tag filters — newest-first, capped at 8. Drives the
   // "Recently used" group in the topbar's inline typeahead (see
   // `docs/design_handoff_sutrapad2/src/tagfilter.jsx`). Device-local + persisted
   // to `localStorage.sp_recent_tags` so the sidebar remembers between
   // sessions, but never syncs to Drive — a shared link should not seed the
   // recipient's typeahead with the sender's personal filter habits.
-  let recentTagFilters: string[] = loadRecentTagFilters();
+  const recentTagFilters$ = atom<readonly string[]>(loadRecentTagFilters());
   // Filled in once `wirePaletteAccess` has mounted the `/` keybinding (near
   // the bottom of createApp). render() and the topbar's "+ tag" trigger both
   // reach the palette through this single reference, so the keyboard path
   // and the click path share the same open/close bookkeeping with no parallel
   // `isOpen` flag. Null until wiring completes, then stable for the session.
-  let paletteAccess: PaletteAccess | null = null;
+  const paletteAccess$ = atom<PaletteAccess | null>(null);
   // When the user picked "auto", the concrete palette depends on the OS
   // light/dark preference. Subscribe once so a system switch during a live
   // session re-applies the theme without a reload.
-  watchAutoTheme(() => currentTheme);
+  watchAutoTheme(() => currentTheme$.get());
 
-  // Tiny typed setters for the mutable state above. Hoisted this high so the
+  // Tiny typed setters for the reactive state above. Hoisted this high so the
   // helpers below (handleNewNote, palette wiring, Drive lifecycle, renderer
   // callbacks) can all pass `setWorkspaceState` instead of re-writing an
-  // inline `(next) => { workspace = next; }` each time.
-  const setWorkspaceState = (next: SutraPadWorkspace): void => { workspace = next; };
-  const setSyncStateValue = (next: SyncState): void => { syncState = next; };
-  const setLastErrorValue = (next: string): void => { lastError = next; };
-  const setProfileState = (next: UserProfile | null): void => { profile = next; };
-  const setSelectedTagFiltersState = (next: string[]): void => { selectedTagFilters = next; };
-  const setFilterModeState = (next: SutraPadTagFilterMode): void => { filterMode = next; };
-  const setActiveMenuItemState = (next: MenuItemId): void => { activeMenuItem = next; };
-  const setDetailNoteIdState = (next: string | null): void => { detailNoteId = next; };
-  const setNotesViewModeState = (next: NotesViewMode): void => { notesViewMode = next; };
-  const setLinksViewModeState = (next: LinksViewMode): void => { linksViewMode = next; };
-  const setCurrentThemeState = (next: ThemeChoice): void => { currentTheme = next; };
-  const setPersonaPreferenceState = (next: PersonaPreference): void => { personaPreference = next; };
-  const setBookmarkletMessageState = (next: string): void => { bookmarkletMessage = next; };
-  const setTasksFilterState = (next: TasksFilterId): void => { tasksFilter = next; };
-  const setTasksShowDoneState = (next: boolean): void => { tasksShowDone = next; };
-  const setTasksOneThingKeyState = (next: string | null): void => { tasksOneThingKey = next; };
-  const setVisibleTagClassesState = (next: Set<TagClassId>): void => { visibleTagClasses = next; };
-  const setTagsSearchQueryState = (next: string): void => { tagsSearchQuery = next; };
-  const setDismissedTagAliasesState = (next: Set<string>): void => { dismissedTagAliases = next; };
-  const setRecentTagFiltersState = (next: readonly string[]): void => { recentTagFilters = [...next]; };
+  // inline `(next) => workspace$.set(next)` each time.
+  const setWorkspaceState = (next: SutraPadWorkspace): void => workspace$.set(next);
+  const setSyncStateValue = (next: SyncState): void => syncState$.set(next);
+  const setLastErrorValue = (next: string): void => lastError$.set(next);
+  const setProfileState = (next: UserProfile | null): void => profile$.set(next);
+  const setSelectedTagFiltersState = (next: string[]): void => selectedTagFilters$.set(next);
+  const setFilterModeState = (next: SutraPadTagFilterMode): void => filterMode$.set(next);
+  const setActiveMenuItemState = (next: MenuItemId): void => activeMenuItem$.set(next);
+  const setDetailNoteIdState = (next: string | null): void => detailNoteId$.set(next);
+  const setNotesViewModeState = (next: NotesViewMode): void => notesViewMode$.set(next);
+  const setLinksViewModeState = (next: LinksViewMode): void => linksViewMode$.set(next);
+  const setCurrentThemeState = (next: ThemeChoice): void => currentTheme$.set(next);
+  const setPersonaPreferenceState = (next: PersonaPreference): void => personaPreference$.set(next);
+  const setBookmarkletMessageState = (next: string): void => bookmarkletMessage$.set(next);
+  const setTasksFilterState = (next: TasksFilterId): void => tasksFilter$.set(next);
+  const setTasksShowDoneState = (next: boolean): void => tasksShowDone$.set(next);
+  const setTasksOneThingKeyState = (next: string | null): void => tasksOneThingKey$.set(next);
+  const setVisibleTagClassesState = (next: Set<TagClassId>): void => visibleTagClasses$.set(next);
+  const setTagsSearchQueryState = (next: string): void => tagsSearchQuery$.set(next);
+  const setDismissedTagAliasesState = (next: Set<string>): void => dismissedTagAliases$.set(next);
+  // Defensive copy: the legacy setter took `readonly` and snapshotted into
+  // a fresh array so the atom stayed unaliased to the caller's input. The
+  // atom-store's `Object.is` check guarantees the snapshot is referentially
+  // distinct, so subscribers fire on every legitimate update.
+  const setRecentTagFiltersState = (next: readonly string[]): void => recentTagFilters$.set([...next]);
 
   const scheduleAutoSave = (): void => {
-    if (!profile) return;
-    if (autoSaveTimer) clearTimeout(autoSaveTimer);
-    autoSaveTimer = setTimeout(() => {
-      autoSaveTimer = null;
+    if (!profile$.get()) return;
+    const previousTimer = autoSaveTimer$.get();
+    if (previousTimer) clearTimeout(previousTimer);
+    autoSaveTimer$.set(setTimeout(() => {
+      autoSaveTimer$.set(null);
       // Fire-time guard. The schedule-time `if (!profile)` covers
       // "user wasn't signed in when typing"; this re-check covers
       // the race where the user signed *out* between schedule (2 s
       // ago) and fire. Without it, `saveWorkspace("background")`
       // would call into Drive without a valid token and surface as
       // a sync error pulse for an action the user never asked for.
-      if (!profile) return;
+      if (!profile$.get()) return;
       void saveWorkspace("background");
-    }, 2000);
+    }, 2000));
   };
 
   /**
@@ -1348,9 +1377,10 @@ export function createApp(root: HTMLElement): void {
    * rather than racing the user's last-keystroke timer.
    */
   const cancelAutoSave = (): void => {
-    if (autoSaveTimer) {
-      clearTimeout(autoSaveTimer);
-      autoSaveTimer = null;
+    const timer = autoSaveTimer$.get();
+    if (timer) {
+      clearTimeout(timer);
+      autoSaveTimer$.set(null);
     }
   };
 
@@ -1362,14 +1392,15 @@ export function createApp(root: HTMLElement): void {
     // sign-in merge while a debounced keystroke was in-flight — `upsertNote`
     // returns the workspace unchanged and we drop the edit rather than
     // clobber an unrelated note.
-    const activeNoteId = workspace.activeNoteId;
+    const previousWorkspace = workspace$.get();
+    const activeNoteId = previousWorkspace.activeNoteId;
     if (activeNoteId === null) return;
 
-    const previousWorkspace = workspace;
-    workspace = upsertNote(workspace, activeNoteId, updater);
-    if (workspace === previousWorkspace) return;
+    const next = upsertNote(previousWorkspace, activeNoteId, updater);
+    if (next === previousWorkspace) return;
 
-    persistLocalWorkspace(workspace);
+    workspace$.set(next);
+    persistLocalWorkspace(next);
     scheduleAutoSave();
   };
 
@@ -1378,9 +1409,11 @@ export function createApp(root: HTMLElement): void {
     // like `device:mobile` survives a workspace reload instead of being
     // silently dropped because `buildTagIndex` only knew about user tags.
     const availableTags = new Set(
-      buildCombinedTagIndex(workspace).tags.map((entry) => entry.tag),
+      buildCombinedTagIndex(workspace$.get()).tags.map((entry) => entry.tag),
     );
-    selectedTagFilters = selectedTagFilters.filter((tag) => availableTags.has(tag));
+    selectedTagFilters$.set(
+      selectedTagFilters$.get().filter((tag) => availableTags.has(tag)),
+    );
   };
 
   /**
@@ -1396,16 +1429,18 @@ export function createApp(root: HTMLElement): void {
    * re-render (no visible change means no render needed).
    */
   const purgeEmptyDraftNotes = (): boolean => {
-    const cleaned = stripEmptyDraftNotes(workspace);
-    if (cleaned === workspace) return false;
-    workspace = cleaned;
-    persistLocalWorkspace(workspace);
+    const previous = workspace$.get();
+    const cleaned = stripEmptyDraftNotes(previous);
+    if (cleaned === previous) return false;
+    workspace$.set(cleaned);
+    persistLocalWorkspace(cleaned);
     // If the detail route was pinned to the discarded draft, drop the
     // pin so `render()` doesn't try to resolve a dangling id. The
     // `ensureVisibleActiveNoteSelection` pass inside `render()` will
     // rebind `activeNoteId` to the next visible note.
-    if (detailNoteId !== null && !workspace.notes.some((note) => note.id === detailNoteId)) {
-      detailNoteId = null;
+    const detailNoteId = detailNoteId$.get();
+    if (detailNoteId !== null && !cleaned.notes.some((note) => note.id === detailNoteId)) {
+      detailNoteId$.set(null);
     }
     return true;
   };
@@ -1417,9 +1452,9 @@ export function createApp(root: HTMLElement): void {
     purgeEmptyDraftNotes();
     handleNewNoteCreation({
       root,
-      getWorkspace: () => workspace,
+      getWorkspace: () => workspace$.get(),
       setWorkspace: setWorkspaceState,
-      getDetailNoteId: () => detailNoteId,
+      getDetailNoteId: () => detailNoteId$.get(),
       setDetailNoteId: setDetailNoteIdState,
       setActiveMenuItem: setActiveMenuItemState,
       setSyncState: setSyncStateValue,
@@ -1438,29 +1473,33 @@ export function createApp(root: HTMLElement): void {
    * every render — the notes-list helper treats `undefined` as "flat cards".
    */
   const resolveCurrentPersonaOptions = (): NotesListPersonaOptions | undefined => {
-    if (!isPersonaEnabled(personaPreference)) return undefined;
+    if (!isPersonaEnabled(personaPreference$.get())) return undefined;
     return {
-      allNotes: workspace.notes,
-      dark: isDarkThemeId(resolveThemeId(currentTheme)),
+      allNotes: workspace$.get().notes,
+      dark: isDarkThemeId(resolveThemeId(currentTheme$.get())),
     };
   };
 
   const refreshNotesPanel = (): void => {
     syncSelectedTagFilters();
     const visibleActiveNote = ensureVisibleActiveNoteSelection(
-      workspace,
-      selectedTagFilters,
-      filterMode,
+      workspace$.get(),
+      selectedTagFilters$.get(),
+      filterMode$.get(),
     );
-    workspace = visibleActiveNote.workspace;
+    workspace$.set(visibleActiveNote.workspace);
     if (visibleActiveNote.shouldPersistWorkspace) {
-      persistLocalWorkspace(workspace);
+      persistLocalWorkspace(visibleActiveNote.workspace);
     }
     const currentPanel = root.querySelector(".notes-panel");
     if (!currentPanel) {
       return;
     }
 
+    const workspace = workspace$.get();
+    const selectedTagFilters = selectedTagFilters$.get();
+    const filterMode = filterMode$.get();
+    const notesViewMode = notesViewMode$.get();
     currentPanel.replaceWith(
       buildNotesPanel({
         workspace,
@@ -1472,18 +1511,16 @@ export function createApp(root: HTMLElement): void {
         personaOptions: resolveCurrentPersonaOptions(),
         onChangeNotesView: (mode) => {
           if (mode === notesViewMode) return;
-          notesViewMode = mode;
+          notesViewMode$.set(mode);
           persistNotesView(mode);
           render();
         },
         onSelectNote: (noteId) => {
-          activeMenuItem = "notes";
-          detailNoteId = noteId;
-          workspace = {
-            ...workspace,
-            activeNoteId: noteId,
-          };
-          persistLocalWorkspace(workspace);
+          activeMenuItem$.set("notes");
+          detailNoteId$.set(noteId);
+          const next = { ...workspace$.get(), activeNoteId: noteId };
+          workspace$.set(next);
+          persistLocalWorkspace(next);
           render();
         },
         onNewNote: handleNewNote,
@@ -1492,13 +1529,14 @@ export function createApp(root: HTMLElement): void {
   };
 
   const refreshStatus = (): void => {
+    const syncState = syncState$.get();
     const statusText = getAppStatusText({
       syncState,
-      lastError,
-      workspace,
-      selectedTagFilters,
-      filterMode,
-      profile,
+      lastError: lastError$.get(),
+      workspace: workspace$.get(),
+      selectedTagFilters: selectedTagFilters$.get(),
+      filterMode: filterMode$.get(),
+      profile: profile$.get(),
     });
 
     const status = root.querySelector(".status");
@@ -1524,23 +1562,39 @@ export function createApp(root: HTMLElement): void {
 
   const render = (): void => {
     syncSelectedTagFilters();
-    const detailRoute = syncDetailRouteSelection(activeMenuItem, detailNoteId, workspace);
-    detailNoteId = detailRoute.detailNoteId;
-    workspace = detailRoute.workspace;
+    const detailRoute = syncDetailRouteSelection(
+      activeMenuItem$.get(),
+      detailNoteId$.get(),
+      workspace$.get(),
+    );
+    detailNoteId$.set(detailRoute.detailNoteId);
+    workspace$.set(detailRoute.workspace);
     if (detailRoute.shouldPersistWorkspace) {
-      persistLocalWorkspace(workspace);
+      persistLocalWorkspace(detailRoute.workspace);
     }
-    if (detailNoteId === null) {
+    if (detailNoteId$.get() === null) {
       const visibleActiveNote = ensureVisibleActiveNoteSelection(
-        workspace,
-        selectedTagFilters,
-        filterMode,
+        workspace$.get(),
+        selectedTagFilters$.get(),
+        filterMode$.get(),
       );
-      workspace = visibleActiveNote.workspace;
+      workspace$.set(visibleActiveNote.workspace);
       if (visibleActiveNote.shouldPersistWorkspace) {
-        persistLocalWorkspace(workspace);
+        persistLocalWorkspace(visibleActiveNote.workspace);
       }
     }
+    // Snapshot every reactive read for the rest of this render — the
+    // values are passed into renderAppPage and friends, which expect a
+    // consistent view of state for the duration of the call.
+    const workspace = workspace$.get();
+    const selectedTagFilters = selectedTagFilters$.get();
+    const filterMode = filterMode$.get();
+    const activeMenuItem = activeMenuItem$.get();
+    const detailNoteId = detailNoteId$.get();
+    const notesViewMode = notesViewMode$.get();
+    const linksViewMode = linksViewMode$.get();
+    const syncState = syncState$.get();
+    const profile = profile$.get();
     syncTagFiltersToLocation(selectedTagFilters);
     syncFilterModeToLocation(filterMode);
     syncActivePageToLocation(activeMenuItem, detailNoteId, appBasePath);
@@ -1557,40 +1611,40 @@ export function createApp(root: HTMLElement): void {
       auth,
       appRootUrl,
       setProfile: setProfileState,
-      getWorkspace: () => workspace,
+      getWorkspace: () => workspace$.get(),
       setWorkspace: setWorkspaceState,
       setSyncState: setSyncStateValue,
       setLastError: setLastErrorValue,
       setBookmarkletMessage: setBookmarkletMessageState,
       getSelectedTagFilters: () => selectedTagFilters,
       setSelectedTagFilters: setSelectedTagFiltersState,
-      getFilterMode: () => filterMode,
+      getFilterMode: () => filterMode$.get(),
       setFilterMode: setFilterModeState,
-      getActiveMenuItem: () => activeMenuItem,
+      getActiveMenuItem: () => activeMenuItem$.get(),
       setActiveMenuItem: setActiveMenuItemState,
-      getDetailNoteId: () => detailNoteId,
+      getDetailNoteId: () => detailNoteId$.get(),
       setDetailNoteId: setDetailNoteIdState,
-      getNotesViewMode: () => notesViewMode,
+      getNotesViewMode: () => notesViewMode$.get(),
       setNotesViewMode: setNotesViewModeState,
-      getLinksViewMode: () => linksViewMode,
+      getLinksViewMode: () => linksViewMode$.get(),
       setLinksViewMode: setLinksViewModeState,
-      getTasksFilter: () => tasksFilter,
+      getTasksFilter: () => tasksFilter$.get(),
       setTasksFilter: setTasksFilterState,
-      getTasksShowDone: () => tasksShowDone,
+      getTasksShowDone: () => tasksShowDone$.get(),
       setTasksShowDone: setTasksShowDoneState,
-      getTasksOneThingKey: () => tasksOneThingKey,
+      getTasksOneThingKey: () => tasksOneThingKey$.get(),
       setTasksOneThingKey: setTasksOneThingKeyState,
-      getVisibleTagClasses: () => visibleTagClasses,
+      getVisibleTagClasses: () => visibleTagClasses$.get(),
       setVisibleTagClasses: setVisibleTagClassesState,
-      getTagsSearchQuery: () => tagsSearchQuery,
+      getTagsSearchQuery: () => tagsSearchQuery$.get(),
       setTagsSearchQuery: setTagsSearchQueryState,
-      getDismissedTagAliases: () => dismissedTagAliases,
+      getDismissedTagAliases: () => dismissedTagAliases$.get(),
       setDismissedTagAliases: setDismissedTagAliasesState,
-      getRecentTagFilters: () => recentTagFilters,
+      getRecentTagFilters: () => recentTagFilters$.get(),
       setRecentTagFilters: setRecentTagFiltersState,
-      getCurrentTheme: () => currentTheme,
+      getCurrentTheme: () => currentTheme$.get(),
       setCurrentTheme: setCurrentThemeState,
-      getPersonaPreference: () => personaPreference,
+      getPersonaPreference: () => personaPreference$.get(),
       setPersonaPreference: setPersonaPreferenceState,
       handleNewNote,
       purgeEmptyDraftNotes,
@@ -1603,7 +1657,7 @@ export function createApp(root: HTMLElement): void {
       render,
       refreshNotesPanel,
     });
-    paletteAccess?.refresh(workspace, selectedTagFilters);
+    paletteAccess$.get()?.refresh(workspace, selectedTagFilters);
     renderAppPage({
       root,
       workspace,
@@ -1615,7 +1669,7 @@ export function createApp(root: HTMLElement): void {
       syncState,
       statusText: getAppStatusText({
         syncState,
-        lastError,
+        lastError: lastError$.get(),
         workspace,
         selectedTagFilters,
         filterMode,
@@ -1623,23 +1677,23 @@ export function createApp(root: HTMLElement): void {
       }),
       profile,
       appRootUrl,
-      bookmarkletMessage,
+      bookmarkletMessage: bookmarkletMessage$.get(),
       iosShortcutUrl,
       buildStamp: formatBuildStamp(__APP_VERSION__, __APP_COMMIT_HASH__, __APP_BUILD_TIME__),
       activeMenuItem,
       detailNoteId,
       notesViewMode,
       linksViewMode,
-      tasksFilter,
-      tasksShowDone,
-      tasksOneThingKey,
-      visibleTagClasses,
-      tagsSearchQuery,
-      dismissedTagAliases,
-      recentTagFilters,
-      currentTheme,
-      personaPreference,
-      onOpenPalette: () => paletteAccess?.open(),
+      tasksFilter: tasksFilter$.get(),
+      tasksShowDone: tasksShowDone$.get(),
+      tasksOneThingKey: tasksOneThingKey$.get(),
+      visibleTagClasses: visibleTagClasses$.get(),
+      tagsSearchQuery: tagsSearchQuery$.get(),
+      dismissedTagAliases: dismissedTagAliases$.get(),
+      recentTagFilters: recentTagFilters$.get(),
+      currentTheme: currentTheme$.get(),
+      personaPreference: personaPreference$.get(),
+      onOpenPalette: () => paletteAccess$.get()?.open(),
       ...callbacks,
     });
   };
@@ -1656,7 +1710,7 @@ export function createApp(root: HTMLElement): void {
   const retryContext: AuthRetryContext = {
     refreshSession: () => auth.refreshSession(),
     onProfileRefreshed: (refreshedProfile) => {
-      profile = refreshedProfile;
+      profile$.set(refreshedProfile);
     },
   };
 
@@ -1678,7 +1732,7 @@ export function createApp(root: HTMLElement): void {
         withAuthRetry(() => getStore().loadWorkspace(), retryContext),
       saveRemoteWorkspace: (ws) =>
         withAuthRetry(() => getStore().saveWorkspace(ws), retryContext),
-      getWorkspace: () => workspace,
+      getWorkspace: () => workspace$.get(),
       setWorkspace: setWorkspaceState,
       persistLocalWorkspace,
       setSyncState: setSyncStateValue,
@@ -1689,7 +1743,7 @@ export function createApp(root: HTMLElement): void {
 
   const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> =>
     runWorkspaceSave(mode, {
-      persistLocalWorkspace: () => persistLocalWorkspace(workspace),
+      persistLocalWorkspace: () => persistLocalWorkspace(workspace$.get()),
       // Background autosave must not trigger the GIS silent-refresh iframe —
       // on mobile it steals focus from the active <textarea> mid-keystroke.
       // We forward the save mode into `withAuthRetry` so a 401 during autosave
@@ -1705,7 +1759,7 @@ export function createApp(root: HTMLElement): void {
       // normally.
       saveRemoteWorkspace: () =>
         withAuthRetry(
-          () => getStore().saveWorkspace(stripEmptyDraftNotes(workspace)),
+          () => getStore().saveWorkspace(stripEmptyDraftNotes(workspace$.get())),
           {
             ...retryContext,
             mode,
@@ -1718,23 +1772,23 @@ export function createApp(root: HTMLElement): void {
       cancelAutoSave,
     });
 
-  paletteAccess = wirePaletteAccess({
+  paletteAccess$.set(wirePaletteAccess({
     host: document.body,
-    getWorkspace: () => workspace,
+    getWorkspace: () => workspace$.get(),
     setWorkspace: setWorkspaceState,
     setActiveMenuItem: setActiveMenuItemState,
     setDetailNoteId: setDetailNoteIdState,
-    getSelectedTagFilters: () => selectedTagFilters,
+    getSelectedTagFilters: () => selectedTagFilters$.get(),
     setSelectedTagFilters: setSelectedTagFiltersState,
-    getFilterMode: () => filterMode,
+    getFilterMode: () => filterMode$.get(),
     persistWorkspace: persistLocalWorkspace,
     purgeEmptyDraftNotes,
     render,
-  });
+  }));
 
   const disposeKeyboardShortcuts = wireKeyboardShortcuts({
-    getActiveMenuItem: () => activeMenuItem,
-    getDetailNoteId: () => detailNoteId,
+    getActiveMenuItem: () => activeMenuItem$.get(),
+    getDetailNoteId: () => detailNoteId$.get(),
     setActiveMenuItem: setActiveMenuItemState,
     setDetailNoteId: setDetailNoteIdState,
     handleNewNote,
@@ -1765,7 +1819,7 @@ export function createApp(root: HTMLElement): void {
   // in dev; production builds tree-shake this branch.
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
-      paletteAccess?.dispose();
+      paletteAccess$.get()?.dispose();
       disposeKeyboardShortcuts();
       disposeCrossTabSignOut();
     });
@@ -1774,7 +1828,7 @@ export function createApp(root: HTMLElement): void {
   void runAppBootstrap({
     auth,
     captureIncomingWorkspaceFromUrl,
-    getWorkspace: () => workspace,
+    getWorkspace: () => workspace$.get(),
     setWorkspace: setWorkspaceState,
     setProfile: setProfileState,
     setSyncState: setSyncStateValue,
