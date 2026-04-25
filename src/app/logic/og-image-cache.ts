@@ -79,14 +79,59 @@ export function persistOgImageCache(
 }
 
 /**
+ * Maximum number of entries we keep in the OG-image cache. With
+ * permanent (TTL-less) entries, an unbounded cache will eventually
+ * tip over the 5–10 MiB localStorage quota and start throwing
+ * `QuotaExceededError` on every write — silently breaking the OG
+ * resolver for every URL the user encounters from then on.
+ *
+ * 500 entries is sized for the normal workspace shape (a few hundred
+ * captured links per active user), and well below the byte ceiling
+ * even with verbose negative-cache markers. The cap is exported so
+ * tests can pin it without depending on the exact number.
+ */
+export const OG_IMAGE_CACHE_MAX_ENTRIES = 500;
+
+/**
  * Returns a new cache with `entry` added under `url`. Pure —
  * constructs a fresh object so the in-memory reference changes
  * (helpful for callers that want to persist-on-change via equality).
+ *
+ * Insertion-order semantics + LRU eviction:
+ *   - If `url` already exists, the entry is "moved" to the tail by
+ *     dropping the old slot and re-inserting; this keeps recently-
+ *     touched URLs at the freshest end.
+ *   - If the resulting cache exceeds `maxEntries`, the oldest entries
+ *     (head of insertion order) are evicted until the cap holds.
+ *
+ * `maxEntries` is overridable for tests and for a future "this
+ * device has lots of room, raise the cap" preference.
  */
 export function setOgImageCacheEntry(
   cache: OgImageCache,
   url: string,
   entry: CachedOgImageEntry,
+  maxEntries: number = OG_IMAGE_CACHE_MAX_ENTRIES,
 ): OgImageCache {
-  return { ...cache, [url]: entry };
+  const next: Record<string, CachedOgImageEntry> = {};
+  // Re-emit existing keys *except* the one we're about to update —
+  // that way the new write lands at the tail and the URL counts as
+  // most-recently-used after the call.
+  for (const [key, value] of Object.entries(cache)) {
+    if (key !== url) next[key] = value;
+  }
+  next[url] = entry;
+
+  // Trim oldest entries until we're back at or below the cap. We
+  // walk Object.keys (insertion order) and delete from the head;
+  // bounded loop because each iteration shrinks `next` by one.
+  const overflow = Object.keys(next).length - maxEntries;
+  if (overflow > 0) {
+    const keys = Object.keys(next);
+    for (let i = 0; i < overflow; i += 1) {
+      delete next[keys[i]];
+    }
+  }
+
+  return next;
 }

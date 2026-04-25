@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CachedOgImageEntry } from "../src/app/logic/og-image";
 import {
   loadOgImageCache,
+  OG_IMAGE_CACHE_MAX_ENTRIES,
   OG_IMAGE_CACHE_STORAGE_KEY,
   persistOgImageCache,
   setOgImageCacheEntry,
@@ -161,5 +162,58 @@ describe("setOgImageCacheEntry", () => {
     const snapshot = { ...input };
     setOgImageCacheEntry(input, "https://b", sampleEntry);
     expect(input).toEqual(snapshot);
+  });
+
+  it("exposes a sensible default cap", () => {
+    // Pin the value: a silent reduction would mass-evict warm caches;
+    // a silent increase would let a misbehaving build push past the
+    // localStorage quota again. Either change should be deliberate.
+    expect(OG_IMAGE_CACHE_MAX_ENTRIES).toBe(500);
+  });
+
+  it("evicts the oldest entry when the cap is exceeded", () => {
+    let cache = {} as Record<string, CachedOgImageEntry>;
+    // Fill to the cap, then add one more — the very first entry must
+    // be the one that disappears.
+    for (let i = 0; i < 3; i += 1) {
+      cache = setOgImageCacheEntry(cache, `https://url-${i}`, sampleEntry, 3);
+    }
+    expect(Object.keys(cache)).toEqual(["https://url-0", "https://url-1", "https://url-2"]);
+
+    cache = setOgImageCacheEntry(cache, "https://url-3", sampleEntry, 3);
+    // url-0 evicted, the rest preserved in the same relative order,
+    // url-3 at the tail.
+    expect(Object.keys(cache)).toEqual(["https://url-1", "https://url-2", "https://url-3"]);
+  });
+
+  it("updates move the touched URL to the tail (LRU semantics)", () => {
+    let cache = {} as Record<string, CachedOgImageEntry>;
+    for (let i = 0; i < 3; i += 1) {
+      cache = setOgImageCacheEntry(cache, `https://url-${i}`, sampleEntry, 3);
+    }
+    // Re-write url-0 with a fresh entry — should move it to the end.
+    const refresh: CachedOgImageEntry = {
+      imageUrl: "https://cdn/refresh.jpg",
+      resolvedAt: "2026-04-25T11:00:00.000Z",
+    };
+    cache = setOgImageCacheEntry(cache, "https://url-0", refresh, 3);
+    expect(Object.keys(cache)).toEqual([
+      "https://url-1",
+      "https://url-2",
+      "https://url-0",
+    ]);
+    expect(cache["https://url-0"]).toEqual(refresh);
+  });
+
+  it("trims a heavily over-capped cache down in a single call", () => {
+    // Defensive against a corrupt loader (or a manual cache injection
+    // from devtools): a 1000-entry input should still come back at
+    // exactly the cap.
+    const input: Record<string, CachedOgImageEntry> = {};
+    for (let i = 0; i < 1000; i += 1) input[`https://url-${i}`] = sampleEntry;
+    const result = setOgImageCacheEntry(input, "https://url-fresh", sampleEntry, 100);
+    expect(Object.keys(result)).toHaveLength(100);
+    // url-fresh is the most recent and must survive.
+    expect(result["https://url-fresh"]).toEqual(sampleEntry);
   });
 });
