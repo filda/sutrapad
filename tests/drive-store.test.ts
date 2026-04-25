@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  escapeDriveQueryValue,
   GoogleDriveApiError,
   GoogleDriveStore,
   isAuthExpiredError,
@@ -494,5 +495,44 @@ describe("GoogleDriveStore saveWorkspace", () => {
 
     expect(deletedUrls).toHaveLength(3);
     expect(includesDeletedSnapshot(deletedUrls, "/index-new")).toBe(false);
+  });
+});
+
+describe("escapeDriveQueryValue", () => {
+  it("passes plain alphanumerics through unchanged", () => {
+    expect(escapeDriveQueryValue("sutrapad-index.json")).toBe(
+      "sutrapad-index.json",
+    );
+    expect(escapeDriveQueryValue("01H8XYZ-uuid-like")).toBe("01H8XYZ-uuid-like");
+  });
+
+  it("escapes single quotes that would otherwise terminate the string", () => {
+    // The Drive query language uses single quotes as string delimiters.
+    // Without escaping, a value of `O'Brien` would close the string and
+    // turn the rest of the query into syntactic garbage at best —
+    // injection at worst.
+    expect(escapeDriveQueryValue("O'Brien")).toBe("O\\'Brien");
+  });
+
+  it("escapes backslashes before processing quotes", () => {
+    // Double-replacement order matters: if we escaped quotes first,
+    // the second pass would turn `\\` → `\\\\`, doubling every
+    // legitimate backslash. The code does backslashes first.
+    expect(escapeDriveQueryValue("a\\b")).toBe("a\\\\b");
+    expect(escapeDriveQueryValue("a\\'b")).toBe("a\\\\\\'b");
+  });
+
+  it("handles empty strings as a no-op", () => {
+    expect(escapeDriveQueryValue("")).toBe("");
+  });
+
+  it("escapes a classic injection payload", () => {
+    // Pin the failure mode the helper exists to defeat: a value
+    // containing `' or '1'='1` would otherwise turn a `value='${x}'`
+    // clause into `value='' or '1'='1'` and bypass the appProperties
+    // filter. Escaped, the apostrophes become literal payload.
+    expect(escapeDriveQueryValue("' or '1'='1")).toBe(
+      "\\' or \\'1\\'=\\'1",
+    );
   });
 });

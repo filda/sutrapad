@@ -13,6 +13,36 @@ const GOOGLE_DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/file
 const GOOGLE_DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 
 /**
+ * Escapes a value for inclusion inside single-quoted Google Drive query
+ * strings. Drive's query language treats `'` as a string terminator and
+ * `\` as the escape character, so any user- or environment-controlled
+ * value substituted into `name='…'`, `value='…'`, or `'…' in parents`
+ * has to escape both characters before reaching the wire.
+ *
+ * Today every input we substitute (note ids from `crypto.randomUUID()`,
+ * Drive file ids from API responses, hard-coded file-name constants)
+ * is either UUID-shaped or developer-controlled, so the practical risk
+ * is low. The helper exists because:
+ *
+ *   - `LEGACY_INDEX_FILE_NAME` reads from
+ *     `import.meta.env.VITE_SUTRAPAD_FILE_NAME` — a deploy-time env
+ *     variable. A misconfigured value containing `'` would silently
+ *     produce malformed queries.
+ *   - Future code paths (e.g. user-supplied workspace folder names,
+ *     a planned import flow) may want to substitute attacker- or
+ *     user-controlled strings; routing every interpolation through
+ *     the same helper is cheaper than adding the guard one site at
+ *     a time and easier to audit.
+ *
+ * Order of replacements matters: backslashes first, then quotes —
+ * otherwise the second pass would double-escape the backslashes
+ * the first pass introduced.
+ */
+export function escapeDriveQueryValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+/**
  * Typed error for Google Drive REST failures. Surfaces the HTTP status so the
  * app layer can react to authorization errors (401) by attempting a silent
  * token refresh before propagating the failure to the user.
@@ -468,7 +498,7 @@ export class GoogleDriveStore {
 
   private async findWorkspaceFolder(): Promise<DriveFileRecord | null> {
     return this.findSingleFile(
-      `trashed = false and mimeType = '${GOOGLE_DRIVE_FOLDER_MIME_TYPE}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='folder' } and name = '${WORKSPACE_FOLDER_NAME}'`,
+      `trashed = false and mimeType = '${escapeDriveQueryValue(GOOGLE_DRIVE_FOLDER_MIME_TYPE)}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='folder' } and name = '${escapeDriveQueryValue(WORKSPACE_FOLDER_NAME)}'`,
     );
   }
 
@@ -508,7 +538,7 @@ export class GoogleDriveStore {
     }
 
     return this.findSingleFile(
-      `trashed = false and name = '${HEAD_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='head' }`,
+      `trashed = false and name = '${escapeDriveQueryValue(HEAD_FILE_NAME)}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='head' }`,
     );
   }
 
@@ -524,7 +554,7 @@ export class GoogleDriveStore {
     }
 
     return this.findSingleFile(
-      `trashed = false and name = '${LEGACY_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }`,
+      `trashed = false and name = '${escapeDriveQueryValue(LEGACY_INDEX_FILE_NAME)}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }`,
     );
   }
 
@@ -540,7 +570,7 @@ export class GoogleDriveStore {
     }
 
     return this.findSingleFile(
-      `trashed = false and name = '${TAG_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='tags' }`,
+      `trashed = false and name = '${escapeDriveQueryValue(TAG_INDEX_FILE_NAME)}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='tags' }`,
     );
   }
 
@@ -556,7 +586,7 @@ export class GoogleDriveStore {
     }
 
     return this.findSingleFile(
-      `trashed = false and name = '${LINK_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='links' }`,
+      `trashed = false and name = '${escapeDriveQueryValue(LINK_INDEX_FILE_NAME)}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='links' }`,
     );
   }
 
@@ -572,7 +602,7 @@ export class GoogleDriveStore {
     }
 
     return this.findSingleFile(
-      `trashed = false and name = '${TASK_INDEX_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='tasks' }`,
+      `trashed = false and name = '${escapeDriveQueryValue(TASK_INDEX_FILE_NAME)}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='tasks' }`,
     );
   }
 
@@ -597,7 +627,7 @@ export class GoogleDriveStore {
   }
 
   private async findNoteFileById(noteId: string, folderId?: string): Promise<DriveFileRecord | null> {
-    const query = `appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' } and appProperties has { key='noteId' and value='${noteId}' }`;
+    const query = `appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' } and appProperties has { key='noteId' and value='${escapeDriveQueryValue(noteId)}' }`;
     const inFolder = folderId
       ? await this.findSingleFile(`${this.buildFolderQuery(folderId)} and ${query}`)
       : null;
@@ -612,7 +642,7 @@ export class GoogleDriveStore {
   private async findLegacyFile(folderId?: string): Promise<DriveFileRecord | null> {
     const folderLegacy = folderId
       ? await this.findSingleFile(
-          `${this.buildFolderQuery(folderId)} and name = '${LEGACY_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' }`,
+          `${this.buildFolderQuery(folderId)} and name = '${escapeDriveQueryValue(LEGACY_FILE_NAME)}' and appProperties has { key='sutrapad' and value='true' }`,
         )
       : null;
 
@@ -621,7 +651,7 @@ export class GoogleDriveStore {
     }
 
     const byLegacyName = await this.findSingleFile(
-      `trashed = false and name = '${LEGACY_FILE_NAME}' and appProperties has { key='sutrapad' and value='true' }`,
+      `trashed = false and name = '${escapeDriveQueryValue(LEGACY_FILE_NAME)}' and appProperties has { key='sutrapad' and value='true' }`,
     );
     if (byLegacyName) {
       return byLegacyName;
@@ -633,7 +663,7 @@ export class GoogleDriveStore {
   }
 
   private buildFolderQuery(folderId: string): string {
-    return `trashed = false and '${folderId}' in parents`;
+    return `trashed = false and '${escapeDriveQueryValue(folderId)}' in parents`;
   }
 
   private async findSingleFile(query: string): Promise<DriveFileRecord | null> {
