@@ -1,5 +1,6 @@
 import type { SutraPadCaptureContext } from "../types";
 import { sanitizeCaptureContext } from "./capture-context-sanitize";
+import { safeFetch } from "./safe-fetch";
 
 export interface UrlCapturePayload {
   title?: string;
@@ -115,7 +116,7 @@ export function extractHtmlLang(html: string): string | null {
 
 export async function resolveTitleFromUrl(urlString: string): Promise<string | null> {
   try {
-    const response = await fetch(urlString);
+    const response = await safeFetch(urlString);
     if (!response.ok) {
       return null;
     }
@@ -275,7 +276,7 @@ export async function reverseGeocodeCoordinates(
   }
 
   try {
-    const response = await fetch(
+    const response = await safeFetch(
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&addressdetails=1&lat=${coordinates.latitude}&lon=${coordinates.longitude}`,
       {
         headers: {

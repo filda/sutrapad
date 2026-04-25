@@ -8,6 +8,7 @@ import type {
   SutraPadCaptureWeatherSnapshot,
   SutraPadCoordinates,
 } from "../types";
+import { safeFetch } from "./safe-fetch";
 
 interface NavigatorConnectionLike {
   effectiveType?: string;
@@ -282,7 +283,7 @@ export async function resolveCurrentWeather(
       current: "temperature_2m,weather_code,wind_speed_10m,is_day",
       forecast_days: "1",
     });
-    const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
+    const response = await safeFetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
     if (!response.ok) {
       return undefined;
     }

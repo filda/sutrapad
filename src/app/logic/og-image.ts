@@ -22,6 +22,7 @@
  * extraction helpers are exported for tests.
  */
 import type { SutraPadCaptureContext, SutraPadDocument } from "../../types";
+import { safeFetch } from "../../lib/safe-fetch";
 
 /**
  * allorigins returns the raw body of a URL with permissive CORS
@@ -249,8 +250,11 @@ export async function resolveOgImageForUrl(
   const cached = options.getCachedEntry(options.url);
   if (cached !== null) return cached.imageUrl;
 
-  // Stage 3 — runtime fetch through the CORS proxy.
-  const fetchImpl = options.fetchImpl ?? (globalThis.fetch.bind(globalThis));
+  // Stage 3 — runtime fetch through the CORS proxy. Production wraps
+  // the network call in `safeFetch` so a stalled allorigins endpoint
+  // can't keep the Links page spinning forever; tests inject a stub
+  // via `fetchImpl` and bypass the timeout layer.
+  const fetchImpl = options.fetchImpl ?? safeFetch;
   let resolved: string | null = null;
   try {
     const response = await fetchImpl(buildAllOriginsUrl(options.url));
@@ -259,8 +263,8 @@ export async function resolveOgImageForUrl(
       resolved = extractOgImageFromHtml(html, options.url);
     }
   } catch {
-    // Network error, DNS failure, allorigins down — all silent.
-    // Cache the negative so we don't hammer the proxy on every
+    // Network error, DNS failure, allorigins down, timeout — all
+    // silent. Cache the negative so we don't hammer the proxy on every
     // render with the same failing URL.
     resolved = null;
   }
