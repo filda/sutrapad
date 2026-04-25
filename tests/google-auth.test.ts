@@ -65,7 +65,7 @@ describe("GoogleAuthService persisted session restore", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("logs but does not throw when revoke fails synchronously", () => {
+  it("logs but does not throw when revoke fails synchronously", async () => {
     // The Google revoke call can throw synchronously when the GIS
     // script has been monkey-patched (e.g. an old version stuck in
     // the cache). The user-visible signed-out state must still hold.
@@ -93,16 +93,15 @@ describe("GoogleAuthService persisted session restore", () => {
     );
 
     const auth = new GoogleAuthService();
-    return auth.restorePersistedSession().then(() => {
-      expect(() => auth.signOut()).not.toThrow();
-      expect(auth.getAccessToken()).toBeNull();
-      expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
-      expect(warnSpy).toHaveBeenCalledWith(
-        "Google token revoke failed:",
-        expect.any(Error),
-      );
-      warnSpy.mockRestore();
-    });
+    await auth.restorePersistedSession();
+    expect(() => auth.signOut()).not.toThrow();
+    expect(auth.getAccessToken()).toBeNull();
+    expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Google token revoke failed:",
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 
   it("drops expired persisted sessions", async () => {
