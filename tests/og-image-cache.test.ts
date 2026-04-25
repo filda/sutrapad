@@ -205,6 +205,17 @@ describe("setOgImageCacheEntry", () => {
     expect(cache["https://url-0"]).toEqual(refresh);
   });
 
+  it("returns a fresh object reference even when the eviction path runs", () => {
+    // The non-eviction path is covered above; this guards the
+    // overflow branch against an in-place mutation regression.
+    const input: Record<string, CachedOgImageEntry> = {};
+    for (let i = 0; i < 3; i += 1) input[`https://url-${i}`] = sampleEntry;
+    const snapshot = { ...input };
+    const result = setOgImageCacheEntry(input, "https://url-3", sampleEntry, 3);
+    expect(result).not.toBe(input);
+    expect(input).toEqual(snapshot);
+  });
+
   it("trims a heavily over-capped cache down in a single call", () => {
     // Defensive against a corrupt loader (or a manual cache injection
     // from devtools): a 1000-entry input should still come back at

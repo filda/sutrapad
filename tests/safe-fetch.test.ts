@@ -135,6 +135,21 @@ describe("safeFetch", () => {
     expect(observer.capturedSignals[0].aborted).toBe(false);
   });
 
+  it("clears the timeout on synchronous fetch failure", async () => {
+    // If `fetch` throws synchronously (invalid URL scheme, init error,
+    // or a stub that misbehaves), the finally block must still clear
+    // the timeout. Otherwise the abort fires later against a discarded
+    // controller — harmless but observable noise.
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+    globalThis.fetch = (() => {
+      throw new TypeError("Failed to fetch");
+    }) as typeof globalThis.fetch;
+
+    await expect(safeFetch("https://x.test/")).rejects.toThrow(TypeError);
+    expect(clearSpy).toHaveBeenCalled();
+    clearSpy.mockRestore();
+  });
+
   it("forwards init fields (headers, method) verbatim", async () => {
     const observer = makeAbortObservingFetch();
     observer.delayMs = 0;

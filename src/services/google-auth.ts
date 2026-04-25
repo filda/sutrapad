@@ -113,16 +113,36 @@ async function loadGoogleIdentityScript(): Promise<void> {
 export class GoogleAuthService {
   #accessToken: string | null = null;
   #clientId: string | null = null;
+  /**
+   * Memoised initialization promise. Without this, parallel callers
+   * (e.g. `signIn()` issued from a button click while
+   * `refreshSession()` is already in flight on a 401-driven retry)
+   * each see `#clientId === null` and start their own `initialize()`
+   * — racing the GIS script load. Idempotent in practice, but
+   * wasteful and a code-smell. Reuse the existing promise instead.
+   */
+  #initPromise: Promise<void> | null = null;
 
   async initialize(): Promise<void> {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    if (this.#initPromise) return this.#initPromise;
 
-    if (!clientId) {
-      throw new Error("Missing VITE_GOOGLE_CLIENT_ID in .env.");
-    }
+    this.#initPromise = (async () => {
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
-    this.#clientId = clientId;
-    await loadGoogleIdentityScript();
+      if (!clientId) {
+        throw new Error("Missing VITE_GOOGLE_CLIENT_ID in .env.");
+      }
+
+      this.#clientId = clientId;
+      await loadGoogleIdentityScript();
+    })().catch((error) => {
+      // Rejected inits must NOT poison subsequent attempts — clear
+      // the cache so a later retry can run a fresh initialize().
+      this.#initPromise = null;
+      throw error;
+    });
+
+    return this.#initPromise;
   }
 
   /**

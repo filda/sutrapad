@@ -174,6 +174,12 @@ describe("parseUserInfoResponse", () => {
     ).toThrow(/missing required fields/);
   });
 
+  it("rejects responses with a blank email", () => {
+    expect(() =>
+      parseUserInfoResponse({ name: "Filda", email: "   " }),
+    ).toThrow(/missing required fields/);
+  });
+
   it("rejects non-object inputs", () => {
     expect(() => parseUserInfoResponse(null)).toThrow();
     expect(() => parseUserInfoResponse("not json")).toThrow();

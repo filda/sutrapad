@@ -65,11 +65,19 @@ export async function safeFetch(
   // `AbortSignal.any()` because tests sometimes pass plain mock
   // objects; a manual relay keeps the contract obvious.
   const onExternalAbort = (): void => controller.abort();
+  // `listenerAdded` tracks whether we actually attached a listener
+  // (we skip the attach when the external signal is already aborted —
+  // there's nothing to wait for) so the finally block matches the
+  // attach exactly. Without this flag the cleanup would call
+  // `removeEventListener` on signals where we never added one — a
+  // no-op today, but semantically misleading and a maintenance trap.
+  let listenerAdded = false;
   if (externalSignal) {
     if (externalSignal.aborted) {
       controller.abort();
     } else {
       externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+      listenerAdded = true;
     }
   }
 
@@ -77,7 +85,7 @@ export async function safeFetch(
     return await fetch(input, { ...rest, signal: controller.signal });
   } finally {
     clearTimeout(timeout);
-    if (externalSignal) {
+    if (listenerAdded && externalSignal) {
       externalSignal.removeEventListener("abort", onExternalAbort);
     }
   }
