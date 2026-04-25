@@ -1010,6 +1010,12 @@ export interface PaletteAccess {
   open: () => void;
   /** Called from render() so the palette's visible list follows the workspace + filter state. */
   refresh: (workspace: SutraPadWorkspace, selectedTagFilters: readonly string[]) => void;
+  /**
+   * Tears down the global `/` keydown listener and closes any open
+   * palette. Hooked up to `import.meta.hot?.dispose` so Vite's HMR
+   * doesn't stack a second listener on every save.
+   */
+  dispose: () => void;
 }
 
 /**
@@ -1088,18 +1094,28 @@ function wirePaletteAccess(options: WirePaletteAccessOptions): PaletteAccess {
     });
   };
 
-  window.addEventListener("keydown", (event) => {
+  const onKeydown = (event: KeyboardEvent): void => {
     if (event.key !== "/") return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (isEditingTarget(event.target)) return;
     event.preventDefault();
     open();
-  });
+  };
+  window.addEventListener("keydown", onKeydown);
 
   return {
     open,
     refresh: (workspace, selectedTagFilters) => {
       handle?.update(buildPaletteEntries(workspace), selectedTagFilters);
+    },
+    dispose: (): void => {
+      // HMR re-runs `createApp` against the same `window`. Without
+      // tearing down listeners on the previous instance, every save
+      // adds another `keydown` handler — `/` would open N palettes
+      // in a row after a few hot reloads.
+      window.removeEventListener("keydown", onKeydown);
+      handle?.destroy();
+      handle = null;
     },
   };
 }
@@ -1132,7 +1148,7 @@ interface WireKeyboardShortcutsOptions {
  * `G N` while already on the notes *detail* route still bounces back
  * to the list — same affordance as clicking the Notes tab.
  */
-function wireKeyboardShortcuts(options: WireKeyboardShortcutsOptions): void {
+function wireKeyboardShortcuts(options: WireKeyboardShortcutsOptions): () => void {
   let state: ShortcutState = initialShortcutState;
 
   const dispatch = (action: ShortcutAction): void => {
@@ -1162,7 +1178,7 @@ function wireKeyboardShortcuts(options: WireKeyboardShortcutsOptions): void {
     options.render();
   };
 
-  window.addEventListener("keydown", (event) => {
+  const onKeydown = (event: KeyboardEvent): void => {
     const result = reduceShortcut(state, {
       key: event.key,
       metaKey: event.metaKey,
@@ -1177,7 +1193,9 @@ function wireKeyboardShortcuts(options: WireKeyboardShortcutsOptions): void {
     state = result.state;
     if (result.preventDefault) event.preventDefault();
     if (result.action !== null) dispatch(result.action);
-  });
+  };
+  window.addEventListener("keydown", onKeydown);
+  return () => window.removeEventListener("keydown", onKeydown);
 }
 
 export function createApp(root: HTMLElement): void {
@@ -1669,7 +1687,7 @@ export function createApp(root: HTMLElement): void {
     render,
   });
 
-  wireKeyboardShortcuts({
+  const disposeKeyboardShortcuts = wireKeyboardShortcuts({
     getActiveMenuItem: () => activeMenuItem,
     getDetailNoteId: () => detailNoteId,
     setActiveMenuItem: setActiveMenuItemState,
@@ -1678,6 +1696,19 @@ export function createApp(root: HTMLElement): void {
     purgeEmptyDraftNotes,
     render,
   });
+
+  // HMR re-runs `createApp` against the same `window` on every save.
+  // Without explicit teardown the `keydown` listeners from
+  // `wirePaletteAccess` and `wireKeyboardShortcuts` stack — a single
+  // `/` press would open one palette per accumulated reload. The
+  // optional `import.meta.hot` hook only exists in dev; production
+  // builds tree-shake this branch.
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      paletteAccess?.dispose();
+      disposeKeyboardShortcuts();
+    });
+  }
 
   void runAppBootstrap({
     auth,
