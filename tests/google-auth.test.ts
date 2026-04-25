@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GoogleAuthService, parseUserInfoResponse } from "../src/services/google-auth";
+import {
+  GoogleAuthService,
+  MAX_IDLE_DAYS_BEFORE_EXPIRY,
+  parseUserInfoResponse,
+} from "../src/services/google-auth";
 
 function createStorageMock(): Storage {
   const store = new Map<string, string>();
@@ -315,6 +319,103 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
 
     expect(service.getAccessToken()).toBeNull();
     expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
+  });
+});
+
+describe("GoogleAuthService rolling idle expiry", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", { localStorage: createStorageMock() });
+    vi.stubGlobal("localStorage", window.localStorage);
+    localStorage.clear();
+  });
+
+  it("pins MAX_IDLE_DAYS_BEFORE_EXPIRY at 7 — silent change would evict warm caches", () => {
+    expect(MAX_IDLE_DAYS_BEFORE_EXPIRY).toBe(7);
+  });
+
+  it("invalidates a session whose lastUsedAt is older than the idle cap", async () => {
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    localStorage.setItem(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "stale",
+        expiresAt,
+        profile: { name: "X", email: "x@x" },
+        lastUsedAt: eightDaysAgo,
+      }),
+    );
+
+    const auth = new GoogleAuthService();
+    expect(await auth.restorePersistedSession()).toBeNull();
+    expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
+  });
+
+  it("keeps a session whose lastUsedAt is just inside the idle cap", async () => {
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    // 6 days ago — well under the 7-day cap, should survive.
+    const sixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+    localStorage.setItem(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "warm",
+        expiresAt,
+        profile: { name: "X", email: "x@x" },
+        lastUsedAt: sixDaysAgo,
+      }),
+    );
+
+    const auth = new GoogleAuthService();
+    const profile = await auth.restorePersistedSession();
+    expect(profile).not.toBeNull();
+    expect(auth.getAccessToken()).toBe("warm");
+  });
+
+  it("treats a missing lastUsedAt as fresh-now (backwards compat)", async () => {
+    // Sessions persisted before the rolling-expiry rollout have no
+    // lastUsedAt field. They must NOT be evicted on the very first
+    // post-rollout bootstrap, because that would mass-sign-out every
+    // active user the moment the deploy lands.
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    localStorage.setItem(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "legacy",
+        expiresAt,
+        profile: { name: "X", email: "x@x" },
+        // No lastUsedAt.
+      }),
+    );
+
+    const auth = new GoogleAuthService();
+    const profile = await auth.restorePersistedSession();
+    expect(profile).not.toBeNull();
+    expect(auth.getAccessToken()).toBe("legacy");
+  });
+
+  it("bumps lastUsedAt on each successful read", async () => {
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    localStorage.setItem(
+      "sutrapad-google-auth-session",
+      JSON.stringify({
+        accessToken: "warm",
+        expiresAt,
+        profile: { name: "X", email: "x@x" },
+        lastUsedAt: oneDayAgo,
+      }),
+    );
+
+    const auth = new GoogleAuthService();
+    await auth.restorePersistedSession();
+
+    const stored = JSON.parse(
+      localStorage.getItem("sutrapad-google-auth-session") as string,
+    );
+    // Heartbeat must have moved forward — the bumped value lives
+    // within the last few seconds, not still 24h old.
+    const bumpedAgeMs = Date.now() - new Date(stored.lastUsedAt).getTime();
+    expect(bumpedAgeMs).toBeLessThan(5_000);
   });
 });
 

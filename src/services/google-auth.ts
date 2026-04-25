@@ -47,7 +47,39 @@ interface StoredGoogleAuthSession {
   accessToken: string;
   expiresAt: string;
   profile: UserProfile;
+  /**
+   * ISO timestamp of when this session was last touched — set on
+   * sign-in, refresh, and bootstrap. Drives the rolling-window
+   * expiry: if a session has been idle for longer than
+   * `MAX_IDLE_DAYS_BEFORE_EXPIRY`, `readStoredSession` invalidates
+   * it even when `expiresAt` is still nominally valid. Optional in
+   * the type so older persisted sessions (written before the field
+   * existed) are still parseable; missing values are treated as
+   * "fresh now" by the reader to avoid mass-evicting active users
+   * on the rollout.
+   */
+  lastUsedAt?: string;
 }
+
+/**
+ * Idle-window cap on the persisted session. Even though the access
+ * token's `expires_in` is one hour, refresh-on-401 keeps replacing
+ * the token in localStorage and the persisted record can otherwise
+ * survive on disk indefinitely as long as someone occasionally
+ * reopens the app. This rolling cap means the session is wiped
+ * automatically after a week of true non-use — limiting the window
+ * during which a stale token sits readable on disk after the user
+ * has effectively stopped using the app.
+ *
+ * Active users are unaffected: every bootstrap and every
+ * persistSession (sign-in, refresh) bumps `lastUsedAt`, so anyone
+ * opening SutraPad even once a week stays signed in. The cap only
+ * bites users who set it down for >7 days, and they pay one
+ * sign-in click on return — same UX as a stale Google session
+ * cookie expiring.
+ */
+export const MAX_IDLE_DAYS_BEFORE_EXPIRY = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Validates the shape of a Google `oauth2/v3/userinfo` response.
@@ -379,6 +411,9 @@ export class GoogleAuthService {
         accessToken: tokenResponse.access_token,
         expiresAt,
         profile,
+        // Touch on every persist (sign-in, refresh) so the rolling
+        // idle window resets while the user is active.
+        lastUsedAt: new Date().toISOString(),
       } satisfies StoredGoogleAuthSession),
     );
   }
@@ -401,7 +436,34 @@ export class GoogleAuthService {
         return null;
       }
 
-      return session;
+      // Rolling idle expiry. Sessions persisted before this field
+      // existed have no `lastUsedAt` — treat them as fresh-now so a
+      // version-bump rollout doesn't mass-evict every active user.
+      // Subsequent `persistSession` calls (sign-in, refresh) write
+      // the field for real.
+      if (session.lastUsedAt) {
+        const idleMs = Date.now() - new Date(session.lastUsedAt).getTime();
+        if (idleMs > MAX_IDLE_DAYS_BEFORE_EXPIRY * MS_PER_DAY) {
+          this.clearStoredSession();
+          return null;
+        }
+      }
+
+      // Bump `lastUsedAt` on every successful read so an active
+      // user's idle clock resets at every bootstrap. Re-write the
+      // session so the on-disk timestamp follows reality. The token
+      // / expiresAt / profile are untouched — only the heartbeat
+      // moves.
+      const touched: StoredGoogleAuthSession = {
+        ...session,
+        lastUsedAt: new Date().toISOString(),
+      };
+      window.localStorage.setItem(
+        GOOGLE_AUTH_SESSION_KEY,
+        JSON.stringify(touched),
+      );
+
+      return touched;
     } catch {
       this.clearStoredSession();
       return null;
