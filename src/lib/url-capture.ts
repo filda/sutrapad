@@ -1,4 +1,5 @@
 import type { SutraPadCaptureContext } from "../types";
+import { sanitizeCaptureContext } from "./capture-context-sanitize";
 
 export interface UrlCapturePayload {
   title?: string;
@@ -39,12 +40,18 @@ function parseCaptureContext(
     return undefined;
   }
 
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(serializedCaptureContext) as Partial<SutraPadCaptureContext>;
-    return typeof parsed === "object" && parsed ? parsed : undefined;
+    parsed = JSON.parse(serializedCaptureContext);
   } catch {
     return undefined;
   }
+
+  // The `?capture=` payload is fully attacker-controllable (the
+  // bookmarklet runs on a third-party page). Funnel everything through
+  // the sanitiser so unknown keys, oversized strings, non-finite
+  // numbers, and `javascript:` URLs never reach `note.captureContext`.
+  return sanitizeCaptureContext(parsed);
 }
 
 export function readNoteCapture(urlString: string): NoteCapturePayload | null {
