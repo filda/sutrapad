@@ -33,6 +33,11 @@ jobs:
     name: Validate App
     runs-on: ubuntu-latest
     env:
+      # Real client ID drives the main-branch build that becomes the deployed
+      # artifact; the fallback keeps PR / fork builds green when `vars` isn't
+      # available to them. The "Validate deployment environment" step below
+      # guards against an artifact accidentally being built with the fallback
+      # and then promoted to production.
       VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID || 'local-dev-client-id.apps.googleusercontent.com' }}
 
     steps:
@@ -75,51 +80,43 @@ jobs:
       - name: Run unit suite
         run: npm run test:unit
 
+      # Guard the deployable build *before* it bakes the (missing) client ID
+      # into the artifact. PR / fork builds are allowed to fall back so that
+      # contributors without access to repo `vars` still get a green check.
+      # The condition mirrors the deploy job's `if` so a workflow_dispatch
+      # rerun on main goes through the same validation path as a push.
+      - name: Validate deployment environment
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          if [ -z "${{ vars.VITE_GOOGLE_CLIENT_ID }}" ]; then
+            echo "Missing repository variable VITE_GOOGLE_CLIENT_ID"
+            exit 1
+          fi
+
       - name: Build
         run: npm run build
+
+      # Only main-branch runs produce an artifact for the deploy job to
+      # publish. PR / fork runs build purely to verify the build still works.
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
 
   deploy:
     name: Deploy to GitHub Pages
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: checks
     runs-on: ubuntu-latest
-    env:
-      VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Set up GitHub Pages
-        uses: actions/configure-pages@v5
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate deployment environment
-        run: |
-          if [ -z "$VITE_GOOGLE_CLIENT_ID" ]; then
-            echo "Missing repository variable VITE_GOOGLE_CLIENT_ID"
-            exit 1
-          fi
-
-      - name: Build app
-        run: npm run build
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./dist
-
+      # No checkout / setup-node / npm ci / build here — `actions/deploy-pages`
+      # picks up the artifact uploaded by the `checks` job and publishes it
+      # directly. The whole job is just the deployment handshake.
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
