@@ -1,4 +1,4 @@
-import { buildLinkIndex } from "../../../lib/notebook";
+import { buildLinkIndex, filterNotesByTags } from "../../../lib/notebook";
 import { formatDate } from "../../logic/formatting";
 import {
   buildLinkCardDescription,
@@ -19,11 +19,18 @@ import {
   type OgImageCache,
 } from "../../logic/og-image-cache";
 import type { SutraPadDocument, SutraPadWorkspace } from "../../../types";
-import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
+import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
 import { buildPageHeader } from "../shared/page-header";
 
 export interface LinksPageOptions {
   workspace: SutraPadWorkspace;
+  /**
+   * Active topbar tag filter set. The Links page narrows to URLs from
+   * notes that carry every selected tag (AND) — the same source-of-truth
+   * the topbar's chip strip and the palette tag-pick already feed. An
+   * empty array means "show everything", same as Notes.
+   */
+  selectedTagFilters: readonly string[];
   /**
    * Current layout preference (cards = handoff default, list = dense
    * opt-in). Threaded from `app.ts` so a full re-render preserves it.
@@ -37,6 +44,12 @@ export interface LinksPageOptions {
    */
   onOpenCapture: () => void;
   onChangeLinksView: (mode: LinksViewMode) => void;
+  /**
+   * Clears every active tag filter. Wired into the filter-miss empty
+   * state so the user can recover without bouncing back to Notes just to
+   * find the chip-strip × button.
+   */
+  onClearTagFilters: () => void;
 }
 
 /**
@@ -57,27 +70,53 @@ const VIEW_TOGGLE_OPTIONS: ReadonlyArray<{
 
 export function buildLinksPage({
   workspace,
+  selectedTagFilters,
   linksViewMode,
   onOpenNote,
   onOpenCapture,
   onChangeLinksView,
+  onClearTagFilters,
 }: LinksPageOptions): HTMLElement {
   const section = document.createElement("section");
   section.className = "links-page";
 
-  const linkIndex = buildLinkIndex(workspace);
+  // Always derive the unfiltered link index too — the eyebrow surfaces a
+  // "filtered N of M" count when a filter is active, mirroring the Notes
+  // page's `Notebook · 4 of 12 · filtered by 1 tag` shape.
+  const totalLinkCount = buildLinkIndex(workspace).links.length;
+
+  // Tag filter narrows by source note: a link sticks around when at least
+  // one of its source notes carries every selected tag (AND). Cheaper to
+  // filter the notes first and rebuild the index from the survivors than
+  // to post-filter the link index — the latter would need every note's
+  // tag set re-checked per (link × source-note) pair.
+  const filterCount = selectedTagFilters.length;
+  const filteredNotes =
+    filterCount === 0
+      ? workspace.notes
+      : filterNotesByTags(workspace.notes, [...selectedTagFilters], "all");
+  const linkIndex = buildLinkIndex({ ...workspace, notes: filteredNotes });
   const linkCount = linkIndex.links.length;
+
+  const eyebrowCount =
+    filterCount === 0
+      ? `${linkCount}`
+      : `${linkCount} of ${totalLinkCount}`;
+  const eyebrowFilter =
+    filterCount === 0
+      ? ""
+      : ` · filtered by ${filterCount} tag${filterCount === 1 ? "" : "s"}`;
 
   section.append(
     buildPageHeader({
-      eyebrow: `Links · ${linkCount}`,
+      eyebrow: `Links · ${eyebrowCount}${eyebrowFilter}`,
       titleHtml: "A <em>library</em> of what caught your eye.",
       subtitle:
         "Every URL you've captured into a note, gathered here with the notebooks they first appeared in.",
     }),
   );
 
-  if (linkCount === 0) {
+  if (totalLinkCount === 0) {
     // First-run full-bleed scene. CTA routes to the Capture page since
     // the handoff copy explicitly pitches the bookmarklet as the way to
     // start saving links.
@@ -90,7 +129,21 @@ export function buildLinksPage({
     return section;
   }
 
-  section.append(buildLinksToolbar(linksViewMode, onChangeLinksView));
+  if (linkCount === 0) {
+    // Workspace has links but the active tag filter killed them all —
+    // dashed inline miss with a "Clear filter" escape, matching the
+    // notes-page filter-miss treatment.
+    section.append(buildLinksToolbar(linksViewMode, onChangeLinksView, filterCount));
+    section.append(
+      buildEmptyState({
+        ...EMPTY_COPY.links_filtered,
+        onSecondary: onClearTagFilters,
+      }),
+    );
+    return section;
+  }
+
+  section.append(buildLinksToolbar(linksViewMode, onChangeLinksView, filterCount));
 
   const notesById = new Map(workspace.notes.map((note) => [note.id, note]));
 
@@ -162,13 +215,24 @@ export type { CachedOgImageEntry };
 function buildLinksToolbar(
   linksViewMode: LinksViewMode,
   onChangeLinksView: (mode: LinksViewMode) => void,
+  filterCount: number,
 ): HTMLElement {
   const toolbar = document.createElement("div");
   toolbar.className = "links-toolbar";
 
   const hint = document.createElement("p");
   hint.className = "links-toolbar-hint muted";
-  hint.textContent = "Sorted by most recent. Filter by tag from the bar above.";
+  // When a filter is active, swap the discovery copy for an explicit
+  // "what's narrowing this view" line — same approach the Notes
+  // toolbar takes (`Showing notes that match every selected tag.`),
+  // adapted to the Links surface. Links uses AND semantics regardless
+  // of the global tagsMode; that's a deliberate simplification (per
+  // scope decision 2026-04-26) so the page doesn't need its own
+  // any/all toggle.
+  hint.textContent =
+    filterCount === 0
+      ? "Sorted by most recent. Filter by tag from the bar above."
+      : "Showing links from notes that match every selected tag.";
   toolbar.append(hint);
 
   toolbar.append(buildViewToggle(linksViewMode, onChangeLinksView));

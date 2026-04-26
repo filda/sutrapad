@@ -428,16 +428,19 @@ export function renderAppPage({
       page.append(
         buildLinksPage({
           workspace,
+          selectedTagFilters,
           linksViewMode,
           onOpenNote: openNoteInEditor,
           onOpenCapture,
           onChangeLinksView,
+          onClearTagFilters,
         }),
       );
     } else if (activeMenuItem === "tasks") {
       page.append(
         buildTasksPage({
           workspace,
+          selectedTagFilters,
           tasksFilter,
           tasksShowDone,
           tasksOneThingKey,
@@ -446,6 +449,7 @@ export function renderAppPage({
           onChangeTasksFilter,
           onToggleTasksShowDone,
           onSetOneThing,
+          onClearTagFilters,
         }),
       );
     } else if (activeMenuItem === "capture") {

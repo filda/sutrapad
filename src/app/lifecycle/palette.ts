@@ -17,10 +17,30 @@ import { mountPalette, type PaletteHandle } from "../view/palette";
 import type { PaletteAccess } from "../view/palette-types";
 import type { SutraPadTagFilterMode, SutraPadWorkspace } from "../../types";
 
+/**
+ * Pages whose render honours `selectedTagFilters`. When a palette tag pick
+ * happens on one of these, the user stays put and the filter just narrows
+ * the page's content. Anywhere else (home, capture, settings, privacy, the
+ * action-only `add` id) we fall back to routing to Notes — those surfaces
+ * have nothing to filter and the filter would otherwise toggle invisibly.
+ */
+const FILTERABLE_MENU_ITEMS: ReadonlySet<MenuItemId> = new Set<MenuItemId>([
+  "notes",
+  "links",
+  "tasks",
+  "tags",
+]);
+
 export interface WirePaletteAccessOptions {
   host: HTMLElement;
   getWorkspace: () => SutraPadWorkspace;
   setWorkspace: (next: SutraPadWorkspace) => void;
+  /**
+   * Reads the currently active page so the tag-pick handler can decide
+   * whether to keep the user on it (notes/links/tasks/tags all visualise
+   * the filter) or route to Notes (everywhere else).
+   */
+  getActiveMenuItem: () => MenuItemId;
   setActiveMenuItem: (next: MenuItemId) => void;
   setDetailNoteId: (next: string | null) => void;
   getSelectedTagFilters: () => string[];
@@ -90,13 +110,23 @@ export function wirePaletteAccess(options: WirePaletteAccessOptions): PaletteAcc
           options.render();
           return;
         }
-        // Route to notes list first so the filter change lands on a
-        // surface that honours it — filtering from home / capture /
-        // settings would otherwise toggle invisibly. The toggle
-        // mirrors the notes-page chip-click path (persist + URL +
-        // visible-active-note reconciliation).
-        options.setActiveMenuItem("notes");
-        options.setDetailNoteId(null);
+        // Stay on the current page when it already visualises the
+        // filter (notes/links/tasks/tags). On Notes specifically we
+        // also clear the detail pin so the user lands on the list —
+        // the detail editor doesn't surface the active filter set, so
+        // applying one there would feel like nothing happened. From
+        // any non-filterable surface (home / capture / settings /
+        // privacy) we fall back to routing into Notes so the toggle
+        // doesn't fire invisibly. The toggle itself mirrors the
+        // notes-page chip-click path (persist + URL + visible-active-
+        // note reconciliation) regardless of where we landed.
+        const currentMenuItem = options.getActiveMenuItem();
+        if (FILTERABLE_MENU_ITEMS.has(currentMenuItem)) {
+          if (currentMenuItem === "notes") options.setDetailNoteId(null);
+        } else {
+          options.setActiveMenuItem("notes");
+          options.setDetailNoteId(null);
+        }
         const nextFilters = togglePaletteTagFilter(
           options.getSelectedTagFilters(),
           entry.payload.tag,

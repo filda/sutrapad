@@ -1,4 +1,4 @@
-import { buildTaskIndex } from "../../../lib/notebook";
+import { buildTaskIndex, filterNotesByTags } from "../../../lib/notebook";
 import type { SutraPadWorkspace } from "../../../types";
 import {
   applyTaskFilter,
@@ -52,6 +52,14 @@ const FILTER_DEFS: ReadonlyArray<{
 
 export interface TasksPageOptions {
   workspace: SutraPadWorkspace;
+  /**
+   * Active topbar tag filter set. The Tasks page narrows to tasks from
+   * notes that carry every selected tag (AND), same source-of-truth the
+   * topbar's chip strip and palette tag-pick already feed. The chip row
+   * (All/Recent/Stale/Waiting) operates on the already-narrowed set,
+   * so a stale filter under "#work" only counts work tasks.
+   */
+  selectedTagFilters: readonly string[];
   /** Active chip id. `all` is the default on first visit. */
   tasksFilter: TasksFilterId;
   /** Toggle that sits next to the chip row; off by default. */
@@ -68,32 +76,96 @@ export interface TasksPageOptions {
   onChangeTasksFilter: (filter: TasksFilterId) => void;
   onToggleTasksShowDone: (showDone: boolean) => void;
   onSetOneThing: (key: string | null) => void;
+  /**
+   * Clears every active tag filter. Wired into the filter-miss empty
+   * state below so the user can recover without leaving the page.
+   */
+  onClearTagFilters: () => void;
 }
 
 export function buildTasksPage(options: TasksPageOptions): HTMLElement {
   const section = document.createElement("section");
   section.className = "tasks-page";
 
-  const taskIndex = buildTaskIndex(options.workspace);
-  // `new Date()` is evaluated here on purpose — the tasks page is rebuilt on
-  // every render, so "today" tracks wall-clock time without needing a
-  // separate tick. In tests the logic functions take an explicit `now`.
-  const enriched = enrichTasks(taskIndex.tasks, options.workspace, new Date());
+  // Always derive the unfiltered enriched list too — the eyebrow needs
+  // the unfiltered open/done counts to show "filtered N of M", and the
+  // first-run empty scene must stay reachable even when a stray tag
+  // filter happens to match nothing.
+  const allEnriched = enrichTasks(
+    buildTaskIndex(options.workspace).tasks,
+    options.workspace,
+    // `new Date()` is evaluated here on purpose — the tasks page is
+    // rebuilt on every render, so "today" tracks wall-clock time
+    // without needing a separate tick. In tests the logic functions
+    // take an explicit `now`.
+    new Date(),
+  );
+
+  const filterCount = options.selectedTagFilters.length;
+  const filteredNotes =
+    filterCount === 0
+      ? options.workspace.notes
+      : filterNotesByTags(
+          options.workspace.notes,
+          [...options.selectedTagFilters],
+          "all",
+        );
+  // Use the same workspace shape (filtered notes + same activeNoteId) so
+  // enrichTasks finds the source notes via the id->note map. Building a
+  // fresh task index from the filtered workspace is cheaper than
+  // post-filtering the enriched list — tasks are ~few-per-note so the
+  // index walk dominates.
+  const enriched =
+    filterCount === 0
+      ? allEnriched
+      : enrichTasks(
+          buildTaskIndex({ ...options.workspace, notes: filteredNotes }).tasks,
+          { ...options.workspace, notes: filteredNotes },
+          new Date(),
+        );
 
   const totalOpen = enriched.filter((entry) => !entry.task.done).length;
   const totalDone = enriched.filter((entry) => entry.task.done).length;
+  const allOpen = allEnriched.filter((entry) => !entry.task.done).length;
+  const allDone = allEnriched.filter((entry) => entry.task.done).length;
+
+  const eyebrowCount =
+    filterCount === 0
+      ? `${totalOpen} open · ${totalDone} done`
+      : `${totalOpen} of ${allOpen} open · ${totalDone} of ${allDone} done`;
+  const eyebrowFilter =
+    filterCount === 0
+      ? ""
+      : ` · filtered by ${filterCount} tag${filterCount === 1 ? "" : "s"}`;
 
   section.append(
     buildPageHeader({
-      eyebrow: `Tasks · ${totalOpen} open · ${totalDone} done`,
+      eyebrow: `Tasks · ${eyebrowCount}${eyebrowFilter}`,
       titleHtml: "Loose <em>threads</em>.",
       subtitle:
         "Every “- [ ]” in a note shows up here, in the context it came from. No artificial buckets — a task is as urgent as the note you wrote it in.",
     }),
   );
 
-  if (enriched.length === 0) {
+  if (allEnriched.length === 0) {
     section.append(buildEmptyScene({ ...EMPTY_COPY.tasks }));
+    return section;
+  }
+
+  if (enriched.length === 0) {
+    // Workspace has tasks but the active tag filter killed them all —
+    // sub-line nudges the user back toward a wider filter, the CTA
+    // clears tags. Re-uses the same dashed-card treatment as the
+    // chip-driven filter-miss further down.
+    const tagMiss = buildEmptyState({
+      kind: "tasks",
+      title: "No tasks under this tag filter.",
+      sub: "Loosen the tag set or clear filters to see everything.",
+      cta: "Clear tag filter",
+      onCta: options.onClearTagFilters,
+    });
+    tagMiss.classList.add("task-empty");
+    section.append(tagMiss);
     return section;
   }
 

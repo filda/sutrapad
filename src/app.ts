@@ -641,6 +641,7 @@ export function createApp(root: HTMLElement): void {
     host: document.body,
     getWorkspace: () => workspace$.get(),
     setWorkspace: setWorkspaceState,
+    getActiveMenuItem: () => activeMenuItem$.get(),
     setActiveMenuItem: setActiveMenuItemState,
     setDetailNoteId: setDetailNoteIdState,
     getSelectedTagFilters: () => selectedTagFilters$.get(),
