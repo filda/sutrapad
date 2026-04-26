@@ -25,4 +25,31 @@ describe("formatting helpers", () => {
     // The date itself is locale-formatted; just confirm the year made it in.
     expect(formatted).toMatch(/2026/);
   });
+
+  it("renders the build stamp with the exact ' · ' separator and `built ` prefix", () => {
+    // Pin the punctuation: the visual rhythm of `vX · hash · built …`
+    // is part of the topbar look. A swap to `-` or omitting `built `
+    // would slip past the contains-check above but reads as a
+    // different string in the UI.
+    const formatted = formatBuildStamp(
+      "0.3.0",
+      "abc1234",
+      "2026-04-13T10:15:00.000Z",
+    );
+    expect(formatted.startsWith("v0.3.0 · abc1234 · built ")).toBe(true);
+  });
+
+  it("includes a time component (date + time, not date alone)", () => {
+    // formatBuildStamp passes both `dateStyle` and `timeStyle` to
+    // Intl.DateTimeFormat. If the options object were ever flattened
+    // to `{}` (the mutation we're guarding against here), the output
+    // would stop including the time and read as a bare date in every
+    // locale. The HH:MM check is locale-agnostic.
+    const formatted = formatBuildStamp(
+      "0.3.0",
+      "abc1234",
+      "2026-04-13T10:15:00.000Z",
+    );
+    expect(formatted).toMatch(/\d{1,2}:\d{2}/);
+  });
 });

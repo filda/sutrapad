@@ -18,6 +18,7 @@ import {
   writeNotesViewToLocation,
   writeTagFiltersToLocation,
 } from "../src/app";
+import { collectNoteCaptureDetails } from "../src/app/capture/fresh-note";
 import type { SutraPadWorkspace, UserProfile } from "../src/types";
 
 describe("app startup session restore", () => {
@@ -277,6 +278,41 @@ describe("active page location helpers", () => {
     ).toBe("notes");
     expect(readActivePageFromLocation("https://example.com/add", "/")).toBe("notes");
   });
+
+  it("trims whitespace around the configured base before matching the pathname", () => {
+    // `vite.config` writers occasionally land a trailing space in the
+    // base. The helper must shrug that off — a regression here would
+    // cause every URL to fail the startsWith() check and silently
+    // route every load to the default page.
+    expect(
+      readActivePageFromLocation("https://example.com/sutrapad/links", "  /sutrapad/  "),
+    ).toBe("links");
+    expect(
+      writeActivePageToLocation("https://example.com/", "links", "  /sutrapad/  "),
+    ).toBe("https://example.com/sutrapad/links");
+  });
+
+  it("synthesises a leading slash when the base lacks one", () => {
+    // Vite accepts `base: "sutrapad"` (no leading `/`) and rewrites it
+    // internally; the location helpers must do the same so they keep
+    // matching once the asset URLs have already been rewritten.
+    expect(
+      readActivePageFromLocation("https://example.com/sutrapad/tags", "sutrapad"),
+    ).toBe("tags");
+    expect(
+      writeActivePageToLocation("https://example.com/sutrapad/", "tags", "sutrapad"),
+    ).toBe("https://example.com/sutrapad/tags");
+  });
+
+  it("treats an empty base the same as the root base '/'", () => {
+    // normalizeBase short-circuits "" and "/" to "/" — pin that so
+    // a future "" → leave-as-is rewrite (which would fail every
+    // startsWith check) reads as a behaviour change.
+    expect(readActivePageFromLocation("https://example.com/links", "")).toBe(
+      "links",
+    );
+    expect(readActivePageFromLocation("https://example.com/", "")).toBe("notes");
+  });
 });
 
 describe("note detail location helpers", () => {
@@ -368,6 +404,61 @@ describe("note detail location helpers", () => {
       expect(
         readNoteDetailIdFromLocation("https://example.com/notes", "/"),
       ).toBeNull();
+    });
+
+    it("returns null when the decoded id trims to an empty string", () => {
+      // `/notes/%20` decodes to a single space → trims to "" → must
+      // be treated the same as "no id supplied" (null) so the detail
+      // view never surfaces an empty-string lookup against the store.
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/notes/%20",
+          "/sutrapad/",
+        ),
+      ).toBeNull();
+    });
+
+    it("trims surrounding whitespace from the decoded id", () => {
+      // A captured share URL might encode a trailing newline (`%0A`)
+      // alongside the id — the helper must hand the store a clean
+      // string, not "abc\n", which would never match.
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/notes/%20abc-123%20",
+          "/sutrapad/",
+        ),
+      ).toBe("abc-123");
+    });
+
+    it("matches the 'notes' segment case-insensitively", () => {
+      // Browser address bars sometimes capitalise the path on paste;
+      // the segment compare uses .toLowerCase() so /Notes/<id> must
+      // still resolve.
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/Notes/abc-123",
+          "/sutrapad/",
+        ),
+      ).toBe("abc-123");
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/NOTES/abc-123",
+          "/sutrapad/",
+        ),
+      ).toBe("abc-123");
+    });
+
+    it("ignores empty segments produced by accidental double slashes", () => {
+      // A pathname like `/sutrapad/notes//abc` would split into
+      // ["notes", "", "abc"] without the length>0 filter; the id
+      // would then read as "" and the route silently 404s. The
+      // filter must drop empty pieces so the id resolves to "abc".
+      expect(
+        readNoteDetailIdFromLocation(
+          "https://example.com/sutrapad/notes//abc-123",
+          "/sutrapad/",
+        ),
+      ).toBe("abc-123");
     });
   });
 
@@ -708,23 +799,154 @@ describe("fresh note details", () => {
   });
 });
 
+describe("collectNoteCaptureDetails", () => {
+  // collectNoteCaptureDetails is the URL-capture variant of the
+  // fresh-note pipeline: same location resolution, but the title is
+  // built upstream and the captureContext gets a caller-supplied
+  // `source` (e.g. "url-capture") plus an optional `sourceSnapshot`.
+  // generateFreshNoteDetails is covered above; this block exists so
+  // the second branch of the helper is observable in unit tests.
+  it("plumbs source and sourceSnapshot into the captureContextBuilder, returning location and coordinates verbatim", async () => {
+    const resolveCoordinates = vi.fn().mockResolvedValue({
+      latitude: 50.0755,
+      longitude: 14.4378,
+    });
+    const reverseGeocode = vi.fn().mockResolvedValue("Prague");
+    const captureContextBuilder = vi.fn().mockResolvedValue({
+      source: "url-capture",
+      timezone: "Europe/Prague",
+    });
+
+    const sourceSnapshot = { referrer: "https://example.com/article" };
+    const result = await collectNoteCaptureDetails({
+      source: "url-capture",
+      now: new Date(2026, 3, 13, 12, 0, 0),
+      resolveCoordinates,
+      reverseGeocode,
+      captureContextBuilder,
+      sourceSnapshot,
+    });
+
+    // The builder must receive the full options object, not a flattened
+    // `{}` — that mutation would silently drop `source` and break the
+    // capture-context downstream.
+    expect(captureContextBuilder).toHaveBeenCalledTimes(1);
+    expect(captureContextBuilder).toHaveBeenCalledWith({
+      source: "url-capture",
+      coordinates: { latitude: 50.0755, longitude: 14.4378 },
+      currentDate: new Date(2026, 3, 13, 12, 0, 0),
+      sourceSnapshot,
+    });
+
+    // The returned object literal must surface every resolved field —
+    // a Stryker `{}` replacement of the return body would drop these.
+    expect(result).toEqual({
+      location: "Prague",
+      coordinates: { latitude: 50.0755, longitude: 14.4378 },
+      captureContext: {
+        source: "url-capture",
+        timezone: "Europe/Prague",
+      },
+    });
+  });
+
+  it("falls back to formatted coordinates when reverse geocoding returns null", async () => {
+    const captureContextBuilder = vi
+      .fn()
+      .mockResolvedValue({ source: "url-capture" });
+    const result = await collectNoteCaptureDetails({
+      source: "url-capture",
+      resolveCoordinates: vi.fn().mockResolvedValue({
+        latitude: 50.0755,
+        longitude: 14.4378,
+      }),
+      reverseGeocode: vi.fn().mockResolvedValue(null),
+      captureContextBuilder,
+    });
+    // formatCoordinates output shape is "lat, lon" with N/E suffixes —
+    // the precise format is owned by url-capture, so we just assert the
+    // helper returned a string instead of undefined.
+    expect(typeof result.location).toBe("string");
+    expect(result.location?.length ?? 0).toBeGreaterThan(0);
+    expect(result.coordinates).toEqual({
+      latitude: 50.0755,
+      longitude: 14.4378,
+    });
+  });
+
+  it("returns undefined location and coordinates when geolocation is unavailable", async () => {
+    const captureContextBuilder = vi
+      .fn()
+      .mockResolvedValue({ source: "url-capture" });
+    const result = await collectNoteCaptureDetails({
+      source: "url-capture",
+      resolveCoordinates: vi.fn().mockResolvedValue(null),
+      reverseGeocode: vi.fn(),
+      captureContextBuilder,
+    });
+    expect(result.location).toBeUndefined();
+    expect(result.coordinates).toBeUndefined();
+    // captureContext still reaches the builder (with undefined coords) —
+    // the URL-capture flow should produce a context even without geo.
+    expect(captureContextBuilder).toHaveBeenCalledWith({
+      source: "url-capture",
+      coordinates: undefined,
+      currentDate: expect.any(Date),
+      sourceSnapshot: undefined,
+    });
+  });
+});
+
 describe("note metadata", () => {
+  const updatedAt = new Date(2026, 3, 13, 12, 0, 0).toISOString();
+  // Plain (non-readonly) shape so the `tags`/`urls` arrays satisfy
+  // `SutraPadDocument`'s mutable arrays. Each test forks a fresh copy
+  // via `{ ...baseNote, ... }` so accidental mutation can't leak.
+  const baseNote = {
+    id: "1",
+    title: "Alpha",
+    body: "",
+    urls: [] as string[],
+    coordinates: {
+      latitude: 50.0755,
+      longitude: 14.4378,
+    },
+    createdAt: new Date(2026, 3, 13, 11, 45, 0).toISOString(),
+    updatedAt,
+    tags: [] as string[],
+  };
+
   it("combines location and update time into a quiet metadata line", () => {
     expect(
       buildNoteMetadata({
-        id: "1",
-        title: "Alpha",
-        body: "",
-        urls: [],
+        ...baseNote,
         location: "Prague",
-        coordinates: {
-          latitude: 50.0755,
-          longitude: 14.4378,
-        },
-        createdAt: new Date(2026, 3, 13, 11, 45, 0).toISOString(),
-        updatedAt: new Date(2026, 3, 13, 12, 0, 0).toISOString(),
-        tags: [],
       }),
     ).toMatch(/^Prague · Updated .*2026/);
+  });
+
+  it("trims whitespace around the location before formatting", () => {
+    // Geocoder responses occasionally come back with stray padding; the
+    // metadata line must render the trimmed name (and not, say,
+    // "  Prague  · Updated …" which looks like a layout bug).
+    const out = buildNoteMetadata({ ...baseNote, location: "  Prague  " });
+    expect(out.startsWith("Prague · Updated ")).toBe(true);
+    expect(out.startsWith(" ")).toBe(false);
+  });
+
+  it("omits the location segment when location is missing", () => {
+    // No `location` key → just "Updated …" without any leading separator.
+    const out = buildNoteMetadata({ ...baseNote });
+    expect(out.startsWith("Updated ")).toBe(true);
+    expect(out).not.toContain("·");
+  });
+
+  it("omits the location segment when location is empty or whitespace-only", () => {
+    // An empty string is falsy after trim and must hit the no-location branch
+    // — otherwise the metadata line would render as " · Updated …".
+    expect(buildNoteMetadata({ ...baseNote, location: "" })).not.toContain("·");
+    expect(buildNoteMetadata({ ...baseNote, location: "   " })).not.toContain(
+      "·",
+    );
   });
 });

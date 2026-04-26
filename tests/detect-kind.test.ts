@@ -236,4 +236,161 @@ describe("URL_PATTERN", () => {
     expect(first).toEqual(second);
     expect(first?.length).toBe(2);
   });
+
+  it("stops at any whitespace character (newline, tab, regular space)", () => {
+    // The character class is `[^\s<>]+`. A swap to `\S` (non-space)
+    // would reject the `<>` exclusion silently; a swap to a single
+    // character `[^\s<>]` would chop URLs into single-character matches.
+    expect("https://a.com next".match(URL_PATTERN)).toEqual(["https://a.com"]);
+    expect("https://a.com\nhttps://b.com".match(URL_PATTERN)).toEqual([
+      "https://a.com",
+      "https://b.com",
+    ]);
+    expect("https://a.com\thttps://b.com".match(URL_PATTERN)).toEqual([
+      "https://a.com",
+      "https://b.com",
+    ]);
+  });
+
+  it("stops at angle brackets so an HTML-style wrapper doesn't leak in", () => {
+    // `<https://x.com>` is the markdown-autolink form. The bracket
+    // exclusion keeps the matched URL clean ("https://x.com" not
+    // "https://x.com>").
+    expect("<https://x.com>".match(URL_PATTERN)).toEqual(["https://x.com"]);
+  });
+
+  it("matches bare-domain URLs that include a path segment", () => {
+    // Pattern's second alternation requires `\/[^\s<>]*` — i.e. there
+    // must be a path. Bare hostnames without a slash are deliberately
+    // not matched (too noisy in casual prose).
+    expect("read example.com/article tomorrow".match(URL_PATTERN)).toEqual([
+      "example.com/article",
+    ]);
+    expect("hostname-only example.com please".match(URL_PATTERN)).toBeNull();
+  });
+});
+
+describe("detectKind — task line shape", () => {
+  // These tests pin the exact shape of the TASK_LINE regex so a swap
+  // from `\s+` to `\s` (Stryker's typical narrowing) or `\d+` to `\d`
+  // surfaces in tests instead of users' notes. Each assertion targets
+  // a specific component of the regex.
+  it("requires at least one whitespace character between bullet and bracket", () => {
+    // `- [ ]` has the space between `-` and `[`. `-[ ] x` does NOT and
+    // must therefore not be classified as tasks. (Otherwise plain
+    // hyphenated prose like "anti-[clockwise]" would tip into tasks.)
+    expect(detect("-[ ] not a task\n-[ ] also not")).not.toBe("tasks");
+  });
+
+  it("requires at least one whitespace character between bracket and content", () => {
+    // `- [ ]task` has no space between `]` and the content. Must not
+    // be tasks. The trailing `\s+` in the regex is what enforces this.
+    expect(detect("- [ ]glued\n- [ ]also-glued")).not.toBe("tasks");
+  });
+
+  it("accepts a multi-digit numbered list (`12. [ ] …`)", () => {
+    // Stryker mutates `\d+` to `\d` (single digit) — a 12-line numbered
+    // task list would silently stop being recognised. Two double-digit
+    // entries here would fall back to the bullet-list path under the
+    // mutated regex.
+    expect(detect("11. [ ] eleven\n12. [ ] twelve")).toBe("tasks");
+  });
+
+  it("rejects a checkbox containing a non-x letter", () => {
+    // The character class is `[ xX]` — anything else (e.g. `[?]`)
+    // must NOT be parsed as a task.
+    expect(detect("- [?] unknown\n- [?] also unknown")).not.toBe("tasks");
+  });
+
+  it("requires a leading anchor — task syntax inside prose does not flip the kind", () => {
+    // The regex starts with `^\s*`, anchored. `prose - [ ] task` has
+    // the bullet mid-line and must not classify as tasks.
+    const body = `prose paragraph - [ ] task fragment\nanother prose paragraph - [ ] more`;
+    expect(detect(body)).not.toBe("tasks");
+  });
+});
+
+describe("detectKind — links count threshold", () => {
+  it("classifies as 'links' at exactly 2 URLs (the boundary)", () => {
+    // `urlCount >= 2 && words < 30` — the `>= 2` half is the boundary
+    // we pin here. A swap to `> 2` would drop two-URL bodies into note.
+    expect(detect("https://a.com https://b.com")).toBe("links");
+  });
+
+  it("does NOT classify as 'links' at exactly 1 URL", () => {
+    // Single URL → falls through to the `link` rule (above) or to
+    // shorter-body rules. Pin the lower edge so a swap to `>= 1`
+    // (which would catch single URLs) reads as a behaviour change.
+    expect(detect("just one https://a.com here please")).not.toBe("links");
+  });
+
+  it("stays 'links' at exactly 29 words (just under the < 30 cap)", () => {
+    // 27 padding words + 2 URLs = 29 words. Under the strict-less-than
+    // cap → still links. Pinned alongside the 30-word test below to
+    // pin both sides of the boundary.
+    const padding = Array.from({ length: 27 }, (_, idx) => `w${idx}`).join(" ");
+    expect(detect(`${padding} https://a.com https://b.com`)).toBe("links");
+  });
+
+  it("stops being 'links' once the word count hits exactly 30", () => {
+    // 28 padding words + 2 URLs = 30 words. `words < 30` flips to
+    // false at exactly 30 — a swap to `<= 30` would silently keep
+    // this case as 'links'. The body is long enough for the longform
+    // branch to claim it instead.
+    const padding = Array.from({ length: 28 }, (_, idx) => `w${idx}`).join(" ");
+    expect(detect(`${padding} https://a.com https://b.com`)).not.toBe("links");
+  });
+});
+
+describe("detectKind — longform / fleeting boundaries", () => {
+  it("'longform' is strict-greater-than 40 words (not >=)", () => {
+    const forty = Array.from({ length: 40 }, (_, index) => `w${index}`).join(
+      " ",
+    );
+    const fortyOne = Array.from({ length: 41 }, (_, index) => `w${index}`).join(
+      " ",
+    );
+    // 40 → not longform (it's the existing "note" branch); 41 → longform.
+    // Stryker's `> 40` → `>= 40` mutation flips the 40 case.
+    expect(detect(forty)).toBe("note");
+    expect(detect(fortyOne)).toBe("longform");
+  });
+
+  it("'longform' requires <= 3 lines", () => {
+    // Pin the line cap. 3 lines → longform; 4 lines with the same
+    // word count → not longform. Stryker's `<= 3` → `< 3` mutation
+    // flips the 3-line case.
+    const line = Array.from({ length: 20 }, (_, index) => `w${index}`).join(
+      " ",
+    );
+    expect(detect(`${line}\n${line}\n${line}`)).toBe("longform");
+    expect(detect(`${line}\n${line}\n${line}\n${line}`)).not.toBe("longform");
+  });
+});
+
+describe("detectKind — tasks ratio boundary", () => {
+  it("crosses into 'tasks' at exactly 50% (tasks*2 === nonEmpty)", () => {
+    // 1 task line, 2 non-empty → 1*2 === 2 → tasks (>= boundary).
+    expect(detect("- [ ] one\nplain")).toBe("tasks");
+  });
+
+  it("does NOT cross into 'tasks' just below 50% (tasks*2 < nonEmpty)", () => {
+    // 1 task line, 3 non-empty → 1*2 < 3 → not tasks.
+    expect(detect("- [ ] one\nplain\nmore plain")).not.toBe("tasks");
+  });
+});
+
+describe("detectKind — pure-URL guard", () => {
+  it("rejects a URL with trailing whitespace as 'pure URL'", () => {
+    // `isPureUrl` rejects whitespace inside the trimmed body. A space
+    // in the middle would otherwise allow `https://a.com tail` to be
+    // classified as a single-URL link kind.
+    expect(detect("https://a.com extra")).not.toBe("link");
+  });
+
+  it("rejects two whitespace-separated URLs as 'pure URL' (kind is 'links', not 'link')", () => {
+    // Two URLs with a space → matches.length === 2, not pure-URL,
+    // falls through to the urlCount branch and lands on 'links'.
+    expect(detect("https://a.com https://b.com")).toBe("links");
+  });
 });

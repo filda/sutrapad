@@ -69,4 +69,94 @@ describe("computeNoteStats", () => {
     const stats = computeNoteStats(makeNote({ tags: ["work", "ideas", "reading"] }));
     expect(stats.tagCount).toBe(3);
   });
+
+  it("stops link-matching at the closing parenthesis around an inline URL", () => {
+    // Markdown-style "(see https://example.com/path)" should match
+    // `https://example.com/path`, not the trailing `)`. A regression
+    // here would render link counts as still-2 for sentences that
+    // bracket their links.
+    const body = "see (https://example.com/path) and (https://b.example/a) more";
+    const stats = computeNoteStats(makeNote({ body }));
+    expect(stats.linkCount).toBe(2);
+  });
+
+  it("stops link-matching at any whitespace character (newline, tab)", () => {
+    // The regex uses `[^\s)]+` — newlines and tabs must terminate the
+    // match, otherwise multi-paragraph notes would glue the next URL
+    // onto the previous one and the count would drop.
+    const body = "https://a.example\nhttps://b.example\thttps://c.example next";
+    expect(computeNoteStats(makeNote({ body })).linkCount).toBe(3);
+  });
+
+  it("returns exactly readMinutes=1 at zero words (Math.max floor)", () => {
+    // Math.round(0/220) is 0 — the floor at 1 must catch this so the
+    // UI never renders "0 min read".
+    expect(computeNoteStats(makeNote({ body: "" })).readMinutes).toBe(1);
+  });
+
+  it("readMinutes rounds down on the half boundary at 110 words", () => {
+    // 110 / 220 = 0.5 — Math.round goes to 1 (ties-away-from-zero in
+    // ECMA), and the floor at 1 keeps the same value. Pinned so a
+    // swap to Math.floor or Math.ceil reads as a behaviour change.
+    const body = Array.from({ length: 110 }, () => "word").join(" ");
+    expect(computeNoteStats(makeNote({ body })).readMinutes).toBe(1);
+  });
+
+  it("readMinutes ticks to 2 once the word count crosses 330", () => {
+    // 330 / 220 = 1.5 → rounds to 2. 329 / 220 ≈ 1.495 → rounds to 1.
+    // Boundary check that pins both the divisor (220) and the round.
+    expect(
+      computeNoteStats(makeNote({
+        body: Array.from({ length: 329 }, () => "word").join(" "),
+      })).readMinutes,
+    ).toBe(1);
+    expect(
+      computeNoteStats(makeNote({
+        body: Array.from({ length: 330 }, () => "word").join(" "),
+      })).readMinutes,
+    ).toBe(2);
+  });
+
+  it("treats tabs and newlines as word separators (not as part of a word)", () => {
+    // The split pattern is /\s+/ — replacing it with a single-character
+    // class would still pass for spaces only. This test pins the
+    // multi-whitespace behaviour explicitly.
+    const stats = computeNoteStats(makeNote({ body: "one\ttwo\nthree four" }));
+    expect(stats.wordCount).toBe(4);
+  });
+
+  it("falls back to body-link count when urls is undefined (no captured-link list)", () => {
+    // `note.urls?.length ?? 0` — if optional chaining were dropped to
+    // `note.urls.length` the test would crash; if `?? 0` were dropped
+    // to `?? capturedFallback` the math.max would shift.
+    const stats = computeNoteStats(
+      makeNote({ body: "see https://a.example", urls: undefined as unknown as never }),
+    );
+    expect(stats.linkCount).toBe(1);
+  });
+
+  it("prefers the captured-urls count when it exceeds the body-link count", () => {
+    // Math.max(bodyLinks, captured) — captured wins here. A swap to
+    // Math.min would drop the count to 1 and the bookmarklet capture
+    // would visibly under-report.
+    const stats = computeNoteStats(
+      makeNote({
+        body: "https://only.example",
+        urls: ["https://a.example", "https://b.example", "https://c.example"],
+      }),
+    );
+    expect(stats.linkCount).toBe(3);
+  });
+
+  it("prefers the body-link count when it exceeds captured", () => {
+    // Reverse direction of the Math.max — guards against a swap that
+    // always picked one source.
+    const stats = computeNoteStats(
+      makeNote({
+        body: "https://a.example https://b.example https://c.example",
+        urls: ["https://only.example"],
+      }),
+    );
+    expect(stats.linkCount).toBe(3);
+  });
 });

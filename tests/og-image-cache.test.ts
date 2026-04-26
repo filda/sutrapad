@@ -65,6 +65,44 @@ describe("loadOgImageCache", () => {
     expect(loadOgImageCache(storage)).toEqual({});
   });
 
+  it("returns an empty map when the stored payload parses to literal `null`", () => {
+    // `JSON.parse("null") === null`. Without an explicit null guard,
+    // `Object.entries(null)` throws TypeError and the loader stops
+    // returning any cache at all (every render becomes a fresh fetch).
+    // Pin: this guard belongs in front of the Object.entries loop.
+    const storage = createStorage({ [OG_IMAGE_CACHE_STORAGE_KEY]: "null" });
+    expect(loadOgImageCache(storage)).toEqual({});
+  });
+
+  it("returns an empty map when the parsed payload is a non-array primitive", () => {
+    // Primitives (numbers, booleans, bare strings) should never feed
+    // into Object.entries — typeof !== "object" is the second arm of
+    // the guard. Without it, a corrupt cache slot would produce a
+    // crash on every page load.
+    const numeric = createStorage({ [OG_IMAGE_CACHE_STORAGE_KEY]: "42" });
+    const boolean = createStorage({ [OG_IMAGE_CACHE_STORAGE_KEY]: "true" });
+    const stringy = createStorage({ [OG_IMAGE_CACHE_STORAGE_KEY]: '"hello"' });
+    expect(loadOgImageCache(numeric)).toEqual({});
+    expect(loadOgImageCache(boolean)).toEqual({});
+    expect(loadOgImageCache(stringy)).toEqual({});
+  });
+
+  it("drops entries whose value is null or a non-object", () => {
+    // `isValidCachedEntry` rejects null + non-object before checking
+    // imageUrl/resolvedAt at all. Without the null guard, the next
+    // line (`value as { imageUrl?: unknown }`) would explode on
+    // `candidate.imageUrl` access.
+    const storage = createStorage({
+      [OG_IMAGE_CACHE_STORAGE_KEY]: JSON.stringify({
+        "https://valid": sampleEntry,
+        "https://nullish": null,
+        "https://primitive": 42,
+        "https://stringy": "hit",
+      }),
+    });
+    expect(loadOgImageCache(storage)).toEqual({ "https://valid": sampleEntry });
+  });
+
   it("drops entries that don't match the expected shape", () => {
     // Defensive: if a future bug writes malformed entries, the loader
     // returns only the valid ones rather than feeding junk into the

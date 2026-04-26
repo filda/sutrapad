@@ -150,6 +150,66 @@ describe("safeFetch", () => {
     clearSpy.mockRestore();
   });
 
+  it("removes the external-signal abort listener after a successful fetch", async () => {
+    // Cleanup is observable via the AbortSignal's listener bookkeeping:
+    // if `removeEventListener` were skipped (or called with the wrong
+    // event name), the relay would still fire later when the caller
+    // eventually aborts their own controller — and would call abort()
+    // on the controller we've already thrown away. We pin both halves
+    // here so a regression on the cleanup branch shows up in unit tests
+    // instead of as a stray late-firing abort against a discarded
+    // controller in production.
+    const observer = makeAbortObservingFetch();
+    observer.delayMs = 0;
+    observer.install();
+
+    const external = new AbortController();
+    const addSpy = vi.spyOn(external.signal, "addEventListener");
+    const removeSpy = vi.spyOn(external.signal, "removeEventListener");
+
+    const promise = safeFetch("https://x.test/", { signal: external.signal });
+    await vi.runAllTimersAsync();
+    await promise;
+
+    // Listener was attached during setup, then removed in the finally
+    // block — exactly once each, with the same handler reference and
+    // the literal "abort" event name (string-literal mutations would
+    // pass an empty string and survive without this exact-arg check).
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    expect(addSpy.mock.calls[0][0]).toBe("abort");
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(removeSpy.mock.calls[0][0]).toBe("abort");
+    // Same handler reference for add/remove — otherwise the relay
+    // would not actually be detached and would still relay future
+    // aborts to a dead controller.
+    expect(removeSpy.mock.calls[0][1]).toBe(addSpy.mock.calls[0][1]);
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
+  it("does not attach (and therefore does not remove) a listener when the external signal is already aborted", async () => {
+    // The early-abort branch sets listenerAdded=false; the cleanup
+    // path must agree and skip removeEventListener. Otherwise we'd
+    // call removeEventListener for a handler we never added — a
+    // no-op in production but a clear contract violation that we
+    // want to catch in tests.
+    const observer = makeAbortObservingFetch();
+    observer.install();
+
+    const external = new AbortController();
+    external.abort();
+    const addSpy = vi.spyOn(external.signal, "addEventListener");
+    const removeSpy = vi.spyOn(external.signal, "removeEventListener");
+
+    await safeFetch("https://x.test/", { signal: external.signal });
+    expect(addSpy).not.toHaveBeenCalled();
+    expect(removeSpy).not.toHaveBeenCalled();
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
   it("forwards init fields (headers, method) verbatim", async () => {
     const observer = makeAbortObservingFetch();
     observer.delayMs = 0;
