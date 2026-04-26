@@ -134,6 +134,24 @@ export interface SutraPadTagEntry {
   kind?: SutraPadTagKind;
 }
 
+/**
+ * Tag-index file as written to the user's Drive workspace folder.
+ *
+ * **Drive copy is write-only.** The app NEVER deserialises this file
+ * back from Drive — every consumer rebuilds the live tag index in
+ * memory via `buildTagIndex` / `buildCombinedTagIndex` (`lib/notebook.ts`)
+ * against `workspace.notes`. The Drive copy exists for two reasons
+ * only: (a) external tooling that wants a pre-aggregated snapshot
+ * without paying the cost of fetching every note file, and (b)
+ * forensic / recovery scenarios.
+ *
+ * Because `appendNoteToWorkspace` (silent capture) intentionally
+ * skips re-writing this file to keep round-trips down, the Drive
+ * copy can drift behind the workspace by N captures. Drift heals on
+ * the next interactive `saveWorkspace`. Any future stats / sync
+ * feature that wants live tag data MUST go through `buildTagIndex`
+ * against the in-memory workspace, not `fetchJsonFile<SutraPadTagIndex>`.
+ */
 export interface SutraPadTagIndex {
   version: 1;
   savedAt: string;
@@ -155,6 +173,13 @@ export interface SutraPadLinkEntry {
   latestUpdatedAt: string;
 }
 
+/**
+ * Link-index file as written to Drive. **Write-only on Drive** — see
+ * `SutraPadTagIndex` doc for the full rationale. Live link aggregation
+ * comes from `buildLinkIndex` (`lib/notebook.ts`) against
+ * `workspace.notes`; the Drive copy can drift behind the workspace
+ * between full saves.
+ */
 export interface SutraPadLinkIndex {
   version: 1;
   savedAt: string;
@@ -176,6 +201,13 @@ export interface SutraPadTaskEntry {
   noteUpdatedAt: string;
 }
 
+/**
+ * Task-index file as written to Drive. **Write-only on Drive** — see
+ * `SutraPadTagIndex` doc for the full rationale. Live task aggregation
+ * comes from `buildTaskIndex` (`lib/tasks.ts`) against
+ * `workspace.notes`; the Drive copy can drift behind the workspace
+ * between full saves.
+ */
 export interface SutraPadTaskIndex {
   version: 1;
   savedAt: string;
