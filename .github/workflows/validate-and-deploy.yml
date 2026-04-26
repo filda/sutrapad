@@ -48,8 +48,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run checks
-        run: npm run check
+      # Steps are ordered cheapest → most expensive so a failure aborts the
+      # job at the earliest possible point. `npm run check` would do all of
+      # this in one shot, but it doesn't fail-fast between sub-steps the way
+      # GitHub Actions step-by-step execution does — and the smoke test in
+      # particular is much more informative as a standalone failure (it
+      # signals "createApp doesn't even start", not "some unit test broke").
+      #
+      #   1. lint        — ~70ms, catches typos / dead-code regressions
+      #   2. typecheck   — ~2-5s, catches type drift after refactors
+      #   3. smoke       — ~2-3s, end-to-end "createApp boots" canary
+      #                    (regressions here include the microtask-loop
+      #                    bug class, which manifests as a job timeout
+      #                    via vitest's per-test 3s timeout)
+      #   4. rest tests  — ~15s, the bulk unit suite
+      #   5. build       — ~3s, final shape we ship to GitHub Pages
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Smoke test (createApp end-to-end)
+        run: npm run test:smoke
+
+      - name: Run unit suite
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build
 
   deploy:
     name: Deploy to GitHub Pages

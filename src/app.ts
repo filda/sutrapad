@@ -408,139 +408,163 @@ export function createApp(root: HTMLElement): void {
   };
 
   const render = (): void => {
-    // Pre-empt any pending microtask render so an atom-driven
-    // `scheduleRender` queued earlier doesn't double-fire after this
-    // synchronous call returns. See `scheduleRender` comment for the
-    // shared-flag handshake.
-    renderScheduled = false;
-    syncSelectedTagFilters();
-    const detailRoute = syncDetailRouteSelection(
-      activeMenuItem$.get(),
-      detailNoteId$.get(),
-      workspace$.get(),
-    );
-    detailNoteId$.set(detailRoute.detailNoteId);
-    workspace$.set(detailRoute.workspace);
-    if (detailRoute.shouldPersistWorkspace) {
-      persistLocalWorkspace(detailRoute.workspace);
-    }
-    if (detailNoteId$.get() === null) {
-      const visibleActiveNote = ensureVisibleActiveNoteSelection(
+    // Set the flag *true* for the entire body of render(): the
+    // mutations below (`syncSelectedTagFilters` filters into a fresh
+    // array, `workspace$.set(detailRoute.workspace)` etc. land new
+    // object references) all fire their atom subscribers, and each
+    // subscriber calls `scheduleRender`. Without this guard,
+    // `scheduleRender` would see `renderScheduled = false`, queue a
+    // microtask, and as soon as the synchronous render returns the
+    // microtask would call render() again — which mutates the same
+    // atoms with new references — looping the browser in microtasks
+    // forever (no paint, no console error, blank page). Holding the
+    // flag true throughout keeps every in-render schedule a no-op.
+    //
+    // Resetting the flag in `finally` (rather than at the top, which
+    // is what we used to do) also pre-empts any pending microtask
+    // queued *before* this synchronous render: when the microtask
+    // eventually flushes it sees `renderScheduled = false` and skips
+    // — that's the "shared-flag handshake" referenced in
+    // `scheduleRender`.
+    renderScheduled = true;
+    try {
+      syncSelectedTagFilters();
+      const detailRoute = syncDetailRouteSelection(
+        activeMenuItem$.get(),
+        detailNoteId$.get(),
         workspace$.get(),
-        selectedTagFilters$.get(),
-        filterMode$.get(),
       );
-      workspace$.set(visibleActiveNote.workspace);
-      if (visibleActiveNote.shouldPersistWorkspace) {
-        persistLocalWorkspace(visibleActiveNote.workspace);
+      detailNoteId$.set(detailRoute.detailNoteId);
+      workspace$.set(detailRoute.workspace);
+      if (detailRoute.shouldPersistWorkspace) {
+        persistLocalWorkspace(detailRoute.workspace);
       }
-    }
-    // Snapshot every reactive read for the rest of this render — the
-    // values are passed into renderAppPage and friends, which expect a
-    // consistent view of state for the duration of the call.
-    const workspace = workspace$.get();
-    const selectedTagFilters = selectedTagFilters$.get();
-    const filterMode = filterMode$.get();
-    const activeMenuItem = activeMenuItem$.get();
-    const detailNoteId = detailNoteId$.get();
-    const notesViewMode = notesViewMode$.get();
-    const linksViewMode = linksViewMode$.get();
-    const syncState = syncState$.get();
-    const profile = profile$.get();
-    syncTagFiltersToLocation(selectedTagFilters);
-    syncFilterModeToLocation(filterMode);
-    syncActivePageToLocation(activeMenuItem, detailNoteId, appBasePath);
-    syncViewToLocation(activeMenuItem, detailNoteId, notesViewMode, linksViewMode);
+      if (detailNoteId$.get() === null) {
+        const visibleActiveNote = ensureVisibleActiveNoteSelection(
+          workspace$.get(),
+          selectedTagFilters$.get(),
+          filterMode$.get(),
+        );
+        workspace$.set(visibleActiveNote.workspace);
+        if (visibleActiveNote.shouldPersistWorkspace) {
+          persistLocalWorkspace(visibleActiveNote.workspace);
+        }
+      }
+      // Snapshot every reactive read for the rest of this render — the
+      // values are passed into renderAppPage and friends, which expect a
+      // consistent view of state for the duration of the call.
+      const workspace = workspace$.get();
+      const selectedTagFilters = selectedTagFilters$.get();
+      const filterMode = filterMode$.get();
+      const activeMenuItem = activeMenuItem$.get();
+      const detailNoteId = detailNoteId$.get();
+      const notesViewMode = notesViewMode$.get();
+      const linksViewMode = linksViewMode$.get();
+      const syncState = syncState$.get();
+      const profile = profile$.get();
+      syncTagFiltersToLocation(selectedTagFilters);
+      syncFilterModeToLocation(filterMode);
+      syncActivePageToLocation(activeMenuItem, detailNoteId, appBasePath);
+      syncViewToLocation(activeMenuItem, detailNoteId, notesViewMode, linksViewMode);
 
-    const currentNote = getCurrentWorkspaceNote(workspace);
-    const detailNote =
-      detailNoteId !== null
-        ? (workspace.notes.find((note) => note.id === detailNoteId) ?? null)
-        : null;
-    const displayedNote =
-      detailNote ?? resolveDisplayedNote(workspace, selectedTagFilters, filterMode);
-    const callbacks = createRenderCallbacks({
-      auth,
-      appRootUrl,
-      setProfile: setProfileState,
-      getWorkspace: () => workspace$.get(),
-      setWorkspace: setWorkspaceState,
-      setSyncState: setSyncStateValue,
-      setLastError: setLastErrorValue,
-      setBookmarkletMessage: setBookmarkletMessageState,
-      getSelectedTagFilters: () => selectedTagFilters,
-      setSelectedTagFilters: setSelectedTagFiltersState,
-      getFilterMode: () => filterMode$.get(),
-      setFilterMode: setFilterModeState,
-      getActiveMenuItem: () => activeMenuItem$.get(),
-      setActiveMenuItem: setActiveMenuItemState,
-      getDetailNoteId: () => detailNoteId$.get(),
-      setDetailNoteId: setDetailNoteIdState,
-      setNotesViewMode: setNotesViewModeState,
-      setLinksViewMode: setLinksViewModeState,
-      setTasksFilter: setTasksFilterState,
-      setTasksShowDone: setTasksShowDoneState,
-      setTasksOneThingKey: setTasksOneThingKeyState,
-      getVisibleTagClasses: () => visibleTagClasses$.get(),
-      setVisibleTagClasses: setVisibleTagClassesState,
-      getTagsSearchQuery: () => tagsSearchQuery$.get(),
-      setTagsSearchQuery: setTagsSearchQueryState,
-      getDismissedTagAliases: () => dismissedTagAliases$.get(),
-      setDismissedTagAliases: setDismissedTagAliasesState,
-      getRecentTagFilters: () => recentTagFilters$.get(),
-      setRecentTagFilters: setRecentTagFiltersState,
-      setCurrentTheme: setCurrentThemeState,
-      setPersonaPreference: setPersonaPreferenceState,
-      handleNewNote,
-      purgeEmptyDraftNotes,
-      loadWorkspace,
-      saveWorkspace: () => saveWorkspace(),
-      restoreWorkspaceAfterSignIn,
-      replaceCurrentNote,
-      persistWorkspace: persistLocalWorkspace,
-      scheduleAutoSave,
-      render,
-      refreshNotesPanel,
-    });
-    paletteAccess$.get()?.refresh(workspace, selectedTagFilters);
-    renderAppPage({
-      root,
-      workspace,
-      currentNoteId: displayedNote?.id ?? "",
-      selectedTagFilters,
-      filterMode,
-      note: displayedNote,
-      currentNote: detailNote ?? currentNote,
-      syncState,
-      statusText: getAppStatusText({
-        syncState,
-        lastError: lastError$.get(),
+      const currentNote = getCurrentWorkspaceNote(workspace);
+      const detailNote =
+        detailNoteId !== null
+          ? (workspace.notes.find((note) => note.id === detailNoteId) ?? null)
+          : null;
+      const displayedNote =
+        detailNote ?? resolveDisplayedNote(workspace, selectedTagFilters, filterMode);
+      const callbacks = createRenderCallbacks({
+        auth,
+        appRootUrl,
+        setProfile: setProfileState,
+        getWorkspace: () => workspace$.get(),
+        setWorkspace: setWorkspaceState,
+        setSyncState: setSyncStateValue,
+        setLastError: setLastErrorValue,
+        setBookmarkletMessage: setBookmarkletMessageState,
+        getSelectedTagFilters: () => selectedTagFilters,
+        setSelectedTagFilters: setSelectedTagFiltersState,
+        getFilterMode: () => filterMode$.get(),
+        setFilterMode: setFilterModeState,
+        getActiveMenuItem: () => activeMenuItem$.get(),
+        setActiveMenuItem: setActiveMenuItemState,
+        getDetailNoteId: () => detailNoteId$.get(),
+        setDetailNoteId: setDetailNoteIdState,
+        setNotesViewMode: setNotesViewModeState,
+        setLinksViewMode: setLinksViewModeState,
+        setTasksFilter: setTasksFilterState,
+        setTasksShowDone: setTasksShowDoneState,
+        setTasksOneThingKey: setTasksOneThingKeyState,
+        getVisibleTagClasses: () => visibleTagClasses$.get(),
+        setVisibleTagClasses: setVisibleTagClassesState,
+        getTagsSearchQuery: () => tagsSearchQuery$.get(),
+        setTagsSearchQuery: setTagsSearchQueryState,
+        getDismissedTagAliases: () => dismissedTagAliases$.get(),
+        setDismissedTagAliases: setDismissedTagAliasesState,
+        getRecentTagFilters: () => recentTagFilters$.get(),
+        setRecentTagFilters: setRecentTagFiltersState,
+        setCurrentTheme: setCurrentThemeState,
+        setPersonaPreference: setPersonaPreferenceState,
+        handleNewNote,
+        purgeEmptyDraftNotes,
+        loadWorkspace,
+        saveWorkspace: () => saveWorkspace(),
+        restoreWorkspaceAfterSignIn,
+        replaceCurrentNote,
+        persistWorkspace: persistLocalWorkspace,
+        scheduleAutoSave,
+        render,
+        refreshNotesPanel,
+      });
+      paletteAccess$.get()?.refresh(workspace, selectedTagFilters);
+      renderAppPage({
+        root,
         workspace,
+        currentNoteId: displayedNote?.id ?? "",
         selectedTagFilters,
         filterMode,
+        note: displayedNote,
+        currentNote: detailNote ?? currentNote,
+        syncState,
+        statusText: getAppStatusText({
+          syncState,
+          lastError: lastError$.get(),
+          workspace,
+          selectedTagFilters,
+          filterMode,
+          profile,
+        }),
         profile,
-      }),
-      profile,
-      appRootUrl,
-      bookmarkletMessage: bookmarkletMessage$.get(),
-      iosShortcutUrl,
-      buildStamp: formatBuildStamp(__APP_VERSION__, __APP_COMMIT_HASH__, __APP_BUILD_TIME__),
-      activeMenuItem,
-      detailNoteId,
-      notesViewMode,
-      linksViewMode,
-      tasksFilter: tasksFilter$.get(),
-      tasksShowDone: tasksShowDone$.get(),
-      tasksOneThingKey: tasksOneThingKey$.get(),
-      visibleTagClasses: visibleTagClasses$.get(),
-      tagsSearchQuery: tagsSearchQuery$.get(),
-      dismissedTagAliases: dismissedTagAliases$.get(),
-      recentTagFilters: recentTagFilters$.get(),
-      currentTheme: currentTheme$.get(),
-      personaPreference: personaPreference$.get(),
-      onOpenPalette: () => paletteAccess$.get()?.open(),
-      ...callbacks,
-    });
+        appRootUrl,
+        bookmarkletMessage: bookmarkletMessage$.get(),
+        iosShortcutUrl,
+        buildStamp: formatBuildStamp(__APP_VERSION__, __APP_COMMIT_HASH__, __APP_BUILD_TIME__),
+        activeMenuItem,
+        detailNoteId,
+        notesViewMode,
+        linksViewMode,
+        tasksFilter: tasksFilter$.get(),
+        tasksShowDone: tasksShowDone$.get(),
+        tasksOneThingKey: tasksOneThingKey$.get(),
+        visibleTagClasses: visibleTagClasses$.get(),
+        tagsSearchQuery: tagsSearchQuery$.get(),
+        dismissedTagAliases: dismissedTagAliases$.get(),
+        recentTagFilters: recentTagFilters$.get(),
+        currentTheme: currentTheme$.get(),
+        personaPreference: personaPreference$.get(),
+        onOpenPalette: () => paletteAccess$.get()?.open(),
+        ...callbacks,
+      });
+    } finally {
+      // Releasing the guard outside the try means a thrown render() doesn't
+      // leave the flag stuck `true` (which would silently kill all future
+      // schedule attempts — every scheduleRender would short-circuit and
+      // the UI would freeze without any further error). The `finally` runs
+      // either way: success path hits it after `renderAppPage`, failure
+      // path hits it before the throw propagates out of createApp.
+      renderScheduled = false;
+    }
   };
 
   // Atom-driven render scheduling. Subscribing every UI-affecting atom
