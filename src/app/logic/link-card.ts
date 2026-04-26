@@ -69,7 +69,15 @@ export function buildLinkCardDescription(
   // the thumb chip. Preserve surrounding whitespace / punctuation so
   // "Read: <url> — fascinating" becomes "Read: — fascinating" rather
   // than "Read:fascinating".
-  const withoutUrl = body.split(url).join("").trim();
+  //
+  // Defense-in-depth on the empty-url branch: `body.split("")` splits
+  // *between every character* and `join("")` then re-stitches the body
+  // codepoint-by-codepoint — a no-op for ASCII but a subtle grapheme-
+  // splitter trap on emoji / combining-diacritic input. The call sites
+  // today never pass an empty url, so this is a guard against a future
+  // regression rather than a hot path; truncation logic below still
+  // applies because we only short-circuit the split/join.
+  const withoutUrl = url === "" ? body.trim() : body.split(url).join("").trim();
   if (withoutUrl === "") return null;
 
   // Collapse runs of whitespace to single spaces — the card body is a

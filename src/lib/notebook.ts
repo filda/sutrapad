@@ -504,6 +504,16 @@ export function mergeWorkspaces(
   // valuable side of the collision; a remote workspace that's about to
   // be re-saved will have its own revision incremented next time
   // anyway.
+  //
+  // The `>=` is a string compare. That's safe here only because every
+  // `updatedAt` we mint goes through `new Date().toISOString()`, which
+  // emits a fixed-width UTC ISO-8601 (`YYYY-MM-DDTHH:mm:ss.sssZ`) —
+  // constant width, no offset variation, no trimmed millisecond zeros
+  // — so lexicographic order matches chronological order. If a future
+  // writer ever uses a local-offset variant (`+02:00`) or
+  // `Date.prototype.toJSON` short-form, this comparison breaks
+  // silently. Same invariant is relied on across `sortNotes` and the
+  // `localeCompare` calls in this file.
   for (const note of [...remoteWorkspace.notes, ...localWorkspace.notes]) {
     const existing = notesById.get(note.id);
     if (!existing || note.updatedAt >= existing.updatedAt) {

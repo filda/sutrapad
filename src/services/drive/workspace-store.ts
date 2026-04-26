@@ -66,22 +66,31 @@ function createIndex(
 ): SutraPadIndex {
   const savedAt = new Date().toISOString();
 
+  // Build an id → previous-summary lookup once instead of `.find()`-ing
+  // through `existingIndex.notes` for every note in the new workspace.
+  // The old shape was O(N×M) where both N (current notes) and M
+  // (previous notes) grow without bound — once a workspace has a few
+  // hundred notes the save path was visibly worse than the load path.
+  const previousById = new Map<string, SutraPadNoteSummary>();
+  if (existingIndex) {
+    for (const entry of existingIndex.notes) {
+      previousById.set(entry.id, entry);
+    }
+  }
+
   return {
     version: 1,
     updatedAt: savedAt,
     savedAt,
     previousIndexId,
     activeNoteId: workspace.activeNoteId,
-    notes: workspace.notes.map((note) => {
-      const previous = existingIndex?.notes.find((entry) => entry.id === note.id);
-      return {
-        id: note.id,
-        title: note.title,
-        createdAt: note.createdAt,
-        updatedAt: note.updatedAt,
-        fileId: previous?.fileId,
-      };
-    }),
+    notes: workspace.notes.map((note) => ({
+      id: note.id,
+      title: note.title,
+      createdAt: note.createdAt,
+      updatedAt: note.updatedAt,
+      fileId: previousById.get(note.id)?.fileId,
+    })),
   };
 }
 
@@ -266,6 +275,18 @@ export class GoogleDriveStore {
 
     const nextIndex = createIndex(workspace, existingIndex, existingIndexFile?.id);
 
+    // Same lookup table as `createIndex` builds internally — the
+    // savedNotes loop below also needs id → existing summary
+    // resolution, so we hoist it out of the per-note `.find()` and
+    // share it with the upload path. Same O(N+M) → O(1) win as in
+    // `createIndex`, just on the save half instead of the index half.
+    const existingSummaryById = new Map<string, SutraPadNoteSummary>();
+    if (existingIndex) {
+      for (const entry of existingIndex.notes) {
+        existingSummaryById.set(entry.id, entry);
+      }
+    }
+
     // Notes upload + the four `find*IndexFile` lookups all need only
     // `workspaceFolder.id` and `existingIndex` (already resolved
     // above), so they run in a single concurrent batch instead of
@@ -281,7 +302,7 @@ export class GoogleDriveStore {
     ] = await Promise.all([
       Promise.all(
         workspace.notes.map(async (note) => {
-          const existingSummary = existingIndex?.notes.find((entry) => entry.id === note.id);
+          const existingSummary = existingSummaryById.get(note.id);
           const existingFileId = existingSummary?.fileId;
 
           if (existingFileId && existingSummary?.updatedAt === note.updatedAt) {

@@ -111,17 +111,34 @@ const OG_IMAGE_META_SOURCES: ReadonlyArray<{
 const META_TAG_PATTERN = /<meta\b([^>]*)>/gi;
 
 /**
+ * Precompiled regexes for the only three attribute names we actually
+ * read off `<meta>` tags. The previous shape allocated a new RegExp on
+ * every call — a typical page parse hits 5-10 meta tags × up to 3
+ * `readMetaAttribute` calls each, so 15-30 throw-away regexes per
+ * extract. The set of names is closed (driven by `OG_IMAGE_META_SOURCES`
+ * + the unconditional `content` lookup), so a static lookup table is
+ * the right shape — and the `MetaAttributeName` type means a future
+ * call with a different name (`itemprop`, …) is a compile error rather
+ * than a silent `null`.
+ */
+type MetaAttributeName = "content" | "property" | "name";
+const META_ATTRIBUTE_PATTERNS: Record<MetaAttributeName, RegExp> = {
+  content: /\bcontent\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i,
+  property: /\bproperty\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i,
+  name: /\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i,
+};
+
+/**
  * Pulls a single attribute value out of a `<meta>` tag's inner
  * attribute string. Handles both single- and double-quoted values,
  * plus unquoted bare-word attributes (spec-permissive HTML). Returns
  * `null` when the attribute isn't present.
  */
-function readMetaAttribute(attrs: string, name: string): string | null {
-  const pattern = new RegExp(
-    `\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
-    "i",
-  );
-  const match = pattern.exec(attrs);
+function readMetaAttribute(
+  attrs: string,
+  name: MetaAttributeName,
+): string | null {
+  const match = META_ATTRIBUTE_PATTERNS[name].exec(attrs);
   if (!match) return null;
   return match[1] ?? match[2] ?? match[3] ?? null;
 }

@@ -106,6 +106,17 @@ describe("buildLinkCardDescription", () => {
     expect(buildLinkCardDescription("", "https://nytimes.com/")).toBeNull();
   });
 
+  it("treats an empty url as 'nothing to strip' instead of degenerating into a per-character split", () => {
+    // Regression guard: `body.split("").join("")` re-stitches the body
+    // codepoint-by-codepoint and would corrupt grapheme clusters
+    // (combining diacritics, ZWJ emoji sequences). The empty-url
+    // branch must short-circuit and return the trimmed body verbatim.
+    const body = "café 👨‍👩‍👧 fin";
+    expect(buildLinkCardDescription(body, "")).toBe("café 👨‍👩‍👧 fin");
+    // Whitespace-only body still folds to null on the empty-url path.
+    expect(buildLinkCardDescription("   \n\n   ", "")).toBeNull();
+  });
+
   it("strips the URL out of the body while keeping surrounding prose", () => {
     // The doubled-space left behind where the URL was is collapsed by
     // the whitespace-normalisation step, so "Read: <url> — nice" ends
