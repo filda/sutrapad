@@ -27,6 +27,7 @@
 // browser and don't belong here.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LOCAL_WORKSPACE_KEY } from "../src/app/storage/local-workspace";
 
 // Stub `GoogleAuthService` — the real one tries to load
 // `https://accounts.google.com/gsi/client` and call `/userinfo`, both
@@ -155,5 +156,45 @@ describe("createApp smoke", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(secondRoot.children.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the focused body textarea mounted while local edits update the workspace", { timeout: 3000 }, async () => {
+    const workspace = {
+      activeNoteId: "note-1",
+      notes: [
+        {
+          id: "note-1",
+          title: "Alpha",
+          body: "",
+          urls: [],
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          tags: [],
+        },
+      ],
+    };
+    localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify(workspace));
+    window.history.replaceState({}, "", "/notes/note-1");
+
+    const { createApp } = await import("../src/app");
+    const root = document.querySelector<HTMLElement>("#app");
+    if (root === null) throw new Error("expected #app");
+
+    createApp(root);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(root.querySelector(".sync-pill")?.className).toContain("is-error");
+
+    const textarea = root.querySelector<HTMLTextAreaElement>(".body-input");
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    if (textarea === null) throw new Error("expected body textarea");
+
+    textarea.focus();
+    textarea.value = "A";
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+
+    expect(root.querySelector(".body-input")).toBe(textarea);
+    expect(document.activeElement).toBe(textarea);
+    expect(JSON.parse(localStorage.getItem(LOCAL_WORKSPACE_KEY) ?? "{}").notes[0].body).toBe("A");
   });
 });

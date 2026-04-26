@@ -230,7 +230,17 @@ export function createApp(root: HTMLElement): void {
   // pre-empts any pending microtask, avoiding the "render synchronously
   // then render again on the next tick" double-up.
   let renderScheduled = false;
+  let renderSuppressionDepth = 0;
+  const withRenderSuppressed = (action: () => void): void => {
+    renderSuppressionDepth += 1;
+    try {
+      action();
+    } finally {
+      renderSuppressionDepth -= 1;
+    }
+  };
   const scheduleRender = (): void => {
+    if (renderSuppressionDepth > 0) return;
     if (renderScheduled) return;
     renderScheduled = true;
     queueMicrotask(() => {
@@ -253,7 +263,7 @@ export function createApp(root: HTMLElement): void {
     const next = upsertNote(previousWorkspace, activeNoteId, updater);
     if (next === previousWorkspace) return;
 
-    workspace$.set(next);
+    withRenderSuppressed(() => workspace$.set(next));
     persistLocalWorkspace(next);
     scheduleAutoSave();
   };
@@ -265,9 +275,15 @@ export function createApp(root: HTMLElement): void {
     const availableTags = new Set(
       buildCombinedTagIndex(workspace$.get()).tags.map((entry) => entry.tag),
     );
-    selectedTagFilters$.set(
-      selectedTagFilters$.get().filter((tag) => availableTags.has(tag)),
-    );
+    const currentFilters = selectedTagFilters$.get();
+    const nextFilters = currentFilters.filter((tag) => availableTags.has(tag));
+    if (
+      nextFilters.length === currentFilters.length &&
+      nextFilters.every((tag, index) => tag === currentFilters[index])
+    ) {
+      return;
+    }
+    selectedTagFilters$.set(nextFilters);
   };
 
   /**
@@ -604,10 +620,10 @@ export function createApp(root: HTMLElement): void {
       getStore,
       retryContext,
       getWorkspace: () => workspace$.get(),
-      setWorkspace: setWorkspaceState,
+      setWorkspace: (workspace) => withRenderSuppressed(() => setWorkspaceState(workspace)),
       persistLocalWorkspace,
-      setSyncState: setSyncStateValue,
-      setLastError: setLastErrorValue,
+      setSyncState: (syncState) => withRenderSuppressed(() => setSyncStateValue(syncState)),
+      setLastError: (lastError) => withRenderSuppressed(() => setLastErrorValue(lastError)),
       render,
       refreshStatus,
       cancelAutoSave,
