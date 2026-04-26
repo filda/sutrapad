@@ -176,6 +176,7 @@ npm run check
 
 This runs:
 
+- `npm run lint`
 - `npm test`
 - `npm run build`
 
