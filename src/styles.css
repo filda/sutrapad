@@ -3358,6 +3358,10 @@ button.tag-pill {
 
 .page-title {
   margin: 0;
+  /* The bare `h1` rule above caps width at 11ch for the static landing
+   * pages. Page headers use the full text-block width, so reset it here
+   * — without this, "Good evening, Filda." wraps after every word. */
+  max-width: none;
   font-family: var(--serif);
   font-size: clamp(2.05rem, 4.2vw, 3.2rem);
   line-height: 1.04;
