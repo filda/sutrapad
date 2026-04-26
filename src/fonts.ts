@@ -36,10 +36,13 @@
 // Inter Tight (sans, UI chrome). The variable wght axis covers 100–900 in a
 // single ~30 KB file (per subset), so we don't load three separate weight
 // files for 400 / 500 / 600. Family alias is "Inter Tight Variable" (see the
-// `--sans` declaration in styles.css). No subset-specific entry exists for
-// the variable build, so we accept the wght.css index — unused subsets are
-// still gated by `unicode-range` and never download at runtime.
-import "@fontsource-variable/inter-tight/wght.css";
+// `--sans` declaration in styles.css). `@fontsource-variable/inter-tight` only
+// exposes a combined `wght.css` (no per-subset CSS files for variable fonts),
+// which would drag every subset's .woff2 into dist; instead we import a
+// hand-rolled `fonts.css` that defines @font-face for just `latin` and
+// `latin-ext`. See `fonts.css` for the rationale and the unicode-range
+// tables copied from upstream so runtime gating stays identical.
+import "./fonts.css";
 
 // Newsreader (serif, note bodies + parchment headings). 400 + 500 in upright
 // and italic — matches the previous Google Fonts URL exactly.

@@ -2,11 +2,47 @@ import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { FontaineTransform } from "fontaine";
 
 import { buildPwaManifest } from "./src/lib/pwa-manifest";
+
+/**
+ * Strip legacy `.woff` fallback entries from `@fontsource*` CSS at transform
+ * time, so Vite never sees the URL and never copies the binary into
+ * `dist/assets/`. The packages declare each face as
+ *
+ *     src: url(./files/...woff2) format('woff2'),
+ *          url(./files/...woff)  format('woff');
+ *
+ * which `format()` lets every browser we target (per AGENTS.md / package.json
+ * — modern-only, ES2023) resolve to the woff2 entry. The `.woff` half is
+ * structurally dead code: no client ever requests it, but Vite still emits
+ * it because the URL appears in the CSS source. The regex drops the trailing
+ * `, url(...woff) format('woff')` segment, leaving a single-source `src:`.
+ *
+ * Scoped to `node_modules/@fontsource` ids so we never accidentally rewrite
+ * project-authored CSS, and skipped outside `command === 'build'` because
+ * the dev server doesn't preemptively bundle assets — there's nothing to
+ * trim and the regex would just burn time on every CSS module load.
+ */
+function stripFontsourceWoffFallbacks(): Plugin {
+  const WOFF_FALLBACK = /,\s*url\([^)]*\.woff\)\s*format\(['"]woff['"]\)/g;
+  return {
+    name: "sutrapad:strip-fontsource-woff-fallbacks",
+    apply: "build",
+    enforce: "pre",
+    transform(code, id) {
+      if (!id.includes("/@fontsource") || !id.endsWith(".css")) return null;
+      if (!WOFF_FALLBACK.test(code)) return null;
+      // `RegExp` with the `g` flag carries `lastIndex` across calls, so reset
+      // before doing the replacement on the same instance.
+      WOFF_FALLBACK.lastIndex = 0;
+      return { code: code.replace(WOFF_FALLBACK, ""), map: null };
+    },
+  };
+}
 
 export default defineConfig(({ command, mode }) => {
   const isBuild = command === "build";
@@ -49,6 +85,9 @@ export default defineConfig(({ command, mode }) => {
       __APP_COMMIT_HASH__: JSON.stringify(commitHash),
     },
     plugins: [
+      // Run the woff-fallback strip first so Fontaine and the rest of the
+      // pipeline see the trimmed `src:` declarations.
+      stripFontsourceWoffFallbacks(),
       // Fontaine generates metric-matched fallback @font-face declarations for
       // each web font we ship via @fontsource (see `src/fonts.ts`). Until the
       // .woff2 arrives the user's browser renders text in the local fallback
