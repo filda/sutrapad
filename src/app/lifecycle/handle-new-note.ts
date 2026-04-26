@@ -12,6 +12,10 @@
  */
 import { applyFreshNoteDetails } from "../capture/apply-fresh-note-details";
 import { generateFreshNoteDetails } from "../capture/fresh-note";
+import {
+  isLocationCaptureEnabled,
+  type CaptureLocationPreference,
+} from "../logic/capture-location";
 import { buildNoteMetadata } from "../logic/note-metadata";
 import {
   createNewNoteWorkspace,
@@ -35,6 +39,16 @@ export interface NewNoteHandlerOptions {
   persistWorkspace: (workspace: SutraPadWorkspace) => void;
   scheduleAutoSave: () => void;
   refreshNotesPanel: () => void;
+  /**
+   * Reads the live capture-location preference. Called at the moment
+   * the async backfill kicks off (not at handler-construction time)
+   * so toggling the Settings switch takes effect on the very next
+   * `+ Add`. When `"off"`, the geolocation prompt is suppressed —
+   * `generateFreshNoteDetails` is run with a no-op coordinates
+   * resolver so the rest of the title / capture-context backfill
+   * still happens, just without a place label.
+   */
+  getCaptureLocationPreference: () => CaptureLocationPreference;
 }
 
 export function handleNewNoteCreation({
@@ -49,6 +63,7 @@ export function handleNewNoteCreation({
   persistWorkspace,
   scheduleAutoSave,
   refreshNotesPanel,
+  getCaptureLocationPreference,
 }: NewNoteHandlerOptions): void {
   const nextWorkspace = createNewNoteWorkspace(getWorkspace());
   persistWorkspace(nextWorkspace);
@@ -60,10 +75,26 @@ export function handleNewNoteCreation({
   setLastError("");
   if (!newNoteId) return;
 
+  // Read the preference now (rather than on every coords call) so a
+  // race-y mid-flight toggle doesn't half-fire one prompt and skip
+  // another inside the same backfill. The async closure below sees
+  // a stable snapshot.
+  const locationCaptureEnabled = isLocationCaptureEnabled(
+    getCaptureLocationPreference(),
+  );
+
   void (async () => {
     let details: Awaited<ReturnType<typeof generateFreshNoteDetails>>;
     try {
-      details = await generateFreshNoteDetails();
+      details = locationCaptureEnabled
+        ? await generateFreshNoteDetails()
+        : // Suppress the geolocation prompt entirely by replacing the
+          // coords resolver with a `null` returner. `generateFreshNoteDetails`
+          // already handles that path: no coords → no reverse-geocode →
+          // no `location` field → captureContext built without coordinates.
+          // The note still gets a prettified time-of-day title, just no
+          // place label.
+          await generateFreshNoteDetails(undefined, async () => null);
     } catch (error) {
       // Geolocation / reverse-geocoding / capture-context probes can
       // all reject (denied permission, network, AbortController

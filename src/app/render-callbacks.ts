@@ -35,6 +35,7 @@ import type { NotesViewMode } from "./logic/notes-view";
 import type { LinksViewMode } from "./logic/links-view";
 import type { ThemeChoice } from "./logic/theme";
 import type { PersonaPreference } from "./logic/persona";
+import type { CaptureLocationPreference } from "./logic/capture-location";
 import type { TagClassId } from "./logic/tag-class";
 import { toggleTagClassVisibility } from "./logic/visible-tag-classes";
 import {
@@ -92,6 +93,7 @@ export interface RenderCallbackOptions {
   setRecentTagFilters: (next: readonly string[]) => void;
   setCurrentTheme: (theme: ThemeChoice) => void;
   setPersonaPreference: (preference: PersonaPreference) => void;
+  setCaptureLocationPreference: (preference: CaptureLocationPreference) => void;
   handleNewNote: () => void;
   /**
    * Discards the active note if it's an empty draft (user hit "+ Add"
@@ -143,6 +145,7 @@ export function createRenderCallbacks({
   setRecentTagFilters,
   setCurrentTheme,
   setPersonaPreference,
+  setCaptureLocationPreference,
   handleNewNote,
   purgeEmptyDraftNotes,
   loadWorkspace,
@@ -216,6 +219,8 @@ export function createRenderCallbacks({
     onChangeTheme: (choice: ThemeChoice) => setCurrentTheme(choice),
     onChangePersonaPreference: (preference: PersonaPreference) =>
       setPersonaPreference(preference),
+    onChangeCaptureLocationPreference: (preference: CaptureLocationPreference) =>
+      setCaptureLocationPreference(preference),
     onSelectMenuItem: (id: MenuItemId) => {
       if (isMenuActionItemId(id)) {
         handleNewNote();

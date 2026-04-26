@@ -63,6 +63,11 @@ import {
   resolveInitialPersonaPreference,
   type PersonaPreference,
 } from "./logic/persona";
+import {
+  persistCaptureLocationPreference,
+  resolveInitialCaptureLocationPreference,
+  type CaptureLocationPreference,
+} from "./logic/capture-location";
 import type { TagClassId } from "./logic/tag-class";
 import {
   persistVisibleTagClasses,
@@ -96,6 +101,7 @@ export interface AppStateStore {
   readonly linksViewMode$: Atom<LinksViewMode>;
   readonly currentTheme$: Atom<ThemeChoice>;
   readonly personaPreference$: Atom<PersonaPreference>;
+  readonly captureLocationPreference$: Atom<CaptureLocationPreference>;
   readonly tasksFilter$: Atom<TasksFilterId>;
   readonly tasksShowDone$: Atom<boolean>;
   readonly tasksOneThingKey$: Atom<string | null>;
@@ -121,6 +127,7 @@ export interface AppStateStore {
   setLinksViewMode(next: LinksViewMode): void;
   setCurrentTheme(next: ThemeChoice): void;
   setPersonaPreference(next: PersonaPreference): void;
+  setCaptureLocationPreference(next: CaptureLocationPreference): void;
   setTasksFilter(next: TasksFilterId): void;
   setTasksShowDone(next: boolean): void;
   setTasksOneThingKey(next: string | null): void;
@@ -194,6 +201,9 @@ export function createAppStateStore({
   const personaPreference$ = atom<PersonaPreference>(
     resolveInitialPersonaPreference(),
   );
+  const captureLocationPreference$ = atom<CaptureLocationPreference>(
+    resolveInitialCaptureLocationPreference(),
+  );
   const tasksFilter$ = atom<TasksFilterId>("all");
   const tasksShowDone$ = atom(false);
   const tasksOneThingKey$ = atom<string | null>(null);
@@ -224,6 +234,7 @@ export function createAppStateStore({
       applyThemeChoice(choice);
     }),
     personaPreference$.subscribe(persistPersonaPreference),
+    captureLocationPreference$.subscribe(persistCaptureLocationPreference),
   ];
 
   return {
@@ -241,6 +252,7 @@ export function createAppStateStore({
     linksViewMode$,
     currentTheme$,
     personaPreference$,
+    captureLocationPreference$,
     tasksFilter$,
     tasksShowDone$,
     tasksOneThingKey$,
@@ -262,6 +274,8 @@ export function createAppStateStore({
     setLinksViewMode: (next) => linksViewMode$.set(next),
     setCurrentTheme: (next) => currentTheme$.set(next),
     setPersonaPreference: (next) => personaPreference$.set(next),
+    setCaptureLocationPreference: (next) =>
+      captureLocationPreference$.set(next),
     setTasksFilter: (next) => tasksFilter$.set(next),
     setTasksShowDone: (next) => tasksShowDone$.set(next),
     setTasksOneThingKey: (next) => tasksOneThingKey$.set(next),
@@ -293,6 +307,7 @@ export function createAppStateStore({
       recentTagFilters$,
       currentTheme$,
       personaPreference$,
+      captureLocationPreference$,
     ],
     dispose: () => {
       for (const off of disposers) off();

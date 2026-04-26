@@ -154,6 +154,7 @@ export function createApp(root: HTMLElement): void {
     linksViewMode$,
     currentTheme$,
     personaPreference$,
+    captureLocationPreference$,
     tasksFilter$,
     tasksShowDone$,
     tasksOneThingKey$,
@@ -176,6 +177,7 @@ export function createApp(root: HTMLElement): void {
   const setLinksViewModeState = store.setLinksViewMode;
   const setCurrentThemeState = store.setCurrentTheme;
   const setPersonaPreferenceState = store.setPersonaPreference;
+  const setCaptureLocationPreferenceState = store.setCaptureLocationPreference;
   const setTasksFilterState = store.setTasksFilter;
   const setTasksShowDoneState = store.setTasksShowDone;
   const setTasksOneThingKeyState = store.setTasksOneThingKey;
@@ -332,6 +334,10 @@ export function createApp(root: HTMLElement): void {
       persistWorkspace: persistLocalWorkspace,
       scheduleAutoSave,
       refreshNotesPanel,
+      // Read the latest preference at call time (not at createApp
+      // start) so toggling Settings → Privacy → "Capture location"
+      // takes effect on the very next `+ Add` without a reload.
+      getCaptureLocationPreference: () => captureLocationPreference$.get(),
     });
   };
 
@@ -522,6 +528,7 @@ export function createApp(root: HTMLElement): void {
         setRecentTagFilters: setRecentTagFiltersState,
         setCurrentTheme: setCurrentThemeState,
         setPersonaPreference: setPersonaPreferenceState,
+        setCaptureLocationPreference: setCaptureLocationPreferenceState,
         handleNewNote,
         purgeEmptyDraftNotes,
         loadWorkspace,
@@ -569,6 +576,7 @@ export function createApp(root: HTMLElement): void {
         recentTagFilters: recentTagFilters$.get(),
         currentTheme: currentTheme$.get(),
         personaPreference: personaPreference$.get(),
+        captureLocationPreference: captureLocationPreference$.get(),
         onOpenPalette: () => paletteAccess$.get()?.open(),
         ...callbacks,
       });

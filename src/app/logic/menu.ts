@@ -6,7 +6,8 @@ export type MenuItemId =
   | "tags"
   | "tasks"
   | "capture"
-  | "settings";
+  | "settings"
+  | "privacy";
 
 export interface MenuItem {
   id: MenuItemId;
@@ -37,12 +38,17 @@ export const DEFAULT_MENU_ITEM: MenuItemId = "notes";
 
 /**
  * Ids reachable via `onSelectMenuItem` but not rendered in the primary nav.
- * Capture and Settings both live in the topbar-actions cluster (chip + gear)
- * per handoff v2, so they don't appear in `MENU_ITEMS` — but they still need
- * to be accepted by `isMenuItemId` so routing + persisted-last-page paths
- * don't drop them.
+ * Capture and Settings live in the topbar-actions cluster (chip + gear)
+ * per handoff v2; Privacy is reached only from the footer link or the
+ * Settings → Privacy card (it's a long-form static page, not a daily
+ * destination). All three still need to round-trip through the routing
+ * layer so deep-links and the persisted last-page path don't drop them.
  */
-const OFF_NAV_MENU_ITEM_IDS: readonly MenuItemId[] = ["capture", "settings"];
+const OFF_NAV_MENU_ITEM_IDS: readonly MenuItemId[] = [
+  "capture",
+  "settings",
+  "privacy",
+];
 
 const ALL_MENU_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>([
   HOME_MENU_ITEM.id,
@@ -74,20 +80,24 @@ export function isMenuActionItemId(id: MenuItemId): boolean {
 }
 
 /**
- * Labels for ids that exist but aren't rendered in the primary nav (Capture,
- * Settings). Keeps `getMenuItemLabel` lookup-complete so placeholder pages
- * and aria-labels don't fall through to the raw id string.
+ * Labels for ids that exist but aren't rendered in the primary nav
+ * (Capture, Settings, Privacy). Keeps `getMenuItemLabel` lookup-complete
+ * so placeholder pages and aria-labels don't fall through to the raw id
+ * string.
  */
-const OFF_NAV_MENU_ITEM_LABELS: Readonly<Record<"capture" | "settings", string>> = {
+const OFF_NAV_MENU_ITEM_LABELS: Readonly<
+  Record<"capture" | "settings" | "privacy", string>
+> = {
   capture: "Capture",
   settings: "Settings",
+  privacy: "Privacy",
 };
 
 export function getMenuItemLabel(id: MenuItemId): string {
   if (id === HOME_MENU_ITEM.id) return HOME_MENU_ITEM.label;
   const match = MENU_ITEMS.find((item) => item.id === id);
   if (match) return match.label;
-  if (id === "capture" || id === "settings") {
+  if (id === "capture" || id === "settings" || id === "privacy") {
     return OFF_NAV_MENU_ITEM_LABELS[id];
   }
   return id;

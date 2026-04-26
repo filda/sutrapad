@@ -1,4 +1,8 @@
 import type { UserProfile } from "../../../types";
+import {
+  type CaptureLocationPreference,
+} from "../../logic/capture-location";
+import { type MenuItemId } from "../../logic/menu";
 import { type PersonaPreference } from "../../logic/persona";
 import type { AliasSuggestion } from "../../logic/tag-aliases";
 import { THEMES, type ThemeChoice } from "../../logic/theme";
@@ -7,6 +11,12 @@ import { buildTagPill } from "../shared/tag-pill";
 export interface SettingsPageOptions {
   currentTheme: ThemeChoice;
   personaPreference: PersonaPreference;
+  /**
+   * Whether `+ Add` is allowed to call `getCurrentPosition` on note
+   * creation. Default off; user opts in via the toggle inside the
+   * Privacy card.
+   */
+  captureLocationPreference: CaptureLocationPreference;
   profile: UserProfile | null;
   /**
    * Deduplication suggestions computed over the current workspace, with
@@ -16,6 +26,9 @@ export interface SettingsPageOptions {
   tagAliasSuggestions: readonly AliasSuggestion[];
   onChangeTheme: (choice: ThemeChoice) => void;
   onChangePersonaPreference: (preference: PersonaPreference) => void;
+  onChangeCaptureLocationPreference: (
+    preference: CaptureLocationPreference,
+  ) => void;
   onLoadNotebook: () => void;
   onSaveNotebook: () => void;
   onSignIn: () => void;
@@ -23,6 +36,12 @@ export interface SettingsPageOptions {
   onMergeTagAlias: (from: string, to: string) => void;
   /** Marks the canonical↔alias pair as "keep separate" so future renders skip it. */
   onDismissTagAlias: (canonical: string, alias: string) => void;
+  /**
+   * Routing callback. Used by the Privacy card's "Read full policy"
+   * link — same plumbing the topbar / footer already share, so
+   * static-page navigation never invents its own primitive.
+   */
+  onSelectMenuItem: (id: MenuItemId) => void;
 }
 
 /**
@@ -35,15 +54,18 @@ export interface SettingsPageOptions {
 export function buildSettingsPage({
   currentTheme,
   personaPreference,
+  captureLocationPreference,
   profile,
   tagAliasSuggestions,
   onChangeTheme,
   onChangePersonaPreference,
+  onChangeCaptureLocationPreference,
   onLoadNotebook,
   onSaveNotebook,
   onSignIn,
   onMergeTagAlias,
   onDismissTagAlias,
+  onSelectMenuItem,
 }: SettingsPageOptions): HTMLElement {
   const page = document.createElement("section");
   page.className = "settings-page";
@@ -62,8 +84,152 @@ export function buildSettingsPage({
   page.append(
     buildBackupCard({ profile, onLoadNotebook, onSaveNotebook, onSignIn }),
   );
+  page.append(
+    buildPrivacyCard({
+      captureLocationPreference,
+      onChangeCaptureLocationPreference,
+      onSelectMenuItem,
+    }),
+  );
 
   return page;
+}
+
+interface PrivacyCardOptions {
+  captureLocationPreference: CaptureLocationPreference;
+  onChangeCaptureLocationPreference: (
+    preference: CaptureLocationPreference,
+  ) => void;
+  onSelectMenuItem: (id: MenuItemId) => void;
+}
+
+/**
+ * Privacy controls + pointer to the full disclosure page. Today this
+ * card hosts a single in-page control — the location-capture toggle,
+ * which gates the geolocation prompt that used to fire silently on
+ * `+ Add`. Future privacy-shaped controls (analytics opt-out, etc.)
+ * slot in alongside as additional toggle groups inside this card,
+ * which keeps "the privacy switches" clustered visually.
+ *
+ * The "Read the full Privacy page" link routes via the same
+ * `onSelectMenuItem` plumbing as the topbar / footer — the long-form
+ * page lives in `privacy-page.ts` (single source of truth, two entry
+ * points: this card and the footer link).
+ */
+function buildPrivacyCard({
+  captureLocationPreference,
+  onChangeCaptureLocationPreference,
+  onSelectMenuItem,
+}: PrivacyCardOptions): HTMLElement {
+  const card = document.createElement("section");
+  card.className = "settings-card settings-card-privacy";
+
+  const heading = document.createElement("h3");
+  heading.textContent = "Privacy";
+  card.append(heading);
+
+  const summary = document.createElement("p");
+  summary.textContent =
+    "SutraPad runs in your browser and keeps your notes in your own Google Drive. The app talks to Google Identity, Google Drive, Nominatim (location labels) and Open-Meteo (weather context) directly from your browser when those features are used.";
+  card.append(summary);
+
+  card.append(
+    buildLocationCaptureToggle({
+      captureLocationPreference,
+      onChangeCaptureLocationPreference,
+    }),
+  );
+
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "is-link settings-card-privacy-link";
+  link.textContent = "Read the full Privacy page →";
+  link.addEventListener("click", () => onSelectMenuItem("privacy"));
+  card.append(link);
+
+  return card;
+}
+
+interface LocationCaptureToggleOptions {
+  captureLocationPreference: CaptureLocationPreference;
+  onChangeCaptureLocationPreference: (
+    preference: CaptureLocationPreference,
+  ) => void;
+}
+
+/**
+ * Radio-group toggle for the location-capture preference. Mirrors the
+ * Persona card's two-button toggle so the visual language stays
+ * consistent. Default ships off — the geolocation prompt should only
+ * fire after the user deliberately switches the toggle on, not as a
+ * side effect of clicking `+ Add` for the first time.
+ */
+function buildLocationCaptureToggle({
+  captureLocationPreference,
+  onChangeCaptureLocationPreference,
+}: LocationCaptureToggleOptions): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "settings-card-privacy-toggle";
+
+  const label = document.createElement("p");
+  label.className = "settings-card-subheading";
+  label.textContent = "Capture location on new notes";
+  wrapper.append(label);
+
+  const hint = document.createElement("p");
+  hint.className = "settings-card-hint";
+  hint.textContent =
+    "When on, creating a new note asks the browser for your current location and adds a place label. When off (default), the geolocation prompt is skipped and no coordinates are recorded for new notes. Existing notes keep whatever location they already have.";
+  wrapper.append(hint);
+
+  const group = document.createElement("div");
+  group.className = "persona-toggle";
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", "Capture location on new notes");
+
+  const options: ReadonlyArray<{
+    value: CaptureLocationPreference;
+    label: string;
+    description: string;
+  }> = [
+    {
+      value: "off",
+      label: "Off",
+      description: "Don't ask for location.",
+    },
+    {
+      value: "on",
+      label: "On",
+      description: "Ask for location and add a place label.",
+    },
+  ];
+
+  for (const option of options) {
+    const isSelected = option.value === captureLocationPreference;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `persona-toggle-option${isSelected ? " is-active" : ""}`;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", isSelected ? "true" : "false");
+    button.setAttribute("data-capture-location-preference", option.value);
+
+    const optionLabel = document.createElement("span");
+    optionLabel.className = "persona-toggle-label";
+    optionLabel.textContent = option.label;
+
+    const optionDescription = document.createElement("span");
+    optionDescription.className = "persona-toggle-description";
+    optionDescription.textContent = option.description;
+
+    button.append(optionLabel, optionDescription);
+    button.addEventListener("click", () =>
+      onChangeCaptureLocationPreference(option.value),
+    );
+    group.append(button);
+  }
+
+  wrapper.append(group);
+  return wrapper;
 }
 
 interface AppearanceCardOptions {

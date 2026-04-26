@@ -53,6 +53,10 @@ describe("menu items", () => {
     expect(MENU_ITEMS.some((item) => item.id === "capture")).toBe(false);
     expect(MENU_ITEMS.some((item) => item.id === "settings")).toBe(false);
   });
+
+  it("keeps privacy out of the primary nav (footer-link only — long-form static page, not a daily destination)", () => {
+    expect(MENU_ITEMS.some((item) => item.id === "privacy")).toBe(false);
+  });
 });
 
 describe("isMenuItemId", () => {
@@ -70,6 +74,10 @@ describe("isMenuItemId", () => {
   it("still accepts capture + settings ids (routable via topbar-actions)", () => {
     expect(isMenuItemId("capture")).toBe(true);
     expect(isMenuItemId("settings")).toBe(true);
+  });
+
+  it("accepts the privacy id (routable via footer link / Settings card)", () => {
+    expect(isMenuItemId("privacy")).toBe(true);
   });
 
   it("rejects unknown values", () => {
@@ -91,6 +99,7 @@ describe("getMenuItemLabel", () => {
     expect(getMenuItemLabel("tasks")).toBe("Tasks");
     expect(getMenuItemLabel("capture")).toBe("Capture");
     expect(getMenuItemLabel("settings")).toBe("Settings");
+    expect(getMenuItemLabel("privacy")).toBe("Privacy");
   });
 });
 
@@ -108,6 +117,7 @@ describe("isMenuActionItemId", () => {
       "tasks",
       "capture",
       "settings",
+      "privacy",
     ];
     for (const id of pageIds) {
       expect(isMenuActionItemId(id)).toBe(false);

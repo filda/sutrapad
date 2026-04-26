@@ -8,6 +8,7 @@ import {
   isPersonaEnabled,
   type PersonaPreference,
 } from "../logic/persona";
+import type { CaptureLocationPreference } from "../logic/capture-location";
 import type { TagClassId } from "../logic/tag-class";
 import { suggestTagAliases } from "../logic/tag-aliases";
 import type { TasksFilterId } from "../logic/tasks-filter";
@@ -24,6 +25,7 @@ import { buildTasksPage } from "./pages/tasks-page";
 import { buildNotesPanel, type NotesPanelOptions } from "./pages/notes-page";
 import { buildPagePlaceholder } from "./pages/placeholder-page";
 import { buildSettingsPage } from "./pages/settings-page";
+import { buildPrivacyPage } from "./pages/privacy-page";
 import { buildDetailTopbar } from "./shared/detail-topbar";
 import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
 import { buildEditorSidebar } from "./shared/editor-sidebar";
@@ -59,6 +61,13 @@ interface RenderAppOptions
    * rotation, stickers, and patina. When "off", the flat card style runs.
    */
   personaPreference: PersonaPreference;
+  /**
+   * Whether `+ Add` (and other fresh-note paths) is allowed to call
+   * `getCurrentPosition` to enrich the new note with a place label.
+   * Device-local, default off so the geolocation prompt only appears
+   * after a deliberate opt-in via Settings → Privacy.
+   */
+  captureLocationPreference: CaptureLocationPreference;
   onSelectMenuItem: (id: MenuItemId) => void;
   onSignIn: () => void;
   onLoadNotebook: () => void;
@@ -68,6 +77,9 @@ interface RenderAppOptions
   onToggleTask: (noteId: string, lineIndex: number) => void;
   onChangeTheme: (choice: ThemeChoice) => void;
   onChangePersonaPreference: (preference: PersonaPreference) => void;
+  onChangeCaptureLocationPreference: (
+    preference: CaptureLocationPreference,
+  ) => void;
   onChangeFilterMode: (mode: SutraPadTagFilterMode) => void;
   /**
    * Removes a single active filter — hooked up to the `×` affordance inside
@@ -179,7 +191,10 @@ interface RenderAppOptions
  * Keeping zero interpolated-innerHTML in the repo means a single
  * grep is enough to audit the entire view layer.
  */
-function buildFooter(buildStamp: string): HTMLElement {
+function buildFooter(
+  buildStamp: string,
+  onSelectMenuItem: (id: MenuItemId) => void,
+): HTMLElement {
   const footer = document.createElement("footer");
   footer.className = "footer";
 
@@ -201,11 +216,27 @@ function buildFooter(buildStamp: string): HTMLElement {
   nominatimLink.textContent = "Nominatim";
   description.append(nominatimLink, ".");
 
+  // Small in-app static-page link cluster. Today only Privacy lives
+  // here; the wrapping nav makes it easy to slot future static pages
+  // (Help, About, Terms, Changelog) alongside without restructuring
+  // the footer markup each time. `is-link` re-uses the existing button-
+  // as-link styling that brand / nav-tab / detail-back already share.
+  const staticLinks = document.createElement("nav");
+  staticLinks.className = "footer-links";
+  staticLinks.setAttribute("aria-label", "Site information");
+
+  const privacyLink = document.createElement("button");
+  privacyLink.type = "button";
+  privacyLink.className = "is-link footer-link";
+  privacyLink.textContent = "Privacy";
+  privacyLink.addEventListener("click", () => onSelectMenuItem("privacy"));
+  staticLinks.append(privacyLink);
+
   const stamp = document.createElement("p");
   stamp.className = "build-stamp";
   stamp.textContent = buildStamp;
 
-  footer.append(description, stamp);
+  footer.append(description, staticLinks, stamp);
   return footer;
 }
 
@@ -246,10 +277,12 @@ export function renderAppPage({
   detailNoteId,
   currentTheme,
   personaPreference,
+  captureLocationPreference,
   onSelectMenuItem,
   onToggleTask,
   onChangeTheme,
   onChangePersonaPreference,
+  onChangeCaptureLocationPreference,
   onOpenPalette,
   onApplyTagFilter,
   onOpenCapture,
@@ -336,7 +369,7 @@ export function renderAppPage({
   const page = document.createElement("main");
   page.className = "page";
 
-  const footer = buildFooter(buildStamp);
+  const footer = buildFooter(buildStamp, onSelectMenuItem);
 
   // Tail applied to every render path: footer → page → root → FAB (last, so
   // the FAB paints above page content on mobile without a z-index war with
@@ -436,17 +469,22 @@ export function renderAppPage({
         buildSettingsPage({
           currentTheme,
           personaPreference,
+          captureLocationPreference,
           profile,
           tagAliasSuggestions,
           onChangeTheme,
           onChangePersonaPreference,
+          onChangeCaptureLocationPreference,
           onLoadNotebook,
           onSaveNotebook,
           onSignIn,
           onMergeTagAlias,
           onDismissTagAlias,
+          onSelectMenuItem,
         }),
       );
+    } else if (activeMenuItem === "privacy") {
+      page.append(buildPrivacyPage({ onSelectMenuItem }));
     } else {
       page.append(buildPagePlaceholder(activeMenuItem));
     }

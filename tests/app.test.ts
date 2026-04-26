@@ -164,6 +164,9 @@ describe("active page location helpers", () => {
       expect(readActivePageFromLocation("https://example.com/home", "/")).toBe("home");
       expect(readActivePageFromLocation("https://example.com/links", "/")).toBe("links");
       expect(readActivePageFromLocation("https://example.com/settings", "/")).toBe("settings");
+      expect(readActivePageFromLocation("https://example.com/privacy", "/")).toBe(
+        "privacy",
+      );
     });
 
     it("writes non-default pages as a slug and strips the slug for the default page", () => {
