@@ -17,7 +17,7 @@
     "google": "readonly"
   },
   "rules": {
-    "no-console": "warn",
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
     "no-debugger": "error",
     "eqeqeq": ["error", "always", { "null": "ignore" }],
     "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],

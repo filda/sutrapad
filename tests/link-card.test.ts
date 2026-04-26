@@ -128,17 +128,18 @@ describe("buildLinkCardDescription", () => {
   it("truncates long bodies with an ellipsis at the caller-specified max", () => {
     const body = "a".repeat(200);
     const result = buildLinkCardDescription(body, "https://unused.com", 50);
-    expect(result).not.toBeNull();
+    if (result === null) throw new Error("expected non-null result");
     // Length <= max; ends with the single ellipsis char.
-    expect(result!.length).toBeLessThanOrEqual(50);
-    expect(result!.endsWith("\u2026")).toBe(true);
+    expect(result.length).toBeLessThanOrEqual(50);
+    expect(result.endsWith("\u2026")).toBe(true);
   });
 
   it("leaves short bodies untruncated (no trailing ellipsis)", () => {
     const body = "A short paragraph.";
     const result = buildLinkCardDescription(body, "https://unused.com");
+    if (result === null) throw new Error("expected non-null result");
     expect(result).toBe("A short paragraph.");
-    expect(result!.endsWith("\u2026")).toBe(false);
+    expect(result.endsWith("\u2026")).toBe(false);
   });
 
   it("does not truncate when the body is exactly at the max-char budget", () => {
@@ -147,9 +148,10 @@ describe("buildLinkCardDescription", () => {
     // limit would grow a phantom ellipsis.
     const body = "a".repeat(50);
     const result = buildLinkCardDescription(body, "https://unused.com", 50);
+    if (result === null) throw new Error("expected non-null result");
     expect(result).toBe(body);
-    expect(result!.length).toBe(50);
-    expect(result!.endsWith("\u2026")).toBe(false);
+    expect(result.length).toBe(50);
+    expect(result.endsWith("\u2026")).toBe(false);
   });
 
   it("trims leading and trailing whitespace from the result", () => {
@@ -166,7 +168,8 @@ describe("buildLinkCardDescription", () => {
     // budget; changing it silently would reflow the whole Links grid.
     const body = "a".repeat(200);
     const result = buildLinkCardDescription(body, "https://unused.com");
-    expect(result!.length).toBeLessThanOrEqual(160);
-    expect(result!.length).toBe(160);
+    if (result === null) throw new Error("expected non-null result");
+    expect(result.length).toBeLessThanOrEqual(160);
+    expect(result.length).toBe(160);
   });
 });

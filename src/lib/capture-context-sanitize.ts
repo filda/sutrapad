@@ -68,6 +68,31 @@ const VALID_DEVICE_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Narrows an unknown to one of the enumerated capture-source literals,
+ * dropping anything else (wrong type, unknown literal). Hoisted out of
+ * `sanitizeCaptureContext` to keep that function under the cyclomatic
+ * complexity budget.
+ */
+function sanitizeSource(value: unknown): SutraPadCaptureSource | undefined {
+  if (typeof value !== "string") return undefined;
+  if (!VALID_SOURCES.has(value)) return undefined;
+  return value as SutraPadCaptureSource;
+}
+
+/**
+ * Narrows an unknown to a known device-type literal. Same rationale as
+ * `sanitizeSource` — keeping the field-by-field assembly in
+ * `sanitizeCaptureContext` flat.
+ */
+function sanitizeDeviceType(
+  value: unknown,
+): SutraPadCaptureContext["deviceType"] | undefined {
+  if (typeof value !== "string") return undefined;
+  if (!VALID_DEVICE_TYPES.has(value)) return undefined;
+  return value as SutraPadCaptureContext["deviceType"];
+}
+
+/**
  * Trims and clamps a candidate to a finite-length string. Returns
  * `undefined` for non-strings, `null`, blanks, and after-trim empties
  * — every consumer in `auto-tags.ts` expects "absent or non-empty".
@@ -279,9 +304,8 @@ export function sanitizeCaptureContext(
 
   const result: Partial<SutraPadCaptureContext> = {};
 
-  if (typeof r.source === "string" && VALID_SOURCES.has(r.source)) {
-    result.source = r.source as SutraPadCaptureSource;
-  }
+  const source = sanitizeSource(r.source);
+  if (source !== undefined) result.source = source;
 
   const timezone = clampString(r.timezone, STRING_BUDGETS.medium);
   if (timezone !== undefined) result.timezone = timezone;
@@ -301,9 +325,8 @@ export function sanitizeCaptureContext(
   const referrer = clampHttpUrl(r.referrer);
   if (referrer !== undefined) result.referrer = referrer;
 
-  if (typeof r.deviceType === "string" && VALID_DEVICE_TYPES.has(r.deviceType)) {
-    result.deviceType = r.deviceType as SutraPadCaptureContext["deviceType"];
-  }
+  const deviceType = sanitizeDeviceType(r.deviceType);
+  if (deviceType !== undefined) result.deviceType = deviceType;
 
   const os = clampString(r.os, STRING_BUDGETS.short);
   if (os !== undefined) result.os = os;

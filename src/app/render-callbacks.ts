@@ -16,7 +16,7 @@
  * additional side-effect alongside the mutation (autosave schedule,
  * URL location sync).
  */
-import { GoogleAuthService } from "../services/google-auth";
+import type { GoogleAuthService } from "../services/google-auth";
 import { buildBookmarklet } from "../lib/bookmarklet";
 import {
   extractUrlsFromText,

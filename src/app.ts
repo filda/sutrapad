@@ -19,13 +19,8 @@ import {
   syncViewToLocation,
 } from "./app/sync-helpers";
 import { runAppBootstrap } from "./app/session/session";
-import { withAuthRetry, type AuthRetryContext } from "./app/session/auth-retry";
-import {
-  runWorkspaceLoad,
-  runWorkspaceRestoreAfterSignIn,
-  runWorkspaceSave,
-  type SaveMode,
-} from "./app/session/workspace-sync";
+import type { AuthRetryContext } from "./app/session/auth-retry";
+import { createWorkspaceIO } from "./app/session/workspace-io";
 import { persistLocalWorkspace } from "./app/storage/local-workspace";
 import { renderAppPage } from "./app/view/render-app";
 import { syncPillLabel } from "./app/view/chrome/topbar";
@@ -118,6 +113,19 @@ export { runWorkspaceSave } from "./app/session/workspace-sync";
 export type PaletteAccess = ExtractedPaletteAccess;
 
 
+// `createApp` is the application's composition root: it instantiates the
+// state-store, defines the closure-bound mutators that the
+// already-extracted helpers (`createRenderCallbacks`, `createWorkspaceIO`,
+// `wirePaletteAccess`, `wireKeyboardShortcuts`, `runAppBootstrap`, …)
+// need, and wires them together. Most other functions in the codebase
+// stay well under the 350-line `max-lines-per-function` budget; this one
+// legitimately exceeds it because every additional extraction would
+// surface a deps interface roughly the size of the extracted block, with
+// no readability win. Treat the disable as a per-function exception, not
+// a license to loosen the project-wide rule. If the function grows much
+// past ~450 lines, time to revisit (likely candidate: lift `render` to a
+// dedicated module behind an explicit `RenderContext`).
+// eslint-disable-next-line max-lines-per-function
 export function createApp(root: HTMLElement): void {
   const auth = new GoogleAuthService();
   const iosShortcutUrl = "https://www.icloud.com/shortcuts/969e1b627e4a46deae3c690ef0c9ca84";
@@ -567,57 +575,13 @@ export function createApp(root: HTMLElement): void {
     },
   };
 
-  const loadWorkspace = async (): Promise<void> =>
-    runWorkspaceLoad({
-      loadRemoteWorkspace: () =>
-        withAuthRetry(() => getStore().loadWorkspace(), retryContext),
-      setWorkspace: setWorkspaceState,
-      persistLocalWorkspace,
-      setSyncState: setSyncStateValue,
-      setLastError: setLastErrorValue,
-      render,
-      cancelAutoSave,
-    });
-
-  const restoreWorkspaceAfterSignIn = async (): Promise<void> =>
-    runWorkspaceRestoreAfterSignIn({
-      loadRemoteWorkspace: () =>
-        withAuthRetry(() => getStore().loadWorkspace(), retryContext),
-      saveRemoteWorkspace: (ws) =>
-        withAuthRetry(() => getStore().saveWorkspace(ws), retryContext),
+  const { loadWorkspace, saveWorkspace, restoreWorkspaceAfterSignIn } =
+    createWorkspaceIO({
+      getStore,
+      retryContext,
       getWorkspace: () => workspace$.get(),
       setWorkspace: setWorkspaceState,
       persistLocalWorkspace,
-      setSyncState: setSyncStateValue,
-      setLastError: setLastErrorValue,
-      render,
-      cancelAutoSave,
-    });
-
-  const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> =>
-    runWorkspaceSave(mode, {
-      persistLocalWorkspace: () => persistLocalWorkspace(workspace$.get()),
-      // Background autosave must not trigger the GIS silent-refresh iframe —
-      // on mobile it steals focus from the active <textarea> mid-keystroke.
-      // We forward the save mode into `withAuthRetry` so a 401 during autosave
-      // propagates unchanged (surfaces as syncState = "error") and waits for
-      // the user's next interactive save / load to drive the refresh.
-      //
-      // Strip empty drafts before the remote push so a note the user
-      // spawned-then-cleared doesn't land on Drive: e.g. user hits N,
-      // types one character (scheduling autosave), deletes it, and the
-      // 2-second timer fires before they click away. We only filter
-      // at the *remote* edge — the local copy is still there so the
-      // user can keep typing, and the next nav-away purge sweeps it
-      // normally.
-      saveRemoteWorkspace: () =>
-        withAuthRetry(
-          () => getStore().saveWorkspace(stripEmptyDraftNotes(workspace$.get())),
-          {
-            ...retryContext,
-            mode,
-          },
-        ),
       setSyncState: setSyncStateValue,
       setLastError: setLastErrorValue,
       render,

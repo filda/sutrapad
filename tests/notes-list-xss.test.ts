@@ -37,8 +37,8 @@ describe("buildNotesList — XSS guards", () => {
     // Any HTML interpretation would produce an <img>; textContent must be the literal string.
     expect(list.querySelectorAll("img")).toHaveLength(0);
     const item = list.querySelector(".note-list-item");
-    expect(item).not.toBeNull();
-    const strong = item!.querySelector("strong");
+    if (item === null) throw new Error("expected .note-list-item");
+    const strong = item.querySelector("strong");
     expect(strong?.textContent).toBe(malicious);
 
     // Belt-and-braces — the global side-effect of the onerror payload must not have fired.
@@ -73,10 +73,10 @@ describe("buildNotesList — XSS guards", () => {
     document.body.append(list);
 
     const chip = list.querySelector(".note-list-tasks");
-    expect(chip).not.toBeNull();
-    expect(chip!.classList.contains("is-all-done")).toBe(true);
+    if (chip === null) throw new Error("expected .note-list-tasks");
+    expect(chip.classList.contains("is-all-done")).toBe(true);
     // Chip is a single text-bearing span with no nested elements.
-    expect(chip!.children).toHaveLength(0);
+    expect(chip.children).toHaveLength(0);
 
     list.remove();
   });
