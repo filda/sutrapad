@@ -1,10 +1,16 @@
 /*
- * Google Fonts used exclusively by the "parchment" / "parchment-dark" themes
- * (redesign palette based on docs/design_handoff_sutrapad). `display=swap`
- * keeps first paint on the system-font fallback while the custom faces load
- * in the background, so switching to parchment never blocks rendering.
+ * Custom typeface @font-face rules are bundled in via `src/fonts.ts` (which
+ * is imported from `main.ts` ahead of this stylesheet) — see that file for
+ * subset / weight rationale. The fonts ship as @fontsource npm dependencies,
+ * so first paint never blocks on a third-party host and the strict CSP in
+ * `index.html` keeps `style-src 'self'` without an exception.
+ *
+ * Anti-skip: Fontaine (Vite plugin in `vite.config.ts`) generates
+ * metric-matched fallback @font-face rules using the local Georgia / Arial /
+ * Menlo metrics. Until the .woff2 arrives, the user sees the system fallback
+ * with adjusted size-adjust / ascent-override / descent-override so layout
+ * stays pixel-identical when the real face swaps in.
  */
-@import url("https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;1,400;1,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@400;600&display=swap");
 
 :root {
   color-scheme: light;
@@ -17,14 +23,28 @@
   -moz-osx-font-smoothing: grayscale;
 
   /*
-   * Font-family stacks used by the notebook persona decorator (when enabled).
-   * Declared at the base so every theme can opt in regardless of whether it
-   * redeclares the palette tokens — the persona stickers + paper rendering
-   * shouldn't depend on which theme happens to be active.
+   * Font-family stacks used by the notebook persona decorator (and most of
+   * the UI chrome since the parchment redesign). Declared at the base so
+   * every theme can opt in regardless of whether it redeclares the palette
+   * tokens — the persona stickers + paper rendering shouldn't depend on
+   * which theme happens to be active.
+   *
+   * Each stack threads the Fontaine-generated `<family> fallback` alias
+   * right after the real face. While the .woff2 is loading, browsers render
+   * in that fallback — but Fontaine has overridden its size-adjust /
+   * ascent-override / descent-override to match the loaded font's metrics,
+   * so the eventual swap is pixel-identical and layout doesn't reflow. The
+   * classic system fonts after that ("Cormorant Garamond", Georgia, …) are
+   * the deeper safety net for browsers that block our font for any reason.
+   *
+   * Caveat is intentionally without a Fontaine fallback (script handwriting
+   * has no proportionally similar system font; metric overrides on Comic
+   * Sans et al. would be more disruptive than a brief raw swap on the rare
+   * persona card that uses it).
    */
-  --serif: "Newsreader", "Cormorant Garamond", Georgia, serif;
-  --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --serif: "Newsreader", "Newsreader fallback", "Cormorant Garamond", Georgia, serif;
+  --sans: "Inter Tight Variable", "Inter Tight Variable fallback", "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", "JetBrains Mono fallback", ui-monospace, SFMono-Regular, Menlo, monospace;
   --handwritten: "Caveat", "Kalam", cursive;
 
   /*
@@ -285,7 +305,7 @@
 :root[data-theme="parchment"] {
   color-scheme: light;
   color: #1b1714;
-  font-family: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: "Inter Tight Variable", "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
   background: var(--app-bg);
   --app-bg:
     radial-gradient(1200px 700px at 85% -10%, rgba(196, 106, 58, 0.1), transparent 60%),
@@ -331,9 +351,23 @@
     0 1px 0 rgba(255, 255, 255, 0.6) inset,
     0 14px 36px -14px rgba(58, 44, 28, 0.22),
     0 2px 6px rgba(58, 44, 28, 0.08);
-  --serif: "Newsreader", "Cormorant Garamond", Georgia, serif;
-  --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /*
+   * Each stack threads the Fontaine-generated `<family> fallback` alias right
+   * after the real face. While the .woff2 is loading, browsers render in that
+   * fallback — but Fontaine has overridden its size-adjust / ascent-override
+   * / descent-override to match the loaded font's metrics, so the eventual
+   * swap is pixel-identical and layout doesn't reflow. The classic system
+   * fonts after that ("Cormorant Garamond", Georgia, …) are the deeper
+   * safety net for browsers that block our font for any reason.
+   *
+   * Caveat is intentionally without a Fontaine fallback (script handwriting
+   * has no proportionally similar system font; metric overrides on Comic Sans
+   * et al. would be more disruptive than a brief raw swap on the rare persona
+   * card that uses it).
+   */
+  --serif: "Newsreader", "Newsreader fallback", "Cormorant Garamond", Georgia, serif;
+  --sans: "Inter Tight Variable", "Inter Tight Variable fallback", "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", "JetBrains Mono fallback", ui-monospace, SFMono-Regular, Menlo, monospace;
   --handwritten: "Caveat", "Kalam", cursive;
 
   /* Warmer parchment-specific pill ramp from handoff tokens.css "parchment"
@@ -353,7 +387,7 @@
 :root[data-theme="parchment-dark"] {
   color-scheme: dark;
   color: #f1e8d7;
-  font-family: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: "Inter Tight Variable", "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
   background: var(--app-bg);
   --app-bg:
     radial-gradient(1200px 700px at 85% -10%, rgba(232, 154, 90, 0.12), transparent 60%),
@@ -399,9 +433,23 @@
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 18px 42px -20px rgba(0, 0, 0, 0.6),
     0 2px 6px rgba(0, 0, 0, 0.3);
-  --serif: "Newsreader", "Cormorant Garamond", Georgia, serif;
-  --sans: "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /*
+   * Each stack threads the Fontaine-generated `<family> fallback` alias right
+   * after the real face. While the .woff2 is loading, browsers render in that
+   * fallback — but Fontaine has overridden its size-adjust / ascent-override
+   * / descent-override to match the loaded font's metrics, so the eventual
+   * swap is pixel-identical and layout doesn't reflow. The classic system
+   * fonts after that ("Cormorant Garamond", Georgia, …) are the deeper
+   * safety net for browsers that block our font for any reason.
+   *
+   * Caveat is intentionally without a Fontaine fallback (script handwriting
+   * has no proportionally similar system font; metric overrides on Comic Sans
+   * et al. would be more disruptive than a brief raw swap on the rare persona
+   * card that uses it).
+   */
+  --serif: "Newsreader", "Newsreader fallback", "Cormorant Garamond", Georgia, serif;
+  --sans: "Inter Tight Variable", "Inter Tight Variable fallback", "Inter Tight", Inter, ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", "JetBrains Mono fallback", ui-monospace, SFMono-Regular, Menlo, monospace;
   --handwritten: "Caveat", "Kalam", cursive;
 
   /* Dark parchment pill ramp — deeper muted paper feel matches the warm

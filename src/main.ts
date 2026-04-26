@@ -1,4 +1,5 @@
 import { createApp } from "./app";
+import "./fonts";
 import "./styles.css";
 import { registerSW } from "virtual:pwa-register";
 import {

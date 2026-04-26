@@ -26,11 +26,18 @@
     "@types/node": "^24.6.1",
     "@vitest/coverage-istanbul": "^3.2.4",
     "@vitest/coverage-v8": "^3.2.4",
+    "fontaine": "^0.8.0",
     "happy-dom": "^20.9.0",
     "oxlint": "^1.60.0",
     "typescript": "^5.6.3",
     "vite": "^7.1.2",
     "vite-plugin-pwa": "^1.2.0",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter-tight": "^5.2.7",
+    "@fontsource/caveat": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/newsreader": "^5.2.10"
   }
 }

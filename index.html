@@ -29,6 +29,10 @@
           `accounts.google.com` separately under that origin.
         - `connect-src` lists every host we fetch from at runtime.
           Adding a new external API requires touching this list.
+        - `font-src 'self' data:` covers the self-hosted typefaces
+          bundled via @fontsource (see `src/fonts.ts`). No third-party
+          font hosts allowed — keeps Google Fonts (and similar) from
+          ever silently leaking visitor IPs out of an origin.
         - `img-src https:` for og:images is broad on purpose — link
           captures can come from any domain and we resolve their og
           thumbnails via allorigins; narrowing this would force a
