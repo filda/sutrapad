@@ -109,6 +109,7 @@ export function buildLinksPage({
 
   section.append(
     buildPageHeader({
+      pageId: "links",
       eyebrow: `Links · ${eyebrowCount}${eyebrowFilter}`,
       titleHtml: "A <em>library</em> of what caught your eye.",
       subtitle:

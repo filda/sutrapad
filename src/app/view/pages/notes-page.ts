@@ -180,6 +180,7 @@ function buildNotesPageHeader({
   const newNoteButton = buildNewNoteButton(onNewNote);
 
   return buildPageHeader({
+    pageId: "notes",
     eyebrow: `Notebook · ${countPart}${filterPart}`,
     titleHtml: "Your <em>notebook</em>.",
     subtitle:

@@ -496,6 +496,7 @@ export function buildTagsPage({
 
   section.append(
     buildPageHeader({
+      pageId: "tags",
       eyebrow: `Tags · ${fullIndex.tags.length} unique · ${noteCount} note${noteCount === 1 ? "" : "s"}`,
       titleHtml: "A <em>constellation</em> of what you think about.",
       subtitle:

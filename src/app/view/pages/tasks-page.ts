@@ -140,6 +140,7 @@ export function buildTasksPage(options: TasksPageOptions): HTMLElement {
 
   section.append(
     buildPageHeader({
+      pageId: "tasks",
       eyebrow: `Tasks · ${eyebrowCount}${eyebrowFilter}`,
       titleHtml: "Loose <em>threads</em>.",
       subtitle:

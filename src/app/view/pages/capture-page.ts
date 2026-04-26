@@ -49,6 +49,7 @@ export function buildCapturePage(options: CapturePageOptions): HTMLElement {
 
   section.append(
     buildPageHeader({
+      pageId: "capture",
       eyebrow: "Capture · Install",
       titleHtml: "Send anything into <em>SutraPad</em>.",
       subtitle:

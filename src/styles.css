@@ -3384,6 +3384,68 @@ button.tag-pill {
   line-height: 1.5;
 }
 
+/*
+ * The eyebrow is rendered as a <button class="page-eyebrow page-eyebrow-toggle">
+ * so it doubles as an expand/collapse control for the rest of the lockup.
+ * We strip the button's UA chrome (border/background/padding/font-family)
+ * but inherit the eyebrow's typography from `.page-eyebrow` above so the
+ * collapsed-state chip looks identical to the original static label —
+ * users who never click it shouldn't see any visual difference.
+ */
+.page-eyebrow-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 0;
+  /* Match the bottom margin from the original `<p class="page-eyebrow">` so
+   * the title's vertical position doesn't shift when the toggle button takes
+   * over the slot. UA buttons reset margin to 0; we re-apply the rhythm. */
+  margin: 0 0 6px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s ease;
+}
+
+.page-eyebrow-toggle:hover {
+  opacity: 0.72;
+}
+
+.page-eyebrow-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.page-eyebrow-chev {
+  display: inline-block;
+  flex: none;
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+
+/*
+ * Chevron rotates from "v" (intro showing — points down to indicate "more
+ * below would be reachable by collapsing") to ">" (collapsed — points right
+ * because the title is no longer below; clicking unfolds the lockup). Same
+ * affordance as `.tweak-segment` style accordions throughout the design.
+ */
+.page-header.is-collapsed .page-eyebrow-chev {
+  transform: rotate(-90deg);
+}
+
+/*
+ * Tighten the eyebrow's bottom margin when the title and subtitle are
+ * folded away — without this, the collapsed chip carries a 6px gap below
+ * itself for content that no longer exists. Keeps the page's vertical
+ * rhythm consistent whether the intro is showing or not.
+ */
+.page-header.is-collapsed .page-eyebrow-toggle {
+  margin-bottom: 0;
+}
+
 .page-header-actions {
   display: flex;
   gap: 10px;

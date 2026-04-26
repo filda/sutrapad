@@ -257,10 +257,16 @@ function buildHomeHeader(
   const newNoteButton = buildNewNoteButton(onNewNote);
 
   return buildPageHeader({
+    pageId: "home",
     eyebrow: formatHomeHeaderDate(now),
     titleHtml,
     subtitle,
     actions: newNoteButton,
+    // Greeting + counts change daily — the lockup carries live information,
+    // not onboarding chrome, so it shouldn't quietly fade out after ten
+    // visits like the static page intros do. The eyebrow toggle still
+    // works for users who'd rather see only the date strip.
+    noAutoFade: true,
   });
 }
 
