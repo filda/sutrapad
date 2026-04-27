@@ -29,6 +29,8 @@ import { buildPrivacyPage } from "./pages/privacy-page";
 import { buildDetailTopbar } from "./shared/detail-topbar";
 import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
 import { buildEditorSidebar } from "./shared/editor-sidebar";
+import { composeHintBanner } from "./shared/hint-banner";
+import { countTasksInNote } from "../../lib/tasks";
 
 // The editor-card builder needs the list of available tag suggestions, but
 // callers don't have to supply it — it's derived here from the workspace
@@ -386,11 +388,47 @@ export function renderAppPage({
   };
 
   if (activeMenuItem === "home") {
+    // Pre-compute every derived signal the hint candidates read, once per
+    // render. Multiple candidates poke at the alias suggestions and the
+    // task counts, so doing it here keeps every gate cheap and avoids
+    // re-walking the workspace inside `isApplicable`. The cost mirrors
+    // what the home stats strip already pays.
+    const tagAliasSuggestions = suggestTagAliases(buildTagIndex(workspace), {
+      dismissed: dismissedTagAliases,
+    });
+    let openTaskCount = 0;
+    for (const note of workspace.notes) {
+      openTaskCount += countTasksInNote(note).open;
+    }
+    const hasEverCapturedExternally = workspace.notes.some(
+      (note) =>
+        note.captureContext?.source === "url-capture" ||
+        note.captureContext?.source === "text-capture",
+    );
+
+    const hintBanner = composeHintBanner({
+      ctx: {
+        workspace,
+        profile,
+        dismissedTagAliases,
+        tasksOneThingKey,
+        tagAliasSuggestions,
+        openTaskCount,
+        hasEverCapturedExternally,
+        callbacks: {
+          openCapture: () => onSelectMenuItem("capture"),
+          openSettings: () => onSelectMenuItem("settings"),
+          openTasks: () => onSelectMenuItem("tasks"),
+        },
+      },
+    });
+
     page.append(
       buildHomePage({
         workspace,
         profile,
         personaOptions,
+        hintBanner,
         onNewNote,
         onOpenNote: onSelectNote,
       }),

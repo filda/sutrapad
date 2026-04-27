@@ -305,6 +305,13 @@ export interface HomePageOptions {
    * stacked column stays readable.
    */
   personaOptions?: NotesListPersonaOptions;
+  /**
+   * Optional rotating hint banner mounted between the today-stats strip
+   * and the timeline. Composed by the render-app caller via
+   * `composeHintBanner` so the home page stays unaware of which hint
+   * fired or how the rotation persists. When `null`, no slot is rendered.
+   */
+  hintBanner?: HTMLElement | null;
   onNewNote: () => void;
   onOpenNote: (noteId: string) => void;
 }
@@ -313,6 +320,7 @@ export function buildHomePage({
   workspace,
   profile,
   personaOptions,
+  hintBanner,
   onNewNote,
   onOpenNote,
 }: HomePageOptions): HTMLElement {
@@ -333,6 +341,12 @@ export function buildHomePage({
   section.append(heroCard);
 
   section.append(buildTodayStats(summary));
+
+  // Hint slot sits between the stats strip and the timeline so it reads
+  // as "here's something to think about" before the user scans down into
+  // their notebook. Omitted entirely when the composer returned null —
+  // an empty placeholder would be visual noise on a clean home.
+  if (hintBanner) section.append(hintBanner);
 
   const timeline = buildTimeline(workspace, onOpenNote, personaOptions);
   if (timeline) section.append(timeline);

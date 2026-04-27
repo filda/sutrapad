@@ -1286,6 +1286,146 @@ button.tag-pill {
   color: var(--muted);
 }
 
+/*
+ * Home-page hint banner. One-of-N rotating tip slot composed by
+ * `view/shared/hint-banner.ts`. Three columns: terracotta accent
+ * stripe, text block (eyebrow + title + body), action cluster (primary
+ * CTA + dismiss ✕). Shape mirrors `.hero-card` so the home page reads
+ * as a stack of related lockups, not a styled-banner-island.
+ */
+.hint-banner {
+  display: grid;
+  grid-template-columns: 4px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 8px 22px rgba(var(--primary-rgb), 0.06);
+}
+
+.hint-banner-accent {
+  align-self: stretch;
+  border-radius: 4px;
+  background: var(--accent);
+  /* The stripe lives in the grid track, so a fixed width here would
+   * fight the grid; we leave width to the column definition above and
+   * use min-width as a backstop for browsers that compute the track at 0. */
+  min-width: 4px;
+}
+
+.hint-banner-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hint-banner-eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.hint-banner-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  line-height: 1.3;
+  color: var(--primary);
+}
+
+.hint-banner-body {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.hint-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.hint-banner-cta {
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.hint-banner-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(var(--accent-rgb), 0.25);
+}
+
+.hint-banner-cta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.hint-banner-dismiss {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.hint-banner-dismiss:hover,
+.hint-banner-dismiss:focus-visible {
+  background-color: rgba(var(--primary-rgb), 0.06);
+  color: var(--primary);
+  outline: none;
+}
+
+/* On narrow viewports, stack title/body above the action cluster so the
+ * CTA stays a comfortable tap target without squeezing the title to one
+ * word. The accent stripe collapses to a top edge so the column flow
+ * still reads as one card, not three rows. */
+@media (max-width: 560px) {
+  .hint-banner {
+    grid-template-columns: 1fr;
+    grid-template-rows: 4px auto auto;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+
+  .hint-banner-accent {
+    align-self: auto;
+    height: 4px;
+    width: 100%;
+  }
+
+  .hint-banner-actions {
+    justify-content: flex-end;
+  }
+}
+
 .timeline {
   position: relative;
   padding-left: 28px;
