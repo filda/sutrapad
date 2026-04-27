@@ -519,8 +519,7 @@ a {
   color: inherit;
 }
 
-.lede a,
-.footer a {
+.lede a {
   color: var(--primary);
   text-decoration: none;
   font-weight: 600;
@@ -532,15 +531,13 @@ a {
     box-shadow 150ms ease;
 }
 
-.lede a:hover,
-.footer a:hover {
+.lede a:hover {
   color: var(--accent);
   border-bottom-color: rgba(var(--accent-rgb), 0.9);
   box-shadow: inset 0 -0.45em 0 rgba(var(--accent-rgb), 0.24);
 }
 
-.lede a:focus-visible,
-.footer a:focus-visible {
+.lede a:focus-visible {
   outline: 2px solid rgba(var(--accent-rgb), 0.65);
   outline-offset: 4px;
   border-radius: 4px;
@@ -4749,17 +4746,635 @@ button.tag-pill {
   overflow-wrap: anywhere;
 }
 
-.footer {
-  margin-top: 16px;
+/*
+ * Site footer — replaces the previous one-line `.footer` rule with a
+ * 4-column layout (brand block + Sutrapad / Use / Sources / Legal).
+ * Mirrored after the v3 design handoff; markup is built in
+ * `src/app/view/chrome/site-footer.ts`. The base row sits below a
+ * thin rule and carries the copyright + the build stamp side-by-side.
+ */
+.site-footer {
+  margin-top: 56px;
+  padding-top: 32px;
   color: var(--muted);
   font-size: 0.92rem;
+  border-top: 1px solid var(--line);
+  /* Inter Tight throughout — body font defaults to Segoe UI / Trebuchet
+   * which read as "system font" on Windows and don't match the topbar.
+   * Setting it here cascades to the brand wordmark, link buttons,
+   * column heads, and copyright. The build-stamp opts back into mono
+   * per-element since version strings benefit from tabular figures. */
+  font-family: var(--sans);
 }
 
-.build-stamp {
-  margin-top: 0.4rem;
-  font-family: "Cascadia Code", "Consolas", monospace;
+.site-footer-inner {
+  display: grid;
+  /* Brand column takes more room than the link columns so the tagline
+   * has a place to breathe; the four link columns share the rest
+   * equally. `auto-fit` would let CSS pick fewer columns when narrow,
+   * but explicit fractions match the v3 layout pixel-for-pixel and the
+   * mobile breakpoint below collapses the whole grid to one column
+   * anyway. */
+  grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+.site-footer-brand {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.site-footer-wordmark {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.4rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--primary);
+}
+
+.site-footer-tagline {
+  margin: 0;
+  max-width: 36ch;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.site-footer-col {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.site-footer-col-head {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.site-footer-col-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+
+.site-footer-link {
+  /* Buttons (internal links) and anchors (external) share this rule
+   * so a column reads consistently regardless of the underlying
+   * element. The button reset matches `.is-link` elsewhere in the
+   * chrome (brand mark, detail-back, footer-link). */
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  color: var(--primary);
+  text-decoration: none;
+  transition: color 120ms ease;
+}
+
+.site-footer-link:hover,
+.site-footer-link:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+.site-footer-rule {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 32px 0 16px;
+}
+
+.site-footer-base {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px 24px;
   font-size: 0.82rem;
-  opacity: 0.88;
+  color: var(--muted);
+}
+
+.site-footer-copy {
+  margin: 0;
+}
+
+.site-footer-stamp {
+  margin: 0;
+  font-family: var(--mono);
+  opacity: 0.85;
+}
+
+@media (max-width: 720px) {
+  .site-footer-inner {
+    /* On narrow viewports, drop to two columns so the link columns
+     * still sit side-by-side (a single-column stack felt too tall on
+     * mobile in the v3 prototype). The brand block spans the full
+     * width above the link columns. */
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .site-footer-brand {
+    grid-column: 1 / -1;
+  }
+
+  .site-footer-base {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/*
+ * Static-page shell — page wrapper, header block, back link, title, and
+ * the `.prose` article that wraps the long-form content. The shell
+ * builder in `src/app/view/chrome/static-page-shell.ts` is purely
+ * structural; every visual decision lives here so the four pages
+ * (Privacy, About, Terms, Shortcuts) share the same typography and
+ * vertical rhythm without each one re-declaring its layout.
+ */
+.static-page {
+  /* No max-width / centering here — the static page should sit at the
+   * same left edge as Home / Notes / Tasks / Tags so the navigation
+   * doesn't appear to "shift" when the user enters a long-form page.
+   * Reading measure is enforced per-element below: `.static-page-subtitle`
+   * caps at 60ch, `.prose` at 64ch, individual sections respect those.
+   * Vertical rhythm is the only layout concern here. */
+  display: grid;
+  gap: 28px;
+  /* Newsreader serif throughout — long-form editorial pages (About,
+   * Privacy, Terms) read as a polished document, not a chrome screen.
+   * Sans is opted into per-element where the content is utility text
+   * rather than prose: kbd chips (mono), uppercase eyebrows + h4
+   * sub-section labels (sans), step numbers (mono), foot-CTA buttons
+   * (default `.button` sans). Setting it here cascades cleanly to all
+   * paragraph / list / cite content. */
+  font-family: var(--serif);
+}
+
+.static-page-header {
+  display: grid;
+  gap: 4px;
+}
+
+.static-page-back {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  align-self: flex-start;
+  justify-self: start;
+  margin-bottom: 6px;
+  /* Sans, not the serif body font — the back link is utility nav, not
+   * editorial copy. Serif on a tiny "← Back to X" string reads as if
+   * the button is a footnote rather than a control. */
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  color: var(--muted);
+  transition: color 120ms ease;
+}
+
+.static-page-back:hover,
+.static-page-back:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+.static-page-title {
+  margin: 0;
+  /* The bare `h1` rule near the top of this stylesheet caps width at
+   * 11ch for the static landing pages — that wraps "A notebook that
+   * remembers like you do." after every word. Mirror the override from
+   * `.page-title` so the title can use the full column. */
+  max-width: none;
+  font-family: var(--serif);
+  font-size: clamp(2rem, 4vw, 2.6rem);
+  line-height: 1.08;
+  letter-spacing: -0.005em;
+  font-weight: 500;
+  color: var(--primary);
+}
+
+.static-page-title em {
+  font-style: italic;
+  color: var(--accent);
+  font-weight: 400;
+}
+
+.prose {
+  /* Comfortable reading column. The page wrapper above already caps
+   * width; this keeps lists and headings aligned with the title above. */
+  max-width: 64ch;
+  line-height: 1.6;
+  color: var(--primary);
+}
+
+.prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: rgba(var(--accent-rgb), 0.55);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 120ms ease, color 120ms ease;
+}
+
+.prose a:hover,
+.prose a:focus-visible {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+  outline: none;
+}
+
+/*
+ * Static-page header lockup — eyebrow, subtitle, last-updated stamp.
+ * Sized + spaced to match the in-app `.page-eyebrow` token (0.72rem,
+ * 0.18em letter-spacing, 600 weight, accent colour) so the chrome
+ * reads consistently whether the user is on Notes or About.
+ */
+.static-page-eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.static-page-subtitle {
+  margin: 8px 0 0;
+  max-width: 60ch;
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.55;
+}
+
+.static-page-meta {
+  margin: 12px 0 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+/*
+ * Long-form sections inside `<article class="prose">` — section spacing,
+ * h2, paragraphs, lists, pull-quote, numbered steps, foot CTA. Each
+ * element opts into the serif/mono fonts explicitly; the article
+ * container's base font stays sans (inherited from `.static-page`)
+ * so headings stand against the body text.
+ */
+.static-section {
+  margin-top: 36px;
+}
+
+.static-section:first-child {
+  margin-top: 12px;
+}
+
+.static-h2 {
+  margin: 0 0 14px;
+  font-family: var(--serif);
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--primary);
+}
+
+/*
+ * Nested headings — only Privacy uses these today (per-category
+ * sub-sections). Sized down two steps from h2 so the visual rhythm
+ * `section-title → category → field-group` is clear at a glance.
+ * h3 stays serif for editorial weight, h4 drops to sans-uppercase
+ * accent-eyebrow style because the field-group labels ("What we
+ * collect" etc.) are repeated three times per category and shouldn't
+ * compete with the category name for attention.
+ */
+.static-h3 {
+  margin: 24px 0 10px;
+  font-family: var(--serif);
+  font-size: 1.18rem;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.005em;
+  color: var(--primary);
+}
+
+.static-h4 {
+  margin: 18px 0 6px;
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.static-paragraph {
+  margin: 0 0 14px;
+  max-width: 64ch;
+  color: var(--primary);
+  line-height: 1.6;
+}
+
+.static-paragraph.muted {
+  color: var(--muted);
+}
+
+.static-list {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  max-width: 64ch;
+}
+
+.static-list.compact {
+  gap: 6px;
+}
+
+.static-list > li {
+  position: relative;
+  padding-left: 20px;
+  color: var(--primary);
+  line-height: 1.55;
+}
+
+/* Accent dash bullet — replaces the default disc to match the v3
+ * editorial style. Vertically centred on the first line of text via
+ * top: 0.7em which lands on the cap-height of body copy at our
+ * line-height. */
+.static-list > li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 10px;
+  height: 1px;
+  background: var(--accent);
+}
+
+.static-list a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: rgba(var(--accent-rgb), 0.5);
+  text-underline-offset: 3px;
+}
+
+.static-list a:hover,
+.static-list a:focus-visible {
+  text-decoration-color: var(--accent);
+  outline: none;
+}
+
+/*
+ * Pull-quote on the About page. Generous padding, italic serif body,
+ * oversized quote-mark anchored to the top-left corner. The accent
+ * rule on the left is the same 3px stripe used by `.hint-banner-accent`
+ * so editorial pull-quotes and home-page hints share a visual idiom.
+ */
+.pull-quote {
+  position: relative;
+  margin: 32px 0;
+  padding: 28px 28px 24px;
+  background: color-mix(in oklab, var(--accent) 6%, var(--bg));
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  max-width: 64ch;
+}
+
+.pull-quote-mark {
+  position: absolute;
+  top: -8px;
+  left: 18px;
+  font-family: var(--serif);
+  font-size: 3.4rem;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.45;
+}
+
+.pull-quote-body {
+  margin: 0 0 12px;
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--primary);
+}
+
+.pull-quote-cite {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-style: normal;
+  letter-spacing: 0.02em;
+}
+
+/*
+ * "How it works" numbered steps on About. The number lives in a
+ * paper-tinted disc with the same line treatment as cards elsewhere
+ * (subtle bg + 1px border) so the steps read as a polished sequence
+ * rather than a bullet list with extra make-up.
+ */
+.static-steps {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 18px;
+  max-width: 64ch;
+}
+
+.static-step {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.static-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 4%, var(--bg));
+  border: 1px solid var(--line);
+  color: var(--primary);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.static-step-head {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 1.05rem;
+  color: var(--primary);
+  line-height: 1.4;
+}
+
+.static-step-text {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+/*
+ * Foot CTA strip on About / Terms — a soft handoff to the next page.
+ * Eyebrow lockup uses the same token as `.static-page-eyebrow` so the
+ * accent label reads consistently top + bottom of the page.
+ */
+.static-foot-cta {
+  margin-top: 48px;
+  padding: 22px 26px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--accent) 4%, var(--bg));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  max-width: 64ch;
+}
+
+.static-foot-cta-text {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.static-foot-cta-eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.static-foot-cta-head {
+  margin: 4px 0 0;
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  color: var(--primary);
+}
+
+.static-foot-cta-emphasis {
+  font-style: italic;
+  color: var(--primary);
+}
+
+.static-foot-cta-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* CTA buttons inside the foot strip read as controls, not editorial
+ * prose — opt them back into the sans stack so they look like the
+ * `.button` chrome elsewhere in the app rather than inheriting the
+ * static page's serif. Same applies to anchor-styled buttons. */
+.static-foot-cta-actions .button {
+  font-family: var(--sans);
+}
+
+/*
+ * Shortcuts cheat-sheet. Two grouped tables side-by-side on wide
+ * viewports, single-column on mobile. Group heads use the serif
+ * uppercase treatment v3 prototyped — slightly more visual weight
+ * than a plain eyebrow because the table below has its own micro-
+ * structure (kbd chip + description) and needs a clear separator.
+ */
+.kbd-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px 36px;
+  margin-top: 12px;
+  max-width: 720px;
+}
+
+@media (max-width: 720px) {
+  .kbd-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kbd-group {
+  min-width: 0;
+}
+
+.kbd-group-head {
+  margin: 0 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.kbd-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kbd-table tr + tr td {
+  border-top: 1px dashed color-mix(in oklab, var(--line) 60%, transparent);
+}
+
+.kbd-key-cell {
+  padding: 8px 14px 8px 0;
+  white-space: nowrap;
+  vertical-align: middle;
+  width: 1%;
+}
+
+.kbd-key {
+  display: inline-block;
+  padding: 1px 7px;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--primary);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  line-height: 1.4;
+}
+
+.kbd-sep {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.kbd-desc-cell {
+  padding: 8px 0;
+  color: var(--primary);
+  line-height: 1.45;
+  font-size: 0.92rem;
+  /* Cheatsheet descriptions are utility text — sans matches the
+   * surrounding kbd chip + the user's mental model of "documentation",
+   * not the editorial serif body the rest of the static page uses. */
+  font-family: var(--sans);
 }
 
 @media (max-width: 860px) {

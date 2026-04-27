@@ -56,18 +56,29 @@ export function buildPrivacyPage({
 
 function buildParagraph(text: string): HTMLParagraphElement {
   const p = document.createElement("p");
+  p.className = "static-paragraph";
   p.textContent = text;
   return p;
 }
 
 function buildHeading(level: 2 | 3 | 4, text: string): HTMLHeadingElement {
+  // Class names mirror the level so the static-page CSS can give each
+  // step in the hierarchy its own treatment (h2 = section start, h3 =
+  // category name, h4 = subsection like "What we collect"). Privacy
+  // is the only static page that uses h3 / h4 today; About / Terms
+  // / Shortcuts stay at h2.
   const heading = document.createElement(`h${level}`);
+  heading.className = `static-h${level}`;
   heading.textContent = text;
   return heading;
 }
 
 function buildBulletList(items: readonly string[]): HTMLUListElement {
+  // Compact variant — Privacy lists are dense, six-to-eight short
+  // bullets per category, and look better with the tighter row gap
+  // than the default `.static-list` spacing About uses.
   const ul = document.createElement("ul");
+  ul.className = "static-list compact";
   for (const item of items) {
     const li = document.createElement("li");
     li.textContent = item;

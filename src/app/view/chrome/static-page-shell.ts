@@ -22,8 +22,39 @@
 import type { MenuItemId } from "../../logic/menu";
 
 export interface StaticPageShellOptions {
-  /** Page title rendered as `<h1>`. */
-  title: string;
+  /**
+   * Page title rendered as `<h1>`. Plain text — set via `textContent`
+   * so user-controlled strings can't smuggle markup. For pages that
+   * want an italic emphasis word (the v3 handoff style), use
+   * {@link titleHtml} instead; the two are mutually exclusive at the
+   * call site.
+   */
+  title?: string;
+  /**
+   * Title markup. Rendered via `innerHTML` so callers can wrap the
+   * emphasis word in `<em>`. Caller is responsible for escaping any
+   * user-controlled content; the live call sites all hand in
+   * static strings, mirroring the contract on `page-header.ts`.
+   */
+  titleHtml?: string;
+  /**
+   * Optional small-caps accent label above the title (`"About ·
+   * Sutrapad"`, `"Keyboard shortcuts"`, `"Terms of use"`). Mirrors the
+   * page-header eyebrow pattern but lives inside the static-page
+   * shell because long-form pages benefit from a stronger header
+   * hierarchy than the in-app pages do.
+   */
+  eyebrow?: string;
+  /**
+   * Optional subtitle below the title, ~60ch clamped. Plain text.
+   */
+  subtitle?: string;
+  /**
+   * Optional `Last updated · April 2026`-style stamp under the
+   * subtitle. Free-form so the caller can render whatever date format
+   * matches its source markdown.
+   */
+  lastUpdated?: string;
   /**
    * Pre-built prose content (one or more elements that go inside the
    * `<article class="prose">` container). The caller decides on
@@ -32,14 +63,16 @@ export interface StaticPageShellOptions {
    */
   content: readonly Node[];
   /**
-   * Where the "Back" link sends the user. Defaults to `"home"` so a
-   * direct deep-link visit to `/privacy` from outside the app still
-   * has a sensible up-route.
+   * Where the "Back" link sends the user. Optional — when omitted
+   * (the default for About / Terms / Shortcuts), the shell renders
+   * no back link at all and users return via the topbar / footer
+   * like on any other page. Privacy keeps the link because it's
+   * reached as a sub-page of Settings.
    */
   backTo?: MenuItemId;
   /**
-   * Label shown next to the back arrow, e.g. `"Home"`. Falls back to
-   * `"Home"` if omitted.
+   * Label shown next to the back arrow, e.g. `"Settings"`. Required
+   * when `backTo` is set; ignored otherwise.
    */
   backLabel?: string;
   /**
@@ -52,9 +85,13 @@ export interface StaticPageShellOptions {
 
 export function buildStaticPageShell({
   title,
+  titleHtml,
+  eyebrow,
+  subtitle,
+  lastUpdated,
   content,
-  backTo = "home",
-  backLabel = "Home",
+  backTo,
+  backLabel,
   onSelectMenuItem,
 }: StaticPageShellOptions): HTMLElement {
   const page = document.createElement("section");
@@ -63,19 +100,46 @@ export function buildStaticPageShell({
   const header = document.createElement("header");
   header.className = "static-page-header";
 
-  const backLink = document.createElement("button");
-  backLink.type = "button";
-  backLink.className = "static-page-back is-link";
-  // Plain-text arrow keeps the markup readable even if the icon font
-  // hasn't loaded yet (FOIT avoidance for a navigation control).
-  backLink.textContent = `← Back to ${backLabel}`;
-  backLink.addEventListener("click", () => onSelectMenuItem(backTo));
-  header.append(backLink);
+  if (backTo !== undefined && backLabel !== undefined) {
+    const backLink = document.createElement("button");
+    backLink.type = "button";
+    backLink.className = "static-page-back is-link";
+    // Plain-text arrow keeps the markup readable even if the icon font
+    // hasn't loaded yet (FOIT avoidance for a navigation control).
+    backLink.textContent = `← Back to ${backLabel}`;
+    backLink.addEventListener("click", () => onSelectMenuItem(backTo));
+    header.append(backLink);
+  }
+
+  if (eyebrow !== undefined) {
+    const eyebrowEl = document.createElement("p");
+    eyebrowEl.className = "static-page-eyebrow";
+    eyebrowEl.textContent = eyebrow;
+    header.append(eyebrowEl);
+  }
 
   const heading = document.createElement("h1");
   heading.className = "static-page-title";
-  heading.textContent = title;
+  if (titleHtml !== undefined) {
+    heading.innerHTML = titleHtml;
+  } else if (title !== undefined) {
+    heading.textContent = title;
+  }
   header.append(heading);
+
+  if (subtitle !== undefined) {
+    const subtitleEl = document.createElement("p");
+    subtitleEl.className = "static-page-subtitle";
+    subtitleEl.textContent = subtitle;
+    header.append(subtitleEl);
+  }
+
+  if (lastUpdated !== undefined) {
+    const meta = document.createElement("p");
+    meta.className = "static-page-meta";
+    meta.textContent = `Last updated · ${lastUpdated}`;
+    header.append(meta);
+  }
 
   page.append(header);
 

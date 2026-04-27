@@ -7,7 +7,10 @@ export type MenuItemId =
   | "tasks"
   | "capture"
   | "settings"
-  | "privacy";
+  | "privacy"
+  | "about"
+  | "terms"
+  | "shortcuts";
 
 export interface MenuItem {
   id: MenuItemId;
@@ -39,15 +42,18 @@ export const DEFAULT_MENU_ITEM: MenuItemId = "notes";
 /**
  * Ids reachable via `onSelectMenuItem` but not rendered in the primary nav.
  * Capture and Settings live in the topbar-actions cluster (chip + gear)
- * per handoff v2; Privacy is reached only from the footer link or the
- * Settings → Privacy card (it's a long-form static page, not a daily
- * destination). All three still need to round-trip through the routing
- * layer so deep-links and the persisted last-page path don't drop them.
+ * per handoff v2; Privacy / About / Terms / Shortcuts are static long-form
+ * pages reached from the site footer, never the primary nav. All of them
+ * still need to round-trip through the routing layer so deep-links and the
+ * persisted last-page path don't drop them.
  */
 const OFF_NAV_MENU_ITEM_IDS: readonly MenuItemId[] = [
   "capture",
   "settings",
   "privacy",
+  "about",
+  "terms",
+  "shortcuts",
 ];
 
 const ALL_MENU_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>([
@@ -81,23 +87,36 @@ export function isMenuActionItemId(id: MenuItemId): boolean {
 
 /**
  * Labels for ids that exist but aren't rendered in the primary nav
- * (Capture, Settings, Privacy). Keeps `getMenuItemLabel` lookup-complete
- * so placeholder pages and aria-labels don't fall through to the raw id
- * string.
+ * (Capture, Settings, Privacy, About, Terms, Shortcuts). Keeps
+ * `getMenuItemLabel` lookup-complete so placeholder pages and aria-
+ * labels don't fall through to the raw id string.
  */
 const OFF_NAV_MENU_ITEM_LABELS: Readonly<
-  Record<"capture" | "settings" | "privacy", string>
+  Record<
+    "capture" | "settings" | "privacy" | "about" | "terms" | "shortcuts",
+    string
+  >
 > = {
   capture: "Capture",
   settings: "Settings",
   privacy: "Privacy",
+  about: "About",
+  terms: "Terms",
+  shortcuts: "Shortcuts",
 };
 
 export function getMenuItemLabel(id: MenuItemId): string {
   if (id === HOME_MENU_ITEM.id) return HOME_MENU_ITEM.label;
   const match = MENU_ITEMS.find((item) => item.id === id);
   if (match) return match.label;
-  if (id === "capture" || id === "settings" || id === "privacy") {
+  if (
+    id === "capture" ||
+    id === "settings" ||
+    id === "privacy" ||
+    id === "about" ||
+    id === "terms" ||
+    id === "shortcuts"
+  ) {
     return OFF_NAV_MENU_ITEM_LABELS[id];
   }
   return id;

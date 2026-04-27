@@ -26,6 +26,10 @@ import { buildNotesPanel, type NotesPanelOptions } from "./pages/notes-page";
 import { buildPagePlaceholder } from "./pages/placeholder-page";
 import { buildSettingsPage } from "./pages/settings-page";
 import { buildPrivacyPage } from "./pages/privacy-page";
+import { buildAboutPage } from "./pages/about-page";
+import { buildTermsPage } from "./pages/terms-page";
+import { buildShortcutsPage } from "./pages/shortcuts-page";
+import { buildSiteFooter } from "./chrome/site-footer";
 import { buildDetailTopbar } from "./shared/detail-topbar";
 import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
 import { buildEditorSidebar } from "./shared/editor-sidebar";
@@ -184,66 +188,6 @@ interface RenderAppOptions
   onOpenCapture: () => void;
 }
 
-/**
- * Builds the page footer using DOM construction APIs instead of an
- * `innerHTML` template literal. The previous version interpolated
- * `buildStamp` into innerHTML — safe today (build stamps are
- * `version • commit • timestamp`, all developer-controlled), but the
- * pattern was the last interpolated-innerHTML site in the codebase
- * and a tempting precedent for someone adding a user-string later.
- *
- * Keeping zero interpolated-innerHTML in the repo means a single
- * grep is enough to audit the entire view layer.
- */
-function buildFooter(
-  buildStamp: string,
-  onSelectMenuItem: (id: MenuItemId) => void,
-): HTMLElement {
-  const footer = document.createElement("footer");
-  footer.className = "footer";
-
-  const description = document.createElement("p");
-  description.append(
-    "Each note is stored as its own JSON file in Google Drive, with a notebook index file keeping the list and active selection together. Location labels are powered by ",
-  );
-  const osmLink = document.createElement("a");
-  osmLink.href = "https://www.openstreetmap.org/";
-  osmLink.target = "_blank";
-  osmLink.rel = "noreferrer";
-  osmLink.textContent = "OpenStreetMap";
-  description.append(osmLink, " and ");
-
-  const nominatimLink = document.createElement("a");
-  nominatimLink.href = "https://nominatim.openstreetmap.org/";
-  nominatimLink.target = "_blank";
-  nominatimLink.rel = "noreferrer";
-  nominatimLink.textContent = "Nominatim";
-  description.append(nominatimLink, ".");
-
-  // Small in-app static-page link cluster. Today only Privacy lives
-  // here; the wrapping nav makes it easy to slot future static pages
-  // (Help, About, Terms, Changelog) alongside without restructuring
-  // the footer markup each time. `is-link` re-uses the existing button-
-  // as-link styling that brand / nav-tab / detail-back already share.
-  const staticLinks = document.createElement("nav");
-  staticLinks.className = "footer-links";
-  staticLinks.setAttribute("aria-label", "Site information");
-
-  const privacyLink = document.createElement("button");
-  privacyLink.type = "button";
-  privacyLink.className = "is-link footer-link";
-  privacyLink.textContent = "Privacy";
-  privacyLink.addEventListener("click", () => onSelectMenuItem("privacy"));
-  staticLinks.append(privacyLink);
-
-  const stamp = document.createElement("p");
-  stamp.className = "build-stamp";
-  stamp.textContent = buildStamp;
-
-  footer.append(description, staticLinks, stamp);
-  return footer;
-}
-
 export function renderAppPage({
   root,
   workspace,
@@ -373,7 +317,7 @@ export function renderAppPage({
   const page = document.createElement("main");
   page.className = "page";
 
-  const footer = buildFooter(buildStamp, onSelectMenuItem);
+  const footer = buildSiteFooter({ buildStamp, onSelectMenuItem });
 
   // Tail applied to every render path: footer → page → root → FAB (last, so
   // the FAB paints above page content on mobile without a z-index war with
@@ -514,6 +458,12 @@ export function renderAppPage({
       );
     } else if (activeMenuItem === "privacy") {
       page.append(buildPrivacyPage({ onSelectMenuItem }));
+    } else if (activeMenuItem === "about") {
+      page.append(buildAboutPage({ onSelectMenuItem }));
+    } else if (activeMenuItem === "terms") {
+      page.append(buildTermsPage({ onSelectMenuItem }));
+    } else if (activeMenuItem === "shortcuts") {
+      page.append(buildShortcutsPage({ onSelectMenuItem }));
     } else {
       page.append(buildPagePlaceholder(activeMenuItem));
     }

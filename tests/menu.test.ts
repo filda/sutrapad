@@ -80,6 +80,15 @@ describe("isMenuItemId", () => {
     expect(isMenuItemId("privacy")).toBe(true);
   });
 
+  it("accepts the about / terms / shortcuts ids (routable via footer link)", () => {
+    // All three are long-form static pages reached only from the site
+    // footer's column links — they need to round-trip through the routing
+    // layer so a deep link or persisted last-page path doesn't drop them.
+    expect(isMenuItemId("about")).toBe(true);
+    expect(isMenuItemId("terms")).toBe(true);
+    expect(isMenuItemId("shortcuts")).toBe(true);
+  });
+
   it("rejects unknown values", () => {
     expect(isMenuItemId("inbox")).toBe(false);
     expect(isMenuItemId("")).toBe(false);
@@ -100,6 +109,9 @@ describe("getMenuItemLabel", () => {
     expect(getMenuItemLabel("capture")).toBe("Capture");
     expect(getMenuItemLabel("settings")).toBe("Settings");
     expect(getMenuItemLabel("privacy")).toBe("Privacy");
+    expect(getMenuItemLabel("about")).toBe("About");
+    expect(getMenuItemLabel("terms")).toBe("Terms");
+    expect(getMenuItemLabel("shortcuts")).toBe("Shortcuts");
   });
 });
 
@@ -118,6 +130,9 @@ describe("isMenuActionItemId", () => {
       "capture",
       "settings",
       "privacy",
+      "about",
+      "terms",
+      "shortcuts",
     ];
     for (const id of pageIds) {
       expect(isMenuActionItemId(id)).toBe(false);
