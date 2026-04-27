@@ -158,8 +158,10 @@ export function isWithinCooldown(
  * Candidates with the same priority are rotated by least-recently-shown:
  * the one with the smaller `lastShownAt` wins, so a fresh hint (zero) is
  * always picked first, and after that the two trade visits one render
- * each. `Array.prototype.sort` is stable in modern V8, but the comparator
- * is total (priority then lastShownAt), so we don't rely on stability.
+ * each. We use `toSorted` rather than `sort` so the input array stays
+ * untouched (`selectHint` is contracted as pure); the comparator is
+ * total (priority then lastShownAt) so the result is stable regardless
+ * of engine sort behaviour.
  */
 export function selectHint(
   candidates: readonly HintCandidate[],
@@ -173,7 +175,7 @@ export function selectHint(
   });
   if (live.length === 0) return null;
 
-  const sorted = [...live].sort((a, b) => {
+  const sorted = live.toSorted((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
     const aShown = store[a.id]?.lastShownAt ?? 0;
     const bShown = store[b.id]?.lastShownAt ?? 0;

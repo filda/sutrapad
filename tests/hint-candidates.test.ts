@@ -6,11 +6,7 @@ import {
   HINT_TAG_MERGE,
 } from "../src/app/logic/hint-candidates";
 import type { HintCandidate, HintContext } from "../src/app/logic/hints";
-import type {
-  SutraPadDocument,
-  SutraPadWorkspace,
-  UserProfile,
-} from "../src/types";
+import type { SutraPadWorkspace, UserProfile } from "../src/types";
 
 /**
  * The candidates are pure functions of {@link HintContext}; tests build a
@@ -329,9 +325,3 @@ describe("hint content shape", () => {
   });
 });
 
-// Reference to the SutraPadDocument type just so an unused-import lint
-// rule doesn't strip it — the SutraPadWorkspace stub carries the shape
-// indirectly via casts, but we keep the import in case future tests want
-// to flesh out the workspace.
-const _typeAnchor: SutraPadDocument | undefined = undefined;
-void _typeAnchor;

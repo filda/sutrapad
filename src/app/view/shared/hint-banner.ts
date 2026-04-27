@@ -30,11 +30,72 @@ import {
   recordDismissed,
   recordShown,
   selectHint,
+  type HintCallbacks,
   type HintCandidate,
   type HintContext,
   type HintId,
 } from "../../logic/hints";
 import { DEFAULT_HINT_CANDIDATES } from "../../logic/hint-candidates";
+import { suggestTagAliases } from "../../logic/tag-aliases";
+import { buildTagIndex } from "../../../lib/notebook";
+import { countTasksInNote } from "../../../lib/tasks";
+import type { SutraPadWorkspace, UserProfile } from "../../../types";
+
+/**
+ * Inputs needed to derive the home-page {@link HintContext}. Lifted out
+ * of `render-app.ts` so the workspace-walking signal computation has
+ * its own scope and doesn't shadow the outer `note` parameter that
+ * `RenderAppOptions` already destructures. Centralising the build
+ * here also keeps every candidate's pre-computed dependency next to
+ * the engine that consumes it.
+ */
+export interface HomeHintContextOptions {
+  workspace: SutraPadWorkspace;
+  profile: UserProfile | null;
+  dismissedTagAliases: ReadonlySet<string>;
+  tasksOneThingKey: string | null;
+  callbacks: HintCallbacks;
+}
+
+/**
+ * Builds the {@link HintContext} for one home render. Walks the
+ * workspace twice in the worst case (open-task tally + capture-source
+ * scan) — both are O(n) over notes and the cost mirrors the existing
+ * stats-strip computation, so the banner doesn't add a round trip.
+ */
+export function buildHomeHintContext(
+  options: HomeHintContextOptions,
+): HintContext {
+  const {
+    workspace,
+    profile,
+    dismissedTagAliases,
+    tasksOneThingKey,
+    callbacks,
+  } = options;
+  const tagAliasSuggestions = suggestTagAliases(buildTagIndex(workspace), {
+    dismissed: dismissedTagAliases,
+  });
+  let openTaskCount = 0;
+  for (const note of workspace.notes) {
+    openTaskCount += countTasksInNote(note).open;
+  }
+  const hasEverCapturedExternally = workspace.notes.some(
+    (note) =>
+      note.captureContext?.source === "url-capture" ||
+      note.captureContext?.source === "text-capture",
+  );
+  return {
+    workspace,
+    profile,
+    dismissedTagAliases,
+    tasksOneThingKey,
+    tagAliasSuggestions,
+    openTaskCount,
+    hasEverCapturedExternally,
+    callbacks,
+  };
+}
 
 /**
  * Options accepted by {@link composeHintBanner}. The candidate list and

@@ -217,7 +217,7 @@ describe("selectHint", () => {
     expect(selectHint([seen, fresh], ctx(), store, 1_000)?.id).toBe("fresh");
   });
 
-  it("does not mutate the candidates array (sort works on a copy)", () => {
+  it("does not mutate the candidates array (toSorted returns a new copy)", () => {
     const a = candidate({ id: "a", priority: 10 });
     const b = candidate({ id: "b", priority: 100 });
     const list = [a, b];
