@@ -29,6 +29,7 @@ import { buildPrivacyPage } from "./pages/privacy-page";
 import { buildAboutPage } from "./pages/about-page";
 import { buildTermsPage } from "./pages/terms-page";
 import { buildShortcutsPage } from "./pages/shortcuts-page";
+import { buildLexiconPage } from "./pages/lexicon-page";
 import { buildSiteFooter } from "./chrome/site-footer";
 import { buildDetailTopbar } from "./shared/detail-topbar";
 import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
@@ -186,6 +187,15 @@ interface RenderAppOptions
    * the behaviour of `onBackToNotes`.
    */
   onOpenCapture: () => void;
+  /**
+   * Returns the current Google Drive access token, or `null` when the
+   * user is signed out. Threaded through purely for the Lexicon
+   * Builder workbench page, which talks to its own Drive artifacts
+   * outside the regular workspace sync. Keeping the read at call time
+   * (rather than capturing a token at render time) means a sign-out
+   * mid-session is reflected on the very next workbench action.
+   */
+  getAccessToken: () => string | null;
 }
 
 export function renderAppPage({
@@ -250,6 +260,7 @@ export function renderAppPage({
   dismissedTagAliases,
   onMergeTagAlias,
   onDismissTagAlias,
+  getAccessToken,
 }: RenderAppOptions): void {
   root.innerHTML = "";
 
@@ -464,6 +475,15 @@ export function renderAppPage({
       page.append(buildTermsPage({ onSelectMenuItem }));
     } else if (activeMenuItem === "shortcuts") {
       page.append(buildShortcutsPage({ onSelectMenuItem }));
+    } else if (activeMenuItem === "lexicon") {
+      page.append(
+        buildLexiconPage({
+          profile,
+          getAccessToken,
+          onSignIn,
+          onSelectMenuItem,
+        }),
+      );
     } else {
       page.append(buildPagePlaceholder(activeMenuItem));
     }

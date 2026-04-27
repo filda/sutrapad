@@ -578,6 +578,7 @@ export function createApp(root: HTMLElement): void {
         personaPreference: personaPreference$.get(),
         captureLocationPreference: captureLocationPreference$.get(),
         onOpenPalette: () => paletteAccess$.get()?.open(),
+        getAccessToken: () => auth.getAccessToken(),
         ...callbacks,
       });
     } finally {

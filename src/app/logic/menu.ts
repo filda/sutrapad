@@ -10,7 +10,8 @@ export type MenuItemId =
   | "privacy"
   | "about"
   | "terms"
-  | "shortcuts";
+  | "shortcuts"
+  | "lexicon";
 
 export interface MenuItem {
   id: MenuItemId;
@@ -43,8 +44,10 @@ export const DEFAULT_MENU_ITEM: MenuItemId = "notes";
  * Ids reachable via `onSelectMenuItem` but not rendered in the primary nav.
  * Capture and Settings live in the topbar-actions cluster (chip + gear)
  * per handoff v2; Privacy / About / Terms / Shortcuts are static long-form
- * pages reached from the site footer, never the primary nav. All of them
- * still need to round-trip through the routing layer so deep-links and the
+ * pages reached from the site footer, never the primary nav; Lexicon is
+ * an internal workbench page reached only from a Settings link / direct
+ * URL, intentionally hidden from the user-facing nav. All of them still
+ * need to round-trip through the routing layer so deep-links and the
  * persisted last-page path don't drop them.
  */
 const OFF_NAV_MENU_ITEM_IDS: readonly MenuItemId[] = [
@@ -54,6 +57,7 @@ const OFF_NAV_MENU_ITEM_IDS: readonly MenuItemId[] = [
   "about",
   "terms",
   "shortcuts",
+  "lexicon",
 ];
 
 const ALL_MENU_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>([
@@ -87,13 +91,19 @@ export function isMenuActionItemId(id: MenuItemId): boolean {
 
 /**
  * Labels for ids that exist but aren't rendered in the primary nav
- * (Capture, Settings, Privacy, About, Terms, Shortcuts). Keeps
+ * (Capture, Settings, Privacy, About, Terms, Shortcuts, Lexicon). Keeps
  * `getMenuItemLabel` lookup-complete so placeholder pages and aria-
  * labels don't fall through to the raw id string.
  */
 const OFF_NAV_MENU_ITEM_LABELS: Readonly<
   Record<
-    "capture" | "settings" | "privacy" | "about" | "terms" | "shortcuts",
+    | "capture"
+    | "settings"
+    | "privacy"
+    | "about"
+    | "terms"
+    | "shortcuts"
+    | "lexicon",
     string
   >
 > = {
@@ -103,6 +113,7 @@ const OFF_NAV_MENU_ITEM_LABELS: Readonly<
   about: "About",
   terms: "Terms",
   shortcuts: "Shortcuts",
+  lexicon: "Lexicon Builder",
 };
 
 export function getMenuItemLabel(id: MenuItemId): string {
@@ -115,7 +126,8 @@ export function getMenuItemLabel(id: MenuItemId): string {
     id === "privacy" ||
     id === "about" ||
     id === "terms" ||
-    id === "shortcuts"
+    id === "shortcuts" ||
+    id === "lexicon"
   ) {
     return OFF_NAV_MENU_ITEM_LABELS[id];
   }

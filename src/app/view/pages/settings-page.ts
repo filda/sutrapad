@@ -91,8 +91,52 @@ export function buildSettingsPage({
       onSelectMenuItem,
     }),
   );
+  page.append(buildWorkbenchCard({ onSelectMenuItem }));
 
   return page;
+}
+
+interface WorkbenchCardOptions {
+  onSelectMenuItem: (id: MenuItemId) => void;
+}
+
+/**
+ * Workbench card — surfaces internal-only tooling that lives inside the
+ * SutraPad app temporarily. Today's only entry is the Topic Lexicon
+ * Builder; future workbenches slot in as additional rows below.
+ *
+ * Intentionally minimal styling and tucked under the privacy card —
+ * this card exists so the workbench is reachable without polluting the
+ * primary nav, not so it's discoverable to general users.
+ */
+function buildWorkbenchCard({
+  onSelectMenuItem,
+}: WorkbenchCardOptions): HTMLElement {
+  const card = document.createElement("section");
+  card.className = "settings-card settings-card-workbench";
+
+  const header = document.createElement("header");
+  header.className = "settings-card-header";
+  header.innerHTML = `
+    <p class="panel-eyebrow">Workbench</p>
+    <h2>Internal tooling</h2>
+  `;
+  card.append(header);
+
+  const hint = document.createElement("p");
+  hint.className = "settings-card-hint";
+  hint.textContent =
+    "Internal builders hosted inside SutraPad. They reuse the app shell and Google Drive sync, but are not part of the regular notebook flow.";
+  card.append(hint);
+
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "is-link settings-card-workbench-link";
+  link.textContent = "Topic Lexicon Builder →";
+  link.addEventListener("click", () => onSelectMenuItem("lexicon"));
+  card.append(link);
+
+  return card;
 }
 
 interface PrivacyCardOptions {

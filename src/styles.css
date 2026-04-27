@@ -6247,3 +6247,268 @@ button.tag-pill {
     max-width: 100%;
   }
 }
+
+/* ---------- Topic Lexicon Builder workbench ---------- */
+/* Internal-only page; styling intentionally borrows the Settings card
+ * shape so the workbench reads as part of the same family without
+ * inventing a parallel system. */
+
+.lexicon-page {
+  display: grid;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.lexicon-header {
+  display: grid;
+  gap: 6px;
+}
+
+.lexicon-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.lexicon-back {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  align-self: flex-start;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  color: var(--muted);
+  transition: color 120ms ease;
+  margin-top: 6px;
+}
+
+.lexicon-back:hover,
+.lexicon-back:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
+
+.lexicon-card {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--bg);
+  padding: 22px 26px;
+  display: grid;
+  gap: 14px;
+}
+
+.lexicon-card h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.lexicon-card-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.lexicon-textarea {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  resize: vertical;
+}
+
+.lexicon-import-button {
+  justify-self: start;
+}
+
+.lexicon-file-label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.lexicon-candidate-word-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.lexicon-candidate-word {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+.lexicon-candidate-count {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.lexicon-candidate-context {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.lexicon-target-row {
+  display: grid;
+  gap: 6px;
+}
+
+.lexicon-target-label {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.lexicon-target-input-wrap {
+  position: relative;
+}
+
+.lexicon-target-input {
+  font-family: var(--mono);
+  font-size: 1rem;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Custom typeahead dropdown — anchored to the input wrap so it
+ * overlays the actions row below without nudging the layout. The
+ * native `<datalist>` was flaky during fast typing (it would erase
+ * in-flight characters); this list never touches the input value
+ * except on an explicit pick. */
+.lexicon-typeahead {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 14px 32px rgba(var(--primary-rgb), 0.12);
+  font-family: var(--mono);
+  font-size: 0.95rem;
+}
+
+.lexicon-typeahead[hidden] {
+  display: none;
+}
+
+.lexicon-typeahead-item {
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--primary);
+}
+
+.lexicon-typeahead-item:hover,
+.lexicon-typeahead-item.is-active {
+  background: rgba(var(--primary-rgb), 0.08);
+}
+
+.lexicon-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Map = "yes, save this" — soft green tint signals the constructive
+ * choice without competing with the page's primary palette. */
+.lexicon-action-map {
+  border-color: rgba(22, 101, 52, 0.35);
+  color: #166534;
+  background: rgba(22, 101, 52, 0.06);
+}
+
+.lexicon-action-map:hover {
+  background: rgba(22, 101, 52, 0.12);
+}
+
+/* Reject is destructive (removes the candidate from the queue), so it
+ * gets a soft red tint and a wide left margin to put visual + spatial
+ * distance between it and the constructive Map button next to it. */
+.lexicon-action-reject {
+  margin-left: 56px;
+  border-color: rgba(179, 38, 30, 0.35);
+  color: #b3261e;
+  background: rgba(179, 38, 30, 0.06);
+}
+
+.lexicon-action-reject:hover {
+  background: rgba(179, 38, 30, 0.12);
+}
+
+.lexicon-progress-strip {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.lexicon-save-status {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.lexicon-save-saving {
+  color: var(--primary);
+}
+
+.lexicon-save-error {
+  color: #b3261e;
+}
+
+.lexicon-empty-note {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.lexicon-error-card,
+.lexicon-placeholder-card {
+  text-align: center;
+  padding: 28px;
+}
+
+.settings-card-workbench-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  color: var(--primary);
+  align-self: flex-start;
+  text-align: left;
+  transition: color 120ms ease;
+}
+
+.settings-card-workbench-link:hover,
+.settings-card-workbench-link:focus-visible {
+  color: var(--accent);
+  outline: none;
+}
