@@ -4895,6 +4895,34 @@ button.tag-pill {
 
 .account-menu-trigger .avatar-fallback {
   background: linear-gradient(135deg, var(--primary), var(--accent));
+  /* Centre the initials inside the 32 px circle. The flex layout costs
+   * nothing when the fallback is empty (no profile picture *and* a
+   * blank name) and gives the monogram a stable baseline regardless of
+   * which characters land there — diacritics, surrogate pairs, or
+   * narrow letters all sit on the same optical centre. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-fallback-initials {
+  /* Inter Tight is already the chrome's sans stack; setting it explicitly
+   * here keeps the monogram from inheriting a serif from any nearby
+   * persona context that might try to bleed into the topbar. */
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  /* Bg is the dark end of the gradient; force a tone the user can
+   * read regardless of which scheme/theme picks the gradient stops.
+   * `--bg` resolves to the page surface — paper light, ink dark — so
+   * the monogram inverts cleanly against the accent gradient. */
+  color: var(--bg);
+  /* Ensure the glyph stays inside the 32 px circle even when the user's
+   * initials happen to be wide ("MM" or "ŻŻ"); the line-height match
+   * lets the flex centre the actual glyph, not the line box around it. */
+  line-height: 1;
+  user-select: none;
 }
 
 .account-menu-panel {
@@ -4913,8 +4941,13 @@ button.tag-pill {
   z-index: 20;
 }
 
-.account-menu:hover .account-menu-panel,
-.account-menu:focus-within .account-menu-panel {
+/* Click-to-open: panel becomes visible only when the trigger reports
+ * `aria-expanded="true"`. Replaces the previous `:hover / :focus-within`
+ * rules that triggered on every layout graze and didn't work on touch
+ * devices at all. Selector relies on the trigger being the immediate
+ * sibling of the panel — see account-bar.ts where they're appended in
+ * that order. */
+.account-menu-trigger[aria-expanded="true"] + .account-menu-panel {
   display: flex;
 }
 
