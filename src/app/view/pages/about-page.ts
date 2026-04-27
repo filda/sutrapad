@@ -15,10 +15,10 @@
  * do." — the rich title goes through the shell's `titleHtml` slot whose
  * caller-escapes-everything contract is documented there.
  *
- * **Updating copy:** keep this module and the v3 handoff in lockstep
- * until we have a markdown source of truth (Privacy uses
- * `docs/privacy-page-draft.md`; About will likely grow one too once the
- * copy stops moving).
+ * **Updating copy:** edit the strings in this module directly. Copy
+ * lives next to the DOM that renders it — same convention as
+ * `privacy-page.ts` and `terms-page.ts`. There is no separate markdown
+ * source-of-truth to keep in sync.
  */
 
 import { buildStaticPageShell } from "../chrome/static-page-shell";

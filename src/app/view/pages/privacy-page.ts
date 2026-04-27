@@ -1,19 +1,13 @@
 /**
  * Privacy page — disclosure of what data SutraPad handles, why, and
- * where it goes. Content is the in-app rendering of
- * `docs/privacy-page-draft.md`; copy lives there as the canonical
- * source of truth and is mirrored here as a typed DOM tree so the page
- * doesn't need a markdown parser at runtime.
+ * where it goes. Copy lives in this module as the canonical source of
+ * truth, alongside the DOM that renders it.
  *
  * **All textual content is set via `textContent`** (not `innerHTML`)
  * so even though the strings are static today, a future contributor
  * dropping a user-controlled string into one of the helpers can't
  * accidentally regress the no-innerHTML invariant the rest of the view
  * layer keeps.
- *
- * **Updating copy:** keep `docs/privacy-page-draft.md` and this module
- * in lockstep. The "Sources of truth" line in the draft links back to
- * this file so the round-trip is documented.
  */
 
 import { buildStaticPageShell } from "../chrome/static-page-shell";

@@ -6,8 +6,7 @@
 //
 // Coverage goals:
 //   - the structural shell exists (h1 title, back button, prose article)
-//   - all six top-level sections from `privacy-page-draft.md` render as
-//     `<h2>` headings
+//   - all six top-level sections render as `<h2>` headings
 //   - the back button routes through `onSelectMenuItem("settings")`
 //     (Settings is the natural up-route — Privacy is reached from there)
 //   - text content is set via `textContent`, not innerHTML interpolation
