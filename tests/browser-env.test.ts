@@ -90,6 +90,21 @@ describe("isIOS", () => {
     ).toBe(false);
   });
 
+  it("does NOT match a Macintosh UA with exactly 1 touch point (boundary case)", () => {
+    // The iPad-desktop-mode heuristic uses `> 1` not `>= 1` because
+    // real iPads/iPhones report at least 5 simultaneous touch points,
+    // and a Mac with an external touch peripheral may report 1.
+    // Pinning the strict-greater boundary kills the mutant where
+    // someone "tightens" or "loosens" the comparison without noticing
+    // the spec-defined touch-points minimum on iOS hardware.
+    expect(
+      isIOS(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+        1,
+      ),
+    ).toBe(false);
+  });
+
   it("does NOT match desktop Chrome on Windows", () => {
     expect(
       isIOS(
