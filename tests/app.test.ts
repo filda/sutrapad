@@ -8,10 +8,10 @@ import {
   readActivePageFromLocation,
   readNoteDetailIdFromLocation,
   readNotesViewFromLocation,
+  bootstrapSessionOnStartup,
   readTagFiltersFromLocation,
   resolveDisplayedNote,
   resolveInitialNotesView,
-  restoreSessionOnStartup,
   runWorkspaceSave,
   writeActivePageToLocation,
   writeNoteDetailIdToLocation,
@@ -21,41 +21,41 @@ import {
 import { collectNoteCaptureDetails } from "../src/app/capture/fresh-note";
 import type { SutraPadWorkspace, UserProfile } from "../src/types";
 
-describe("app startup session restore", () => {
-  it("restores the workspace when Google session refresh succeeds", async () => {
+describe("app startup session bootstrap", () => {
+  it("restores the workspace when GIS silent refresh succeeds at startup", async () => {
     const profile: UserProfile = {
       name: "Filda",
       email: "panfilda@gmail.com",
       picture: "https://example.com/avatar.png",
     };
     const auth = {
-      restorePersistedSession: vi.fn().mockResolvedValue(profile),
+      bootstrap: vi.fn().mockResolvedValue(profile),
     };
     const applyRestoredProfile = vi.fn();
     const restoreWorkspaceAfterSignIn = vi.fn().mockResolvedValue(undefined);
 
     await expect(
-      restoreSessionOnStartup(auth, applyRestoredProfile, restoreWorkspaceAfterSignIn),
+      bootstrapSessionOnStartup(auth, applyRestoredProfile, restoreWorkspaceAfterSignIn),
     ).resolves.toEqual(profile);
 
-    expect(auth.restorePersistedSession).toHaveBeenCalledTimes(1);
+    expect(auth.bootstrap).toHaveBeenCalledTimes(1);
     expect(applyRestoredProfile).toHaveBeenCalledWith(profile);
     expect(applyRestoredProfile).toHaveBeenCalledBefore(restoreWorkspaceAfterSignIn);
     expect(restoreWorkspaceAfterSignIn).toHaveBeenCalledTimes(1);
   });
 
-  it("does not restore the workspace when there is no persisted Google session", async () => {
+  it("does not restore the workspace when silent refresh fails (no Google session / ITP-blocked)", async () => {
     const auth = {
-      restorePersistedSession: vi.fn().mockResolvedValue(null),
+      bootstrap: vi.fn().mockResolvedValue(null),
     };
     const applyRestoredProfile = vi.fn();
     const restoreWorkspaceAfterSignIn = vi.fn().mockResolvedValue(undefined);
 
     await expect(
-      restoreSessionOnStartup(auth, applyRestoredProfile, restoreWorkspaceAfterSignIn),
+      bootstrapSessionOnStartup(auth, applyRestoredProfile, restoreWorkspaceAfterSignIn),
     ).resolves.toBeNull();
 
-    expect(auth.restorePersistedSession).toHaveBeenCalledTimes(1);
+    expect(auth.bootstrap).toHaveBeenCalledTimes(1);
     expect(applyRestoredProfile).not.toHaveBeenCalled();
     expect(restoreWorkspaceAfterSignIn).not.toHaveBeenCalled();
   });

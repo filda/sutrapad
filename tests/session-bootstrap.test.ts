@@ -26,7 +26,7 @@ interface BootstrapHarness {
     restoreWorkspaceAfterSignIn: ReturnType<typeof vi.fn>;
     render: ReturnType<typeof vi.fn>;
     initialize: ReturnType<typeof vi.fn>;
-    restorePersistedSession: ReturnType<typeof vi.fn>;
+    bootstrap: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -36,7 +36,7 @@ function createHarness(
   overrides: Partial<{
     captureIncomingWorkspaceFromUrl: (workspace: SutraPadWorkspace) => Promise<SutraPadWorkspace>;
     initialize: () => Promise<void>;
-    restorePersistedSession: () => Promise<UserProfile | null>;
+    bootstrap: () => Promise<UserProfile | null>;
   }> = {},
 ): BootstrapHarness {
   const spies = {
@@ -52,15 +52,15 @@ function createHarness(
     restoreWorkspaceAfterSignIn: vi.fn(async () => {}),
     render: vi.fn(),
     initialize: vi.fn(overrides.initialize ?? (async () => {})),
-    restorePersistedSession: vi.fn(
-      overrides.restorePersistedSession ?? (async () => null),
+    bootstrap: vi.fn(
+      overrides.bootstrap ?? (async () => null),
     ),
   };
 
   const effects: Parameters<typeof runAppBootstrap>[0] = {
     auth: {
       initialize: spies.initialize,
-      restorePersistedSession: spies.restorePersistedSession,
+      bootstrap: spies.bootstrap,
     },
     captureIncomingWorkspaceFromUrl: spies.captureIncomingWorkspaceFromUrl,
     getWorkspace: () => emptyWorkspace,
@@ -125,18 +125,18 @@ describe("runAppBootstrap", () => {
     expect(typeof args[2]).toBe("string");
   });
 
-  it("skips the trailing render when restoreSessionOnStartup returned a profile", async () => {
+  it("skips the trailing render when bootstrapSessionOnStartup returned a profile", async () => {
     // The `if (restoredProfile) return;` branch must short-circuit:
-    // restorePersistedSession already triggers its own render via the
-    // applyRestoredProfile callback wired below, so a second render
-    // here would double-paint the initial frame.
+    // bootstrapSessionOnStartup already triggers its own render via
+    // the applyRestoredProfile callback wired below, so a second
+    // render here would double-paint the initial frame.
     const profile: UserProfile = {
       name: "Filda",
       email: "filda@example.test",
       picture: "https://example.test/avatar.png",
     };
     const { effects, spies } = createHarness({
-      restorePersistedSession: async () => profile,
+      bootstrap: async () => profile,
     });
 
     await runAppBootstrap(effects);
@@ -149,9 +149,10 @@ describe("runAppBootstrap", () => {
     expect(spies.render).not.toHaveBeenCalled();
   });
 
-  it("renders exactly once when no persisted session was restored", async () => {
-    // Happy "first launch" path: no profile, no error → exactly one
-    // render at the bottom of the function.
+  it("renders exactly once when bootstrap silent refresh returned no profile", async () => {
+    // Happy "first launch" path (or ITP-blocked silent refresh): no
+    // profile, no error → exactly one render at the bottom of the
+    // function.
     const { effects, spies } = createHarness();
 
     await runAppBootstrap(effects);

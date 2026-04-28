@@ -88,7 +88,7 @@ export {
   resolveInitialPersonaPreference,
   type PersonaPreference,
 } from "./app/logic/persona";
-export { restoreSessionOnStartup } from "./app/session/session";
+export { bootstrapSessionOnStartup } from "./app/session/session";
 export { withAuthRetry } from "./app/session/auth-retry";
 export { runWorkspaceSave } from "./app/session/workspace-sync";
 
@@ -663,31 +663,22 @@ export function createApp(root: HTMLElement): void {
     render,
   });
 
-  // Cross-tab sign-out: when the user signs out in another tab of
-  // the same origin, the storage event fires here and we clear the
-  // local in-memory token + flip the UI back to signed-out. Avoids
-  // the "stale tab keeps using a revoked token" footgun until the
-  // next 401 retroactively forces the issue.
-  const disposeCrossTabSignOut = auth.subscribeToCrossTabSignOut(() => {
-    setProfileState(null);
-    setSyncStateValue("idle");
-    setLastErrorValue("");
-    cancelAutoSave();
-  });
-
   // HMR re-runs `createApp` against the same `window` on every save.
   // Without explicit teardown the `keydown` listeners from
-  // `wirePaletteAccess` and `wireKeyboardShortcuts` plus the
-  // `storage` listener from `subscribeToCrossTabSignOut` stack — a
-  // single `/` press would open one palette per accumulated reload
-  // and one tab-level sign-out would fire N "you've been signed
-  // out" handlers. The optional `import.meta.hot` hook only exists
-  // in dev; production builds tree-shake this branch.
+  // `wirePaletteAccess` and `wireKeyboardShortcuts` stack — a single
+  // `/` press would open one palette per accumulated reload. The
+  // optional `import.meta.hot` hook only exists in dev; production
+  // builds tree-shake this branch.
+  //
+  // Cross-tab sign-out propagation was removed alongside the
+  // localStorage token cache: with no shared persisted state there's
+  // nothing for a peer tab's sign-out to revoke here, and the
+  // in-memory token in this tab will be replaced (or invalidated) on
+  // its next interactive action via `withAuthRetry`.
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
       paletteAccess$.get()?.dispose();
       disposeKeyboardShortcuts();
-      disposeCrossTabSignOut();
       for (const dispose of disposeRenderSubscriptions) dispose();
       store.dispose();
     });

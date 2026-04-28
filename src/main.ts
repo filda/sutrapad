@@ -14,10 +14,15 @@ import { runSilentCapture } from "./app/silent-capture-runner";
 // The bookmarklet opens SutraPad in a new tab with `?silent=1` so we
 // can save the captured URL without a redirect on the source page.
 // The runner saves to Drive and then calls `window.close()` — the
-// user's source page keeps focus when the tab closes. Anything that
-// blocks the silent path (no auth, no payload, save failure) returns
+// user's source page keeps focus when the tab closes. Cases that
+// can't be resolved inside the runner (no payload, save failure
+// after sign-in, user opting into the main UI) return
 // `needs-fallback`, and we mount the regular UI instead so the user
-// can sign in / inspect / retry.
+// can inspect / retry.
+//
+// Note: silent-refresh failure no longer falls back here — it is
+// handled in-place by the runner's buffer flow ("Authorize & save"
+// button + sessionStorage hand-off across the interactive sign-in).
 if (isSilentCapture(window.location.href)) {
   void runSilentCapture().then((result) => {
     if (result.kind === "needs-fallback") {
@@ -26,7 +31,7 @@ if (isSilentCapture(window.location.href)) {
       // already logs the underlying error for the `save-failed`
       // branch; this top-level marker tags the user-visible
       // transition (silent → main UI fallback) with the reason
-      // (`no-auth` / `no-capture` / `save-failed`) so a single
+      // (`no-capture` / `save-failed` / `user-fallback`) so a single
       // grep on "Silent capture" surfaces both halves of the story.
       console.warn(
         `Silent capture fell back to the main app (${result.reason}). The capture params will be processed by captureIncomingWorkspaceFromUrl on bootstrap.`,

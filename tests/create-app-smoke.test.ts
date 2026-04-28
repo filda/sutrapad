@@ -43,7 +43,7 @@ vi.mock("../src/services/google-auth", () => {
       async initialize(): Promise<void> {
         throw new Error("smoke-test: auth disabled");
       }
-      async restorePersistedSession(): Promise<null> {
+      async bootstrap(): Promise<null> {
         return null;
       }
       async refreshSession(): Promise<null> {
@@ -52,9 +52,12 @@ vi.mock("../src/services/google-auth", () => {
       getAccessToken(): string | null {
         return null;
       }
-      subscribeToCrossTabSignOut(_handler: () => void): () => void {
-        return (): void => {};
-      }
+    },
+    readEmailHint(): string | null {
+      return null;
+    },
+    hasLoggedInHint(): boolean {
+      return false;
     },
   };
 });

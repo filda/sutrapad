@@ -19,10 +19,19 @@ interface CodeClientConfig {
   scope: string;
   callback: (response: TokenResponse) => void;
   error_callback?: (error: { type: string }) => void;
+  /**
+   * `login_hint` lets us pre-select the right Google account in the
+   * silent refresh flow and the interactive popup. It's a hint, not
+   * enforcement — the user can still pick a different account in the
+   * popup — but providing it materially improves silent-refresh hit
+   * rate (especially on iOS Safari, where Google needs to know which
+   * of several signed-in accounts to refresh against without UI).
+   */
+  hint?: string;
 }
 
 interface TokenClient {
-  requestAccessToken: (options?: { prompt?: string }) => void;
+  requestAccessToken: (options?: { prompt?: string; hint?: string }) => void;
 }
 
 interface GoogleNamespace {
@@ -35,51 +44,42 @@ interface GoogleNamespace {
 }
 
 const GOOGLE_IDENTITY_SCRIPT = "https://accounts.google.com/gsi/client";
-const GOOGLE_AUTH_SESSION_KEY = "sutrapad-google-auth-session";
+
+/**
+ * `localStorage` keys we still keep around even after dropping the
+ * persisted access-token cache. Both are user-experience hints, not
+ * credentials:
+ *
+ *   - `EMAIL_HINT_KEY` — last signed-in email. Passed as
+ *     `login_hint` on subsequent silent refreshes and the interactive
+ *     popup so Google knows which of multiple signed-in accounts to
+ *     refresh against without UI. Cleared on explicit sign-out.
+ *
+ *   - `IS_LOGGED_IN_KEY` — boolean breadcrumb that we've previously
+ *     completed an interactive sign-in. Used by the PWA standalone
+ *     fast-path: when iOS PWA + ITP would normally block the silent
+ *     refresh iframe, we can show the Sign-In button immediately
+ *     instead of waiting on a doomed timeout. Cleared on sign-out;
+ *     NOT cleared on silent-refresh failure (a failed refresh on
+ *     iOS Safari is normal under ITP and doesn't mean the user has
+ *     actually signed out).
+ *
+ * No access tokens or profile JSON are persisted. Tokens live in
+ * memory for the lifetime of the document; on every cold load the
+ * service re-runs silent refresh against the long-lived
+ * `accounts.google.com` first-party session cookie. See
+ * `project_sutrapad_token_storage.md` (auto-memory) for the full
+ * trade-off rationale that drove this design.
+ */
+const EMAIL_HINT_KEY = "sutrapad-user-email-hint";
+const IS_LOGGED_IN_KEY = "sutrapad-is-logged-in";
+
 const GOOGLE_SCOPES = [
   "openid",
   "profile",
   "email",
   "https://www.googleapis.com/auth/drive.file",
 ].join(" ");
-
-interface StoredGoogleAuthSession {
-  accessToken: string;
-  expiresAt: string;
-  profile: UserProfile;
-  /**
-   * ISO timestamp of when this session was last touched — set on
-   * sign-in, refresh, and bootstrap. Drives the rolling-window
-   * expiry: if a session has been idle for longer than
-   * `MAX_IDLE_DAYS_BEFORE_EXPIRY`, `readStoredSession` invalidates
-   * it even when `expiresAt` is still nominally valid. Optional in
-   * the type so older persisted sessions (written before the field
-   * existed) are still parseable; missing values are treated as
-   * "fresh now" by the reader to avoid mass-evicting active users
-   * on the rollout.
-   */
-  lastUsedAt?: string;
-}
-
-/**
- * Idle-window cap on the persisted session. Even though the access
- * token's `expires_in` is one hour, refresh-on-401 keeps replacing
- * the token in localStorage and the persisted record can otherwise
- * survive on disk indefinitely as long as someone occasionally
- * reopens the app. This rolling cap means the session is wiped
- * automatically after a week of true non-use — limiting the window
- * during which a stale token sits readable on disk after the user
- * has effectively stopped using the app.
- *
- * Active users are unaffected: every bootstrap and every
- * persistSession (sign-in, refresh) bumps `lastUsedAt`, so anyone
- * opening SutraPad even once a week stays signed in. The cap only
- * bites users who set it down for >7 days, and they pay one
- * sign-in click on return — same UX as a stale Google session
- * cookie expiring.
- */
-export const MAX_IDLE_DAYS_BEFORE_EXPIRY = 7;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Validates the shape of a Google `oauth2/v3/userinfo` response.
@@ -111,6 +111,28 @@ export function parseUserInfoResponse(raw: unknown): UserProfile {
     email: data.email,
     picture,
   };
+}
+
+/**
+ * Reads the persisted login hint without coupling consumers to the
+ * storage key. Used by the PWA fast-path in `app.ts` (alongside
+ * `hasLoggedInHint`) to decide whether to wait for silent refresh or
+ * surface the Sign-In button immediately.
+ */
+export function readEmailHint(): string | null {
+  return window.localStorage.getItem(EMAIL_HINT_KEY);
+}
+
+/**
+ * Boolean read of the "user has previously signed in" breadcrumb.
+ * `true` doesn't mean the session is currently valid — silent refresh
+ * may still fail. It only means we know the user has interactively
+ * signed in at least once on this origin and hasn't explicitly signed
+ * out. Used by the iOS PWA fast-path to differentiate "first run"
+ * from "ITP-blocked silent refresh on a returning user".
+ */
+export function hasLoggedInHint(): boolean {
+  return window.localStorage.getItem(IS_LOGGED_IN_KEY) === "true";
 }
 
 let googleScriptPromise: Promise<void> | null = null;
@@ -164,10 +186,13 @@ export class GoogleAuthService {
    * before the winner returns a fresh token. Coalesce to a single
    * in-flight refresh and let every concurrent caller await the same
    * resolution.
+   *
+   * Also covers the bootstrap-vs-401 race: app startup calls
+   * `bootstrap()` (which delegates to `refreshSession()`) and an
+   * autosave-fired 401 lands in parallel — both paths share the same
+   * in-flight promise rather than each spinning up an iframe.
    */
   #refreshPromise: Promise<UserProfile | null> | null = null;
-  /** Active storage-event listener for cross-tab sign-out propagation. */
-  #storageListener: ((event: StorageEvent) => void) | null = null;
 
   async initialize(): Promise<void> {
     if (this.#initPromise) return this.#initPromise;
@@ -192,32 +217,51 @@ export class GoogleAuthService {
   }
 
   /**
-   * Single token-request entry point used by both `signIn` (with
-   * `prompt: "consent"`) and `refreshSession` (with `prompt: ""`).
+   * Single token-request entry point used by `signIn` (with
+   * `prompt: "consent"`) and the silent refresh paths
+   * (`bootstrap` / `refreshSession`, with `prompt: "none"`).
+   *
+   * Prompt values:
+   *  - `"consent"` — interactive popup, user picks account & confirms
+   *    scopes. Used by the explicit Sign-In button.
+   *  - `"none"` — strictly silent. No UI ever; if Google needs
+   *    consent or account selection, the request fails via
+   *    `error_callback` and the caller surfaces signed-out UI. This
+   *    is what we want for cold-load bootstrap and 401-driven
+   *    refresh — anything else flickers a brief auto-confirm popup
+   *    on every page load (the GIS FedCM-style "auto-select" UX),
+   *    which feels off for a returning user who's already authorised.
    *
    * Google Identity Services binds the response callback into the
    * token client at construction time, so each call has to spin up a
    * fresh `initTokenClient` — there's no public API to swap the
-   * callback on an existing client. The earlier code duplicated this
-   * setup across two methods; consolidating here keeps the failure
-   * shape consistent (same `error_callback` message label, same
-   * `tokenResponse.error → Error` mapping) and makes it impossible
-   * for the two flows to drift on edge cases like missing
+   * callback on an existing client. Consolidating here keeps the
+   * failure shape consistent (same `error_callback` message label,
+   * same `tokenResponse.error → Error` mapping) and makes it
+   * impossible for the two flows to drift on edge cases like missing
    * `error_callback`.
    *
    * `errorMessage` is what the caller's outer promise rejects with
    * when GIS reports a transport-level failure (popup closed,
    * network error, scope refused). The `tokenResponse.error` path
    * carries Google's own error code which we surface as-is.
+   *
+   * `login_hint` is read from localStorage if available — it
+   * materially improves silent-refresh hit rate by telling Google
+   * which of multiple signed-in accounts to refresh against without
+   * UI, and pre-selects the right account in the interactive popup.
+   * Passing an unknown / stale hint is safe: Google falls back to the
+   * default flow, the user sees the picker, life goes on.
    */
   private async requestToken(
-    prompt: "consent" | "",
+    prompt: "consent" | "none",
     errorMessage: string,
   ): Promise<TokenResponse> {
     if (!this.#clientId) {
       throw new Error("Google auth has not been initialized.");
     }
     const clientId = this.#clientId;
+    const hint = readEmailHint() ?? undefined;
 
     return new Promise<TokenResponse>((resolve, reject) => {
       const tokenClient = requireGoogleOAuth().initTokenClient({
@@ -231,9 +275,29 @@ export class GoogleAuthService {
           resolve(tokenResponse);
         },
         error_callback: () => reject(new Error(errorMessage)),
+        ...(hint ? { hint } : {}),
       });
-      tokenClient.requestAccessToken({ prompt });
+      tokenClient.requestAccessToken({ prompt, ...(hint ? { hint } : {}) });
     });
+  }
+
+  /**
+   * Startup auth probe. Loads the Google Identity Services script
+   * (idempotent), attempts a silent token request against the
+   * long-lived `accounts.google.com` session cookie, and on success
+   * returns the resolved profile so the UI can hydrate as already-
+   * signed-in. On failure — no Google session, ITP-blocked iframe,
+   * network error — returns `null` and the caller renders the
+   * signed-out UI.
+   *
+   * Mechanically identical to `refreshSession`; semantically distinct
+   * because the caller's intent is different (startup hydration vs
+   * recovery from a 401). They share the same coalesced
+   * `#refreshPromise` so a startup probe and a parallel 401 don't
+   * double-launch the iframe.
+   */
+  async bootstrap(): Promise<UserProfile | null> {
+    return this.refreshSession();
   }
 
   async signIn(): Promise<UserProfile> {
@@ -248,20 +312,20 @@ export class GoogleAuthService {
     this.#accessToken = response.access_token;
     try {
       const profile = await this.fetchUserProfile(response.access_token);
-      this.persistSession(response, profile);
+      this.recordSignedInHints(profile.email);
       return profile;
     } catch (error) {
       // The token request succeeded but the userinfo follow-up failed
       // (network blip, 403 on profile scope, malformed Google
       // response). Without this catch, `#accessToken` would be set
-      // to a working Drive token but no profile would be persisted —
+      // to a working Drive token but no profile would be returned —
       // app.ts treats `profile === null` as "signed out", so the
       // user sees the signed-out UI while the in-memory token sits
       // there orphaned, ready to ride along on any background save.
       // Wipe the same way `refreshSession` does and re-throw so the
       // caller can show the error.
       this.#accessToken = null;
-      this.clearStoredSession();
+      this.clearSignedInHints();
       throw error;
     }
   }
@@ -278,25 +342,31 @@ export class GoogleAuthService {
 
       try {
         const token = await this.requestToken(
-          "",
+          "none",
           "Unable to refresh the Google session.",
         );
         this.#accessToken = token.access_token;
         const profile = await this.fetchUserProfile(token.access_token);
-        this.persistSession(token, profile);
+        // Refresh the email hint on every successful silent refresh
+        // — Google may have rotated which account is "primary" on the
+        // session, and a stale hint there could nudge silent refresh
+        // toward the wrong account next time. The `is-logged-in` flag
+        // is set here too as a defensive write: if it was somehow
+        // missing (e.g. cleared by a stale tab), success on a real
+        // silent refresh proves the user is in fact signed in.
+        this.recordSignedInHints(profile.email);
         return profile;
       } catch {
-        // Eager invalidate: when silent refresh fails, the persisted
-        // token is by definition no longer usable — Google has either
-        // revoked it (sign-out on another device, security event) or
-        // the GIS session cookie is gone (ITP, browser data clear,
-        // user signed out of Google entirely). Leaving the dead token
-        // on disk would let the next bootstrap pretend it's signed in,
-        // hand the stale token to Drive, and surface as a sync-error
-        // pulse on first save instead of a clean signed-out state.
-        // Wipe both in-memory and persisted copies immediately.
+        // Silent refresh failure is a normal state on iOS Safari with
+        // strict ITP — the cross-site iframe to `accounts.google.com`
+        // can't read the session cookie and the request fails. We
+        // deliberately do NOT clear `IS_LOGGED_IN_KEY` here: that
+        // flag exists to remember "user has signed in before" for the
+        // PWA fast-path, and a single ITP-driven failure shouldn't
+        // erase that. The flag is cleared only on explicit sign-out.
+        // The in-memory token IS cleared because by definition we
+        // don't have a fresh one.
         this.#accessToken = null;
-        this.clearStoredSession();
         return null;
       }
     })().finally(() => {
@@ -310,19 +380,9 @@ export class GoogleAuthService {
     return this.#refreshPromise;
   }
 
-  async restorePersistedSession(): Promise<UserProfile | null> {
-    const storedSession = this.readStoredSession();
-    if (!storedSession) {
-      return null;
-    }
-
-    this.#accessToken = storedSession.accessToken;
-    return storedSession.profile;
-  }
-
   signOut(): void {
     if (!this.#accessToken || !window.google?.accounts?.oauth2) {
-      this.clearStoredSession();
+      this.clearSignedInHints();
       this.#accessToken = null;
       return;
     }
@@ -332,76 +392,18 @@ export class GoogleAuthService {
     // gives us a paper trail when devtools is open. The user-visible
     // signed-out state is decoupled from revocation: even if revoke
     // fails (offline, Google unreachable), the local session is gone
-    // and the persisted token is wiped.
+    // and the persisted hints are wiped.
     try {
       window.google.accounts.oauth2.revoke(this.#accessToken, () => undefined);
     } catch (error) {
       console.warn("Google token revoke failed:", error);
     }
-    this.clearStoredSession();
+    this.clearSignedInHints();
     this.#accessToken = null;
   }
 
   getAccessToken(): string | null {
     return this.#accessToken;
-  }
-
-  /**
-   * Subscribe to cross-tab sign-out. When another tab on the same
-   * origin removes the persisted auth session (sign-out, manual
-   * cache wipe, or the storage event fires for any reason that
-   * results in `newValue === null` for our key), this tab clears its
-   * own in-memory access token and invokes `handler` so the UI can
-   * reflect the signed-out state.
-   *
-   * Returns a teardown function that removes the listener. `app.ts`
-   * registers it from the `import.meta.hot.dispose` hook to avoid
-   * stacking listeners on HMR reloads — same pattern as
-   * `wirePaletteAccess` and `wireKeyboardShortcuts`.
-   *
-   * Storage events only fire in *other* tabs (not the one that wrote
-   * the change), so a sign-out in tab A reaches tab B but not back
-   * to tab A — exactly the propagation shape we want.
-   *
-   * `signIn` from another tab is intentionally NOT propagated here.
-   * Re-hydrating a peer tab's signed-in state from a `newValue`
-   * payload would require running `restorePersistedSession`-style
-   * logic from inside an event handler and would surprise the user
-   * who's looking at a "sign in" screen and suddenly sees their
-   * notes; sign-in is a deliberate action that should be triggered
-   * by the user reloading the tab they want to use.
-   */
-  subscribeToCrossTabSignOut(handler: () => void): () => void {
-    // Defensive teardown — in normal use the caller registers once
-    // per service instance, but the HMR-aware app.ts dispose hook
-    // can call this twice if the previous registration didn't run.
-    this.unsubscribeFromCrossTabSignOut();
-
-    const listener = (event: StorageEvent): void => {
-      // Only react to our own session key. Cross-origin storage
-      // events don't fire on this listener (browsers only notify
-      // same-origin tabs), but other localStorage slots on the same
-      // origin do — filter explicitly.
-      if (event.key !== GOOGLE_AUTH_SESSION_KEY) return;
-      // `newValue === null` means the key was removed (sign-out) or
-      // localStorage was cleared. Other transitions (sign-in,
-      // refresh-token rotation in another tab) fall through; see
-      // method-level comment for rationale.
-      if (event.newValue !== null) return;
-
-      this.#accessToken = null;
-      handler();
-    };
-
-    window.addEventListener("storage", listener);
-    this.#storageListener = listener;
-    return () => this.unsubscribeFromCrossTabSignOut();
-  }
-
-  private unsubscribeFromCrossTabSignOut(): void {
-    if (!this.#storageListener) return;
-    window.removeEventListener("storage", this.#storageListener);
-    this.#storageListener = null;
   }
 
   private async fetchUserProfile(accessToken: string): Promise<UserProfile> {
@@ -418,95 +420,30 @@ export class GoogleAuthService {
     return parseUserInfoResponse(await response.json());
   }
 
-  private persistSession(tokenResponse: TokenResponse, profile: UserProfile): void {
-    const expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString();
-    window.localStorage.setItem(
-      GOOGLE_AUTH_SESSION_KEY,
-      JSON.stringify({
-        accessToken: tokenResponse.access_token,
-        expiresAt,
-        profile,
-        // Touch on every persist (sign-in, refresh) so the rolling
-        // idle window resets while the user is active.
-        lastUsedAt: new Date().toISOString(),
-      } satisfies StoredGoogleAuthSession),
-    );
-  }
-
-  private readStoredSession(): StoredGoogleAuthSession | null {
-    const rawValue = window.localStorage.getItem(GOOGLE_AUTH_SESSION_KEY);
-    if (!rawValue) {
-      return null;
-    }
-
+  /**
+   * Persists the two non-credential UX hints we keep across sessions.
+   * Wrapped in try/catch because localStorage can throw on quota
+   * exhaustion or in private-mode contexts where writes are disabled
+   * — neither should derail a successful sign-in. The hints are an
+   * optimization; if they fail to write, the next bootstrap simply
+   * runs without `login_hint` and the PWA fast-path falls through to
+   * the regular silent-refresh wait.
+   */
+  private recordSignedInHints(email: string): void {
     try {
-      const session = JSON.parse(rawValue) as StoredGoogleAuthSession;
-      if (!session.accessToken || !session.expiresAt || !session.profile?.email || !session.profile?.name) {
-        this.clearStoredSession();
-        return null;
-      }
-
-      if (new Date(session.expiresAt).getTime() <= Date.now()) {
-        this.clearStoredSession();
-        return null;
-      }
-
-      // Rolling idle expiry. Sessions persisted before this field
-      // existed have no `lastUsedAt` — treat them as fresh-now so a
-      // version-bump rollout doesn't mass-evict every active user.
-      // Subsequent `persistSession` calls (sign-in, refresh) write
-      // the field for real.
-      if (session.lastUsedAt) {
-        // `Math.max(…, 0)` clamps the clock-backward case: if the
-        // user manually moves their system clock or NTP steps back,
-        // a naive `Date.now() - past` can go negative and look like
-        // "infinitely fresh", which would incorrectly keep a session
-        // that should evict. Negative idle is treated as zero — the
-        // session is *at least* freshly touched, never older.
-        const idleMs = Math.max(
-          Date.now() - new Date(session.lastUsedAt).getTime(),
-          0,
-        );
-        if (idleMs > MAX_IDLE_DAYS_BEFORE_EXPIRY * MS_PER_DAY) {
-          this.clearStoredSession();
-          return null;
-        }
-      }
-
-      // Bump `lastUsedAt` on every successful read so an active
-      // user's idle clock resets at every bootstrap. Re-write the
-      // session so the on-disk timestamp follows reality. The token
-      // / expiresAt / profile are untouched — only the heartbeat
-      // moves.
-      const touched: StoredGoogleAuthSession = {
-        ...session,
-        lastUsedAt: new Date().toISOString(),
-      };
-      try {
-        window.localStorage.setItem(
-          GOOGLE_AUTH_SESSION_KEY,
-          JSON.stringify(touched),
-        );
-      } catch (error) {
-        // localStorage quota exhausted or similar. The heartbeat
-        // didn't land, but the read itself succeeded — return the
-        // already-loaded session so the user stays signed in. The
-        // idle clock will keep ticking against the previous
-        // `lastUsedAt`, which is the right degraded behaviour: an
-        // unwriteable storage shouldn't lock the user out, just
-        // stop bumping the idle clock until quota frees up.
-        console.warn("Failed to bump lastUsedAt on persisted session:", error);
-        return session;
-      }
-
-      return touched;
-    } catch {
-      this.clearStoredSession();
-      return null;
+      window.localStorage.setItem(EMAIL_HINT_KEY, email);
+      window.localStorage.setItem(IS_LOGGED_IN_KEY, "true");
+    } catch (error) {
+      console.warn("Failed to persist sign-in hints:", error);
     }
   }
 
-  private clearStoredSession(): void {
-    window.localStorage.removeItem(GOOGLE_AUTH_SESSION_KEY);
+  private clearSignedInHints(): void {
+    try {
+      window.localStorage.removeItem(EMAIL_HINT_KEY);
+      window.localStorage.removeItem(IS_LOGGED_IN_KEY);
+    } catch (error) {
+      console.warn("Failed to clear sign-in hints:", error);
+    }
   }
 }

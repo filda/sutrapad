@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   GoogleAuthService,
-  MAX_IDLE_DAYS_BEFORE_EXPIRY,
+  hasLoggedInHint,
   parseUserInfoResponse,
+  readEmailHint,
 } from "../src/services/google-auth";
 
 function createStorageMock(): Storage {
@@ -30,98 +31,160 @@ function createStorageMock(): Storage {
   };
 }
 
-describe("GoogleAuthService persisted session restore", () => {
-  beforeEach(() => {
-    vi.stubGlobal("window", { localStorage: createStorageMock() });
-    vi.stubGlobal("localStorage", window.localStorage);
-    localStorage.clear();
-  });
+type TokenCallback = (response: {
+  access_token: string;
+  expires_in: number;
+  scope: string;
+  token_type: string;
+  error?: string;
+}) => void;
+type ErrorCallback = () => void;
 
-  it("restores a persisted session without calling the Google profile endpoint again", async () => {
-    const expiresAt = new Date(Date.now() + 60_000).toISOString();
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "test-token",
-        expiresAt,
-        profile: {
-          name: "Filda",
-          email: "panfilda@gmail.com",
-          picture: "https://example.com/avatar.png",
-        },
-      }),
-    );
+interface PendingTokenRequest {
+  callback: TokenCallback;
+  errorCallback: ErrorCallback | undefined;
+  prompt: string;
+  /**
+   * `hint` arrives in two places — on `initTokenClient`'s top-level
+   * config and on `requestAccessToken({ hint })`. The harness records
+   * both because both sites must be populated with the persisted
+   * email hint for GIS to actually thread the value through to the
+   * silent-refresh flow. Tests assert against this to pin the
+   * round-trip.
+   */
+  hintAtInit: string | undefined;
+  hintAtRequest: string | undefined;
+}
 
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const auth = new GoogleAuthService();
+function setupGoogleIdentityHarness(): {
+  pendingRequests: Array<PendingTokenRequest>;
+  initCalls: { current: number };
+} {
+  const pendingRequests: Array<PendingTokenRequest> = [];
+  const initCalls = { current: 0 };
 
-    await expect(auth.restorePersistedSession()).resolves.toEqual({
-      name: "Filda",
-      email: "panfilda@gmail.com",
-      picture: "https://example.com/avatar.png",
-    });
-
-    expect(auth.getAccessToken()).toBe("test-token");
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("logs but does not throw when revoke fails synchronously", async () => {
-    // The Google revoke call can throw synchronously when the GIS
-    // script has been monkey-patched (e.g. an old version stuck in
-    // the cache). The user-visible signed-out state must still hold.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    vi.stubGlobal("window", {
-      localStorage: window.localStorage,
-      google: {
-        accounts: {
-          oauth2: {
-            initTokenClient: () => ({ requestAccessToken: () => undefined }),
-            revoke: () => {
-              throw new Error("revoke broken");
+  vi.stubGlobal("window", {
+    localStorage: createStorageMock(),
+    google: {
+      accounts: {
+        oauth2: {
+          initTokenClient: vi.fn(
+            (config: {
+              callback: TokenCallback;
+              error_callback?: ErrorCallback;
+              hint?: string;
+            }) => {
+              initCalls.current += 1;
+              return {
+                requestAccessToken: vi.fn(
+                  (opts: { prompt?: string; hint?: string } = {}) => {
+                    pendingRequests.push({
+                      callback: config.callback,
+                      errorCallback: config.error_callback,
+                      prompt: opts.prompt ?? "",
+                      hintAtInit: config.hint,
+                      hintAtRequest: opts.hint,
+                    });
+                  },
+                ),
+              };
             },
-          },
+          ),
+          revoke: vi.fn((_token: string, done: () => void) => done()),
         },
       },
-    });
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "broken-token",
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        profile: { name: "X", email: "x@x" },
-      }),
-    );
+    },
+  });
+  vi.stubGlobal("localStorage", window.localStorage);
+  localStorage.clear();
 
-    const auth = new GoogleAuthService();
-    await auth.restorePersistedSession();
-    expect(() => auth.signOut()).not.toThrow();
-    expect(auth.getAccessToken()).toBeNull();
-    expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(
-      "Google token revoke failed:",
-      expect.any(Error),
-    );
-    warnSpy.mockRestore();
+  // Stub fetch (used by fetchUserProfile) so the userinfo round-trip
+  // resolves with a valid profile shape.
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      new Response(
+        JSON.stringify({ name: "Test", email: "t@t", picture: "p" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    ),
+  );
+  // VITE_GOOGLE_CLIENT_ID is read from import.meta.env; stub it.
+  vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "stub-client-id");
+
+  return { pendingRequests, initCalls };
+}
+
+describe("GoogleAuthService.bootstrap", () => {
+  it("returns the profile and holds an in-memory token when silent refresh succeeds", async () => {
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+
+    const bootstrapPromise = service.bootstrap();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "fresh",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+
+    const profile = await bootstrapPromise;
+    expect(profile).toEqual({ name: "Test", email: "t@t", picture: "p" });
+    expect(service.getAccessToken()).toBe("fresh");
   });
 
-  it("drops expired persisted sessions", async () => {
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "expired-token",
-        expiresAt: new Date(Date.now() - 60_000).toISOString(),
-        profile: {
-          name: "Filda",
-          email: "panfilda@gmail.com",
-        },
-      }),
-    );
+  it("uses prompt: 'none' for the silent refresh — never surfaces an auto-confirm popup", async () => {
+    // GIS treats `prompt: ''` as "may show a brief FedCM auto-select
+    // popup" and `prompt: 'none'` as "strictly silent, fail if any UI
+    // would be needed". Cold-load bootstrap must use the strict mode
+    // — flickering a popup on every page reload feels off for a
+    // returning user. Pin this against accidental regression to ''.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
 
-    const auth = new GoogleAuthService();
+    void service.bootstrap();
+    await Promise.resolve();
 
-    await expect(auth.restorePersistedSession()).resolves.toBeNull();
-    expect(auth.getAccessToken()).toBeNull();
-    expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
+    expect(pendingRequests).toHaveLength(1);
+    expect(pendingRequests[0].prompt).toBe("none");
+  });
+
+  it("returns null and leaves no token when silent refresh fails", async () => {
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+
+    const bootstrapPromise = service.bootstrap();
+    await Promise.resolve();
+    pendingRequests[0].errorCallback?.();
+
+    expect(await bootstrapPromise).toBeNull();
+    expect(service.getAccessToken()).toBeNull();
+  });
+
+  it("does NOT clear the is-logged-in hint when silent refresh fails", async () => {
+    // Failed silent refresh on iOS Safari with strict ITP is a normal
+    // state, not a sign-out. The is-logged-in flag exists to remember
+    // that the user has interactively authorised on this origin and
+    // should be presented with the sign-in button (not a "first
+    // visit" experience). Wiping it on every ITP-driven failure
+    // would make the PWA fast-path useless.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    localStorage.setItem("sutrapad-is-logged-in", "true");
+    localStorage.setItem("sutrapad-user-email-hint", "x@x");
+
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const bootstrapPromise = service.bootstrap();
+    await Promise.resolve();
+    pendingRequests[0].errorCallback?.();
+    await bootstrapPromise;
+
+    expect(localStorage.getItem("sutrapad-is-logged-in")).toBe("true");
+    expect(localStorage.getItem("sutrapad-user-email-hint")).toBe("x@x");
   });
 });
 
@@ -132,69 +195,7 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
    * tag index fetch all hitting the stale token in the same tick),
    * we want a single GIS silent-refresh round-trip, not three
    * racing each other.
-   *
-   * Tests stub Google Identity Services + `fetch` to avoid hitting
-   * the real network. The harness lets each test queue a sequence
-   * of token-callback responses; `expect(initCalls)` then asserts
-   * how many times the underlying GIS round-trip actually ran.
    */
-
-  type TokenCallback = (response: { access_token: string; expires_in: number; scope: string; token_type: string; error?: string }) => void;
-  type ErrorCallback = () => void;
-
-  function setupGoogleIdentityHarness(): {
-    pendingRequests: Array<{ callback: TokenCallback; errorCallback: ErrorCallback | undefined; prompt: string }>;
-    initCalls: { current: number };
-  } {
-    const pendingRequests: Array<{ callback: TokenCallback; errorCallback: ErrorCallback | undefined; prompt: string }> = [];
-    const initCalls = { current: 0 };
-
-    vi.stubGlobal("window", {
-      localStorage: createStorageMock(),
-      google: {
-        accounts: {
-          oauth2: {
-            initTokenClient: vi.fn(
-              (config: {
-                callback: TokenCallback;
-                error_callback?: ErrorCallback;
-              }) => {
-                initCalls.current += 1;
-                return {
-                  requestAccessToken: vi.fn((opts: { prompt?: string } = {}) => {
-                    pendingRequests.push({
-                      callback: config.callback,
-                      errorCallback: config.error_callback,
-                      prompt: opts.prompt ?? "",
-                    });
-                  }),
-                };
-              },
-            ),
-            revoke: vi.fn((_token: string, done: () => void) => done()),
-          },
-        },
-      },
-    });
-    vi.stubGlobal("localStorage", window.localStorage);
-    localStorage.clear();
-
-    // Stub fetch (used by fetchUserProfile) so the userinfo round-trip
-    // resolves with a valid profile shape.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({ name: "Test", email: "t@t", picture: "p" }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
-      ),
-    );
-    // VITE_GOOGLE_CLIENT_ID is read from import.meta.env; stub it.
-    vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "stub-client-id");
-
-    return { pendingRequests, initCalls };
-  }
 
   it("coalesces three concurrent refresh calls into a single GIS round-trip", async () => {
     const { pendingRequests, initCalls } = setupGoogleIdentityHarness();
@@ -289,21 +290,19 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
     expect(await second).not.toBeNull();
   });
 
-  it("eagerly clears state when signIn's userinfo fetch fails", async () => {
+  it("eagerly clears in-memory state when signIn's userinfo fetch fails", async () => {
     // Token grant succeeded but the follow-up userinfo fetch
     // returned an error shape (or threw). Without the catch in
     // signIn, `#accessToken` would sit set to a working Drive token
     // while `profile === null`, leaving the app in a broken
-    // pseudo-signed-in state. Eager invalidate must wipe both
-    // in-memory and persisted copies the same way refresh does,
-    // and re-throw so the user-facing error path runs.
+    // pseudo-signed-in state. Eager invalidate must wipe the
+    // in-memory token AND the persisted hints (so the failed account
+    // doesn't auto-prefill the next sign-in attempt).
     const { pendingRequests } = setupGoogleIdentityHarness();
     // Override the fetch stub so userinfo throws.
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response("internal", { status: 500 }),
-      ),
+      vi.fn(async () => new Response("internal", { status: 500 })),
     );
 
     const service = new GoogleAuthService();
@@ -320,354 +319,167 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
 
     await expect(signInPromise).rejects.toThrow();
     expect(service.getAccessToken()).toBeNull();
-    expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
-  });
-
-  it("eagerly clears the persisted session when refresh fails", async () => {
-    // Drive returned 401, silent refresh failed (ITP, cookies gone,
-    // Google sign-out elsewhere). The persisted token in localStorage
-    // is by definition dead — leaving it would fool the next
-    // bootstrap into "signed in" state and replay the same dead token
-    // against Drive. Wipe both in-memory and the on-disk copy.
-    const { pendingRequests } = setupGoogleIdentityHarness();
-    // Pre-populate localStorage with a "still valid by clock" session
-    // so we can prove eager-invalidate clears it on refresh failure.
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "stale-token",
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        profile: { name: "Stale", email: "s@s" },
-      }),
-    );
-
-    const service = new GoogleAuthService();
-    await service.initialize();
-    expect(localStorage.getItem("sutrapad-google-auth-session")).not.toBeNull();
-
-    const refresh = service.refreshSession();
-    await Promise.resolve();
-    pendingRequests[0].errorCallback?.();
-    expect(await refresh).toBeNull();
-
-    expect(service.getAccessToken()).toBeNull();
-    expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
+    expect(localStorage.getItem("sutrapad-user-email-hint")).toBeNull();
+    expect(localStorage.getItem("sutrapad-is-logged-in")).toBeNull();
   });
 });
 
-describe("GoogleAuthService rolling idle expiry", () => {
+describe("GoogleAuthService login_hint round-trip", () => {
+  it("does not pass a hint when localStorage has none", async () => {
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+    void service.refreshSession();
+    await Promise.resolve();
+
+    expect(pendingRequests[0].hintAtInit).toBeUndefined();
+    expect(pendingRequests[0].hintAtRequest).toBeUndefined();
+  });
+
+  it("passes the persisted email hint on both initTokenClient and requestAccessToken", async () => {
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    localStorage.setItem("sutrapad-user-email-hint", "filda@example.com");
+    const service = new GoogleAuthService();
+    await service.initialize();
+    void service.refreshSession();
+    await Promise.resolve();
+
+    expect(pendingRequests[0].hintAtInit).toBe("filda@example.com");
+    expect(pendingRequests[0].hintAtRequest).toBe("filda@example.com");
+  });
+
+  it("writes the email hint and is-logged-in flag on signIn success", async () => {
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+
+    const signInPromise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "fresh",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await signInPromise;
+
+    expect(localStorage.getItem("sutrapad-user-email-hint")).toBe("t@t");
+    expect(localStorage.getItem("sutrapad-is-logged-in")).toBe("true");
+  });
+
+  it("refreshes the email hint on each successful silent refresh", async () => {
+    // Google may have rotated which account is "primary" on the
+    // `accounts.google.com` session between sign-in and refresh. A
+    // stale hint there could nudge subsequent silent refresh toward
+    // the wrong account; refreshing the hint on every successful
+    // round-trip keeps it tracking reality.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    localStorage.setItem("sutrapad-user-email-hint", "old@x");
+    // Userinfo will return `t@t` per the harness default.
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const refreshPromise = service.refreshSession();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "fresh",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await refreshPromise;
+
+    expect(localStorage.getItem("sutrapad-user-email-hint")).toBe("t@t");
+  });
+});
+
+describe("GoogleAuthService.signOut", () => {
   beforeEach(() => {
     vi.stubGlobal("window", { localStorage: createStorageMock() });
     vi.stubGlobal("localStorage", window.localStorage);
     localStorage.clear();
   });
 
-  it("pins MAX_IDLE_DAYS_BEFORE_EXPIRY at 7 — silent change would evict warm caches", () => {
-    expect(MAX_IDLE_DAYS_BEFORE_EXPIRY).toBe(7);
+  it("clears both persisted hints (email + logged-in flag)", () => {
+    localStorage.setItem("sutrapad-user-email-hint", "x@x");
+    localStorage.setItem("sutrapad-is-logged-in", "true");
+    const service = new GoogleAuthService();
+    service.signOut();
+
+    expect(localStorage.getItem("sutrapad-user-email-hint")).toBeNull();
+    expect(localStorage.getItem("sutrapad-is-logged-in")).toBeNull();
   });
 
-  it("invalidates a session whose lastUsedAt is older than the idle cap", async () => {
-    const expiresAt = new Date(Date.now() + 60_000).toISOString();
-    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "stale",
-        expiresAt,
-        profile: { name: "X", email: "x@x" },
-        lastUsedAt: eightDaysAgo,
-      }),
-    );
-
-    const auth = new GoogleAuthService();
-    expect(await auth.restorePersistedSession()).toBeNull();
-    expect(localStorage.getItem("sutrapad-google-auth-session")).toBeNull();
-  });
-
-  it("keeps a session whose lastUsedAt is just inside the idle cap", async () => {
-    const expiresAt = new Date(Date.now() + 60_000).toISOString();
-    // 6 days ago — well under the 7-day cap, should survive.
-    const sixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "warm",
-        expiresAt,
-        profile: { name: "X", email: "x@x" },
-        lastUsedAt: sixDaysAgo,
-      }),
-    );
-
-    const auth = new GoogleAuthService();
-    const profile = await auth.restorePersistedSession();
-    expect(profile).not.toBeNull();
-    expect(auth.getAccessToken()).toBe("warm");
-  });
-
-  it("treats a missing lastUsedAt as fresh-now (backwards compat)", async () => {
-    // Sessions persisted before the rolling-expiry rollout have no
-    // lastUsedAt field. They must NOT be evicted on the very first
-    // post-rollout bootstrap, because that would mass-sign-out every
-    // active user the moment the deploy lands.
-    const expiresAt = new Date(Date.now() + 60_000).toISOString();
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "legacy",
-        expiresAt,
-        profile: { name: "X", email: "x@x" },
-        // No lastUsedAt.
-      }),
-    );
-
-    const auth = new GoogleAuthService();
-    const profile = await auth.restorePersistedSession();
-    expect(profile).not.toBeNull();
-    expect(auth.getAccessToken()).toBe("legacy");
-  });
-
-  it("treats backward clock skew as zero idle (no false fresh marker)", async () => {
-    // User moved their system clock backward (manual change, NTP
-    // step). `lastUsedAt` is now in the future relative to
-    // `Date.now()`. A naive `Date.now() - lastUsedAt` would go
-    // negative and pass the idle check, treating an arbitrarily-old
-    // session as fresh. The Math.max(…, 0) clamp prevents that.
-    const expiresAt = new Date(Date.now() + 60_000).toISOString();
-    const oneHourFuture = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "skewed",
-        expiresAt,
-        profile: { name: "X", email: "x@x" },
-        lastUsedAt: oneHourFuture,
-      }),
-    );
-
-    const auth = new GoogleAuthService();
-    // Session should still be returned (idle is clamped to 0, well
-    // under the 7-day cap), but the heartbeat should have re-anchored
-    // lastUsedAt to "now" so the future timestamp doesn't persist.
-    const profile = await auth.restorePersistedSession();
-    expect(profile).not.toBeNull();
-    const stored = JSON.parse(
-      localStorage.getItem("sutrapad-google-auth-session") as string,
-    );
-    expect(new Date(stored.lastUsedAt).getTime()).toBeLessThanOrEqual(
-      Date.now() + 1_000,
-    );
-  });
-
-  it("survives a localStorage quota error during heartbeat write", async () => {
-    // The user's localStorage is full (other apps / extensions).
-    // `setItem` throws QuotaExceededError. The read itself succeeded,
-    // so the user is signed in — degraded mode is "session works,
-    // idle clock doesn't reset". Locking the user out on quota
-    // failure would be the wrong call.
-    const expiresAt = new Date(Date.now() + 60_000).toISOString();
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "warm",
-        expiresAt,
-        profile: { name: "X", email: "x@x" },
-        lastUsedAt: oneDayAgo,
-      }),
-    );
-
-    // Patch setItem to throw on the auth key. The pre-population
-    // above ran fine because we patched after.
-    const originalSetItem = localStorage.setItem.bind(localStorage);
-    localStorage.setItem = (key: string, value: string) => {
-      if (key === "sutrapad-google-auth-session") {
-        throw new Error("QuotaExceededError");
-      }
-      originalSetItem(key, value);
+  it("logs but does not throw when revoke fails synchronously", async () => {
+    // The Google revoke call can throw synchronously when the GIS
+    // script has been monkey-patched (e.g. an old version stuck in
+    // the cache). The user-visible signed-out state must still hold.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    // Replace the harness's revoke with a throwing one; everything
+    // else (initTokenClient, fetch) stays.
+    const win = window as unknown as {
+      google: { accounts: { oauth2: { revoke: (token: string, done: () => void) => void } } };
     };
+    win.google.accounts.oauth2.revoke = () => {
+      throw new Error("revoke broken");
+    };
+
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    const auth = new GoogleAuthService();
-    const profile = await auth.restorePersistedSession();
-    expect(profile).not.toBeNull();
-    expect(auth.getAccessToken()).toBe("warm");
+    const service = new GoogleAuthService();
+    await service.initialize();
+    // Drive a successful signIn so there's a token in memory to
+    // revoke. Without it, signOut returns early before reaching
+    // revoke. Microtask flush gives signIn a chance to register the
+    // pending request before we resolve it.
+    const signInPromise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "live",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await signInPromise;
+
+    expect(() => service.signOut()).not.toThrow();
+    expect(service.getAccessToken()).toBeNull();
+    expect(localStorage.getItem("sutrapad-user-email-hint")).toBeNull();
+    expect(localStorage.getItem("sutrapad-is-logged-in")).toBeNull();
     expect(warnSpy).toHaveBeenCalledWith(
-      "Failed to bump lastUsedAt on persisted session:",
+      "Google token revoke failed:",
       expect.any(Error),
     );
-
     warnSpy.mockRestore();
-  });
-
-  it("bumps lastUsedAt on each successful read", async () => {
-    const expiresAt = new Date(Date.now() + 60_000).toISOString();
-    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "warm",
-        expiresAt,
-        profile: { name: "X", email: "x@x" },
-        lastUsedAt: oneDayAgo,
-      }),
-    );
-
-    const auth = new GoogleAuthService();
-    await auth.restorePersistedSession();
-
-    const stored = JSON.parse(
-      localStorage.getItem("sutrapad-google-auth-session") as string,
-    );
-    // Heartbeat must have moved forward — the bumped value lives
-    // within the last few seconds, not still 24h old.
-    const bumpedAgeMs = Date.now() - new Date(stored.lastUsedAt).getTime();
-    expect(bumpedAgeMs).toBeLessThan(5_000);
   });
 });
 
-describe("GoogleAuthService.subscribeToCrossTabSignOut", () => {
-  function createWindowWithStorage(): {
-    eventListeners: Map<string, Array<EventListener>>;
-    fireStorageEvent: (key: string | null, newValue: string | null) => void;
-  } {
-    const listeners = new Map<string, Array<EventListener>>();
-    vi.stubGlobal("window", {
-      localStorage: createStorageMock(),
-      addEventListener: (type: string, listener: EventListener) => {
-        const list = listeners.get(type) ?? [];
-        list.push(listener);
-        listeners.set(type, list);
-      },
-      removeEventListener: (type: string, listener: EventListener) => {
-        const list = listeners.get(type) ?? [];
-        listeners.set(
-          type,
-          list.filter((l) => l !== listener),
-        );
-      },
-    });
+describe("readEmailHint / hasLoggedInHint", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", { localStorage: createStorageMock() });
     vi.stubGlobal("localStorage", window.localStorage);
     localStorage.clear();
-
-    return {
-      eventListeners: listeners,
-      fireStorageEvent: (key, newValue) => {
-        const event = { key, newValue, oldValue: null } as StorageEvent;
-        for (const l of listeners.get("storage") ?? []) {
-          l(event);
-        }
-      },
-    };
-  }
-
-  it("clears in-memory token and invokes the handler when peer tab removes the session key", () => {
-    const harness = createWindowWithStorage();
-    const service = new GoogleAuthService();
-    // Pre-populate restored session so there's an in-memory token
-    // to invalidate.
-    localStorage.setItem(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "live-token",
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        profile: { name: "X", email: "x@x" },
-      }),
-    );
-    return service.restorePersistedSession().then(() => {
-      expect(service.getAccessToken()).toBe("live-token");
-
-      const handler = vi.fn();
-      service.subscribeToCrossTabSignOut(handler);
-
-      // Peer tab removes the session key — storage event fires with
-      // newValue === null.
-      harness.fireStorageEvent("sutrapad-google-auth-session", null);
-
-      expect(service.getAccessToken()).toBeNull();
-      expect(handler).toHaveBeenCalledTimes(1);
-    });
   });
 
-  it("ignores storage events for unrelated keys", () => {
-    const harness = createWindowWithStorage();
-    const service = new GoogleAuthService();
-    const handler = vi.fn();
-    service.subscribeToCrossTabSignOut(handler);
-
-    harness.fireStorageEvent("sutrapad-local-workspace", null);
-    harness.fireStorageEvent("sutrapad-og-image-cache-v1", null);
-
-    expect(handler).not.toHaveBeenCalled();
+  it("readEmailHint returns null when nothing persisted", () => {
+    expect(readEmailHint()).toBeNull();
   });
 
-  it("ignores localStorage.clear() (event.key === null)", () => {
-    // The storage event spec dictates that `localStorage.clear()`
-    // fires an event with `key === null`. A devtools panic-clear,
-    // a misbehaving extension, or another app on the origin
-    // wiping their own slot shouldn't be treated as a SutraPad
-    // sign-out — the existing `event.key !== GOOGLE_AUTH_SESSION_KEY`
-    // filter already protects this, but pin it explicitly so a
-    // future "react to clear too" change has to remove this guard
-    // intentionally.
-    const harness = createWindowWithStorage();
-    const service = new GoogleAuthService();
-    const handler = vi.fn();
-    service.subscribeToCrossTabSignOut(handler);
-
-    harness.fireStorageEvent(null, null);
-
-    expect(handler).not.toHaveBeenCalled();
+  it("readEmailHint returns the persisted value verbatim", () => {
+    localStorage.setItem("sutrapad-user-email-hint", "filda@example.com");
+    expect(readEmailHint()).toBe("filda@example.com");
   });
 
-  it("ignores storage events that set a non-null value (peer sign-in)", () => {
-    // Sign-in propagation deliberately not implemented — see method
-    // doc. A peer tab updating our key with a fresh session payload
-    // should NOT silently sign-in this tab.
-    const harness = createWindowWithStorage();
-    const service = new GoogleAuthService();
-    const handler = vi.fn();
-    service.subscribeToCrossTabSignOut(handler);
-
-    harness.fireStorageEvent(
-      "sutrapad-google-auth-session",
-      JSON.stringify({
-        accessToken: "peer-token",
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        profile: { name: "Peer", email: "p@p" },
-      }),
-    );
-
-    expect(handler).not.toHaveBeenCalled();
+  it("hasLoggedInHint is false when flag missing or non-true", () => {
+    expect(hasLoggedInHint()).toBe(false);
+    localStorage.setItem("sutrapad-is-logged-in", "false");
+    expect(hasLoggedInHint()).toBe(false);
+    localStorage.setItem("sutrapad-is-logged-in", "");
+    expect(hasLoggedInHint()).toBe(false);
   });
 
-  it("removes the listener via the returned dispose function", () => {
-    const harness = createWindowWithStorage();
-    const service = new GoogleAuthService();
-    const handler = vi.fn();
-    const dispose = service.subscribeToCrossTabSignOut(handler);
-
-    dispose();
-    harness.fireStorageEvent("sutrapad-google-auth-session", null);
-    expect(handler).not.toHaveBeenCalled();
-  });
-
-  it("replaces an existing subscription when subscribed twice (idempotent dispose)", () => {
-    // HMR or accidentally double-wiring `createApp` could call
-    // subscribe twice. The second call should replace the first
-    // listener — otherwise we'd stack handlers and fire duplicate
-    // sign-out callbacks per peer event.
-    const harness = createWindowWithStorage();
-    const service = new GoogleAuthService();
-    const firstHandler = vi.fn();
-    const secondHandler = vi.fn();
-
-    service.subscribeToCrossTabSignOut(firstHandler);
-    service.subscribeToCrossTabSignOut(secondHandler);
-
-    harness.fireStorageEvent("sutrapad-google-auth-session", null);
-
-    expect(firstHandler).not.toHaveBeenCalled();
-    expect(secondHandler).toHaveBeenCalledTimes(1);
+  it("hasLoggedInHint is true only for the literal string 'true'", () => {
+    localStorage.setItem("sutrapad-is-logged-in", "true");
+    expect(hasLoggedInHint()).toBe(true);
   });
 });
 
