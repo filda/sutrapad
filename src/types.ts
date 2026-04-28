@@ -147,10 +147,15 @@ export interface SutraPadTagEntry {
  *
  * Because `appendNoteToWorkspace` (silent capture) intentionally
  * skips re-writing this file to keep round-trips down, the Drive
- * copy can drift behind the workspace by N captures. Drift heals on
- * the next interactive `saveWorkspace`. Any future stats / sync
- * feature that wants live tag data MUST go through `buildTagIndex`
- * against the in-memory workspace, not `fetchJsonFile<SutraPadTagIndex>`.
+ * copy can drift behind the workspace by N captures. The same
+ * applies to the main `SutraPadIndex` since the silent path stopped
+ * touching it — `loadWorkspace` is now folder-query-driven, so the
+ * index is consulted only for the `activeNoteId` hint and orphan
+ * note files (created by silent capture but absent from the index)
+ * are picked up directly from the folder. Drift heals on the next
+ * interactive `saveWorkspace`. Any future stats / sync feature that
+ * wants live tag data MUST go through `buildTagIndex` against the
+ * in-memory workspace, not `fetchJsonFile<SutraPadTagIndex>`.
  */
 export interface SutraPadTagIndex {
   version: 1;

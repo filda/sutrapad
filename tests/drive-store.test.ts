@@ -33,6 +33,17 @@ const isHeadSearch = (url: string): boolean => url.includes("'head'") && url.inc
 const isIndexSearch = (url: string): boolean => url.includes("'index'") && url.includes("q=");
 const isTagSearch = (url: string): boolean => url.includes("'tags'") && url.includes("q=");
 const isTaskSearch = (url: string): boolean => url.includes("'tasks'") && url.includes("q=");
+/**
+ * Folder-scoped `kind=note` query used by the new
+ * folder-query-driven `loadWorkspace` to inventory note files. The
+ * shape rules out `findNoteFileById` (which also has `kind=note` but
+ * additionally constrains by `noteId=…`) so the predicate is unique
+ * to the folder sweep. Single quotes pass through `encodeURIComponent`
+ * unchanged, so we can match them literally; the `'noteId'` exclusion
+ * disambiguates from per-note id searches.
+ */
+const isNoteFolderSearch = (url: string): boolean =>
+  url.includes("'note'") && url.includes("q=") && !url.includes("'noteId'");
 const isContent = (url: string, id: string): boolean => url.includes(`/${id}?alt=media`);
 const isMetadata = (url: string, id: string): boolean => url.includes(`/${id}?fields=`);
 const isUpload = (_url: string, options?: RequestInit): boolean =>
@@ -60,6 +71,7 @@ function createLoadWorkspaceHandler(
 ): FetchHandler {
   return (url) => {
     if (isFolderSearch(url) && responses.folder) return cloneResponse(responses.folder);
+    if (isNoteFolderSearch(url) && responses.notesSearch) return cloneResponse(responses.notesSearch);
     if (isHeadSearch(url) && responses.headSearch) return cloneResponse(responses.headSearch);
     if (isIndexSearch(url) && responses.indexSearch) return cloneResponse(responses.indexSearch);
 
@@ -124,8 +136,12 @@ describe("GoogleDriveStore loadWorkspace", () => {
     expect(workspace.notes[0].tags).toEqual([]);
   });
 
-  it("loads notes from the active index referenced by the head file", async () => {
+  it("loads notes from the workspace folder, with active note from the index", async () => {
     const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
+    const noteDriveFile = driveFile("note-file-1", "note-note-abc.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "note-abc" },
+      parents: ["folder-1"],
+    });
     const headFile = driveFile("head-1", "sutrapad-head.json");
     const indexFile = driveFile("index-1", "index-2026-04-13T10-00-00-000Z.json");
     const head: SutraPadHead = {
@@ -158,6 +174,7 @@ describe("GoogleDriveStore loadWorkspace", () => {
     mockFetch(
       createLoadWorkspaceHandler({
         folder: fileList([folder]),
+        notesSearch: fileList([noteDriveFile]),
         headSearch: fileList([headFile]),
         "content:head-1": json(head),
         "metadata:index-1": json(indexFile),
@@ -177,26 +194,100 @@ describe("GoogleDriveStore loadWorkspace", () => {
     expect(workspace.activeNoteId).toBe("note-abc");
   });
 
-  it("falls back to the legacy index search when the head file is missing", async () => {
+  it("includes orphan note files that the index does not know about (silent capture)", async () => {
+    // Simulates the silent-capture flow: bookmarklet wrote
+    // `note-orphan.json` into the folder but never updated the
+    // index. The new folder-query-driven load picks it up
+    // regardless. The index's `activeNoteId` still wins (the
+    // bookmarklet-captured note doesn't auto-focus), and the
+    // workspace ends up sorted with the more recent note first.
     const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
-    const indexFile = driveFile("index-1", "sutrapad-index.json");
+    const indexedFile = driveFile("note-file-1", "note-note-abc.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "note-abc" },
+      parents: ["folder-1"],
+    });
+    const orphanFile = driveFile("note-file-orphan", "note-orphan.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "orphan" },
+      parents: ["folder-1"],
+    });
+    const headFile = driveFile("head-1", "sutrapad-head.json");
+    const indexFile = driveFile("index-1", "index-2026-04-13T10-00-00-000Z.json");
+    const head: SutraPadHead = {
+      version: 1,
+      activeIndexId: "index-1",
+      savedAt: "2026-04-13T10:00:00.000Z",
+    };
     const index: SutraPadIndex = {
       version: 1,
       updatedAt: "2026-04-13T10:00:00.000Z",
       savedAt: "2026-04-13T10:00:00.000Z",
-      activeNoteId: "old-note",
+      // Index knows only about note-abc; orphan was added by the
+      // silent path after this index was written.
+      activeNoteId: "note-abc",
       notes: [{
-        id: "old-note",
-        title: "Old",
+        id: "note-abc",
+        title: "Indexed",
         createdAt: "2026-04-13T10:00:00.000Z",
         updatedAt: "2026-04-13T10:00:00.000Z",
         fileId: "note-file-1",
       }],
     };
-    const legacyNote = {
-      id: "old-note",
-      title: "Old",
-      body: "Legacy https://example.com/legacy",
+    const indexedNote = {
+      id: "note-abc",
+      title: "Indexed",
+      body: "Older note",
+      tags: ["work"],
+      createdAt: "2026-04-13T10:00:00.000Z",
+      updatedAt: "2026-04-13T10:00:00.000Z",
+    };
+    const orphanNote = {
+      id: "orphan",
+      title: "Captured by bookmarklet",
+      body: "https://example.com/orphan",
+      tags: [],
+      createdAt: "2026-04-14T12:00:00.000Z",
+      updatedAt: "2026-04-14T12:00:00.000Z",
+    };
+
+    mockFetch(
+      createLoadWorkspaceHandler({
+        folder: fileList([folder]),
+        notesSearch: fileList([indexedFile, orphanFile]),
+        headSearch: fileList([headFile]),
+        "content:head-1": json(head),
+        "metadata:index-1": json(indexFile),
+        "content:index-1": json(index),
+        "content:note-file-1": json(indexedNote),
+        "content:note-file-orphan": json(orphanNote),
+      }),
+    );
+
+    const store = new GoogleDriveStore("test-token");
+    const workspace = await store.loadWorkspace();
+
+    expect(workspace.notes).toHaveLength(2);
+    // Sorted by updatedAt desc — orphan is newer.
+    expect(workspace.notes[0].id).toBe("orphan");
+    expect(workspace.notes[1].id).toBe("note-abc");
+    // Active note still tracked from the index (not auto-switched
+    // to the orphan capture).
+    expect(workspace.activeNoteId).toBe("note-abc");
+  });
+
+  it("loads notes from the folder even when the index pointer chain is broken", async () => {
+    // No head file, no legacy index — but the per-note files are
+    // still on Drive. The folder query is enough to inventory them;
+    // we just lose the `activeNoteId` hint and fall back to "first
+    // note (most recently updated) is active".
+    const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
+    const orphanFile = driveFile("note-file-orphan", "note-orphan.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "orphan" },
+      parents: ["folder-1"],
+    });
+    const orphanNote = {
+      id: "orphan",
+      title: "Recovered",
+      body: "Recovered https://example.com/recovered",
       createdAt: "2026-04-13T10:00:00.000Z",
       updatedAt: "2026-04-13T10:00:00.000Z",
     };
@@ -204,18 +295,21 @@ describe("GoogleDriveStore loadWorkspace", () => {
     mockFetch(
       createLoadWorkspaceHandler({
         folder: fileList([folder]),
+        notesSearch: fileList([orphanFile]),
         headSearch: fileList([]),
-        indexSearch: fileList([indexFile]),
-        "content:index-1": json(index),
-        "content:note-file-1": json(legacyNote),
+        indexSearch: fileList([]),
+        "content:note-file-orphan": json(orphanNote),
       }),
     );
 
     const store = new GoogleDriveStore("test-token");
     const workspace = await store.loadWorkspace();
 
+    expect(workspace.notes).toHaveLength(1);
+    expect(workspace.notes[0].id).toBe("orphan");
     expect(workspace.notes[0].tags).toEqual([]);
-    expect(workspace.notes[0].urls).toEqual(["https://example.com/legacy"]);
+    expect(workspace.notes[0].urls).toEqual(["https://example.com/recovered"]);
+    expect(workspace.activeNoteId).toBe("orphan");
   });
 });
 

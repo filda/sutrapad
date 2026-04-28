@@ -37,6 +37,32 @@ const LINK_INDEX_FILE_NAME = "sutrapad-links.json";
 const TASK_INDEX_FILE_NAME = "sutrapad-tasks.json";
 const WORKSPACE_FOLDER_NAME = "SutraPad";
 const MAX_INDEX_SNAPSHOTS = 10;
+/**
+ * Hard cap on the folder-scoped `kind=note` query that drives
+ * `loadWorkspace`'s inventory. Drive's `pageSize` maxes at 1000;
+ * SutraPad workspaces are nowhere near that today (typical: dozens),
+ * so a single page covers every realistic user. If a workspace ever
+ * grows past this we'd need pagination here — a load would silently
+ * drop notes today, which we'd notice quickly.
+ */
+const MAX_WORKSPACE_NOTE_FILES = 1000;
+
+/**
+ * In-place backfills for fields that older note documents on Drive
+ * may be missing — `createdAt` (added when we split a separate
+ * created-vs-updated timestamp), `urls` (added when link extraction
+ * moved from runtime into stored data), and `tags`. Mutates the input
+ * because the document is always a freshly-deserialised JSON object
+ * we own; spreading into a new object would allocate per-note inside
+ * `loadWorkspace`'s parallel hydration and trip the `no-map-spread`
+ * lint. Returns the same reference for ergonomic call-site shape.
+ */
+function normalizeNoteDocument(document: SutraPadDocument): SutraPadDocument {
+  document.createdAt ??= document.updatedAt;
+  document.urls ??= extractUrlsFromText(document.body);
+  document.tags ??= [];
+  return document;
+}
 
 function createInitialDocument(): SutraPadDocument {
   const timestamp = new Date().toISOString();
@@ -102,11 +128,48 @@ export class GoogleDriveStore {
     this.#client = new GoogleDriveClient(accessToken);
   }
 
+  /**
+   * Loads the workspace from Drive.
+   *
+   * **Folder-query-driven inventory**, not index-driven. The list of
+   * notes is whatever `kind=note` files actually exist inside the
+   * SutraPad workspace folder; the index file is only consulted for
+   * the `activeNoteId` hint. This is the trade-off that lets the
+   * silent-capture path (`appendNoteToWorkspace`) stay 3-RTT cheap by
+   * not touching the index at all — the price is that the index can
+   * drift behind the folder by N captures, and we have to be tolerant
+   * of that drift here on the read side.
+   *
+   * Self-healing: the next interactive `saveWorkspace` rebuilds the
+   * index from `workspace.notes`, so any orphan files captured by the
+   * bookmarklet between two main-app sessions are folded into the
+   * canonical index the moment the user makes any edit.
+   *
+   * Critical-path round-trips (happy path with both index + folder
+   * present): folder lookup → parallel(index lookup, notes-in-folder
+   * query) → parallel(head JSON fetch, all note JSON fetches). The
+   * index fetch never extends critical path because it runs alongside
+   * the always-required note JSON fetches.
+   */
   async loadWorkspace(): Promise<SutraPadWorkspace> {
     const workspaceFolder = await this.findWorkspaceFolder();
-    const indexFile = await this.resolveActiveIndexFile(workspaceFolder?.id);
 
-    if (!indexFile) {
+    // Two parallel inventories: the canonical "what notes exist in
+    // the folder right now" query (source of truth for `notes`), and
+    // the index file lookup (source of truth for `activeNoteId`).
+    // Either may be missing in legitimate workspaces — first-ever
+    // load before any save, or migrated-from-legacy users — and the
+    // fallback paths below handle each case.
+    const [noteFiles, indexFile] = await Promise.all([
+      workspaceFolder ? this.findNoteFilesInFolder(workspaceFolder.id) : Promise.resolve([]),
+      this.resolveActiveIndexFile(workspaceFolder?.id),
+    ]);
+
+    if (noteFiles.length === 0) {
+      // No per-note files found. Either this is a brand-new
+      // workspace, or it's a legacy single-file workspace from before
+      // the per-note split. Try the legacy loader; if that's empty
+      // too, return the seeded empty workspace.
       const legacyDocument = await this.loadLegacyDocument(workspaceFolder?.id);
       if (legacyDocument) {
         return {
@@ -118,152 +181,126 @@ export class GoogleDriveStore {
       return createEmptyWorkspace();
     }
 
-    const index = await this.#client.fetchJsonFile<SutraPadIndex>(indexFile.id);
-    const notes = await Promise.all(
-      index.notes.map(async (entry) => {
-        const fileId =
-          entry.fileId ?? (await this.findNoteFileById(entry.id, workspaceFolder?.id))?.id;
-        if (!fileId) {
-          return null;
-        }
+    // Fetch every note file in parallel alongside the (optional)
+    // index JSON. The index is only used to look up `activeNoteId`
+    // — its `notes` array is ignored because the folder query is
+    // authoritative. We tolerate index fetch failure (corrupt JSON,
+    // 404 on stale head pointer) and fall back to "first note is
+    // active".
+    const [hydratedNotes, indexActiveNoteId] = await Promise.all([
+      Promise.all(
+        noteFiles.map(async (file) =>
+          normalizeNoteDocument(
+            await this.#client.fetchJsonFile<SutraPadDocument>(file.id),
+          ),
+        ),
+      ),
+      this.fetchIndexActiveNoteId(indexFile),
+    ]);
 
-        const document = await this.#client.fetchJsonFile<SutraPadDocument>(fileId);
-        return {
-          ...document,
-          createdAt: document.createdAt ?? document.updatedAt,
-          urls: document.urls ?? extractUrlsFromText(document.body),
-          tags: document.tags ?? [],
-        };
-      }),
-    );
-
-    const hydratedNotes = notes.filter((note): note is SutraPadDocument => note !== null);
     if (hydratedNotes.length === 0) {
       return createEmptyWorkspace();
     }
 
-    const activeNoteId = hydratedNotes.some((note) => note.id === index.activeNoteId)
-      ? index.activeNoteId
-      : hydratedNotes[0].id;
+    const sortedNotes = hydratedNotes.toSorted(
+      (left, right) => right.updatedAt.localeCompare(left.updatedAt),
+    );
+    const activeNoteId =
+      indexActiveNoteId !== null && sortedNotes.some((note) => note.id === indexActiveNoteId)
+        ? indexActiveNoteId
+        : sortedNotes[0].id;
 
     return {
-      notes: hydratedNotes.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+      notes: sortedNotes,
       activeNoteId,
     };
   }
 
   /**
-   * Fast path used by the silent-capture flow: appends a single new
-   * note to the user's workspace without re-uploading every other
-   * note file or rebuilding the derived tag / link / task indexes.
+   * Defensive index read used by `loadWorkspace`. Returns the
+   * `activeNoteId` if the index is fetchable + parseable, `null`
+   * otherwise. Failures here are not fatal — load picks the most
+   * recently updated note as the active one and the next save
+   * rewrites the index.
+   */
+  private async fetchIndexActiveNoteId(indexFile: DriveFileRecord | null): Promise<string | null> {
+    if (!indexFile) return null;
+    try {
+      const index = await this.#client.fetchJsonFile<SutraPadIndex>(indexFile.id);
+      return index.activeNoteId ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Returns every `kind=note` file inside the workspace folder.
+   * This is what makes `loadWorkspace` tolerant of "orphan" notes
+   * appended by the silent-capture bookmarklet without an index
+   * update — they show up here because they exist on Drive,
+   * regardless of whether the index knows about them.
+   */
+  private async findNoteFilesInFolder(folderId: string): Promise<DriveFileRecord[]> {
+    return this.#client.findFiles(
+      `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' }`,
+      MAX_WORKSPACE_NOTE_FILES,
+    );
+  }
+
+  /**
+   * Silent-capture fast path: writes the new note's per-note JSON
+   * file into the workspace folder and stops there. Critically does
+   * NOT touch the index, head pointer, or derived tag/link/task
+   * caches.
    *
-   * The full `saveWorkspace` is overkill for this path — it (a) reads
-   * every note's full body via `loadWorkspace` first (so the runner
-   * can pass the merged workspace back down) and (b) re-uploads four
-   * derived index files. None of that work is necessary when adding
-   * one note: the tag/link/task indexes on Drive are write-only
-   * caches (nothing in the app reads them — `buildTagIndex` and
-   * friends rebuild from `workspace.notes` in memory on every load),
-   * so leaving them slightly stale between captures is harmless. The
-   * next main-app save refreshes them.
+   * This is safe because `loadWorkspace` is now folder-query-driven
+   * (the folder is the source of truth for "what notes exist", and
+   * the index is consulted only for the `activeNoteId` hint). An
+   * orphan note file picked up by the next load gets folded into the
+   * canonical index the moment the user makes any edit and autosave
+   * fires `saveWorkspace`.
    *
-   * Round-trip cost: 4-6 (workspace folder, parallel index lookup +
-   * head lookup + note upload, fetch existing index, index snapshot
-   * upload + ensure, head + cleanup in parallel) — versus 30+ for
-   * the load+save pair on a workspace with even a handful of notes.
+   * Round-trip cost on the critical path: 3 — find workspace folder,
+   * upload the note JSON, re-parent it into the folder defensively.
+   * That's down from the previous 9-RTT chain (folder + parallel
+   * index/head/upload + index fetch + snapshot upload+ensure + head
+   * upload + cleanup) — and the latency drop is what users feel on
+   * iOS Safari where every Drive RTT is paying for ITP-related
+   * overhead.
+   *
+   * Trade-offs intentionally accepted here:
+   *   - The index drifts behind the folder by N captures until the
+   *     next interactive save. This is invisible in the UI because
+   *     load doesn't read the index for inventory.
+   *   - `activeNoteId` doesn't auto-switch to the captured note. The
+   *     user still has to open the new note from the list — but the
+   *     bookmarklet target is "save it", not "open it", and saving
+   *     fast matters more than active-note tracking on a flow the
+   *     user isn't watching.
+   *   - The derived tag/link/task index files stay stale between
+   *     captures. Same trade-off the previous version already
+   *     accepted (those caches are write-only, see `SutraPadTagIndex`
+   *     doc comment in `types.ts`).
    */
   async appendNoteToWorkspace(note: SutraPadDocument): Promise<void> {
     const workspaceFolder = await this.getWorkspaceFolder();
-
-    // Three independent batches in parallel: upload the new note
-    // file, find the active index file, and find the head pointer.
-    // None reads from another so we save ~2×RTT here.
-    const [noteFile, existingIndexFile, existingHeadFile] = await Promise.all([
-      (async () => {
-        const file = await this.#client.uploadJsonFile({
-          fileName: `note-${note.id}.json`,
-          data: note,
-          folderId: workspaceFolder.id,
-          appProperties: {
-            sutrapad: "true",
-            kind: "note",
-            noteId: note.id,
-          },
-        });
-        await this.#client.ensureFileInFolder(file.id, workspaceFolder.id);
-        return file;
-      })(),
-      this.resolveActiveIndexFile(workspaceFolder.id),
-      this.findHeadFile(workspaceFolder.id),
-    ]);
-
-    // Load existing index after we know which file holds it. If
-    // there's no active index file (first-ever save?), start fresh
-    // with a minimal one.
-    const existingIndex = existingIndexFile
-      ? await this.#client.fetchJsonFile<SutraPadIndex>(existingIndexFile.id)
-      : null;
-
-    const noteSummary: SutraPadNoteSummary = {
-      id: note.id,
-      title: note.title,
-      createdAt: note.createdAt,
-      updatedAt: note.updatedAt,
-      fileId: noteFile.id,
-    };
-    // Replace any stale summary for the same note id (defensive — a
-    // re-save of the same note id should overwrite, not duplicate).
-    const otherSummaries = (existingIndex?.notes ?? []).filter(
-      (entry) => entry.id !== note.id,
-    );
-    const savedAt = new Date().toISOString();
-    const finalIndex: SutraPadIndex = {
-      version: 1,
-      savedAt,
-      // `updatedAt` on the index tracks workspace-level last-touched
-      // — same value as `savedAt` for an append, since the act of
-      // saving counts as the last update. Keeps the index shape
-      // consistent with what `createIndex` produces in the full
-      // `saveWorkspace` path.
-      updatedAt: savedAt,
-      activeNoteId: note.id,
-      notes: [noteSummary, ...otherSummaries],
-      previousIndexId: existingIndexFile?.id,
-    };
-
-    // Snapshot upload + ensure (sequential within the chain because
-    // ensure needs the file id from upload).
-    const indexSnapshotFile = await this.#client.uploadJsonFile({
-      fileName: this.buildIndexSnapshotFileName(savedAt),
-      data: finalIndex,
+    const file = await this.#client.uploadJsonFile({
+      fileName: `note-${note.id}.json`,
+      data: note,
       folderId: workspaceFolder.id,
-      appProperties: { sutrapad: "true", kind: "index" },
+      appProperties: {
+        sutrapad: "true",
+        kind: "note",
+        noteId: note.id,
+      },
     });
-    await this.#client.ensureFileInFolder(indexSnapshotFile.id, workspaceFolder.id);
-
-    // Head update + cleanup of stale snapshots in parallel — both
-    // depend on `indexSnapshotFile.id` and are independent of each
-    // other.
-    const head: SutraPadHead = {
-      version: 1,
-      activeIndexId: indexSnapshotFile.id,
-      savedAt,
-    };
-    await Promise.all([
-      (async () => {
-        await this.#client.uploadJsonFile({
-          fileId: existingHeadFile?.id,
-          fileName: HEAD_FILE_NAME,
-          data: head,
-          folderId: workspaceFolder.id,
-          appProperties: { sutrapad: "true", kind: "head" },
-        });
-        if (existingHeadFile) {
-          await this.#client.ensureFileInFolder(existingHeadFile.id, workspaceFolder.id);
-        }
-      })(),
-      this.cleanupOldIndexSnapshots(workspaceFolder.id, indexSnapshotFile.id),
-    ]);
+    // Re-parent defensively. Drive's multipart upload occasionally
+    // detaches a file's folder when uploading a new revision; the
+    // ensure call is a no-op when parents are already correct and
+    // costs one extra RTT in the rare detach case. Cheap insurance
+    // against an orphan-in-Drive-root that wouldn't show up in our
+    // folder-scoped load query.
+    await this.#client.ensureFileInFolder(file.id, workspaceFolder.id);
   }
 
   async saveWorkspace(workspace: SutraPadWorkspace): Promise<void> {
@@ -450,12 +487,7 @@ export class GoogleDriveStore {
     }
 
     const document = await this.#client.fetchJsonFile<SutraPadDocument>(legacyFile.id);
-    return {
-      ...document,
-      createdAt: document.createdAt ?? document.updatedAt,
-      urls: document.urls ?? extractUrlsFromText(document.body),
-      tags: document.tags ?? [],
-    };
+    return normalizeNoteDocument(document);
   }
 
   private async getWorkspaceFolder(): Promise<DriveFileRecord> {
