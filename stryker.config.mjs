@@ -13,9 +13,15 @@ const config = {
     "src/app/capture/**/*.ts",
     "!src/**/*.d.ts",
   ],
-  reporters: ["clear-text", "progress", "html"],
+  reporters: ["clear-text", "progress", "html", "json"],
   htmlReporter: {
     fileName: "reports/mutation/mutation.html",
+  },
+  jsonReporter: {
+    // Stryker's standard mutation-testing JSON schema (mutationtestingelementsschema.json).
+    // One file per run; rewritten on each `stryker run`. Use this for
+    // programmatic analysis — html is for humans.
+    fileName: "reports/mutation/mutation.json",
   },
   thresholds: {
     high: 85,
