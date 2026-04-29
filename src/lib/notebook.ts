@@ -335,12 +335,18 @@ export function extractHashtagsFromText(
   for (const match of text.matchAll(HASHTAG_PATTERN)) {
     // `match.index` is the position of the leading `#`; `#tag`.length
     // gives the inclusive-exclusive end. When the caret sits exactly
-    // at that end, the user is in the middle of typing and would
-    // otherwise commit a prefix on every keystroke.
-    if (caretPosition !== undefined && match.index !== undefined) {
-      const matchEnd = match.index + match[0].length;
-      if (matchEnd === caretPosition) continue;
-    }
+    // at that end, the user is in the middle of typing and we hold
+    // the commit back so a prefix doesn't get committed on every
+    // keystroke. matchAll guarantees `match.index` is defined for
+    // each iteration; the `?? 0` is for the type checker only and
+    // can never be hit at runtime.
+    const matchEnd = (match.index ?? 0) + match[0].length;
+    // Comparison against `undefined` is always false, so an absent
+    // `caretPosition` (silent-capture, unit-test fallback) naturally
+    // skips the suppression and commits every match — keeping the
+    // original end-of-string-only behaviour for non-keystroke callers
+    // without a separate code path.
+    if (matchEnd === caretPosition) continue;
     const tag = match[1].toLowerCase();
     if (seen.has(tag)) continue;
     seen.add(tag);
