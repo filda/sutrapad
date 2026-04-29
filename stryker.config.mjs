@@ -24,9 +24,20 @@ const config = {
     fileName: "reports/mutation/mutation.json",
   },
   thresholds: {
+    // Ratcheted 2026-04-28 after persona pass (55 → 84 %) lifted
+    // overall from 77.6 % to 81.25 %. New `break: 75` leaves
+    // ~6 pp headroom — small regressions still pass, but a slip back
+    // to pre-pass levels (~77 %) now fails CI instead of sliding by
+    // unnoticed. `low: 78` lets the warning band hug the actual
+    // current floor more tightly so a dip toward 78 % surfaces as
+    // yellow before turning red. Hold `high: 85` until the cheap
+    // notebook-persona leftovers and the next batch
+    // (capture-context-sanitize.ts, og-image.ts, theme.ts) land —
+    // see `project_sutrapad_mutation_gaps.md` (auto-memory) for the
+    // sequenced plan.
     high: 85,
-    low: 70,
-    break: 65,
+    low: 78,
+    break: 75,
   },
   vitest: {
     configFile: "vitest.config.ts",
