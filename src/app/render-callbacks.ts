@@ -383,13 +383,16 @@ export function createRenderCallbacks({
       setSyncState("idle");
       refreshNotesPanel();
     },
-    onBodyInput: (value: string, caretPosition: number) => {
+    onBodyInput: (value: string, caretPosition: number | undefined) => {
       const tagsBefore = getCurrentWorkspaceNote(getWorkspace()).tags;
       // `caretPosition` is forwarded so a `#tag` that ends right at the
       // caret (the user is still typing it) is treated as not-yet-
       // committed. Without this guard, inserting `#auto` mid-prose
       // commits `#a`, `#au`, `#aut`, `#auto` one after another as the
       // regex lookahead succeeds against the downstream prose.
+      // `undefined` (sent from blur) skips the caret check entirely,
+      // committing whatever was in flight — leaving the textarea is
+      // the user's "I'm done" signal.
       const mergedTags = mergeHashtagsIntoTags(tagsBefore, value, {
         caretPosition,
       });

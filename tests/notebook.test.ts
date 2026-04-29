@@ -1186,6 +1186,42 @@ describe("extractHashtagsFromText", () => {
       // other non-keystroke callers stay unchanged.
       expect(extractHashtagsFromText("first #auto next")).toEqual(["auto"]);
     });
+
+    // Caret-aware extraction must also tolerate the user backspacing
+    // inside the tag they're typing — every shrunken prefix should
+    // stay uncommitted while the caret rides the tag's end. A naive
+    // implementation that re-extracted from match.index alone (without
+    // checking the caret) would commit every shrinking prefix as the
+    // user deletes characters — same bug pattern as the forward-typing
+    // regression, just running in reverse.
+    it("ignores progressively shorter prefixes while the user backspaces inside the tag", () => {
+      // body "first #auto next", deleting from the `o` end. Caret
+      // shrinks alongside the deleted character.
+      expect(
+        extractHashtagsFromText("first #auto next", { caretPosition: 11 }),
+      ).toEqual([]);
+      expect(
+        extractHashtagsFromText("first #aut next", { caretPosition: 10 }),
+      ).toEqual([]);
+      expect(
+        extractHashtagsFromText("first #au next", { caretPosition: 9 }),
+      ).toEqual([]);
+      expect(
+        extractHashtagsFromText("first #a next", { caretPosition: 8 }),
+      ).toEqual([]);
+      expect(
+        extractHashtagsFromText("first # next", { caretPosition: 7 }),
+      ).toEqual([]);
+    });
+
+    it("commits the tag once the caret has moved away (e.g. user clicks elsewhere)", () => {
+      // Body unchanged from the in-flight typing state, but the user
+      // clicked at the start of the document — caret jumped to 0 and
+      // is no longer at the tag's end, so the tag commits.
+      expect(
+        extractHashtagsFromText("first #auto next", { caretPosition: 0 }),
+      ).toEqual(["auto"]);
+    });
   });
 });
 

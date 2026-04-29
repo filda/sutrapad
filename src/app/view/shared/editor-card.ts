@@ -25,16 +25,19 @@ export interface EditorCardOptions {
   statusText: string;
   onTitleInput: (value: string) => void;
   /**
-   * Fires on every body keystroke. `caretPosition` is the textarea's
-   * `selectionStart` at the moment the input event runs and is passed
-   * through to the hashtag-merge step in `render-callbacks` so we can
-   * tell "user is still typing this tag" (caret sits at the end of
-   * the matched `#tag`) from "user moved past it" (caret has left).
-   * Without this, inserting `#auto` between two existing words
-   * commits `#a` / `#au` / `#aut` / `#auto` progressively as each
-   * prefix passes the regex lookahead against the downstream prose.
+   * Fires on body input AND on body blur. `caretPosition` is the
+   * textarea's `selectionStart` for keystroke events; `undefined`
+   * means "no caret restriction" — used on blur so any in-flight
+   * hashtag the user was typing commits when they leave the
+   * textarea. Passing the caret through on keystrokes lets the
+   * hashtag-merge step in `render-callbacks` tell "user is still
+   * typing this tag" (caret sits at the matched `#tag` end) from
+   * "user moved past it" (caret has left). Without it, inserting
+   * `#auto` between two existing words commits `#a` / `#au` /
+   * `#aut` / `#auto` progressively as each prefix passes the regex
+   * lookahead against the downstream prose.
    */
-  onBodyInput: (value: string, caretPosition: number) => void;
+  onBodyInput: (value: string, caretPosition: number | undefined) => void;
   onAddTag: (value: string) => void;
   onRemoveTag: (tag: string) => void;
   /**
@@ -119,6 +122,17 @@ export function buildEditorCard({
     const caret = bodyInput.selectionStart ?? bodyInput.value.length;
     onBodyInput(bodyInput.value, caret);
     refreshLiveDerived();
+  });
+  bodyInput.addEventListener("blur", () => {
+    // Caret-aware extraction during typing intentionally holds back the
+    // hashtag whose end sits exactly at the caret — the user is still
+    // typing it. When focus leaves the textarea (clicked elsewhere,
+    // tabbed away, navigated) the user is *done* with whatever they
+    // were typing, so we re-run the merge with no caret restriction
+    // so any in-flight tag commits naturally. Re-running for `value`
+    // alone is safe because `mergeHashtagsIntoTags` is idempotent —
+    // already-committed tags dedupe inside the merger.
+    onBodyInput(bodyInput.value, undefined);
   });
 
   const noteMetadata = document.createElement("p");
