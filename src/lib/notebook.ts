@@ -285,23 +285,62 @@ export function extractUrlsFromText(text: string): string[] {
 const HASHTAG_PATTERN = /(?<=^|\s)#([\p{L}\p{N}_-]+)(?=[\s\p{P}])/gu;
 
 /**
+ * Options for caret-aware hashtag extraction. When the caller knows where
+ * the user's caret currently sits inside `text` (e.g. typing in the body
+ * textarea), passing it lets us treat the hashtag the user is actively
+ * mid-typing as "not yet committed". Without it, a `#auto` token whose
+ * trailing terminator is just downstream existing prose (the user is
+ * inserting the tag *between* two words, not at end-of-string) would
+ * commit `#a`, `#au`, `#aut`, `#auto` progressively as the keystrokes
+ * land — once each new prefix passed the lookahead.
+ *
+ * Omit `caretPosition` (or pass `undefined`) to keep the original
+ * end-of-string-only behaviour: useful for non-keystroke callers like
+ * silent-capture, hashtag re-extraction during merge, or unit tests.
+ */
+export interface ExtractHashtagsOptions {
+  /**
+   * Zero-based index where the user's caret currently sits in `text`.
+   * Hashtags whose `#tag` ends exactly at this position are considered
+   * still being typed and excluded from the result. The next keystroke
+   * (which moves the caret past the tag end) commits naturally.
+   */
+  caretPosition?: number;
+}
+
+/**
  * Extracts every distinct `#tag` from `text`. Tags are lowercased so they
  * match the canonical form the app already uses everywhere else (tag filter
  * URL, tag index, chip input). Order follows first-appearance in the body —
  * stable and predictable for the merge step that appends them.
  *
- * Only hashtags that are already "closed" by a trailing space or punctuation
- * are returned. A trailing `#idea` at the very end of the body is NOT
- * extracted — committing it on every keystroke would walk the tag list
- * through `i`, `id`, `ide`, `idea` as the user types, and the additive merge
- * (by design) would never prune the stale prefixes. The user signals "done
- * with this tag" by typing the next character, at which point the tag
- * commits naturally.
+ * Only hashtags that are already "closed" — by a trailing space /
+ * punctuation AND a caret that has moved past their end — are returned.
+ * A trailing `#idea` at end-of-string is NOT extracted (no terminator).
+ * A `#idea` whose terminator is downstream existing prose AND whose end
+ * sits exactly at `caretPosition` is also NOT extracted: the user is
+ * still mid-typing it. Without the caret check, inserting `#auto` between
+ * two existing words would commit `#a`, `#au`, `#aut`, `#auto` one after
+ * another as the lookahead succeeds against the trailing prose — the
+ * additive merge in `mergeHashtagsIntoTags` would then pile every prefix
+ * onto the note.
  */
-export function extractHashtagsFromText(text: string): string[] {
+export function extractHashtagsFromText(
+  text: string,
+  options: ExtractHashtagsOptions = {},
+): string[] {
+  const { caretPosition } = options;
   const seen = new Set<string>();
   const tags: string[] = [];
   for (const match of text.matchAll(HASHTAG_PATTERN)) {
+    // `match.index` is the position of the leading `#`; `#tag`.length
+    // gives the inclusive-exclusive end. When the caret sits exactly
+    // at that end, the user is in the middle of typing and would
+    // otherwise commit a prefix on every keystroke.
+    if (caretPosition !== undefined && match.index !== undefined) {
+      const matchEnd = match.index + match[0].length;
+      if (matchEnd === caretPosition) continue;
+    }
     const tag = match[1].toLowerCase();
     if (seen.has(tag)) continue;
     seen.add(tag);
@@ -317,14 +356,19 @@ export function extractHashtagsFromText(text: string): string[] {
  * **not** removed from the note, because hand-curated tags (added via the
  * tag chip input) should outlive edits to the prose. If the user wants a
  * tag gone, they remove it explicitly via the chip's × button.
+ *
+ * `caretPosition` is forwarded to `extractHashtagsFromText` so callers
+ * driving this from the body input event can suppress the in-flight tag
+ * the user is mid-keystroke on. See `ExtractHashtagsOptions`.
  */
 export function mergeHashtagsIntoTags(
   existingTags: readonly string[],
   body: string,
+  options: ExtractHashtagsOptions = {},
 ): string[] {
   const seen = new Set(existingTags);
   const merged = [...existingTags];
-  for (const tag of extractHashtagsFromText(body)) {
+  for (const tag of extractHashtagsFromText(body, options)) {
     if (seen.has(tag)) continue;
     seen.add(tag);
     merged.push(tag);

@@ -66,3 +66,106 @@ export function renderPreservingBodyInputFocus(render: () => void): void {
     }
   }
 }
+
+/**
+ * Snapshot of which editor input was focused before a render and what
+ * caret / IME state it carried. The companion `restore` function
+ * re-applies that state to the freshly rendered DOM. Split into a
+ * capture/restore pair (rather than wrapping the render call itself)
+ * so `render()` in `app.ts` can hold the snapshot across its own try
+ * / finally — focus restoration runs after the rebuild even when an
+ * exception unwinds the render mid-flight.
+ */
+export interface ActiveEditorFocusSnapshot {
+  restore(): void;
+}
+
+/**
+ * Captures focus + caret on the title / body / tag-input the user is
+ * currently editing (if any) so a subsequent render can put them back
+ * exactly where they were. Returning a `restore` closure keeps the
+ * captured values out of any module-level state — multiple renders in
+ * flight (re-entrant or HMR-overlapped) each get their own snapshot.
+ *
+ * `restore` is a no-op when focus was anywhere outside the editor
+ * card, which means it's safe to call unconditionally — every
+ * `render()` pass takes a snapshot, runs the rebuild, and restores
+ * without having to reason about whether the user was actually in an
+ * editor input.
+ */
+export function captureActiveEditorFocus(): ActiveEditorFocusSnapshot {
+  const active = document.activeElement;
+  const isTitle =
+    active instanceof HTMLInputElement && active.classList.contains("title-input");
+  const isBody =
+    active instanceof HTMLTextAreaElement && active.classList.contains("body-input");
+  const isTag =
+    active instanceof HTMLInputElement && active.classList.contains("tag-text-input");
+
+  // Reading selectionStart on a non-text input throws in some engines,
+  // so we gate it on the matched type rather than a broad union.
+  const savedStart = isTitle || isBody ? active.selectionStart : 0;
+  const savedEnd = isTitle || isBody ? active.selectionEnd : 0;
+  const savedTagValue = isTag ? active.value : "";
+
+  return {
+    restore: () => {
+      if (isTitle) {
+        const nextTitle = document.querySelector<HTMLInputElement>(
+          ".editor-card .title-input",
+        );
+        if (nextTitle && document.activeElement !== nextTitle) {
+          nextTitle.focus();
+          nextTitle.setSelectionRange(savedStart, savedEnd);
+        }
+        return;
+      }
+      if (isBody) {
+        const nextBody = document.querySelector<HTMLTextAreaElement>(
+          ".editor-card .body-input",
+        );
+        if (nextBody && document.activeElement !== nextBody) {
+          nextBody.focus();
+          nextBody.setSelectionRange(savedStart, savedEnd);
+        }
+        return;
+      }
+      if (isTag) {
+        const nextTag = document.querySelector<HTMLInputElement>(
+          ".editor-card .tag-text-input",
+        );
+        if (nextTag && document.activeElement !== nextTag) {
+          nextTag.focus();
+          // The tag typeahead value is pure text-as-you-type —
+          // restoring it (in case render rebuilt it from workspace
+          // state and wiped the in-flight token) keeps the user's
+          // draft tag visible.
+          if (savedTagValue && nextTag.value !== savedTagValue) {
+            nextTag.value = savedTagValue;
+          }
+        }
+      }
+    },
+  };
+}
+
+/**
+ * Generalised focus preserver for any of the three editor-card inputs
+ * — title, body, or the tag typeahead. Kept as a thin
+ * capture/render/restore wrapper for call sites that drive the render
+ * synchronously themselves (e.g. `handleNewNoteCreation`'s post-
+ * geolocation backfill). The shared focus snapshot lives in
+ * `captureActiveEditorFocus`; the global `render()` pass uses the same
+ * primitive so every render is implicitly focus-safe.
+ *
+ * The render is driven synchronously here rather than letting the
+ * atom subscriber fire its own microtask render: doing the rebuild
+ * + focus restore in one synchronous turn means the microtask sees
+ * `renderScheduled === false` (set in `render()`'s `finally`) and
+ * skips, so we don't pay for a second render pass.
+ */
+export function renderPreservingActiveEditorFocus(render: () => void): void {
+  const snapshot = captureActiveEditorFocus();
+  render();
+  snapshot.restore();
+}

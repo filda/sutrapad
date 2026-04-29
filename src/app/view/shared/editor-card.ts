@@ -24,7 +24,17 @@ export interface EditorCardOptions {
   syncState: SyncState;
   statusText: string;
   onTitleInput: (value: string) => void;
-  onBodyInput: (value: string) => void;
+  /**
+   * Fires on every body keystroke. `caretPosition` is the textarea's
+   * `selectionStart` at the moment the input event runs and is passed
+   * through to the hashtag-merge step in `render-callbacks` so we can
+   * tell "user is still typing this tag" (caret sits at the end of
+   * the matched `#tag`) from "user moved past it" (caret has left).
+   * Without this, inserting `#auto` between two existing words
+   * commits `#a` / `#au` / `#aut` / `#auto` progressively as each
+   * prefix passes the regex lookahead against the downstream prose.
+   */
+  onBodyInput: (value: string, caretPosition: number) => void;
   onAddTag: (value: string) => void;
   onRemoveTag: (tag: string) => void;
   /**
@@ -101,7 +111,13 @@ export function buildEditorCard({
     refreshLiveDerived();
   });
   bodyInput.addEventListener("input", () => {
-    onBodyInput(bodyInput.value);
+    // `selectionStart` is the caret position immediately after the
+    // input event; passing it lets `onBodyInput` decide which (if any)
+    // hashtag the user is still mid-typing. Falls back to the value
+    // length when the textarea reports `null` (very old engines /
+    // detached state) so a missing caret never *looks* like position 0.
+    const caret = bodyInput.selectionStart ?? bodyInput.value.length;
+    onBodyInput(bodyInput.value, caret);
     refreshLiveDerived();
   });
 

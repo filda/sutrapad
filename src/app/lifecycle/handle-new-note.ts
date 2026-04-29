@@ -1,7 +1,9 @@
 /**
  * "+ Add" / `N` handler — creates a draft note, optionally backfills
  * its title + location + capture-context after async geolocation
- * resolves, and refreshes the notes panel in place.
+ * resolves, and re-renders the app via a focus-preserving pass so the
+ * patch lands in the DOM without yanking the user's caret out of the
+ * fresh body / title input.
  *
  * Lifted out of `app.ts` so the wiring layer there can pass the
  * store getters/setters in via `NewNoteHandlerOptions` rather than
@@ -16,10 +18,8 @@ import {
   isLocationCaptureEnabled,
   type CaptureLocationPreference,
 } from "../logic/capture-location";
-import { buildNoteMetadata } from "../logic/note-metadata";
 import {
   createNewNoteWorkspace,
-  DEFAULT_NOTE_TITLE,
   isEmptyDraftNote,
   upsertNote,
 } from "../../lib/notebook";
@@ -28,17 +28,25 @@ import type { MenuItemId } from "../logic/menu";
 import type { SyncState } from "../session/workspace-sync";
 
 export interface NewNoteHandlerOptions {
-  root: HTMLElement;
   getWorkspace: () => SutraPadWorkspace;
   setWorkspace: (workspace: SutraPadWorkspace) => void;
-  getDetailNoteId: () => string | null;
   setDetailNoteId: (detailNoteId: string | null) => void;
   setActiveMenuItem: (menuItemId: MenuItemId) => void;
   setSyncState: (syncState: SyncState) => void;
   setLastError: (lastError: string) => void;
   persistWorkspace: (workspace: SutraPadWorkspace) => void;
   scheduleAutoSave: () => void;
-  refreshNotesPanel: () => void;
+  /**
+   * Synchronously re-renders the app while preserving focus + caret
+   * on whichever editor input (title / body / tag typeahead) is
+   * active. Called from the post-geolocation backfill so the patch
+   * (title, location, captureContext) lands in the DOM in one focus-
+   * safe pass — the alternative (letting the atom subscriber fire its
+   * own microtask render via `setWorkspace`) replaces the textarea
+   * the user is mid-word in and drops focus, which is the bug we
+   * actively guard against here.
+   */
+  rerenderPreservingActiveEditorFocus: () => void;
   /**
    * Reads the live capture-location preference. Called at the moment
    * the async backfill kicks off (not at handler-construction time)
@@ -52,17 +60,15 @@ export interface NewNoteHandlerOptions {
 }
 
 export function handleNewNoteCreation({
-  root,
   getWorkspace,
   setWorkspace,
-  getDetailNoteId,
   setDetailNoteId,
   setActiveMenuItem,
   setSyncState,
   setLastError,
   persistWorkspace,
   scheduleAutoSave,
-  refreshNotesPanel,
+  rerenderPreservingActiveEditorFocus,
   getCaptureLocationPreference,
 }: NewNoteHandlerOptions): void {
   const nextWorkspace = createNewNoteWorkspace(getWorkspace());
@@ -126,18 +132,21 @@ export function handleNewNoteCreation({
       scheduleAutoSave();
     }
 
-    if (getDetailNoteId() === newNoteId) {
-      const titleInput = root.querySelector<HTMLInputElement>(".title-input");
-      if (
-        titleInput &&
-        titleInput.value === DEFAULT_NOTE_TITLE &&
-        document.activeElement !== titleInput
-      ) {
-        titleInput.value = patchedNote.title;
-      }
-      const metadataEl = root.querySelector(".note-metadata");
-      if (metadataEl) metadataEl.textContent = buildNoteMetadata(patchedNote);
-    }
-    refreshNotesPanel();
+    // Earlier shape called `setWorkspace` (which schedules a microtask
+    // render via the atom subscriber chain) and then patched the title /
+    // metadata in place to keep the DOM in sync until that render
+    // landed. Problem: the queued render still fires on the microtask,
+    // rebuilds the editor card, and drops focus from whatever input
+    // the user is mid-keystroke in — which the user experiences as
+    // "fresh note loses focus right after I start typing". We now
+    // drive a focus-preserving render synchronously here instead. The
+    // explicit render flips `renderScheduled` back to false in its
+    // `finally`, so the queued microtask sees nothing to do and skips,
+    // leaving the user's caret untouched.
+    //
+    // The render rebuilds the notes-panel as well, so the previously
+    // appended `refreshNotesPanel()` call is no longer needed — it
+    // would just replay the same work on the freshly rendered DOM.
+    rerenderPreservingActiveEditorFocus();
   })();
 }

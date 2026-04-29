@@ -34,6 +34,7 @@ import { isPersonaEnabled } from "./app/logic/persona";
 import type { NotesListPersonaOptions } from "./app/view/shared/notes-list";
 import { createAppStateStore } from "./app/state-store";
 import { createRenderCallbacks } from "./app/render-callbacks";
+import { captureActiveEditorFocus } from "./app/render-helpers";
 import { handleNewNoteCreation } from "./app/lifecycle/handle-new-note";
 import { wirePaletteAccess } from "./app/lifecycle/palette";
 import { wireKeyboardShortcuts } from "./app/lifecycle/keyboard-shortcuts";
@@ -323,17 +324,21 @@ export function createApp(root: HTMLElement): void {
     // first keeps the list honest: at most one active draft at a time.
     purgeEmptyDraftNotes();
     handleNewNoteCreation({
-      root,
       getWorkspace: () => workspace$.get(),
       setWorkspace: setWorkspaceState,
-      getDetailNoteId: () => detailNoteId$.get(),
       setDetailNoteId: setDetailNoteIdState,
       setActiveMenuItem: setActiveMenuItemState,
       setSyncState: setSyncStateValue,
       setLastError: setLastErrorValue,
       persistWorkspace: persistLocalWorkspace,
       scheduleAutoSave,
-      refreshNotesPanel,
+      // Drive the render synchronously at the end of the geolocation
+      // backfill so the queued microtask render (from the unwrapped
+      // `setWorkspace` above) gets pre-empted by the
+      // `renderScheduled` flag handshake. Focus + caret preservation
+      // is now baked into `render()` itself via the capture/restore
+      // around `renderAppPage`, so no special wrapper is needed here.
+      rerenderPreservingActiveEditorFocus: () => render(),
       // Read the latest preference at call time (not at createApp
       // start) so toggling Settings → Privacy → "Capture location"
       // takes effect on the very next `+ Add` without a reload.
@@ -449,6 +454,16 @@ export function createApp(root: HTMLElement): void {
     // — that's the "shared-flag handshake" referenced in
     // `scheduleRender`.
     renderScheduled = true;
+    // Editor focus snapshot. Captured *before* any of the synchronous
+    // rebuild work below — `renderAppPage` empties `root.innerHTML`,
+    // so the title input / body textarea / tag typeahead the user is
+    // typing into get replaced wholesale. We restore in `finally`
+    // (after the new DOM is in place) so any path that triggers a
+    // re-render — atom subscriber chain, manual call, async
+    // resolver — leaves the caret exactly where it was. Restore is a
+    // no-op when focus was outside the editor card, so it's safe to
+    // run unconditionally.
+    const focusSnapshot = captureActiveEditorFocus();
     try {
       syncSelectedTagFilters();
       const detailRoute = syncDetailRouteSelection(
@@ -589,6 +604,12 @@ export function createApp(root: HTMLElement): void {
       // either way: success path hits it after `renderAppPage`, failure
       // path hits it before the throw propagates out of createApp.
       renderScheduled = false;
+      // Restore the editor input focus + caret captured at the top.
+      // Run inside the same `finally` so a throw that unwinds the
+      // synchronous render still gets a focus-restoration attempt
+      // against whatever DOM landed before the failure. Restore is a
+      // no-op when the snapshot was taken outside the editor card.
+      focusSnapshot.restore();
     }
   };
 

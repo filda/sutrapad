@@ -1137,6 +1137,56 @@ describe("extractHashtagsFromText", () => {
     expect(extractHashtagsFromText("Working on #idea")).toEqual([]);
     expect(extractHashtagsFromText("Working on #idea ")).toEqual(["idea"]);
   });
+
+  // Caret-aware extraction: `#auto` typed mid-prose has the lookahead
+  // satisfied immediately by the existing trailing text, so without the
+  // caret check we'd commit `#a`, `#au`, `#aut`, `#auto` progressively
+  // as each letter arrives. Anchoring "still typing" to "match end ===
+  // caret" keeps in-flight tags out until the user moves past them.
+  describe("caret-aware extraction (mid-prose typing)", () => {
+    it("ignores a hashtag whose end sits exactly at the caret", () => {
+      // body "first #auto next" with caret right after the `o` (pos 11)
+      expect(
+        extractHashtagsFromText("first #auto next", { caretPosition: 11 }),
+      ).toEqual([]);
+    });
+
+    it("commits the tag once the caret moves past it", () => {
+      // body "first #auto  next" with caret right after the just-typed
+      // space (pos 12) — match end is still 11, so caret 12 commits.
+      expect(
+        extractHashtagsFromText("first #auto  next", { caretPosition: 12 }),
+      ).toEqual(["auto"]);
+    });
+
+    it("matches the regression: typing `#auto` letter by letter mid-prose stays uncommitted", () => {
+      // Simulates the user typing `#auto` between "first " and " next" one
+      // keystroke at a time. Caret advances with each character; if
+      // caret-aware extraction is wired, none of these prefixes commit.
+      expect(extractHashtagsFromText("first # next", { caretPosition: 7 })).toEqual([]);
+      expect(extractHashtagsFromText("first #a next", { caretPosition: 8 })).toEqual([]);
+      expect(extractHashtagsFromText("first #au next", { caretPosition: 9 })).toEqual([]);
+      expect(extractHashtagsFromText("first #aut next", { caretPosition: 10 })).toEqual([]);
+      expect(extractHashtagsFromText("first #auto next", { caretPosition: 11 })).toEqual([]);
+    });
+
+    it("still commits other unrelated hashtags in the same body", () => {
+      // body "ahead #done, here we go #typing" — caret is at the end of
+      // `#typing` (pos 31), so `#typing` is in flight, but `#done` is
+      // already committed earlier in the body and survives.
+      expect(
+        extractHashtagsFromText("ahead #done, here we go #typing", { caretPosition: 31 }),
+      ).toEqual(["done"]);
+    });
+
+    it("falls back to the original end-of-string-only behaviour without caret", () => {
+      // Same body as the regression test, but caret omitted — the
+      // lookahead succeeds against the trailing prose, so the tag
+      // commits. This proves the option is opt-in: silent-capture and
+      // other non-keystroke callers stay unchanged.
+      expect(extractHashtagsFromText("first #auto next")).toEqual(["auto"]);
+    });
+  });
 });
 
 describe("mergeHashtagsIntoTags", () => {

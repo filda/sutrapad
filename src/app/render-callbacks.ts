@@ -383,9 +383,16 @@ export function createRenderCallbacks({
       setSyncState("idle");
       refreshNotesPanel();
     },
-    onBodyInput: (value: string) => {
+    onBodyInput: (value: string, caretPosition: number) => {
       const tagsBefore = getCurrentWorkspaceNote(getWorkspace()).tags;
-      const mergedTags = mergeHashtagsIntoTags(tagsBefore, value);
+      // `caretPosition` is forwarded so a `#tag` that ends right at the
+      // caret (the user is still typing it) is treated as not-yet-
+      // committed. Without this guard, inserting `#auto` mid-prose
+      // commits `#a`, `#au`, `#aut`, `#auto` one after another as the
+      // regex lookahead succeeds against the downstream prose.
+      const mergedTags = mergeHashtagsIntoTags(tagsBefore, value, {
+        caretPosition,
+      });
       // Only re-render the whole editor when a new hashtag actually appeared
       // in the body — otherwise every keystroke would swap the textarea and
       // lose caret/IME state. The notes panel still refreshes for title/body
