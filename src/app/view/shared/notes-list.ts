@@ -4,10 +4,16 @@ import {
   type NotebookPersona,
 } from "../../../lib/notebook-persona";
 import { formatDate } from "../../logic/formatting";
+import { deriveNotePrimaryUrl } from "../../logic/note-primary-url";
 import type { NotesViewMode } from "../../logic/notes-view";
+import {
+  createOgImageResolver,
+  type OgImageResolver,
+} from "../../logic/og-image-resolver";
 import { describeTaskChip } from "../../logic/task-chip";
 import type { SutraPadDocument } from "../../../types";
 import { EMPTY_COPY, buildEmptyState } from "./empty-state";
+import { buildLinkThumb } from "./link-thumb";
 import { applyPersonaStyles, appendPersonaStickers } from "./persona-decor";
 
 export interface NotesListPersonaOptions {
@@ -57,6 +63,11 @@ export function buildNotesList(
   }
 
   const renderAsRow = viewMode === "list";
+  // Thumb header is cards-only — list/row stays compact (favicon + text rail
+  // already serves the same "this came from the web" signal). Building one
+  // resolver per render keeps every card on the same localStorage cache
+  // snapshot, mirroring the Links and Tasks pages.
+  const resolver = renderAsRow ? null : createOgImageResolver();
 
   for (const note of notes) {
     const persona = personaOptions
@@ -68,7 +79,7 @@ export function buildNotesList(
 
     const button = renderAsRow
       ? buildRowItem(note, persona, currentNoteId)
-      : buildCardItem(note, persona, currentNoteId);
+      : buildCardItem(note, persona, currentNoteId, resolver);
 
     button.addEventListener("click", () => onSelectNote(note.id));
     notesList.append(button);
@@ -81,12 +92,25 @@ function buildCardItem(
   note: SutraPadDocument,
   persona: NotebookPersona | null,
   currentNoteId: string,
+  resolver: OgImageResolver | null,
 ): HTMLButtonElement {
   const button = document.createElement("button");
   button.className = `note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
   button.type = "button";
 
   if (persona) applyPersonaStyles(button, persona);
+
+  // Thumb header — same shape as Links/Tasks cards. Notes without a URL
+  // (hand-typed) still get the gradient (no domain chip) so the card
+  // grid keeps a consistent rhythm across notebooks. The resolver is
+  // null on legacy callers (e.g. tags-page renders a list, not the
+  // grid) — guard it so we don't allocate a thumb in those slots.
+  if (resolver !== null) {
+    const primaryUrl = deriveNotePrimaryUrl(note);
+    button.append(
+      buildLinkThumb({ url: primaryUrl, notes: [note], resolver }),
+    );
+  }
 
   const excerpt = note.body.trim() || "Empty note";
   // Branching/labelling lives in describeTaskChip so the UI stays purely

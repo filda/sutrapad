@@ -6512,3 +6512,171 @@ button.tag-pill {
   color: var(--accent);
   outline: none;
 }
+
+/* ==========================================================================
+ * Unified card header — Notes / Tasks / Links
+ *
+ * The Links page was the first to ship a `.link-thumb` header (gradient or
+ * og:image with a hostname chip). We now reuse that exact element on the
+ * Notes cards and Tasks cards so the three surfaces share one visual
+ * vocabulary: thumb on top, body below, optional persona paper underneath.
+ *
+ * The thumb itself has fixed height + its own paddings (defined further up
+ * with `.link-thumb`); these rules just bleed it to the card edges and
+ * clip with the card's rounded corners.
+ * ========================================================================== */
+
+/*
+ * Notes — `.note-list-item` is the shared card shape used by the Notes
+ * cards-mode grid AND the Tags-page filtered notes list. List/row mode
+ * uses a different element (`.notebook-row`) so it keeps its compact
+ * rail untouched. The negative margin matches `.note-list-item` padding
+ * (14px 15px), and `overflow: hidden` plus the existing 20px border-radius
+ * clips the thumb's straight top into rounded corners.
+ *
+ * Scoping by element rather than container class means a future caller
+ * (Home timeline, etc.) that drops a `.note-list-item` into a different
+ * parent layout still gets the bleed for free.
+ */
+.note-list-item {
+  overflow: hidden;
+}
+
+.note-list-item > .link-thumb {
+  margin: -14px -15px 12px;
+}
+
+/*
+ * Tasks — every card has a thumb, fed off the source note's primary URL.
+ * `.task-card` carries 18px 18px 14px padding; the same negative-margin
+ * trick bleeds the thumb to all three rounded edges of the card top.
+ */
+.task-card {
+  overflow: hidden;
+}
+
+.task-card > .link-thumb {
+  margin: -18px -18px 4px;
+}
+
+/* ==========================================================================
+ * Persona on Tasks and Links cards
+ *
+ * Persona was originally Notes-only. Filip asked for it across all card
+ * surfaces so the same notebook reads with the same paper / ink / fonts /
+ * tilt regardless of which page surfaces it. The decorator
+ * (`applyPersonaStyles`) writes the same CSS variables it always has;
+ * these rules consume them on `.task-card.has-persona` and
+ * `.link-card.has-persona` the same way the existing
+ * `.notes-list--persona .note-list-item` rules do.
+ * ========================================================================== */
+
+/* Tasks ------------------------------------------------------------------- */
+
+.task-grid--persona {
+  /*
+   * Same vertical breathing room as `.notes-list--persona` — the inline
+   * rotation breaks out of the grid cell, and a touch of padding-block
+   * keeps rotated corners from clipping their neighbours.
+   */
+  padding-block: 4px;
+}
+
+.task-card.has-persona {
+  background: var(--nc-bg, var(--surface-strong));
+  color: var(--nc-ink, var(--ink-900));
+  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 18%, transparent);
+  transform: rotate(var(--nc-rotation, 0deg));
+  transition:
+    transform 200ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
+  position: relative;
+}
+
+.task-card.has-persona:hover {
+  transform: rotate(0deg) translateY(-2px);
+  border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 55%, transparent);
+}
+
+.task-card.has-persona .task-card-head h3 {
+  font-family: var(--nc-title-font, var(--serif));
+  color: var(--nc-ink, var(--ink-900));
+}
+
+.task-card.has-persona .task-card-sub,
+.task-card.has-persona .task-card-count {
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 62%, transparent);
+}
+
+.task-card.has-persona .task-item .t {
+  font-family: var(--nc-body-font, inherit);
+  color: var(--nc-ink, var(--ink-900));
+}
+
+.task-card.has-persona .task-item.done .t {
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 45%, transparent);
+}
+
+.task-card.has-persona .task-card-foot {
+  border-top-color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 22%, transparent);
+}
+
+.task-card.has-persona .task-card-add {
+  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 25%, transparent);
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 80%, transparent);
+}
+
+/* Links ------------------------------------------------------------------- */
+
+.links-page--persona .links-grid {
+  padding-block: 4px;
+}
+
+.link-card.has-persona {
+  background: var(--nc-bg, var(--paper-0));
+  color: var(--nc-ink, var(--ink-700));
+  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 18%, transparent);
+  transform: rotate(var(--nc-rotation, 0deg));
+  transition:
+    transform 200ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease;
+  position: relative;
+}
+
+.link-card.has-persona:hover {
+  transform: rotate(0deg) translateY(-1px);
+  border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 50%, transparent);
+}
+
+.link-card.has-persona .link-card-title {
+  font-family: var(--nc-title-font, var(--serif));
+  color: var(--nc-ink, var(--ink-900));
+}
+
+.link-card.has-persona .link-card-desc,
+.link-card.has-persona .link-card-saved {
+  font-family: var(--nc-body-font, inherit);
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 70%, transparent);
+}
+
+.link-card.has-persona .link-card-source {
+  background: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 8%, transparent);
+  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 22%, transparent);
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 80%, transparent);
+}
+
+/*
+ * Stickers re-use the same row layout the Notes list uses — the JS layer
+ * appends them with the default `.note-list-stickers` / `.note-list-sticker`
+ * classes via `appendPersonaStickers`, so the existing per-kind rules
+ * (`[data-sticker="…"]`) just work.
+ */
+.task-card .note-list-stickers,
+.link-card .note-list-stickers {
+  margin-top: 4px;
+}
+

@@ -1,23 +1,23 @@
 import { buildLinkIndex, filterNotesByTags } from "../../../lib/notebook";
+import { deriveNotebookPersona } from "../../../lib/notebook-persona";
 import { formatDate } from "../../logic/formatting";
 import {
   buildLinkCardDescription,
   deriveLinkHostname,
-  hashStringToHue,
 } from "../../logic/link-card";
 import type { LinksViewMode } from "../../logic/links-view";
-import {
-  buildFaviconUrl,
-  resolveOgImageForUrl,
-  type CachedOgImageEntry,
-} from "../../logic/og-image";
+import { buildFaviconUrl, type CachedOgImageEntry } from "../../logic/og-image";
 import { buildIcon, type IconName } from "../shared/icons";
 import {
-  loadOgImageCache,
-  persistOgImageCache,
-  setOgImageCacheEntry,
-  type OgImageCache,
-} from "../../logic/og-image-cache";
+  createOgImageResolver,
+  type OgImageResolver,
+} from "../../logic/og-image-resolver";
+import { buildLinkThumb } from "../shared/link-thumb";
+import {
+  applyPersonaStyles,
+  appendPersonaStickers,
+} from "../shared/persona-decor";
+import type { NotesListPersonaOptions } from "../shared/notes-list";
 import type { SutraPadDocument, SutraPadWorkspace } from "../../../types";
 import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
 import { buildPageHeader } from "../shared/page-header";
@@ -36,6 +36,14 @@ export interface LinksPageOptions {
    * opt-in). Threaded from `app.ts` so a full re-render preserves it.
    */
   linksViewMode: LinksViewMode;
+  /**
+   * Persona decoration. Same contract as `NotesPanelOptions.personaOptions`:
+   * `undefined` keeps the flat-card render, an object turns on the persona
+   * layer (paper palette, rotation, stickers) on each link card based on the
+   * primary source note. Pass through from `render-app.ts` so the user's
+   * persona toggle applies uniformly across Notes / Tasks / Links.
+   */
+  personaOptions?: NotesListPersonaOptions;
   onOpenNote: (noteId: string) => void;
   /**
    * Routes to the Capture page. Wired here because the first-run empty
@@ -72,13 +80,15 @@ export function buildLinksPage({
   workspace,
   selectedTagFilters,
   linksViewMode,
+  personaOptions,
   onOpenNote,
   onOpenCapture,
   onChangeLinksView,
   onClearTagFilters,
 }: LinksPageOptions): HTMLElement {
   const section = document.createElement("section");
-  section.className = "links-page";
+  const personaClass = personaOptions ? " links-page--persona" : "";
+  section.className = `links-page${personaClass}`;
 
   // Always derive the unfiltered link index too — the eyebrow surfaces a
   // "filtered N of M" count when a filter is active, mirroring the Notes
@@ -157,7 +167,13 @@ export function buildLinksPage({
     // lands.
     const resolver = createOgImageResolver();
     section.append(
-      buildLinksGrid(linkIndex.links, notesById, onOpenNote, resolver),
+      buildLinksGrid(
+        linkIndex.links,
+        notesById,
+        onOpenNote,
+        resolver,
+        personaOptions,
+      ),
     );
   } else {
     section.append(buildLinksList(linkIndex.links, notesById, onOpenNote));
@@ -166,43 +182,6 @@ export function buildLinksPage({
   return section;
 }
 
-/**
- * One resolver per render. Owns the in-memory view of the og:image
- * cache, persists the full cache back to localStorage after every
- * hit/miss that actually wrote (so subsequent renders short-circuit
- * on the warm cache), and hands cards a `resolve(url, notes)` method
- * that walks the priority chain from `og-image.ts`.
- *
- * Kept internal to this module — nothing outside the Links page
- * needs to orchestrate og:image lookups today.
- */
-interface OgImageResolver {
-  resolve: (url: string, notes: readonly SutraPadDocument[]) => Promise<string | null>;
-}
-
-function createOgImageResolver(): OgImageResolver {
-  let cache: OgImageCache = loadOgImageCache();
-
-  return {
-    resolve: async (url, notes) => {
-      const result = await resolveOgImageForUrl({
-        url,
-        notes,
-        getCachedEntry: (key) => cache[key] ?? null,
-        putCachedEntry: (key, entry) => {
-          const next = setOgImageCacheEntry(cache, key, entry);
-          // Only persist when something actually changed. `setOgImageCacheEntry`
-          // returns a new reference on every call, but the resolver only
-          // calls us after a runtime fetch, so any call here is a real
-          // write worth committing.
-          cache = next;
-          persistOgImageCache(cache);
-        },
-      });
-      return result;
-    },
-  };
-}
 // Re-export the cache entry type so tests/external callers (if any) can
 // reason about resolver shape without reaching into the helper module.
 export type { CachedOgImageEntry };
@@ -296,12 +275,15 @@ function buildLinksGrid(
   notesById: ReadonlyMap<string, SutraPadDocument>,
   onOpenNote: (noteId: string) => void,
   resolver: OgImageResolver,
+  personaOptions: NotesListPersonaOptions | undefined,
 ): HTMLElement {
   const grid = document.createElement("div");
   grid.className = "links-grid";
 
   for (const entry of links) {
-    grid.append(buildLinkCard(entry, notesById, onOpenNote, resolver));
+    grid.append(
+      buildLinkCard(entry, notesById, onOpenNote, resolver, personaOptions),
+    );
   }
 
   return grid;
@@ -312,6 +294,7 @@ function buildLinkCard(
   notesById: ReadonlyMap<string, SutraPadDocument>,
   onOpenNote: (noteId: string) => void,
   resolver: OgImageResolver,
+  personaOptions: NotesListPersonaOptions | undefined,
 ): HTMLElement {
   const card = document.createElement("article");
   card.className = "link-card";
@@ -333,93 +316,29 @@ function buildLinkCard(
     if (note) notesForUrl.push(note);
   }
 
-  card.append(buildLinkThumb(entry.url, notesForUrl, resolver));
+  // Persona uses the primary source note: same paper/ink/rotation a user
+  // would see on that note's card on the Notes page, so the workspace
+  // reads with one consistent visual language across surfaces.
+  const persona =
+    personaOptions && primaryNote
+      ? deriveNotebookPersona(primaryNote, {
+          allNotes: personaOptions.allNotes,
+          dark: personaOptions.dark,
+        })
+      : null;
+  if (persona) {
+    card.classList.add("has-persona");
+    applyPersonaStyles(card, persona);
+  }
+
+  card.append(
+    buildLinkThumb({ url: entry.url, notes: notesForUrl, resolver }),
+  );
   card.append(buildLinkBody(entry, primaryNote, onOpenNote));
 
+  if (persona) appendPersonaStickers(card, persona);
+
   return card;
-}
-
-/**
- * Renders the thumbnail as a gradient placeholder and kicks off an
- * async og:image resolution. When the resolver returns a URL, we swap
- * the gradient for an `<img>` cover. When it returns null (no og:image
- * exists, proxy fetch failed, etc.), the gradient stays — same pleasant
- * fallback the user had before og:image support shipped.
- *
- * The hostname chip sits over both states so a user glancing at a
- * gradient mid-resolution still sees the domain label.
- */
-function buildLinkThumb(
-  url: string,
-  notesForUrl: readonly SutraPadDocument[],
-  resolver: OgImageResolver,
-): HTMLElement {
-  const thumb = document.createElement("div");
-  thumb.className = "link-thumb";
-
-  const hostname = deriveLinkHostname(url);
-  // Fallback to the raw URL for hashing when parse failed — gives us
-  // *some* stable hue rather than all-same-red on every malformed entry.
-  const hue = hashStringToHue(hostname ?? url);
-  // Two-colour diagonal gradient + a subtle diagonal stripe overlay.
-  // Ported from handoff screen_rest.jsx's inline style for `.link-thumb`.
-  // Kept as inline style (rather than CSS variable handoff) because the
-  // hue is per-card, not per-theme — setting it in CSS would need one
-  // custom property per card to plumb through.
-  thumb.style.background = `linear-gradient(135deg, hsl(${hue} 42% 52%), hsl(${(hue + 40) % 360} 60% 38%)), repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 6px, transparent 6px 12px)`;
-
-  const domainLabel = document.createElement("span");
-  domainLabel.className = "link-thumb-domain";
-  domainLabel.textContent = hostname ?? "link";
-  thumb.append(domainLabel);
-
-  // Fire the async resolve and attach the image if/when it lands. We
-  // don't block the render on this — the gradient stands in until the
-  // resolver settles, which means a cold workspace prints the whole
-  // grid at paint-speed and fills in thumbs over the next handful of
-  // network round-trips.
-  //
-  // We swallow resolver errors silently: the resolver already
-  // normalises proxy failures to a cached null, but just in case a
-  // future code path throws, we never want a bad card to nuke the
-  // whole page.
-  void (async () => {
-    let imageUrl: string | null = null;
-    try {
-      imageUrl = await resolver.resolve(url, notesForUrl);
-    } catch {
-      return;
-    }
-    if (!imageUrl) return;
-    if (!thumb.isConnected) return;
-    applyOgImageToThumb(thumb, imageUrl);
-  })();
-
-  return thumb;
-}
-
-/**
- * Swaps the thumb's background from the gradient placeholder to an
- * actual image. Uses an `Image()` pre-load + onerror so that a broken
- * og:image URL (404, CORS on the image itself) silently keeps the
- * gradient rather than flashing a broken-image icon.
- *
- * We set the image as a `background-image` rather than an `<img>`
- * element so the existing domain chip overlay in the thumb keeps
- * working without restructuring the DOM. The gradient stripe stays
- * as a secondary background so a semi-transparent image still reads
- * as "a SutraPad card" rather than a raw screenshot.
- */
-function applyOgImageToThumb(thumb: HTMLElement, imageUrl: string): void {
-  const probe = new Image();
-  probe.addEventListener("load", () => {
-    if (!thumb.isConnected) return;
-    thumb.style.backgroundImage = `url("${imageUrl}"), ${thumb.style.backgroundImage}`;
-    thumb.style.backgroundSize = "cover, auto, auto";
-    thumb.style.backgroundPosition = "center, 0 0, 0 0";
-    thumb.classList.add("has-og-image");
-  });
-  probe.src = imageUrl;
 }
 
 function buildLinkBody(

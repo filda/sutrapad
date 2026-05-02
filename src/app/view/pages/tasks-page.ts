@@ -1,4 +1,5 @@
 import { buildTaskIndex, filterNotesByTags } from "../../../lib/notebook";
+import { deriveNotebookPersona } from "../../../lib/notebook-persona";
 import type { SutraPadWorkspace } from "../../../types";
 import {
   applyTaskFilter,
@@ -13,7 +14,15 @@ import {
   type EnrichedTask,
   type TasksFilterId,
 } from "../../logic/tasks-filter";
+import { deriveNotePrimaryUrl } from "../../logic/note-primary-url";
+import { createOgImageResolver } from "../../logic/og-image-resolver";
 import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
+import { buildLinkThumb } from "../shared/link-thumb";
+import {
+  applyPersonaStyles,
+  appendPersonaStickers,
+} from "../shared/persona-decor";
+import type { NotesListPersonaOptions } from "../shared/notes-list";
 import { buildPageHeader } from "../shared/page-header";
 
 // Inline SVG paths, taken verbatim from
@@ -71,6 +80,13 @@ export interface TasksPageOptions {
    * harmlessly falls back to the empty-pick state on the next render.
    */
   tasksOneThingKey: string | null;
+  /**
+   * Persona decoration. Same shape as on Notes/Links — when present, each
+   * task card gets paper/ink/rotation/stickers derived from its source
+   * note, so the surface visually matches the Notes page entry for the
+   * same notebook.
+   */
+  personaOptions?: NotesListPersonaOptions;
   onOpenNote: (noteId: string) => void;
   onToggleTask: (noteId: string, lineIndex: number) => void;
   onChangeTasksFilter: (filter: TasksFilterId) => void;
@@ -201,13 +217,19 @@ export function buildTasksPage(options: TasksPageOptions): HTMLElement {
   const groups = groupEnrichedTasksByNote(filtered);
 
   const grid = document.createElement("div");
-  grid.className = "task-grid";
+  const personaClass = options.personaOptions ? " task-grid--persona" : "";
+  grid.className = `task-grid${personaClass}`;
 
   if (groups.length === 0) {
     grid.append(buildFilterMiss(options, totalDone));
   } else {
+    // One resolver per render for the same reason the Links page does it:
+    // Notes/Tasks/Links all draw on the same localStorage og:image cache,
+    // and a per-render resolver keeps a warm-cache paint cheap when the
+    // user bounces between pages.
+    const resolver = createOgImageResolver();
     for (const group of groups) {
-      grid.append(buildTaskCard(group, options));
+      grid.append(buildTaskCard(group, options, resolver));
     }
   }
 
@@ -443,9 +465,36 @@ function buildFilterMiss(
 function buildTaskCard(
   group: EnrichedNoteGroup,
   options: TasksPageOptions,
+  resolver: ReturnType<typeof createOgImageResolver>,
 ): HTMLElement {
   const card = document.createElement("article");
   card.className = "task-card";
+
+  // Persona attaches to the source note so the same notebook reads with
+  // the same paper/ink across Notes ↔ Tasks. When persona is off the card
+  // keeps its original flat treatment.
+  const persona = options.personaOptions
+    ? deriveNotebookPersona(group.note, {
+        allNotes: options.personaOptions.allNotes,
+        dark: options.personaOptions.dark,
+      })
+    : null;
+  if (persona) {
+    card.classList.add("has-persona");
+    applyPersonaStyles(card, persona);
+  }
+
+  // Thumb header — same shape as the Links page, fed off the source
+  // note's primary URL. URL-less notes still render the gradient (no
+  // domain chip) so the visual rhythm of the grid stays consistent.
+  const primaryUrl = deriveNotePrimaryUrl(group.note);
+  card.append(
+    buildLinkThumb({
+      url: primaryUrl,
+      notes: [group.note],
+      resolver,
+    }),
+  );
 
   card.append(buildTaskCardHead(group, options));
 
@@ -457,6 +506,9 @@ function buildTaskCard(
   card.append(list);
 
   card.append(buildTaskCardFoot(group, options));
+
+  if (persona) appendPersonaStickers(card, persona);
+
   return card;
 }
 
