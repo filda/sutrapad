@@ -56,8 +56,12 @@ export function buildLinkThumb({
   // Two-colour diagonal gradient + a subtle diagonal stripe overlay
   // (handoff: screen_rest.jsx → `.link-thumb`). Inline because the hue
   // is per-card; CSS variable plumbing would cost one custom property
-  // per card with no real benefit.
-  thumb.style.background = `linear-gradient(135deg, hsl(${hue} 42% 52%), hsl(${(hue + 40) % 360} 60% 38%)), repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 6px, transparent 6px 12px)`;
+  // per card with no real benefit. We assign `backgroundImage` directly
+  // (rather than the `background` shorthand) so the multi-layer value
+  // round-trips through browsers and test environments — the shorthand
+  // parser in happy-dom collapses multi-gradient values, which would
+  // hide the second hue from any DOM-level assertion.
+  thumb.style.backgroundImage = `linear-gradient(135deg, hsl(${hue} 42% 52%), hsl(${(hue + 40) % 360} 60% 38%)), repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 6px, transparent 6px 12px)`;
 
   if (hostname !== null) {
     const domainLabel = document.createElement("span");
@@ -74,9 +78,11 @@ export function buildLinkThumb({
       try {
         imageUrl = await resolver.resolve(url, notes);
       } catch {
-        // Resolver promises don't throw in the happy path, but a future
-        // code path might; an unhandled throw must never nuke the card.
-        return;
+        // Resolver promises don't throw in the happy path; if a future
+        // code path does, leave `imageUrl` at its initial null and the
+        // next guard bails. No explicit `return` here — it would be
+        // an equivalent mutation surface (the `if (!imageUrl) return`
+        // immediately below catches the same control-flow exit).
       }
       if (!imageUrl) return;
       if (!thumb.isConnected) return;

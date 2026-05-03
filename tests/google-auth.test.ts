@@ -541,9 +541,692 @@ describe("parseUserInfoResponse", () => {
     ).toThrow(/missing required fields/);
   });
 
-  it("rejects non-object inputs", () => {
-    expect(() => parseUserInfoResponse(null)).toThrow();
-    expect(() => parseUserInfoResponse("not json")).toThrow();
-    expect(() => parseUserInfoResponse(42)).toThrow();
+  it("rejects a callable input even when it carries valid name/email own properties", () => {
+    // The first guard is `!raw || typeof raw !== "object"`. Without a
+    // truthy non-object, both `false` mutants on the second
+    // sub-condition collapse to the original's observable behaviour
+    // (the inner `typeof data.name !== "string"` guard catches them).
+    // A function with valid string `name` and `email` properties slips
+    // past the inner guard if the outer one misfires — so this input
+    // proves the outer `typeof raw !== "object"` check actually runs.
+    const fnLike = (() => {}) as unknown as Record<string, unknown> & (() => void);
+    Object.defineProperty(fnLike, "name", {
+      value: "Filda",
+      writable: true,
+      configurable: true,
+    });
+    fnLike.email = "filda@example.com";
+    expect(() => parseUserInfoResponse(fnLike)).toThrow(
+      "Google profile response missing required fields.",
+    );
+  });
+
+  it("rejects non-object inputs with the missing-fields message", () => {
+    // The exact message text is part of the contract — it's logged and
+    // surfaced in the bootstrap-error pulse. Assert on the text rather
+    // than just `toThrow()` so the StringLiteral mutant on line 99 is
+    // pinned (an empty error message would otherwise pass `toThrow()`).
+    expect(() => parseUserInfoResponse(null)).toThrow(
+      "Google profile response missing required fields.",
+    );
+    expect(() => parseUserInfoResponse("not json")).toThrow(
+      "Google profile response missing required fields.",
+    );
+    expect(() => parseUserInfoResponse(42)).toThrow(
+      "Google profile response missing required fields.",
+    );
+    expect(() => parseUserInfoResponse(undefined)).toThrow(
+      "Google profile response missing required fields.",
+    );
+  });
+});
+
+describe("GoogleAuthService.initialize", () => {
+  it("throws a specific error when VITE_GOOGLE_CLIENT_ID is missing", async () => {
+    setupGoogleIdentityHarness();
+    vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "");
+    const service = new GoogleAuthService();
+    await expect(service.initialize()).rejects.toThrow(
+      "Missing VITE_GOOGLE_CLIENT_ID in .env.",
+    );
+  });
+
+  it("clears the cached init promise on rejection so a later retry can succeed", async () => {
+    // A failed init must NOT permanently poison the service — the user
+    // can correct the env (in real life: a hot-reloaded vite config) and
+    // a follow-up call should run a fresh attempt rather than re-rejecting
+    // forever from the cached promise.
+    setupGoogleIdentityHarness();
+    vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "");
+    const service = new GoogleAuthService();
+    await expect(service.initialize()).rejects.toThrow();
+
+    vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "stub-client-id");
+    await expect(service.initialize()).resolves.toBeUndefined();
+  });
+});
+
+describe("loadGoogleIdentityScript (via service.initialize)", () => {
+  it("does not append a <script> when GIS is already loaded on the window", async () => {
+    // Hot-reload + tab-restore can land with `window.google.accounts.oauth2`
+    // already populated. Re-injecting the script on every initialize
+    // would queue a duplicate fetch and stack a second `load` listener.
+    setupGoogleIdentityHarness();
+    // happy-dom isn't the env here — emulate document.head minimally
+    // for the script-tag count assertion.
+    const head = { children: [] as unknown[] };
+    let appendCalls = 0;
+    vi.stubGlobal("document", {
+      createElement: () => ({
+        addEventListener: () => undefined,
+        set src(_: string) {},
+        set async(_: boolean) {},
+        set defer(_: boolean) {},
+      }),
+      head: {
+        append: () => {
+          appendCalls += 1;
+        },
+      },
+      ...head,
+    });
+    const service = new GoogleAuthService();
+    await service.initialize();
+    expect(appendCalls).toBe(0);
+  });
+});
+
+describe("GoogleAuthService GOOGLE_SCOPES round-trip", () => {
+  it("forwards the full openid+profile+email+drive.file scope string to initTokenClient", async () => {
+    // The four-part scope is the contract with Google: openid for the
+    // sub claim, profile + email for userinfo, drive.file for the
+    // notebook store. Pin the literal here so the array+join form can't
+    // silently lose a scope (ArrayDeclaration `[]` mutant) or replace
+    // a member with `""` (StringLiteral mutants).
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+    void service.refreshSession();
+    await Promise.resolve();
+
+    const oauth = (window as unknown as {
+      google: {
+        accounts: {
+          oauth2: {
+            initTokenClient: { mock: { calls: Array<[{ scope: string }]> } };
+          };
+        };
+      };
+    }).google.accounts.oauth2;
+    const config = oauth.initTokenClient.mock.calls[0][0];
+    expect(config.scope).toBe(
+      "openid profile email https://www.googleapis.com/auth/drive.file",
+    );
+    expect(pendingRequests).toHaveLength(1);
+  });
+});
+
+describe("requireGoogleOAuth error path", () => {
+  it("throws a specific message when window.google is missing entirely", async () => {
+    // The harness-less window has no `google` namespace. signIn drives
+    // through requestToken → requireGoogleOAuth, which must throw the
+    // user-visible "client is not available" message rather than a
+    // generic TypeError on `.accounts`.
+    setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+    // Strip the google namespace so requireGoogleOAuth bails. We keep
+    // localStorage so initialize doesn't trip over a missing one.
+    const w = window as unknown as { google?: unknown };
+    delete w.google;
+
+    await expect(service.signIn()).rejects.toThrow(
+      "Google OAuth client is not available.",
+    );
+  });
+
+  it("throws when window.google exists but accounts is missing (partial GIS load)", async () => {
+    // Defends the optional-chaining mutant on line 141: removing `?`
+    // from `accounts?.oauth2` would TypeError instead of throwing the
+    // intended message. Test the half-loaded shape (google present,
+    // accounts undefined) to pin the chain.
+    setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const w = window as unknown as { google: unknown };
+    w.google = {};
+
+    await expect(service.signIn()).rejects.toThrow(
+      "Google OAuth client is not available.",
+    );
+  });
+});
+
+describe("requestToken error propagation", () => {
+  it("rejects signIn with the GIS error_callback message label", async () => {
+    // The error message string is the user-visible failure mode for
+    // the sign-in button — pin it explicitly.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const signInPromise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].errorCallback?.();
+    await expect(signInPromise).rejects.toThrow(
+      "Google sign-in was cancelled or failed.",
+    );
+  });
+
+  it("rejects refreshSession with the silent-refresh error label when surfaced (sanity probe)", async () => {
+    // refreshSession swallows GIS error_callback into `null` rather
+    // than a throw, but the inner `requestToken` rejects with the
+    // refresh-specific label. Reach in via signIn-style assertion that
+    // the label string isn't the cancellation one — protects the
+    // StringLiteral mutant on line 346 by demonstrating the two flows
+    // use different labels.
+    setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+    // Force the refresh through and capture its label by intercepting
+    // requestToken via the private surface.
+    const internalRequest = (
+      service as unknown as {
+        requestToken: (
+          prompt: "consent" | "none",
+          msg: string,
+        ) => Promise<unknown>;
+      }
+    ).requestToken.bind(service);
+    const promise = internalRequest("none", "Unable to refresh the Google session.");
+    await Promise.resolve();
+    // Trigger the error path via the most recent pending request.
+    const oauth = (window as unknown as {
+      google: {
+        accounts: {
+          oauth2: {
+            initTokenClient: {
+              mock: {
+                calls: Array<[{ error_callback?: () => void }]>;
+              };
+            };
+          };
+        };
+      };
+    }).google.accounts.oauth2;
+    const lastConfig =
+      oauth.initTokenClient.mock.calls[
+        oauth.initTokenClient.mock.calls.length - 1
+      ][0];
+    lastConfig.error_callback?.();
+    await expect(promise).rejects.toThrow(
+      "Unable to refresh the Google session.",
+    );
+  });
+
+  it("rejects when the GIS callback's tokenResponse carries an error code", async () => {
+    // Google can land a tokenResponse with `error: "popup_closed_by_user"`
+    // (the user dismissed the popup). The callback path must reject —
+    // the conditional `if (tokenResponse.error)` mutating to `false`
+    // would let the bad token through to access_token assignment.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const signInPromise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "",
+      expires_in: 0,
+      scope: "",
+      token_type: "Bearer",
+      error: "popup_closed_by_user",
+    });
+    await expect(signInPromise).rejects.toThrow("popup_closed_by_user");
+    expect(service.getAccessToken()).toBeNull();
+  });
+});
+
+describe("fetchUserProfile contract", () => {
+  it("calls the Google userinfo endpoint with a Bearer Authorization header", async () => {
+    // Pin the URL string, the Bearer prefix, and the Authorization
+    // header shape — three StringLiteral mutants survive otherwise.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const fetchSpy = vi.fn(async () =>
+      new Response(JSON.stringify({ name: "Test", email: "t@t" }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const promise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "live-token",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await promise;
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const call = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[0]).toBe("https://www.googleapis.com/oauth2/v3/userinfo");
+    const init = call[1];
+    expect(init).toBeDefined();
+    expect(
+      (init.headers as Record<string, string>).Authorization,
+    ).toBe("Bearer live-token");
+  });
+
+  it("throws a specific message when userinfo returns non-OK", async () => {
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("forbidden", { status: 403 })),
+    );
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const signInPromise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "doomed-token",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await expect(signInPromise).rejects.toThrow(
+      "Failed to load the user profile from the Google account.",
+    );
+  });
+});
+
+describe("signOut early-return paths", () => {
+  beforeEach(() => {
+    vi.stubGlobal("window", { localStorage: createStorageMock() });
+    vi.stubGlobal("localStorage", window.localStorage);
+    localStorage.clear();
+  });
+
+  it("clears hints and skips revoke when no token is held in memory", () => {
+    // No prior signIn → `#accessToken` is null → revoke isn't safe to
+    // call. The hints still get wiped (a defensive sweep).
+    localStorage.setItem("sutrapad-user-email-hint", "x@x");
+    localStorage.setItem("sutrapad-is-logged-in", "true");
+    const service = new GoogleAuthService();
+    expect(() => service.signOut()).not.toThrow();
+    expect(localStorage.getItem("sutrapad-user-email-hint")).toBeNull();
+    expect(localStorage.getItem("sutrapad-is-logged-in")).toBeNull();
+  });
+
+  it("clears hints and skips revoke when GIS is not loaded on the window", async () => {
+    // After a successful signIn but a subsequent loss of the google
+    // namespace (e.g. an HMR shim that strips it), signOut must still
+    // clean up rather than TypeError on `google.accounts.oauth2.revoke`.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const signInPromise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "live",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await signInPromise;
+
+    const w = window as unknown as { google?: unknown };
+    delete w.google;
+    expect(() => service.signOut()).not.toThrow();
+    expect(service.getAccessToken()).toBeNull();
+    expect(localStorage.getItem("sutrapad-user-email-hint")).toBeNull();
+  });
+
+  it("clears hints and skips revoke when window.google exists but accounts is missing (partial GIS)", async () => {
+    // The optional-chaining guard `window.google?.accounts?.oauth2`
+    // tolerates a half-loaded GIS shape (google present, accounts not).
+    // Removing the `?` after accounts would TypeError here; this test
+    // pins the chain by replacing the namespace mid-flight with `{}`.
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const signInPromise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "live",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await signInPromise;
+
+    (window as unknown as { google: unknown }).google = {};
+    expect(() => service.signOut()).not.toThrow();
+    expect(service.getAccessToken()).toBeNull();
+  });
+});
+
+describe("signIn / refreshSession auto-initialize when called first", () => {
+  // The two public entry points each carry a defensive
+  // `if (!this.#clientId) await this.initialize();` guard so callers
+  // don't have to remember to call initialize() before signIn().
+  // Without coverage on these paths, the BlockStatement and
+  // ConditionalExpression mutants on lines 304 / 339 survive.
+
+  it("signIn auto-initializes when no prior initialize() was awaited", async () => {
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    // Skip the explicit initialize() — signIn must trigger it itself.
+    // Several await boundaries separate the call from the GIS round-trip
+    // (signIn → initialize IIFE → loadGoogleIdentityScript → requestToken),
+    // so flush a handful of microtasks before checking for the request.
+    const signInPromise = service.signIn();
+    // Six microtask flushes — one per await boundary in the
+    // auto-initialize chain. Unrolled rather than looped because
+    // `no-await-in-loop` flags the natural `for` form, and the
+    // serial flush is exactly the behaviour we want here.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pendingRequests).toHaveLength(1);
+    pendingRequests[0].callback({
+      access_token: "fresh-from-auto-init",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await expect(signInPromise).resolves.toBeDefined();
+    expect(service.getAccessToken()).toBe("fresh-from-auto-init");
+  });
+
+  it("refreshSession auto-initializes when no prior initialize() was awaited", async () => {
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    const service = new GoogleAuthService();
+    const refreshPromise = service.refreshSession();
+    // Six microtask flushes — one per await boundary in the
+    // auto-initialize chain. Unrolled rather than looped because
+    // `no-await-in-loop` flags the natural `for` form, and the
+    // serial flush is exactly the behaviour we want here.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pendingRequests).toHaveLength(1);
+    pendingRequests[0].callback({
+      access_token: "auto-refresh-token",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await expect(refreshPromise).resolves.toBeDefined();
+    expect(service.getAccessToken()).toBe("auto-refresh-token");
+  });
+});
+
+describe("loadGoogleIdentityScript injects the GIS <script> when google is missing", () => {
+  // This path is the cold-load case — first ever bootstrap on a
+  // browser that hasn't loaded GIS yet. Module-level
+  // `googleScriptPromise` persists across tests in the same file, so
+  // we use vi.resetModules() to get a fresh load in this test only.
+  // Without this coverage the entire `if (!googleScriptPromise) {…}`
+  // block in `loadGoogleIdentityScript` surfaces as NoCoverage and
+  // the URL constant on line 46 stays a survivor.
+
+  it("rejects initialize() with the script-load-failure message when the <script> dispatches `error`", async () => {
+    vi.resetModules();
+    const { GoogleAuthService: FreshService } = await import(
+      "../src/services/google-auth"
+    );
+
+    const handlers: { error: (() => void) | null } = { error: null };
+    const scriptStub: Record<string, unknown> = {
+      addEventListener: (event: string, handler: () => void) => {
+        if (event === "error") handlers.error = handler;
+      },
+    };
+    Object.defineProperty(scriptStub, "src", { set: () => undefined });
+    Object.defineProperty(scriptStub, "async", { set: () => undefined });
+    Object.defineProperty(scriptStub, "defer", { set: () => undefined });
+    vi.stubGlobal("document", {
+      createElement: () => scriptStub,
+      head: { append: () => undefined },
+    });
+    vi.stubGlobal("window", { localStorage: createStorageMock() });
+    vi.stubGlobal("localStorage", window.localStorage);
+    vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "stub-client-id");
+
+    const service = new FreshService();
+    const initPromise = service.initialize();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(handlers.error).not.toBeNull();
+    handlers.error?.();
+    await expect(initPromise).rejects.toThrow(
+      "Failed to load Google Identity Services.",
+    );
+  });
+
+  it("memoises the script-loading Promise across separate service instances so only one <script> is ever appended", async () => {
+    // `googleScriptPromise` is module-scoped specifically so two
+    // independent `GoogleAuthService` instances share one GIS script
+    // load. Mutating `if (!googleScriptPromise)` to `if (true)` would
+    // re-enter the body for the second service and stack a duplicate
+    // <script> tag. (Two separate services, not two calls on one,
+    // because each service memoises its own `#initPromise` — same
+    // service called twice never re-enters loadGoogleIdentityScript
+    // anyway, regardless of the inner guard.)
+    vi.resetModules();
+    const { GoogleAuthService: FreshService } = await import(
+      "../src/services/google-auth"
+    );
+
+    const handlers: { load: (() => void) | null } = { load: null };
+    let appendCount = 0;
+    const scriptStub: Record<string, unknown> = {
+      addEventListener: (event: string, handler: () => void) => {
+        if (event === "load") handlers.load = handler;
+      },
+    };
+    Object.defineProperty(scriptStub, "src", { set: () => undefined });
+    Object.defineProperty(scriptStub, "async", { set: () => undefined });
+    Object.defineProperty(scriptStub, "defer", { set: () => undefined });
+    vi.stubGlobal("document", {
+      createElement: () => scriptStub,
+      head: {
+        append: () => {
+          appendCount += 1;
+        },
+      },
+    });
+    vi.stubGlobal("window", { localStorage: createStorageMock() });
+    vi.stubGlobal("localStorage", window.localStorage);
+    vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "stub-client-id");
+
+    const a = new FreshService();
+    const b = new FreshService();
+    const firstInit = a.initialize();
+    const secondInit = b.initialize();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(appendCount).toBe(1);
+    handlers.load?.();
+    await expect(firstInit).resolves.toBeUndefined();
+    await expect(secondInit).resolves.toBeUndefined();
+  });
+
+  it("threads the optional chain through `accounts` when window.google is half-loaded (truthy but missing accounts)", async () => {
+    // Defends the optional-chaining mutant on line 148. With
+    // `window.google = {}`, the original `window.google?.accounts?.oauth2`
+    // resolves to undefined and the function falls through to script
+    // injection; the mutant `window.google?.accounts.oauth2` would
+    // TypeError on `undefined.oauth2`. Driving initialize from a fresh
+    // module with this exact shape pins the chain.
+    vi.resetModules();
+    const { GoogleAuthService: FreshService } = await import(
+      "../src/services/google-auth"
+    );
+
+    const handlers: { load: (() => void) | null } = { load: null };
+    const scriptStub: Record<string, unknown> = {
+      addEventListener: (event: string, handler: () => void) => {
+        if (event === "load") handlers.load = handler;
+      },
+    };
+    Object.defineProperty(scriptStub, "src", { set: () => undefined });
+    Object.defineProperty(scriptStub, "async", { set: () => undefined });
+    Object.defineProperty(scriptStub, "defer", { set: () => undefined });
+    vi.stubGlobal("document", {
+      createElement: () => scriptStub,
+      head: { append: () => undefined },
+    });
+    vi.stubGlobal("window", {
+      localStorage: createStorageMock(),
+      google: {}, // truthy but no `.accounts`
+    });
+    vi.stubGlobal("localStorage", window.localStorage);
+    vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "stub-client-id");
+
+    const service = new FreshService();
+    const initPromise = service.initialize();
+    await Promise.resolve();
+    await Promise.resolve();
+    handlers.load?.();
+    await expect(initPromise).resolves.toBeUndefined();
+  });
+
+  it("appends a single <script src=GIS_URL> with async/defer to <head> and resolves on load", async () => {
+    vi.resetModules();
+    const { GoogleAuthService: FreshService } = await import(
+      "../src/services/google-auth"
+    );
+
+    const appendCalls: Array<unknown> = [];
+    // Held inside a box so TS doesn't narrow the assigned-in-closure
+    // value back to `null` after the closure escapes.
+    const handlers: { load: (() => void) | null } = { load: null };
+    const scriptStub: Record<string, unknown> = {
+      addEventListener: (event: string, handler: () => void) => {
+        if (event === "load") handlers.load = handler;
+      },
+    };
+    const documentStub = {
+      createElement: (tag: string) => {
+        expect(tag).toBe("script");
+        return scriptStub;
+      },
+      head: {
+        append: (node: unknown) => {
+          appendCalls.push(node);
+        },
+      },
+    };
+    // Track src/async/defer assignments via setters on the stub.
+    let recordedSrc: string | undefined;
+    let recordedAsync: boolean | undefined;
+    let recordedDefer: boolean | undefined;
+    Object.defineProperty(scriptStub, "src", {
+      set: (v: string) => {
+        recordedSrc = v;
+      },
+    });
+    Object.defineProperty(scriptStub, "async", {
+      set: (v: boolean) => {
+        recordedAsync = v;
+      },
+    });
+    Object.defineProperty(scriptStub, "defer", {
+      set: (v: boolean) => {
+        recordedDefer = v;
+      },
+    });
+    vi.stubGlobal("document", documentStub);
+
+    // Simulate a browser without GIS yet — initialize must trigger
+    // the script-injection path. We populate `window.google` only
+    // AFTER the script "loads" so requireGoogleOAuth can succeed in
+    // any subsequent code, but for this test we only care about the
+    // appended-script side-effect.
+    vi.stubGlobal("window", { localStorage: createStorageMock() });
+    vi.stubGlobal("localStorage", window.localStorage);
+    vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "stub-client-id");
+
+    const service = new FreshService();
+    const initPromise = service.initialize();
+    // The IIFE awaits loadGoogleIdentityScript — we need to fire the
+    // script `load` event so the promise resolves.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(appendCalls).toHaveLength(1);
+    expect(recordedSrc).toBe("https://accounts.google.com/gsi/client");
+    expect(recordedAsync).toBe(true);
+    expect(recordedDefer).toBe(true);
+    handlers.load?.();
+    await expect(initPromise).resolves.toBeUndefined();
+  });
+});
+
+describe("hint persistence catches localStorage failures", () => {
+  it("logs a warning and keeps going when setItem throws on sign-in success", async () => {
+    // Quota-exceeded / private-mode setItem throws are normal failure
+    // modes. The sign-in result must still resolve (the hints are an
+    // optimization, not a credential).
+    const { pendingRequests } = setupGoogleIdentityHarness();
+    // Re-stub localStorage with a setItem that throws.
+    const w = window as { localStorage: Storage };
+    const real = w.localStorage;
+    w.localStorage = {
+      ...real,
+      setItem: () => {
+        throw new Error("QuotaExceeded");
+      },
+    };
+    vi.stubGlobal("localStorage", w.localStorage);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const service = new GoogleAuthService();
+    await service.initialize();
+    const signInPromise = service.signIn();
+    await Promise.resolve();
+    pendingRequests[0].callback({
+      access_token: "live",
+      expires_in: 3600,
+      scope: "x",
+      token_type: "Bearer",
+    });
+    await expect(signInPromise).resolves.toBeDefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Failed to persist sign-in hints:",
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("logs a warning and keeps going when removeItem throws on sign-out", () => {
+    // Some private-mode contexts also throw on removeItem. signOut
+    // must still wipe the in-memory token and not surface the storage
+    // failure to the caller.
+    setupGoogleIdentityHarness();
+    const w = window as { localStorage: Storage };
+    w.localStorage = {
+      ...w.localStorage,
+      removeItem: () => {
+        throw new Error("StorageError");
+      },
+    };
+    vi.stubGlobal("localStorage", w.localStorage);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const service = new GoogleAuthService();
+    expect(() => service.signOut()).not.toThrow();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Failed to clear sign-in hints:",
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
   });
 });

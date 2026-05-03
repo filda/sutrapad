@@ -186,17 +186,32 @@ This runs:
 npm run test:mutation
 ```
 
-This runs StrykerJS mutation testing against the pure helper modules in:
+This runs StrykerJS mutation testing. The current mutate scope is set in `stryker.config.mjs` and covers:
 
-- `src/lib/**/*.ts`
-- `src/app/logic/**/*.ts`
-- `src/app/storage/**/*.ts`
-- `src/app/session/**/*.ts`
-- `src/app/capture/**/*.ts`
+- `src/lib/**/*.ts` — pure helpers
+- `src/app/logic/**/*.ts` — DOM-free logic modules
+- `src/app/storage/**/*.ts`, `src/app/session/**/*.ts`, `src/app/capture/**/*.ts` — extracted helper areas
+- `src/services/{google-auth,drive-store}.ts` and `src/services/drive/{client,workspace-store}.ts` — auth + Drive store; tests exercise these via the `drive-store` facade and vitest's related-test resolver picks them up transitively
+- `src/app/lifecycle/palette.ts` — has a dedicated happy-dom test
+- `src/app/view/{chrome/mobile-nav,pages/links-page,pages/privacy-page,pages/tasks-page,shared/link-thumb,shared/notes-list}.ts` — view modules with dedicated happy-dom tests
+
+Explicitly excluded so the score isn't dragged down by meaningless mutants:
+
+- `*.d.ts` — declaration-only
+- `src/app/logic/lexicon/stoplist.ts` — frozen Czech-stopword Set, pure data; mutating each word's StringLiteral generates dozens of survivors no real test can pin
+- `src/app/logic/lexicon/types.ts` — type-only
+
+Adding a new source file:
+
+- If it lands in one of the already-globbed directories, the include is automatic.
+- Otherwise, add an explicit path to `mutate:` in the same change as the file. If it's pure data or types, add a matching `!` exclusion so the score reflects logic only.
+- A new file that pulls overall below `thresholds.break` is a signal to either write more tests before merging or to lower `break:` temporarily with a comment explaining the deferred work — never silently merge a file that pulls CI red.
 
 The HTML report is written to:
 
 - `reports/mutation/mutation.html`
+
+A machine-readable JSON report (standard `mutationtestingelementsschema.json` shape) is written alongside it at `reports/mutation/mutation.json`.
 
 Important:
 
@@ -337,8 +352,8 @@ Compatibility notes:
 - When a piece of logic becomes awkward to test through DOM setup in `src/app.ts`, extract it into `src/app/logic/**`, `src/app/storage/**`, or another pure helper module first.
 - Coverage and mutation testing both improve faster when new behavior lands in pure modules instead of controller or DOM wiring code.
 - `src/app/view/render-app.ts` is intentionally still mostly untested at the unit level; prefer moving decision-heavy logic out of it before adding large DOM-heavy tests.
-- Stryker currently mutates `src/lib/**/*.ts` plus the pure helper areas under `src/app/{logic,storage,session,capture}/**`.
-- UI-heavy controller and rendering files outside that scope still benefit from normal coverage immediately, but do not affect mutation score until the Stryker config is widened again.
+- Stryker mutates the pure-helper areas (`src/lib`, `src/app/{logic,storage,session,capture}`), the auth + Drive services (`src/services/google-auth.ts`, `src/services/drive-store.ts` and the underlying `src/services/drive/{client,workspace-store}.ts`), `src/app/lifecycle/palette.ts`, and the subset of `src/app/view/**` that has dedicated happy-dom tests. The full list lives in `stryker.config.mjs` — keep it in sync when adding new files.
+- View files without a dedicated test, the composition root in `src/app.ts`, and glue modules under `src/app/{render-callbacks,render-helpers,silent-capture-runner,state-store,sync-helpers}.ts` are intentionally not mutated yet — their only coverage is the smoke test, which is too coarse to discriminate mutants. Add a focused test before widening the mutate scope to one of these.
 
 ## Structure
 

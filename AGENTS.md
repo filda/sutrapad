@@ -4,6 +4,7 @@
 
 - Read [docs/conventions.md](docs/conventions.md) and [docs/development.md](docs/development.md) before making non-trivial changes.
 - A bugfix is not complete without a test that would fail before the fix and pass after it.
+- New source files are not done at "tests pass" — they're done when they're under mutation pressure too. Verify the file falls under one of the `mutate:` globs in `stryker.config.mjs`; if it doesn't, add it explicitly in the same change. Pure-data modules (frozen sets/maps, type-only files) get a matching `!` exclusion so they don't drag the score down with meaningless StringLiteral mutants. See [docs/development.md](docs/development.md#run-mutation-testing) for the current mutate scope and the rationale for what's deliberately excluded.
 - Prefer small extracted helpers for logic that is otherwise hard to test in UI setup code.
 - Verification gate before declaring a task done: run `npm run check` (chains `lint && test && build`, i.e. oxlint + tsc + vitest + vite build). Do not substitute partial runs ("tsc passed elsewhere", "vitest is green in watch"). For truly trivial edits (typo, single-line config tweak) `npm run lint` alone is an acceptable explicit shortcut.
 - A task is not finished when `npm run check` goes green. Every non-trivial change then ends with an explicit **cleanup pass**:
