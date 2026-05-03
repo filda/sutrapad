@@ -403,6 +403,407 @@ describe("buildTasksPage structural / chip / one-thing", () => {
     input.dispatchEvent(new Event("change"));
     expect(onToggleTasksShowDone).toHaveBeenCalledWith(true);
   });
+});
+
+// Split out from the structural describe above to keep each `describe`
+// body under the `max-lines-per-function` (350) lint cap. These are the
+// finer-grained DOM contracts pinned by the 2026-05-03 mutation pass —
+// eyebrow exact text, chip hint titles, one-thing meta details, task
+// card head/foot, location stripping, filter-miss copy variants.
+describe("buildTasksPage prose contracts and branch coverage", () => {
+  it("renders the eyebrow exactly as 'Tasks · N of M open · X of Y done · filtered by 1 tag' (singular tag, not tags)", () => {
+    // Pin three literals that survive substring assertions:
+    //   - the singular/plural ternary on line 155 (`tag` vs `tags`)
+    //   - the eyebrow prefix "Tasks · " StringLiteral on line 159
+    //   - the "of" connective in `filterCount > 0 → "${linkCount} of ${total}"`
+    const note = makeNote({
+      id: "n",
+      tags: ["work"],
+      body: "- [ ] Email",
+    });
+    const eyebrow =
+      buildPage(makeWorkspace([note]), ["work"]).querySelector(".page-eyebrow")
+        ?.textContent ?? "";
+    expect(eyebrow).toBe(
+      "Tasks · 1 of 1 open · 0 of 0 done · filtered by 1 tag",
+    );
+    expect(eyebrow).not.toContain("1 tags");
+  });
+
+  it("uses plural `tags` (not `tag`) when more than one filter is active", () => {
+    const note = makeNote({
+      id: "n",
+      tags: ["work", "urgent"],
+      body: "- [ ] Email",
+    });
+    const eyebrow =
+      buildPage(makeWorkspace([note]), ["work", "urgent"]).querySelector(
+        ".page-eyebrow",
+      )?.textContent ?? "";
+    expect(eyebrow).toContain("filtered by 2 tags");
+    expect(eyebrow).not.toContain("2 tag · ");
+  });
+
+  it("renders 'N of M' open/done counts in the eyebrow when a tag filter narrows the set", () => {
+    // Pins L143–146: each `enriched.filter(...)` and `allEnriched.filter(...)`
+    // contributes to the eyebrow's "filtered N of M open · X of Y done"
+    // shape. Without per-bucket count assertions, mutants that swap the
+    // arrays or the predicates all collapse to similar-looking eyebrows.
+    const work = makeNote({
+      id: "w",
+      tags: ["work"],
+      body: "- [ ] open work\n- [x] done work",
+    });
+    const home = makeNote({
+      id: "h",
+      tags: ["home"],
+      body: "- [ ] open home\n- [x] done home",
+    });
+    const eyebrow =
+      buildPage(makeWorkspace([work, home]), ["work"]).querySelector(
+        ".page-eyebrow",
+      )?.textContent ?? "";
+    expect(eyebrow).toBe(
+      "Tasks · 1 of 2 open · 1 of 2 done · filtered by 1 tag",
+    );
+  });
+
+  it("renders each filter chip's `title` attribute with the canonical hint copy", () => {
+    // Pin FILTER_DEFS hint strings (lines 57–59).
+    const today = "2026-05-03T08:00:00.000Z";
+    const longAgo = "2026-04-25T08:00:00.000Z";
+    const fresh = makeNote({
+      id: "fresh",
+      tags: [],
+      body: "- [ ] Email Mia",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const old = makeNote({
+      id: "old",
+      tags: [],
+      body: "- [ ] Stale work",
+      createdAt: longAgo,
+      updatedAt: longAgo,
+    });
+    const waitingNote = makeNote({
+      id: "wait",
+      tags: [],
+      body: "- [ ] @Mia owes us a draft",
+      createdAt: longAgo,
+      updatedAt: longAgo,
+    });
+    const page = buildPage(makeWorkspace([fresh, old, waitingNote]));
+    const chips = Array.from(
+      page.querySelectorAll<HTMLButtonElement>(".task-filters .task-filter"),
+    );
+    const titleByLabel = Object.fromEntries(
+      chips.map((c) => [
+        (c.firstElementChild as HTMLSpanElement)?.textContent,
+        c.getAttribute("title"),
+      ]),
+    );
+    expect(titleByLabel.Recent).toBe("added last 2 days");
+    expect(titleByLabel.Stale).toBe("open 3+ days");
+    expect(titleByLabel["Waiting for"]).toBe("mentions a person");
+    // The `All` chip carries no hint (null in FILTER_DEFS) — it must
+    // therefore have NO title attribute set at all.
+    expect(titleByLabel.All ?? null).toBeNull();
+  });
+
+  it("renders the chip count badge with the `c mono` className and the bucket size as text", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] one\n- [ ] two\n- [ ] three",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const all = Array.from(
+      page.querySelectorAll<HTMLButtonElement>(".task-filters .task-filter"),
+    ).find(
+      (c) => (c.firstElementChild as HTMLSpanElement)?.textContent === "All",
+    );
+    const count = all?.querySelector(".c");
+    expect(count?.classList.contains("c")).toBe(true);
+    expect(count?.classList.contains("mono")).toBe(true);
+    expect(count?.textContent).toBe("3");
+  });
+
+  it("stamps `role=group` and a screen-reader label on the task-filter row, plus a spacer between chips and Show done", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const row = page.querySelector(".task-filters");
+    expect(row?.getAttribute("role")).toBe("group");
+    expect(row?.getAttribute("aria-label")).toBe("Filter tasks");
+    expect(row?.querySelector(".task-filters-spacer")).not.toBeNull();
+    expect(row?.querySelector(".done-toggle")?.textContent).toContain(
+      "Show done",
+    );
+  });
+
+  it("renders the one-thing label `One thing for today` with the `one-thing-label` className", () => {
+    const note = makeNote({
+      id: "n",
+      title: "T",
+      tags: [],
+      body: "- [ ] hi",
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const label = page.querySelector(".one-thing-label");
+    expect(label).not.toBeNull();
+    expect(label?.textContent).toContain("One thing for today");
+  });
+
+  it("renders the one-thing 'from <noteTitle> · <relativeDays>' meta line on the filled card", () => {
+    // Pins the "from " span (line 302), the dim relative-days span
+    // (lines 313–314), and the `oneThing.note.title.trim() || "Untitled note"`
+    // fallback (line 306).
+    const note = makeNote({
+      id: "n",
+      title: "Source note",
+      tags: [],
+      body: "- [ ] hi",
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const meta = page.querySelector(".one-thing-meta");
+    expect(meta).not.toBeNull();
+    const fromSpan = meta?.firstElementChild;
+    expect(fromSpan?.textContent).toBe("from ");
+    const dim = meta?.querySelector(".dim");
+    expect(dim?.textContent?.startsWith(" · ")).toBe(true);
+    // formatRelativeDays produces a non-empty descriptor (e.g. "today",
+    // "1 day ago", etc). Ensure the dim span isn't the bare " · ".
+    expect((dim?.textContent ?? "").length).toBeGreaterThan(3);
+  });
+
+  it("falls back to 'Untitled note' on the one-thing source link when the note has a blank title", () => {
+    const note = makeNote({
+      id: "n",
+      title: "   ",
+      tags: [],
+      body: "- [ ] hi",
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    expect(
+      page.querySelector(".one-thing-meta a")?.textContent,
+    ).toBe("Untitled note");
+  });
+
+  it("stamps title='Clear' and the `Clear one thing` aria-label on the filled card's `×` button", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const clear = page.querySelector<HTMLButtonElement>(".one-thing-clear");
+    expect(clear?.getAttribute("aria-label")).toBe("Clear one thing");
+    expect(clear?.title).toBe("Clear");
+  });
+
+  it("renders the task-check in its OPEN state without the `checked` class and with `Mark done` aria-label", () => {
+    // Pins the `${entry.task.done ? " checked" : ""}` ternary on
+    // line 593 and the open-state aria-label literal on line 596.
+    // The done-state assertion already exists; the open-state was
+    // missing.
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] still open",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const check = page.querySelector(".task-list .task-check");
+    expect(check?.classList.contains("checked")).toBe(false);
+    expect(check?.getAttribute("aria-label")).toBe("Mark done");
+    // Open-state checks have no inner SVG — only done-state injects the
+    // ICON_CHECK markup.
+    expect(check?.innerHTML).toBe("");
+  });
+
+  it("renders the one-thing pick sub-line with the open count and the 'we'll suggest the stalest' suffix", () => {
+    // Pin line 357 — `${totalOpen} open — we'll suggest the stalest`.
+    const a = makeNote({
+      id: "a",
+      tags: [],
+      body: "- [ ] one",
+    });
+    const b = makeNote({
+      id: "b",
+      tags: [],
+      body: "- [ ] two\n- [ ] three",
+    });
+    const page = buildPage(makeWorkspace([a, b]));
+    expect(
+      page.querySelector(".one-thing-pick-sub")?.textContent,
+    ).toBe("3 open — we'll suggest the stalest");
+  });
+
+  it("renders the empty pick sub-line with the 'all caught up' copy when there are no open tasks", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [x] all done",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    expect(
+      page.querySelector(".one-thing-pick-sub")?.textContent,
+    ).toBe("All caught up — enjoy the silence.");
+  });
+});
+
+// Second half of the prose-contracts split: task-card head/foot,
+// location stripping, stale badge, filter-miss copy variants. Split
+// out from the previous describe to stay under the 350-line lint cap.
+describe("buildTasksPage task-card and filter-miss contracts", () => {
+  it("renders the task-card-open arrow with `Open note` aria-label and matching title", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const open = page.querySelector<HTMLButtonElement>(".task-card-open");
+    expect(open?.getAttribute("aria-label")).toBe("Open note");
+    expect(open?.title).toBe("Open note");
+  });
+
+  it("stamps `mono dim task-card-count` on the per-card footer count and uses 'N of M open' shape", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] one\n- [ ] two\n- [x] three",
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksShowDone: true,
+    });
+    const count = page.querySelector(".task-card-foot .task-card-count");
+    expect(count?.classList.contains("mono")).toBe(true);
+    expect(count?.classList.contains("dim")).toBe(true);
+    expect(count?.textContent).toBe("2 of 3 open");
+  });
+
+  it("renders an 'Open & add' button in the task-card footer that routes onOpenNote", () => {
+    const note = makeNote({
+      id: "src",
+      tags: [],
+      body: "- [ ] hi",
+    });
+    const onOpenNote = vi.fn();
+    const page = buildPage(makeWorkspace([note]), [], { onOpenNote });
+    const add = page.querySelector<HTMLButtonElement>(
+      ".task-card-foot .task-card-add",
+    );
+    expect(add?.textContent).toBe("Open & add");
+    add?.click();
+    expect(onOpenNote).toHaveBeenCalledWith("src");
+  });
+
+  it("renders a `stale` badge inside the task-card head when at least one of the card's open tasks crossed the staleness threshold", () => {
+    const old = makeNote({
+      id: "old",
+      tags: [],
+      body: "- [ ] forgotten",
+      createdAt: "2026-04-20T00:00:00.000Z",
+      updatedAt: "2026-04-20T00:00:00.000Z",
+    });
+    const page = buildPage(makeWorkspace([old]));
+    const badge = page.querySelector(".task-card-head .stale-badge");
+    expect(badge).not.toBeNull();
+    expect(badge?.textContent).toBe("stale");
+  });
+
+  it("strips a leading `City — ` prefix from the source note location and renders only the venue", () => {
+    // Pins the `rawLocation.replace(/^.*?—\s*/, "")` regex on line 554
+    // and the `rawLocation && rawLocation !== "—"` guard on line 544.
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+      location: "Praha — Karlin office",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const sub = page.querySelector(".task-card-sub");
+    expect(sub?.textContent).toContain("Karlin office");
+    expect(sub?.textContent).not.toContain("Praha");
+  });
+
+  it("omits the location chip entirely when the note's location is the placeholder `—`", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+      location: "—",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    expect(page.querySelector(".task-card-sub .task-card-pin")).toBeNull();
+  });
+
+  it("renders the chip-driven filter-miss empty state with a Show done CTA when there are unrevealed done tasks", () => {
+    // tasksFilter = "stale" + tasksShowDone = false on a workspace
+    // whose only task is fresh-and-done. Then:
+    //   - allEnriched contains 1 entry (done)
+    //   - the active "stale" filter narrows to 0
+    //   - canShowDone branch fires (`!tasksShowDone && totalDone > 0`)
+    //     and the empty-state offers "Show 1 done"
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [x] done today",
+    });
+    const onToggleTasksShowDone = vi.fn();
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksFilter: "stale",
+      tasksShowDone: false,
+      onToggleTasksShowDone,
+    });
+    const miss = page.querySelector(".task-empty");
+    expect(miss).not.toBeNull();
+    expect(miss?.querySelector("h3")?.textContent).toBe(
+      "Nothing matches this filter.",
+    );
+    const cta = miss?.querySelector<HTMLButtonElement>("button");
+    expect(cta?.textContent).toBe("Show 1 done");
+    cta?.click();
+    expect(onToggleTasksShowDone).toHaveBeenCalledWith(true);
+  });
+
+  it("renders the chip-driven filter-miss with a Show all CTA when only the chip narrows the view (no done tasks to reveal)", () => {
+    // tasksFilter = "stale" with showDone already true and no done
+    // tasks AND no stale tasks. canShowDone is false → falls to the
+    // "Show all" branch. The note's createdAt is fresh (today, not the
+    // 2026-04-21 default) so it doesn't qualify as stale (>= 3 days).
+    const today = new Date().toISOString();
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] open today",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const onChangeTasksFilter = vi.fn();
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksFilter: "stale",
+      tasksShowDone: true,
+      onChangeTasksFilter,
+    });
+    const miss = page.querySelector(".task-empty");
+    const cta = miss?.querySelector<HTMLButtonElement>("button");
+    expect(cta?.textContent).toBe("Show all");
+    cta?.click();
+    expect(onChangeTasksFilter).toHaveBeenCalledWith("all");
+  });
 
   it("stamps `task-grid--persona` on the grid only when personaOptions is provided", () => {
     const note = makeNote({
