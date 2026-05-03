@@ -141,3 +141,7 @@ vite.config.ts.timestamp-*
 .idea/
 /docs/todo.md
 .stryker-tmp
+
+# Per-machine agent notes (workflow conventions for the local checkout
+# that don't belong in the shared AGENTS.md).
+AGENTS.local.md

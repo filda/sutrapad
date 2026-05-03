@@ -77,14 +77,17 @@ describe("createApp smoke", () => {
     vi.unstubAllGlobals();
   });
 
-  // Per-test timeout tightened from the 5s vitest default to fail a
-  // real hang in ~3s instead of ~5s. Success path runs ~0.9-1.4s
-  // locally (dominated by the cold dynamic `import("../src/app")`
-  // transforming the whole module graph); 3s leaves ~2× headroom
-  // for slow GitHub Actions runners (especially macOS, which is
-  // typically 2-3× slower than Linux). Raise this if it flakes — the
-  // fix is almost certainly happy-dom warm-up, not the test itself.
-  it("renders without looping and surfaces the bootstrap-error pulse", { timeout: 3000 }, async () => {
+  // Per-test timeout sits at the 5s vitest default. Success path runs
+  // ~0.9-1.4s on Linux (dominated by the cold dynamic
+  // `import("../src/app")` transforming the whole module graph). The
+  // earlier 3s ceiling tripped on Filip's Windows machine
+  // (2026-05-03), where module transform is meaningfully slower than
+  // Linux — same regime as macOS GitHub Actions runners. The
+  // microtask-loop trip-wire still works at 5s; it just fails ~2s
+  // slower in the genuinely-broken case, which is a fine trade for
+  // not flaking on slow hosts. Raise again if it flakes — the fix is
+  // almost certainly happy-dom warm-up, not the test itself.
+  it("renders without looping and surfaces the bootstrap-error pulse", { timeout: 5000 }, async () => {
     // Dynamic import so the `vi.mock` above is in effect when `app.ts`
     // imports `../src/services/google-auth`.
     const { createApp } = await import("../src/app");
@@ -134,7 +137,7 @@ describe("createApp smoke", () => {
     expect(syncPill?.className).toContain("is-error");
   });
 
-  it("can be re-mounted against a fresh root without throwing (HMR canary)", { timeout: 3000 }, async () => {
+  it("can be re-mounted against a fresh root without throwing (HMR canary)", { timeout: 5000 }, async () => {
     // Dev-mode HMR re-runs `createApp` against the same `window` after
     // every save. The `import.meta.hot.dispose` hook is supposed to
     // tear down keydown / storage listeners + render subscriptions so

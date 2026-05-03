@@ -80,11 +80,15 @@ describe("buildLinkThumb", () => {
     // Cards re-render aggressively (every workspace mutation); a card
     // that's detached before its og:image promise resolves must not
     // touch the no-longer-mounted node.
-    let resolveFn: ((value: string) => void) | null = null;
+    // Held inside an object so TS doesn't narrow the captured `resolve`
+    // back to `null` after the Promise executor closure assigns it —
+    // closure assignments to a bare `let` aren't tracked by control-flow
+    // analysis, which collapses the call site type to `never`.
+    const resolveBox: { fn: ((value: string) => void) | null } = { fn: null };
     const resolver = makeResolver(
       () =>
         new Promise<string>((resolve) => {
-          resolveFn = resolve;
+          resolveBox.fn = resolve;
         }),
     );
     const thumb = buildLinkThumb({
@@ -94,7 +98,7 @@ describe("buildLinkThumb", () => {
     });
     document.body.append(thumb);
     thumb.remove();
-    resolveFn?.("https://img.example.com/og.png");
+    resolveBox.fn?.("https://img.example.com/og.png");
     await Promise.resolve();
     expect(thumb.classList.contains("has-og-image")).toBe(false);
   });
