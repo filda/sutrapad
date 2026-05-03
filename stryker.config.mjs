@@ -64,20 +64,25 @@ const config = {
     fileName: "reports/mutation/mutation.json",
   },
   thresholds: {
-    // Ratcheted 2026-04-28 after persona pass (55 → 84 %) lifted
-    // overall from 77.6 % to 81.25 %. New `break: 75` leaves
-    // ~6 pp headroom — small regressions still pass, but a slip back
-    // to pre-pass levels (~77 %) now fails CI instead of sliding by
-    // unnoticed. `low: 78` lets the warning band hug the actual
-    // current floor more tightly so a dip toward 78 % surfaces as
-    // yellow before turning red. Hold `high: 85` until the cheap
-    // notebook-persona leftovers and the next batch
-    // (capture-context-sanitize.ts, og-image.ts, theme.ts) land —
-    // see `project_sutrapad_mutation_gaps.md` (auto-memory) for the
-    // sequenced plan.
+    // Ratcheted 2026-05-03 after the mutate-scope expansion + targeted
+    // test pass on services, view files, tasks-page (55 → 77 %), and
+    // privacy-page (14 → 100 %) lifted overall from 82.14 % to 86.08 %.
+    // New `break: 80` leaves ~6 pp headroom against the current floor
+    // — a regression that drops a single 100-percent file (palette,
+    // link-thumb, mobile-nav, drive-client, privacy-page) back to 80 %
+    // would still pass; a broader slip down toward 80 % overall fails
+    // CI. `low: 82` hugs the actual baseline so a dip below 82 %
+    // surfaces yellow before turning red. `high: 85` holds — moving it
+    // to 88 would put the current 86.08 % back in the warning band
+    // immediately, which isn't useful until we sustainably clear 88 %.
+    // Reach the next ratchet by chasing the remaining tasks-page
+    // survivors (buildTaskCard persona stickers, deeper renderIcon
+    // SVG, secondary copy variants) and lifting workspace-store from
+    // 80 % toward 90+. See `project_sutrapad_mutation_gaps.md`
+    // (auto-memory) for the per-file map.
     high: 85,
-    low: 78,
-    break: 75,
+    low: 82,
+    break: 80,
   },
   vitest: {
     configFile: "vitest.config.ts",
