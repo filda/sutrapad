@@ -119,6 +119,14 @@ export function buildTagInput(
 
   const addTag = (value: string): void => {
     const tag = value.trim().toLowerCase();
+    // Clear the typed token *before* delegating: render's focus snapshot
+    // (`captureActiveEditorFocus`) reads `input.value` to restore it onto
+    // the rebuilt input — so without this clear, the in-flight text would
+    // re-appear next to the freshly added chip, which the user reads as
+    // "my text didn't get committed". Closing suggestions here covers the
+    // early-return path; the success path tears down the whole DOM anyway.
+    input.value = "";
+    closeSuggestions();
     if (!tag || note.tags.includes(tag)) return;
     // onAddTag triggers a full app render, which replaces this entire tag
     // input with a freshly built one (app.ts re-focuses it). Any DOM updates
@@ -198,8 +206,9 @@ export function buildTagInput(
       // top of the tag we just added.
       if (!input.isConnected) return;
       if (input.value.trim()) {
+        // addTag clears the input + closes suggestions itself; the trailing
+        // closeSuggestions below covers the empty-blur path.
         addTag(input.value);
-        input.value = "";
       }
       closeSuggestions();
     }, 100);

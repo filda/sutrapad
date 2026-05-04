@@ -41,6 +41,7 @@ const config = {
     "src/app/view/pages/tasks-page.ts",
     "src/app/view/shared/link-thumb.ts",
     "src/app/view/shared/notes-list.ts",
+    "src/app/view/shared/tag-input.ts",
 
     // Exclusions.
     // `*.d.ts` — declaration-only, no executable code to mutate.
