@@ -105,7 +105,10 @@ describe("buildTasksPage structural / chip / one-thing", () => {
     // render when their count is > 0 (or when they're the active
     // filter), so this fixture must populate Recent (added today),
     // Stale (>= 3 days old), and Waiting (mentions a person).
-    const today = "2026-05-03T08:00:00.000Z";
+    // `today` is wall-clock derived because tasks-page rebuilds with
+    // `new Date()` — a hardcoded ISO string drifts out of the 2-day
+    // Recent window the moment the suite is rerun on a later date.
+    const today = new Date().toISOString();
     const longAgo = "2026-04-25T08:00:00.000Z";
     const fresh = makeNote({
       id: "fresh",
@@ -469,8 +472,11 @@ describe("buildTasksPage prose contracts and branch coverage", () => {
   });
 
   it("renders each filter chip's `title` attribute with the canonical hint copy", () => {
-    // Pin FILTER_DEFS hint strings (lines 57–59).
-    const today = "2026-05-03T08:00:00.000Z";
+    // Pin FILTER_DEFS hint strings (lines 57–59). `today` is wall-clock
+    // derived for the same reason as in the chip-render test above —
+    // the page wraps `new Date()` so a frozen literal slides out of
+    // the 2-day Recent window and hides the chip.
+    const today = new Date().toISOString();
     const longAgo = "2026-04-25T08:00:00.000Z";
     const fresh = makeNote({
       id: "fresh",
