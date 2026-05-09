@@ -16,8 +16,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Cheap gate so the cron-triggered run skips on quiet days. If no commits
+  # landed in the last 25 hours (24 h cadence + 15-min GitHub cron jitter
+  # buffer), the mutation job below skips entirely instead of burning ~40 min
+  # to produce yesterday's report verbatim. Manual `workflow_dispatch` always
+  # proceeds — the gate only debounces the schedule trigger.
+  gate:
+    name: Check for recent commits
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          # `git log --since` needs history; default fetch-depth: 1 sees only
+          # the tip commit. fetch-depth: 0 is overkill but trivial on this
+          # repo and keeps the check robust against any history shape.
+          fetch-depth: 0
+
+      - name: Determine whether mutation run is needed
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — running."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$(git log --since='25 hours ago' --oneline)" ]; then
+            echo "Found commits in the last 25 hours — running."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No commits in the last 25 hours — skipping."
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   mutation:
     name: Run Stryker
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     env:
       VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID || 'local-dev-client-id.apps.googleusercontent.com' }}
