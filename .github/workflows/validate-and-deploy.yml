@@ -7,12 +7,15 @@ on:
     paths:
       - ".github/workflows/validate-and-deploy.yml"
       - "src/**"
+      - "tests/**"
       - "public/**"
       - "index.html"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
+      - "tsconfig.vitest.json"
       - "vite.config.ts"
+      - "vitest.config.ts"
   pull_request:
   workflow_dispatch:
 
