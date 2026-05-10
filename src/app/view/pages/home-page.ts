@@ -331,15 +331,6 @@ export function buildHomePage({
 
   section.append(buildHomeHeader(profile, summary, onNewNote));
 
-  const heroCard = document.createElement("div");
-  heroCard.className = "hero-card";
-  const info = document.createElement("p");
-  info.textContent = profile
-    ? "You can write immediately in a local notebook. Your notes sync to Google Drive when you're online."
-    : "You can write immediately in a local notebook. Sign in only when you want to sync with Google Drive.";
-  heroCard.append(info);
-  section.append(heroCard);
-
   section.append(buildTodayStats(summary));
 
   // Hint slot sits between the stats strip and the timeline so it reads

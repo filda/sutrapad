@@ -1287,8 +1287,8 @@ button.tag-pill {
  * Home-page hint banner. One-of-N rotating tip slot composed by
  * `view/shared/hint-banner.ts`. Three columns: terracotta accent
  * stripe, text block (eyebrow + title + body), action cluster (primary
- * CTA + dismiss ✕). Shape mirrors `.hero-card` so the home page reads
- * as a stack of related lockups, not a styled-banner-island.
+ * CTA + dismiss ✕). Soft card framing so the banner reads as part of
+ * the home stack, not a styled-banner-island.
  */
 .hint-banner {
   display: grid;
@@ -2997,19 +2997,12 @@ button.tag-pill {
   }
 }
 
-.hero-card,
 .editor-card {
   border: 1px solid var(--line);
   border-radius: 28px;
   background: var(--bg);
   backdrop-filter: blur(18px);
   box-shadow: 0 22px 50px rgba(var(--primary-rgb), 0.08);
-}
-
-.hero-card {
-  padding: 24px;
-  display: grid;
-  gap: 18px;
 }
 
 /*
@@ -6166,15 +6159,6 @@ button.tag-pill {
     /* Handoff: 2×2 grid on phones. The 720px rule already does this,
      * re-asserted here so the 640px intent is self-evident. */
     grid-template-columns: repeat(2, 1fr);
-  }
-
-  .hero-card {
-    padding: 18px;
-  }
-
-  .hero-card h1 {
-    font-size: 28px;
-    line-height: 1.1;
   }
 
   .timeline {
