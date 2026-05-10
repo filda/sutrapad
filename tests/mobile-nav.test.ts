@@ -20,10 +20,11 @@ import type { MenuItemId } from "../src/app/logic/menu";
  */
 
 describe("MOBILE_TABBAR_ITEMS", () => {
-  it("exposes exactly four destinations in bottom-bar order", () => {
+  it("exposes exactly five destinations in bottom-bar order", () => {
     expect(MOBILE_TABBAR_ITEMS.map((i) => i.id)).toEqual([
       "home",
       "notes",
+      "links",
       "tasks",
       "tags",
     ]);
@@ -34,7 +35,7 @@ describe("MOBILE_TABBAR_ITEMS", () => {
     expect(home?.label).toBe("Today");
   });
 
-  it("uses the canonical page titles for the other three tabs", () => {
+  it("uses the canonical page titles for the other four tabs", () => {
     // The labels are user-facing — pinning them protects against silent
     // string drift (renamings, typos) that the id-only assertion above
     // wouldn't catch.
@@ -42,11 +43,12 @@ describe("MOBILE_TABBAR_ITEMS", () => {
       MOBILE_TABBAR_ITEMS.map((i) => [i.id, i.label]),
     );
     expect(labels.notes).toBe("Notes");
+    expect(labels.links).toBe("Links");
     expect(labels.tasks).toBe("Tasks");
     expect(labels.tags).toBe("Tags");
   });
 
-  it("keeps each label short (<= 6 chars) so four fit on a narrow viewport", () => {
+  it("keeps each label short (<= 6 chars) so five fit on a narrow viewport", () => {
     for (const item of MOBILE_TABBAR_ITEMS) {
       expect(item.label.length).toBeLessThanOrEqual(6);
     }
@@ -59,6 +61,15 @@ describe("MOBILE_TABBAR_ITEMS", () => {
 
   it("omits Add — the FAB owns that route on mobile", () => {
     expect(MOBILE_TABBAR_ITEMS.find((i) => i.id === "add")).toBeUndefined();
+  });
+
+  it("stays within Apple HIG / Material's 5-tab bottom-nav max", () => {
+    // The handoff originally specced four tabs; we ship five (with Links
+    // as the new addition). Pin the upper bound so a sixth tab is a
+    // deliberate decision rather than a quiet drift past the limit
+    // beyond which bottom navigation ceases to work as a primary
+    // destination affordance.
+    expect(MOBILE_TABBAR_ITEMS.length).toBeLessThanOrEqual(5);
   });
 });
 
@@ -120,6 +131,7 @@ describe("buildMobileTabbar", () => {
     expect(buttons.map((b) => b.textContent)).toEqual([
       "Today",
       "Notes",
+      "Links",
       "Tasks",
       "Tags",
     ]);
@@ -175,7 +187,13 @@ describe("buildMobileTabbar", () => {
     // tab that fires the wrong route. Without the per-button assertion,
     // the `() => onSelectMenuItem(item.id)` mutant `() => undefined`
     // survives.
-    const expected: Array<MenuItemId> = ["home", "notes", "tasks", "tags"];
+    const expected: Array<MenuItemId> = [
+      "home",
+      "notes",
+      "links",
+      "tasks",
+      "tags",
+    ];
     for (const [index, button] of buttons.entries()) {
       button.click();
       expect(onSelectMenuItem).toHaveBeenNthCalledWith(index + 1, expected[index]);
