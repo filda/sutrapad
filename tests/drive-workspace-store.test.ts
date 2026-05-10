@@ -879,3 +879,115 @@ describe("GoogleDriveStore find* query construction", () => {
     expect(noteQueryCall?.url).toContain("fol%5C'der");
   });
 });
+
+describe("GoogleDriveStore.loadNoteInventory (progressive refresh phase 1)", () => {
+  it("returns one entry per kind=note file with the noteId, fileId, and modifiedTime", async () => {
+    // The contract `runWorkspaceRefresh` consumes: a single folder
+    // query produces enough metadata to drive Phase 1 (count + drop
+    // missing) without fetching any JSON bodies. Pinning the
+    // returned shape catches any future refactor that loses one of
+    // the three fields.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const a = driveFile("file-a", "note-a.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "a" },
+      modifiedTime: "2026-05-01T10:00:00.000Z",
+    });
+    const b = driveFile("file-b", "note-b.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "b" },
+      modifiedTime: "2026-04-30T12:00:00.000Z",
+    });
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([a, b]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const inventory = await store.loadNoteInventory();
+
+    expect(inventory).toEqual([
+      { noteId: "a", fileId: "file-a", modifiedTime: "2026-05-01T10:00:00.000Z" },
+      { noteId: "b", fileId: "file-b", modifiedTime: "2026-04-30T12:00:00.000Z" },
+    ]);
+  });
+
+  it("returns an empty inventory when there's no workspace folder yet", async () => {
+    // First-ever visit on a new device: the folder hasn't been
+    // created. We don't want to create it here — that's the
+    // saveWorkspace path's responsibility. Returning empty lets the
+    // orchestrator proceed without spawning a folder for a refresh.
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const inventory = await store.loadNoteInventory();
+    expect(inventory).toEqual([]);
+  });
+
+  it("skips files missing the noteId appProperty or modifiedTime (defensive against malformed Drive state)", async () => {
+    // We never write these fields incompletely, but a corrupted
+    // file or a future schema migration could leave one out.
+    // Skipping is safer than synthesising an id — applying a merge
+    // with a phantom note would either resurrect a deleted note or
+    // collide with a real one.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const ok = driveFile("file-ok", "note-ok.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "ok" },
+      modifiedTime: "2026-05-01T10:00:00.000Z",
+    });
+    const missingNoteId = driveFile("file-bad-1", "note-bad-1.json", {
+      appProperties: { sutrapad: "true", kind: "note" },
+      modifiedTime: "2026-05-01T10:00:00.000Z",
+    });
+    const missingModifiedTime = driveFile("file-bad-2", "note-bad-2.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "bad-2" },
+    });
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([ok, missingNoteId, missingModifiedTime]);
+      }
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const inventory = await store.loadNoteInventory();
+    expect(inventory).toHaveLength(1);
+    expect(inventory[0].noteId).toBe("ok");
+  });
+});
+
+describe("GoogleDriveStore.fetchNoteByFileId (progressive refresh phases 2 + 3)", () => {
+  it("fetches the JSON body at the given file id and normalizes legacy backfills", async () => {
+    // The single-note fetch the orchestrator fans out in parallel
+    // batches. Normalization (`createdAt ??= updatedAt`, `urls ??= []`,
+    // `tags ??= []`) is critical because legacy notes on Drive may
+    // predate one of those slots and rendering against `undefined`
+    // throws.
+    const legacyDoc = {
+      id: "n",
+      title: "Legacy",
+      body: "no urls / tags / createdAt",
+      updatedAt: "2025-09-01T00:00:00.000Z",
+    };
+    captureFetch((url) => {
+      if (url.includes("/file-n?alt=media")) return jsonResponse(legacyDoc);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const note = await store.fetchNoteByFileId("file-n");
+    expect(note.id).toBe("n");
+    expect(note.createdAt).toBe("2025-09-01T00:00:00.000Z");
+    expect(note.urls).toEqual([]);
+    expect(note.tags).toEqual([]);
+  });
+});

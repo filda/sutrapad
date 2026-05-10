@@ -282,6 +282,54 @@ export class GoogleDriveStore {
    *     accepted (those caches are write-only, see `SutraPadTagIndex`
    *     doc comment in `types.ts`).
    */
+  /**
+   * Folder-query inventory for the progressive cross-device refresh.
+   *
+   * Returns one record per `kind=note` file the workspace folder
+   * holds, with the `noteId` lifted out of the file's appProperties
+   * and `modifiedTime` carried through from the same `findFiles` call.
+   * No JSON bodies are fetched here — this is the single 1-RTT
+   * inventory probe that lets the focus-driven refresh learn the note
+   * count (and drop locally-known notes deleted on another device)
+   * before any per-note fetch starts.
+   *
+   * Defensive against malformed Drive state: entries missing either
+   * `appProperties.noteId` or `modifiedTime` are skipped rather than
+   * synthesised, because either omission would let the orchestrator
+   * apply an inconsistent merge. In practice every note we write
+   * carries both, so the filter is belt-and-braces.
+   */
+  async loadNoteInventory(): Promise<
+    Array<{ noteId: string; fileId: string; modifiedTime: string }>
+  > {
+    const workspaceFolder = await this.findWorkspaceFolder();
+    if (!workspaceFolder) return [];
+    const noteFiles = await this.findNoteFilesInFolder(workspaceFolder.id);
+    const entries: Array<{
+      noteId: string;
+      fileId: string;
+      modifiedTime: string;
+    }> = [];
+    for (const file of noteFiles) {
+      const noteId = file.appProperties?.noteId;
+      const modifiedTime = file.modifiedTime;
+      if (!noteId || !modifiedTime) continue;
+      entries.push({ noteId, fileId: file.id, modifiedTime });
+    }
+    return entries;
+  }
+
+  /**
+   * Fetches a single note JSON by its Drive file id and normalises
+   * the legacy-shape backfills (`createdAt`, `urls`, `tags`) the same
+   * way `loadWorkspace` does. The progressive refresh fans this out
+   * in `Promise.all` batches to fill in the JSONs phase-by-phase.
+   */
+  async fetchNoteByFileId(fileId: string): Promise<SutraPadDocument> {
+    const document = await this.#client.fetchJsonFile<SutraPadDocument>(fileId);
+    return normalizeNoteDocument(document);
+  }
+
   async appendNoteToWorkspace(note: SutraPadDocument): Promise<void> {
     const workspaceFolder = await this.getWorkspaceFolder();
     const file = await this.#client.uploadJsonFile({

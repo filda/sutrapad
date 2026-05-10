@@ -39,6 +39,10 @@ import { handleNewNoteCreation } from "./app/lifecycle/handle-new-note";
 import { wirePaletteAccess } from "./app/lifecycle/palette";
 import { wireKeyboardShortcuts } from "./app/lifecycle/keyboard-shortcuts";
 import { captureIncomingWorkspaceFromUrl } from "./app/lifecycle/capture-import";
+import {
+  createBrowserFocusRefreshEnvironment,
+  createFocusRefreshCoordinator,
+} from "./app/lifecycle/focus-refresh";
 import type { PaletteAccess as ExtractedPaletteAccess } from "./app/view/palette-types";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
@@ -645,8 +649,12 @@ export function createApp(root: HTMLElement): void {
     },
   };
 
-  const { loadWorkspace, saveWorkspace, restoreWorkspaceAfterSignIn } =
-    createWorkspaceIO({
+  const {
+    loadWorkspace,
+    saveWorkspace,
+    restoreWorkspaceAfterSignIn,
+    refreshWorkspace,
+  } = createWorkspaceIO({
       getStore,
       retryContext,
       getWorkspace: () => workspace$.get(),
@@ -658,6 +666,35 @@ export function createApp(root: HTMLElement): void {
       refreshStatus,
       cancelAutoSave,
     });
+
+  // Focus / visibility-driven cross-device refresh. The gate captures
+  // every reason we must NOT auto-refresh in the background:
+  //   - no signed-in profile → no Drive token to spend.
+  //   - sync is mid-write → letting a refresh fan out alongside a save
+  //     would race two flows over the same notes; the next focus event
+  //     after the save settles will pick it back up.
+  //   - autosave timer is pending → a typed-but-not-yet-pushed local
+  //     edit is waiting to land. Refreshing first would round-trip the
+  //     pre-edit state into the workspace, the autosave would then
+  //     stomp it back out, and we'd have burned two RTTs to do nothing.
+  // The coordinator owns the throttle + in-flight guard so this stays
+  // a pure predicate.
+  const focusRefresh = createFocusRefreshCoordinator({
+    refresh: () => refreshWorkspace(),
+    canRefresh: () => {
+      if (!profile$.get()) return false;
+      if (syncState$.get() === "saving") return false;
+      if (autoSaveTimer$.get() !== null) return false;
+      return true;
+    },
+    environment: createBrowserFocusRefreshEnvironment(),
+    onError: (error) => {
+      // Surface in devtools but don't propagate — the refresh path
+      // already commits sync state = "error" + lastError via the
+      // orchestrator; this hook is just for visibility in logs.
+      console.warn("Focus refresh failed", error);
+    },
+  });
 
   paletteAccess$.set(wirePaletteAccess({
     host: document.body,
@@ -700,6 +737,7 @@ export function createApp(root: HTMLElement): void {
     import.meta.hot.dispose(() => {
       paletteAccess$.get()?.dispose();
       disposeKeyboardShortcuts();
+      focusRefresh.stop();
       for (const dispose of disposeRenderSubscriptions) dispose();
       store.dispose();
     });

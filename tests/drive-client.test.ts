@@ -129,8 +129,11 @@ describe("GoogleDriveClient.findFiles", () => {
     // `q=` is URL-encoded; pin the encoded form so the
     // `encodeURIComponent` wrapper doesn't get silently dropped.
     expect(url).toContain("q=name%20%3D%20'index'");
+    // `modifiedTime` is requested on every findFiles call so the
+    // progressive-refresh inventory has revision timestamps without
+    // a separate metadata fan-out. See workspace-refresh.ts.
     expect(url).toContain(
-      "fields=files(id,name,mimeType,appProperties,parents)",
+      "fields=files(id,name,mimeType,modifiedTime,appProperties,parents)",
     );
     expect(url).toContain("pageSize=5");
     expect(authHeader(calls[0])).toBe("Bearer tok-1");

@@ -107,8 +107,14 @@ export class GoogleDriveClient {
    * page anywhere, so this is also the practical hard cap.
    */
   async findFiles(query: string, pageSize: number): Promise<DriveFileRecord[]> {
+    // `modifiedTime` is the Drive-server-stamped revision timestamp.
+    // It's used by the progressive refresh to order the priority
+    // batch newest-first; carrying it on every `findFiles` call (one
+    // extra field name on the wire, no extra RTT) keeps the inventory
+    // query a single page-1 lookup instead of a `findFiles` + per-file
+    // metadata fan-out.
     const response = await fetch(
-      `${GOOGLE_DRIVE_API}?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,appProperties,parents)&pageSize=${pageSize}`,
+      `${GOOGLE_DRIVE_API}?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,modifiedTime,appProperties,parents)&pageSize=${pageSize}`,
       {
         headers: {
           Authorization: `Bearer ${this.#token}`,

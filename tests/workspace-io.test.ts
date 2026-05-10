@@ -34,7 +34,12 @@ function emptyDraft(id = "note-draft"): SutraPadWorkspace["notes"][number] {
 }
 
 interface IOHarness {
-  store: { loadWorkspace: ReturnType<typeof vi.fn>; saveWorkspace: ReturnType<typeof vi.fn> };
+  store: {
+    loadWorkspace: ReturnType<typeof vi.fn>;
+    saveWorkspace: ReturnType<typeof vi.fn>;
+    loadNoteInventory: ReturnType<typeof vi.fn>;
+    fetchNoteByFileId: ReturnType<typeof vi.fn>;
+  };
   getStore: () => GoogleDriveStore;
   refreshSession: ReturnType<typeof vi.fn>;
   onProfileRefreshed: ReturnType<typeof vi.fn>;
@@ -51,6 +56,8 @@ function makeHarness(): IOHarness {
   const store = {
     loadWorkspace: vi.fn().mockResolvedValue(makeWorkspace([realNote("remote")])),
     saveWorkspace: vi.fn().mockResolvedValue(undefined),
+    loadNoteInventory: vi.fn().mockResolvedValue([]),
+    fetchNoteByFileId: vi.fn(),
   };
   return {
     store,
@@ -201,5 +208,48 @@ describe("createWorkspaceIO", () => {
     expect(h.store.loadWorkspace).toHaveBeenCalledTimes(1);
     expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
     expect(h.cancelAutoSave).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshWorkspace routes inventory and per-file fetches through withAuthRetry", async () => {
+    // The progressive cross-device refresh closes over the same
+    // getStore() + retryContext pair as load / save. A 401 mid-refresh
+    // therefore hits the same silent-refresh path. Pin the call
+    // routing here so a refactor that drops one of the two store
+    // methods from the orchestrator surfaces immediately.
+    const h = makeHarness();
+    h.store.loadNoteInventory.mockResolvedValue([
+      {
+        noteId: "remote-1",
+        fileId: "drive-file-1",
+        modifiedTime: "2026-04-26T08:00:00.000Z",
+      },
+    ]);
+    h.store.fetchNoteByFileId.mockResolvedValue(realNote("remote-1"));
+
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => makeWorkspace([]),
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.refreshWorkspace();
+
+    expect(h.store.loadNoteInventory).toHaveBeenCalledTimes(1);
+    expect(h.store.fetchNoteByFileId).toHaveBeenCalledWith("drive-file-1");
+    // The orchestrator's autosave cancel is the same race-prevention
+    // guarantee `runWorkspaceLoad` makes — a focus refresh fires while
+    // a 2 s-old keystroke timer is still armed.
+    expect(h.cancelAutoSave).toHaveBeenCalledTimes(1);
+    expect(h.setSyncState).toHaveBeenLastCalledWith("idle");
   });
 });

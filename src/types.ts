@@ -234,6 +234,15 @@ export interface DriveFileRecord {
   id: string;
   name: string;
   mimeType?: string;
+  /**
+   * Drive-server-stamped revision time (ISO-8601). Returned by
+   * `findFiles` for every artifact so the progressive refresh can
+   * sort the inventory by recency without a per-file metadata
+   * fetch. Optional because callers that only need id / name (folder
+   * lookups, ensure-in-folder reparenting) don't have to thread it
+   * through.
+   */
+  modifiedTime?: string;
   appProperties?: Record<string, string>;
   parents?: string[];
 }

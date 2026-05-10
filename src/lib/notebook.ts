@@ -588,6 +588,113 @@ export function mergeWorkspaces(
   };
 }
 
+/**
+ * Applies a partial Drive refresh against the local workspace.
+ *
+ * Built for the progressive-refresh path: the caller hands in whatever
+ * inventory the folder query returned (the canonical "what notes exist
+ * on Drive right now") plus the subset of note JSONs it has fetched so
+ * far, and the result is the workspace state implied by that snapshot.
+ *
+ *   - **Inventory is authoritative for existence.** Any local note
+ *     whose id isn't in `inventory` is dropped (it was deleted from
+ *     another device). Conversely, ids present in `inventory` but not
+ *     yet in `fetchedNotes` keep their current local copy as a
+ *     placeholder — Phase 3 of the refresh will replace it when its
+ *     JSON arrives.
+ *   - **Per-id conflict rule:** when both `fetched` and `local` carry
+ *     the same id, the version with the strictly larger `updatedAt`
+ *     wins. The strict-greater check (not `>=`) is what lets a
+ *     mid-flight local edit survive a refresh: the user typing in
+ *     Device B keeps bumping `local.updatedAt` past whatever Drive
+ *     captured before the edit, and the merge picks local. Same
+ *     lexicographic-ISO-equals-chronological invariant
+ *     `mergeWorkspaces` relies on; see its body comment.
+ *   - **`activeNoteId`** survives if it still resolves to a present
+ *     note, otherwise falls back to the newest note. Mirrors the
+ *     sign-in merge behaviour so an active note that was deleted on
+ *     another device doesn't strand the user on a phantom selection.
+ *
+ * Pure / DOM-free. Sibling of `mergeWorkspaces`; lives here so the
+ * progressive-refresh orchestrator in `src/app/session/workspace-refresh.ts`
+ * can stay I/O-only and node-testable.
+ */
+export function applyDriveRefresh(
+  local: SutraPadWorkspace,
+  fetchedNotes: readonly SutraPadDocument[],
+  inventory: ReadonlyArray<{ noteId: string }>,
+): SutraPadWorkspace {
+  const inventoryIds = new Set(inventory.map((entry) => entry.noteId));
+  const fetchedById = new Map<string, SutraPadDocument>();
+  for (const note of fetchedNotes) {
+    fetchedById.set(note.id, note);
+  }
+
+  const kept: SutraPadDocument[] = [];
+  const keptIds = new Set<string>();
+  // `mutated` flips on the first real change (a drop, a replace, or a
+  // new fetched note appended). When it stays false the merge result
+  // is structurally identical to `local`, and we return the same
+  // reference so the orchestrator can skip the render + persist round.
+  // The steady-state no-op refresh ("user toggled tabs, nothing
+  // actually changed") becomes free.
+  let mutated = false;
+
+  for (const note of local.notes) {
+    if (!inventoryIds.has(note.id)) {
+      mutated = true;
+      continue;
+    }
+    const fetched = fetchedById.get(note.id);
+    // Strictly newer fetched copy wins. Tie keeps local — the user's
+    // most recent unsynced edit is the more valuable side of the
+    // collision, same reasoning as `mergeWorkspaces`.
+    if (fetched && fetched.updatedAt > note.updatedAt) {
+      kept.push(fetched);
+      mutated = true;
+    } else {
+      kept.push(note);
+    }
+    keptIds.add(note.id);
+  }
+
+  // Append fetched notes the local workspace hadn't seen yet (newly
+  // created on another device or by silent capture). Skip ids missing
+  // from the inventory defensively — a fetched note that doesn't appear
+  // in the same snapshot is in an inconsistent state we shouldn't
+  // propagate.
+  for (const note of fetchedNotes) {
+    if (!inventoryIds.has(note.id)) continue;
+    if (keptIds.has(note.id)) continue;
+    kept.push(note);
+    keptIds.add(note.id);
+    mutated = true;
+  }
+
+  const activeStillLives =
+    local.activeNoteId !== null && keptIds.has(local.activeNoteId);
+  // No-op short-circuit. When `!mutated`, `kept` is element-for-
+  // element identical to `local.notes` (we iterated in order,
+  // dropping nothing, replacing nothing, appending nothing). The
+  // only way the result can still differ is via `activeNoteId`
+  // resolution: when active was already non-null and survived in
+  // `keptIds` it stays unchanged, and when active was already null
+  // and there are no notes to promote, the fallback to
+  // `notes[0]?.id ?? null` also lands on `null`. Any other case
+  // (active was null but `kept` is non-empty) would otherwise
+  // promote `kept[0]` to active — a real semantic change, not a
+  // no-op — and we fall through.
+  if (!mutated && (local.activeNoteId !== null ? activeStillLives : kept.length === 0)) {
+    return local;
+  }
+
+  const notes = sortNotes(kept);
+  return {
+    notes,
+    activeNoteId: activeStillLives ? local.activeNoteId : (notes[0]?.id ?? null),
+  };
+}
+
 export function areWorkspacesEqual(
   leftWorkspace: SutraPadWorkspace,
   rightWorkspace: SutraPadWorkspace,

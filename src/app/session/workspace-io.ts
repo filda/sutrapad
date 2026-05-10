@@ -21,6 +21,10 @@ import {
   type SaveMode,
   type SyncState,
 } from "./workspace-sync";
+import {
+  runWorkspaceRefresh,
+  type WorkspaceRefreshOptions,
+} from "./workspace-refresh";
 
 export interface WorkspaceIODeps {
   getStore: () => GoogleDriveStore;
@@ -39,6 +43,14 @@ export interface WorkspaceIO {
   loadWorkspace: () => Promise<void>;
   saveWorkspace: (mode?: SaveMode) => Promise<void>;
   restoreWorkspaceAfterSignIn: () => Promise<void>;
+  /**
+   * Cross-device progressive refresh. Phase-1 inventory updates the
+   * count + drops deleted notes; subsequent phases stream the JSONs
+   * newest-first. Used by the focus / visibility-driven refresh
+   * trigger in `createApp`; manual "Load from Drive" still goes
+   * through `loadWorkspace` for the all-or-nothing replace semantics.
+   */
+  refreshWorkspace: (options?: WorkspaceRefreshOptions) => Promise<void>;
 }
 
 export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
@@ -113,5 +125,37 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
       cancelAutoSave,
     });
 
-  return { loadWorkspace, saveWorkspace, restoreWorkspaceAfterSignIn };
+  // Progressive refresh: Drive I/O is bound through `withAuthRetry`
+  // (interactive mode — focus is a user-driven trigger, so a 401 should
+  // attempt the silent-refresh path) and the existing render / sync-state
+  // hooks. The orchestrator owns batching + merge order.
+  const refreshWorkspace = async (
+    options: WorkspaceRefreshOptions = {},
+  ): Promise<void> =>
+    runWorkspaceRefresh(
+      {
+        loadInventory: () =>
+          withAuthRetry(() => getStore().loadNoteInventory(), retryContext),
+        fetchNoteByFileId: (fileId) =>
+          withAuthRetry(
+            () => getStore().fetchNoteByFileId(fileId),
+            retryContext,
+          ),
+        getWorkspace,
+        setWorkspace,
+        persistLocalWorkspace,
+        setSyncState,
+        setLastError,
+        render,
+        cancelAutoSave,
+      },
+      options,
+    );
+
+  return {
+    loadWorkspace,
+    saveWorkspace,
+    restoreWorkspaceAfterSignIn,
+    refreshWorkspace,
+  };
 }

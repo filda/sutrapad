@@ -29,6 +29,7 @@ const config = {
     // keyboard-shortcuts) only have indirect coverage via the smoke test
     // and are deferred until they get focused tests.
     "src/app/lifecycle/palette.ts",
+    "src/app/lifecycle/focus-refresh.ts",
 
     // View modules with dedicated happy-dom tests. Each file below has
     // a `tests/<name>.test.ts` whose `// @vitest-environment happy-dom`
