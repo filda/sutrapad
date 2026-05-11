@@ -10,17 +10,28 @@ export interface DetailTopbarOptions {
    * to just the back button.
    */
   note: SutraPadDocument | null;
+  /**
+   * Pre-formatted "last change" string appended to the end of the
+   * breadcrumb row — e.g. `synced 22:00` or `local · 11 May, 22:00`.
+   * Built by `formatLastChange` at the render-app level so this view
+   * stays time- and profile-agnostic. Pass `null` when there's no
+   * note to talk about; the crumb is suppressed in that case.
+   */
+  syncCrumb: string | null;
   onBackToNotes?: () => void;
 }
 
 /**
  * Horizontal strip above the editor card: "← Back to notes" on the left, a
- * compact breadcrumb row of stats (word count, read time, tasks, links, tag
- * count) on the right. Mirrors the handoff's `.detail-topbar` but omits the
- * duplicate/export/delete action cluster — those are out of scope here.
+ * compact breadcrumb row on the right with word count, read time, tasks,
+ * links, tag count, and a trailing "synced HH:mm" pill. Mirrors the
+ * handoff's `.detail-topbar` but omits the duplicate/export/delete action
+ * cluster — those are out of scope here. The sync crumb is rendered last
+ * so the eye lands on it after scanning the size signals.
  */
 export function buildDetailTopbar({
   note,
+  syncCrumb,
   onBackToNotes,
 }: DetailTopbarOptions): HTMLElement {
   const topbar = document.createElement("div");
@@ -36,13 +47,16 @@ export function buildDetailTopbar({
   }
 
   if (note) {
-    topbar.append(buildDetailBreadcrumbs(computeNoteStats(note)));
+    topbar.append(buildDetailBreadcrumbs(computeNoteStats(note), syncCrumb));
   }
 
   return topbar;
 }
 
-function buildDetailBreadcrumbs(stats: NoteStats): HTMLElement {
+function buildDetailBreadcrumbs(
+  stats: NoteStats,
+  syncCrumb: string | null,
+): HTMLElement {
   const crumbs = document.createElement("div");
   crumbs.className = "detail-breadcrumbs";
 
@@ -77,6 +91,19 @@ function buildDetailBreadcrumbs(stats: NoteStats): HTMLElement {
       crumbs,
       `${stats.tagCount} ${stats.tagCount === 1 ? "tag" : "tags"}`,
     );
+  }
+
+  // Sync crumb sits at the end of the row, styled like the other crumbs
+  // so the eye reads it as "another fact about this note" rather than as
+  // a separate sync indicator (that role belongs to the chrome topbar's
+  // sync-pill). A muted prefix on the rendered string (`synced` /
+  // `local ·`) carries the signed-in/out distinction.
+  if (syncCrumb !== null) {
+    appendCrumbSeparator(crumbs);
+    const sync = document.createElement("span");
+    sync.className = "crumb crumb-sync";
+    sync.textContent = syncCrumb;
+    crumbs.append(sync);
   }
 
   return crumbs;

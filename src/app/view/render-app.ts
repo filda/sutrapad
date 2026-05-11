@@ -34,18 +34,38 @@ import { buildSiteFooter } from "./chrome/site-footer";
 import { buildDetailTopbar } from "./shared/detail-topbar";
 import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
 import { buildEditorSidebar } from "./shared/editor-sidebar";
+import { formatLastChange } from "../logic/editor-sync-crumb";
+import type { SyncState } from "../session/workspace-sync";
 import {
   buildHomeHintContext,
   composeHintBanner,
 } from "./shared/hint-banner";
 
-// The editor-card builder needs the list of available tag suggestions, but
-// callers don't have to supply it — it's derived here from the workspace
-// that NotesPanelOptions already requires.
-interface RenderAppOptions
-  extends Omit<EditorCardOptions, "availableTagSuggestions">,
-    NotesPanelOptions {
+// The editor-card builder is intentionally minimal (writing surface
+// only) — tag editing moved to the right-rail sidebar and the status
+// row folded into the detail-topbar. So RenderAppOptions still mixes
+// in EditorCardOptions for the title/body callbacks, but declares the
+// surrounding plumbing (sync state for the chrome sync-pill, tag
+// callbacks for the sidebar) inline below.
+interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   root: HTMLElement;
+  /**
+   * Drives the chrome topbar's sync-pill (idle / loading / saving /
+   * error). The detail-topbar's "synced 22:00" crumb is built from
+   * `currentNote.updatedAt` directly and so doesn't read this field —
+   * the pill stays the single source of "is something happening *now*".
+   */
+  syncState: SyncState;
+  /**
+   * Long-form sync status the chrome topbar parks in the sync-pill's
+   * tooltip / aria-label. Kept as a separate string from the visible
+   * crumb so the pill can display the original error detail verbatim.
+   */
+  statusText: string;
+  /** Commits a new user tag from the right-rail tag input. */
+  onAddTag: (value: string) => void;
+  /** Removes a user tag from the right-rail tag input. */
+  onRemoveTag: (tag: string) => void;
   profile: UserProfile | null;
   appRootUrl: string;
   bookmarkletMessage: string;
@@ -180,11 +200,11 @@ interface RenderAppOptions
   /** Dismiss handler for the Settings → Tag hygiene card. */
   onDismissTagAlias: (canonical: string, alias: string) => void;
   /**
-   * Opens the Capture page — wired into the right-rail sidebar's
-   * "Other ways to capture" card. Kept as a dedicated callback (rather
-   * than reusing `onSelectMenuItem("capture")` at the call site) so
-   * app.ts can also clear `detailNoteId` in the same transition, matching
-   * the behaviour of `onBackToNotes`.
+   * Opens the Capture page — consumed by the Links page's empty-state
+   * CTA. Kept as a dedicated callback (rather than reusing
+   * `onSelectMenuItem("capture")` at the call site) so app.ts can also
+   * clear `detailNoteId` in the same transition, matching the behaviour
+   * of `onBackToNotes`.
    */
   onOpenCapture: () => void;
   /**
@@ -511,9 +531,19 @@ export function renderAppPage({
     return;
   }
 
+  // The topbar's right-edge crumb carries "synced HH:mm" (or, for a
+  // signed-out user, "local · HH:mm"); on cross-day edits the date is
+  // appended. Suppressed in the filter-miss state because there is no
+  // single note whose last-edit time would be meaningful.
+  const topbarNote = note ?? (selectedTagFilters.length > 0 ? null : currentNote);
+  const syncCrumb = topbarNote
+    ? formatLastChange(topbarNote.updatedAt, { signedIn: profile !== null })
+    : null;
+
   page.append(
     buildDetailTopbar({
-      note: note ?? (selectedTagFilters.length > 0 ? null : currentNote),
+      note: topbarNote,
+      syncCrumb,
       onBackToNotes,
     }),
   );
@@ -527,38 +557,28 @@ export function renderAppPage({
 
   // When no note matches the active filter, editor-card shows an
   // empty-state notice instead of the writing surface — the sidebar
-  // would just display stats for some unrelated note, so skip it.
+  // would just display tag UI for some unrelated note, so skip it.
   const showSidebar = !(note === null && selectedTagFilters.length > 0);
-
-  const sidebar = showSidebar
-    ? buildEditorSidebar({
-        currentNote: note ?? currentNote,
-        onOpenCapture,
-      })
-    : null;
 
   editorStage.append(
     buildEditorCard({
       note,
       currentNote,
       selectedTagFilters,
-      availableTagSuggestions: buildTagIndex(workspace).tags,
-      syncState,
-      statusText,
       onTitleInput,
       onBodyInput,
-      onAddTag,
-      onRemoveTag,
-      onInputsChange: sidebar
-        ? (title, body) => {
-            sidebar.syncFromInputs(title, body);
-          }
-        : undefined,
     }),
   );
 
-  if (sidebar !== null) {
-    editorStage.append(sidebar.element);
+  if (showSidebar) {
+    editorStage.append(
+      buildEditorSidebar({
+        currentNote: note ?? currentNote,
+        availableTagSuggestions: buildTagIndex(workspace).tags,
+        onAddTag,
+        onRemoveTag,
+      }),
+    );
   } else {
     editorStage.classList.add("editor-stage-solo");
   }

@@ -8,6 +8,7 @@ import {
 import type { SutraPadDocument } from "./types";
 import { resolveDisplayedNote } from "./app/logic/displayed-note";
 import { formatBuildStamp } from "./app/logic/formatting";
+import { formatLastChange } from "./app/logic/editor-sync-crumb";
 import {
   ensureVisibleActiveNoteSelection,
   getAppStatusText,
@@ -408,20 +409,16 @@ export function createApp(root: HTMLElement): void {
 
   const refreshStatus = (): void => {
     const syncState = syncState$.get();
+    const workspace = workspace$.get();
+    const profile = profile$.get();
     const statusText = getAppStatusText({
       syncState,
       lastError: lastError$.get(),
-      workspace: workspace$.get(),
+      workspace,
       selectedTagFilters: selectedTagFilters$.get(),
       filterMode: filterMode$.get(),
-      profile: profile$.get(),
+      profile,
     });
-
-    const status = root.querySelector(".status");
-    if (status instanceof HTMLParagraphElement) {
-      status.className = `status status-${syncState}`;
-      status.textContent = statusText;
-    }
 
     // Keep the topbar sync pill in sync with background saves — a full
     // `render()` always rebuilds it, but background-save triggers only this
@@ -435,6 +432,21 @@ export function createApp(root: HTMLElement): void {
       if (label instanceof HTMLElement) {
         label.textContent = syncPillLabel(syncState);
       }
+    }
+
+    // Patch the detail-topbar's `synced HH:mm` crumb in place too. A
+    // background save bumps the active note's `updatedAt` before the
+    // network call settles, so the crumb would otherwise stay stale
+    // until the next render. We only touch the crumb when there is
+    // exactly one — i.e. the user is on the detail route; on the notes
+    // list / other pages, the selector returns null and the patch is a
+    // no-op. Mirrors the sync-pill in-place patching pattern above.
+    const syncCrumb = root.querySelector(".crumb-sync");
+    if (syncCrumb instanceof HTMLElement) {
+      const activeNote = getCurrentWorkspaceNote(workspace);
+      syncCrumb.textContent = formatLastChange(activeNote.updatedAt, {
+        signedIn: profile !== null,
+      });
     }
   };
 

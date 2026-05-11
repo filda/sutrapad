@@ -1,209 +1,108 @@
-import { computeNoteStats } from "../../logic/note-stats";
-import type { SutraPadDocument } from "../../../types";
+import { confidenceForAutoTag } from "../../logic/auto-tag-confidence";
+import { deriveAutoTags } from "../../../lib/auto-tags";
+import type { SutraPadDocument, SutraPadTagEntry } from "../../../types";
+import { buildTagInput } from "./tag-input";
+import { buildTagPill } from "./tag-pill";
 
 /**
- * Right-rail sidebar rendered next to the detail editor on the notes
- * detail route. Three cards: live Stats, a "How this gets saved"
- * explainer, and an "Other ways to capture" jump list.
+ * Right-rail sidebar rendered next to the detail editor on the note
+ * detail route. Two cards: user-editable Tags (with the autocomplete
+ * combobox) and a read-only Auto-detected strip. The previous Stats /
+ * How-this-gets-saved / Other-ways-to-capture trio is gone — stats live
+ * in the detail-topbar breadcrumbs now, and the two onboarding cards
+ * were redundant for an established user.
  *
- * The sidebar is built once per render pass (like the rest of the
- * editor). Live updates — currently only the Stats card changes during
- * typing — flow through `syncFromInputs`, which is wired by
- * `editor-card.ts` to the same keystroke path that drives the kind
- * chip. Everything else in the sidebar is static copy or navigation,
- * so we don't pay a DOM-refresh cost per keystroke.
+ * The sidebar rebuilds on every render pass (no live-update handle):
+ * adding or removing a tag triggers a full re-render via the existing
+ * `onAddTag` / `onRemoveTag` round-trip, and auto-tags only derive from
+ * capture metadata (which doesn't mutate during editing), so there's
+ * nothing keystroke-driven to refresh in place.
  */
-
-export interface EditorSidebarHandle {
-  element: HTMLElement;
-  /**
-   * Re-reads stats from the live title + body and updates the Stats
-   * card in place. No-op when the displayed numbers haven't changed —
-   * most keystrokes don't cross a word-count integer boundary, so the
-   * DOM stays still even while the handler runs on every input event.
-   */
-  syncFromInputs: (title: string, body: string) => void;
-}
 
 export interface EditorSidebarOptions {
   /**
-   * Baseline note for the stats computation. `syncFromInputs` overlays
-   * live title/body on top of this to get tags, urls (captured via
-   * bookmarklet), and task counts at their current values; the fields
-   * we care about from this baseline are the ones the textarea doesn't
-   * re-derive (tag count, captured urls).
+   * Source of truth for both surfaces: the tag list driving the chips
+   * inside the combobox, and the capture-metadata that
+   * `deriveAutoTags` reads for the auto-detected pills below.
    */
   currentNote: SutraPadDocument;
-  /** Navigates to the Capture page — all three platform buttons use it. */
-  onOpenCapture: () => void;
+  availableTagSuggestions: readonly SutraPadTagEntry[];
+  onAddTag: (value: string) => void;
+  onRemoveTag: (tag: string) => void;
 }
 
-export function buildEditorSidebar(
-  options: EditorSidebarOptions,
-): EditorSidebarHandle {
+export function buildEditorSidebar({
+  currentNote,
+  availableTagSuggestions,
+  onAddTag,
+  onRemoveTag,
+}: EditorSidebarOptions): HTMLElement {
   const aside = document.createElement("aside");
   aside.className = "editor-sidebar";
 
-  const stats = buildStatsCard();
-  const howSaved = buildHowSavedCard();
-  const capture = buildCaptureLinksCard(options.onOpenCapture);
+  aside.append(buildTagsCard(currentNote, availableTagSuggestions, onAddTag, onRemoveTag));
 
-  aside.append(stats.element, howSaved, capture);
+  const autoCard = buildAutoDetectedCard(currentNote);
+  if (autoCard) aside.append(autoCard);
 
-  // Seed stats from whatever is currently in the note — the editor
-  // passes live values in on the first keystroke, but until then the
-  // sidebar should already display the right numbers.
-  stats.setNote(options.currentNote);
-
-  return {
-    element: aside,
-    syncFromInputs: (title, body) => {
-      // Overlay the live editable fields on the captured metadata so
-      // URLs added via the bookmarklet still feed into the link count
-      // even before the user saves.
-      stats.setNote({
-        ...options.currentNote,
-        title,
-        body,
-      });
-    },
-  };
+  return aside;
 }
 
-interface StatsCardHandle {
-  element: HTMLElement;
-  setNote: (note: SutraPadDocument) => void;
-}
-
-function buildStatsCard(): StatsCardHandle {
+function buildTagsCard(
+  note: SutraPadDocument,
+  availableTagSuggestions: readonly SutraPadTagEntry[],
+  onAddTag: (value: string) => void,
+  onRemoveTag: (tag: string) => void,
+): HTMLElement {
   const card = document.createElement("section");
-  card.className = "editor-sidebar-card editor-sidebar-stats-card";
+  card.className = "editor-sidebar-card editor-sidebar-tags-card";
 
   const eyebrow = document.createElement("p");
   eyebrow.className = "editor-sidebar-eyebrow";
-  eyebrow.textContent = "Stats";
+  eyebrow.textContent = "Tags";
 
-  const grid = document.createElement("div");
-  grid.className = "editor-sidebar-stats";
-
-  const wordsStat = buildStat("words");
-  const readStat = buildStat("min read");
-  const tasksStat = buildStat("tasks");
-  const linksStat = buildStat("links");
-
-  grid.append(
-    wordsStat.element,
-    readStat.element,
-    tasksStat.element,
-    linksStat.element,
-  );
-  card.append(eyebrow, grid);
-
-  const setNote = (note: SutraPadDocument): void => {
-    const stats = computeNoteStats(note);
-    wordsStat.setValue(String(stats.wordCount));
-    readStat.setValue(String(stats.readMinutes));
-    tasksStat.setValue(String(stats.openTasks + stats.doneTasks));
-    linksStat.setValue(String(stats.linkCount));
-  };
-
-  return { element: card, setNote };
-}
-
-interface StatHandle {
-  element: HTMLElement;
-  setValue: (value: string) => void;
-}
-
-function buildStat(label: string): StatHandle {
-  const stat = document.createElement("div");
-  stat.className = "editor-sidebar-stat";
-
-  const value = document.createElement("span");
-  value.className = "editor-sidebar-stat-num";
-  value.textContent = "0";
-
-  const labelEl = document.createElement("span");
-  labelEl.className = "editor-sidebar-stat-label";
-  labelEl.textContent = label;
-
-  stat.append(value, labelEl);
-
-  return {
-    element: stat,
-    setValue: (next) => {
-      if (value.textContent !== next) value.textContent = next;
-    },
-  };
-}
-
-function buildHowSavedCard(): HTMLElement {
-  const card = document.createElement("section");
-  card.className = "editor-sidebar-card";
-
-  const eyebrow = document.createElement("p");
-  eyebrow.className = "editor-sidebar-eyebrow";
-  eyebrow.textContent = "How this gets saved";
-
-  const steps = document.createElement("ol");
-  steps.className = "editor-sidebar-steps";
-
-  // Numbered, deliberately terse — this card is a refresher for users
-  // who already read the README, not a tutorial. Keep these in sync
-  // with the equivalent footer note and the Settings > Storage copy
-  // if either one changes.
-  const STEP_TEXT = [
-    "One JSON file per note lives in your Google Drive.",
-    "A notebook index keeps the list and the active note together.",
-    "Nothing leaves this device until you're signed in and sync runs.",
-  ] as const;
-
-  for (const text of STEP_TEXT) {
-    const li = document.createElement("li");
-    const body = document.createElement("p");
-    body.textContent = text;
-    li.append(body);
-    steps.append(li);
-  }
-
-  card.append(eyebrow, steps);
+  card.append(eyebrow, buildTagInput(note, availableTagSuggestions, onAddTag, onRemoveTag));
   return card;
 }
 
-function buildCaptureLinksCard(onOpenCapture: () => void): HTMLElement {
+/**
+ * Read-only "Auto-detected" card — a pill grid summarising the auto-tags
+ * the current note picks up from its metadata (`captureContext`,
+ * `createdAt`, `location`, …). The pills are derived, not stored, so
+ * there's no accept/dismiss affordance: the user can't "commit" an
+ * auto-tag into `note.tags` because it's already available anywhere
+ * auto-tags are rendered (Tags page, topbar filter bar). The card
+ * exists purely to surface *which* auto-tags are attached and flag
+ * low-confidence reads with a `NN%` badge.
+ *
+ * Returns `null` when the note has no auto-tags (drafts without capture
+ * context, empty home notes) so the sidebar doesn't carry an empty
+ * card with just a "nothing to show" eyebrow.
+ */
+function buildAutoDetectedCard(note: SutraPadDocument): HTMLElement | null {
+  const autoTags = deriveAutoTags(note);
+  if (autoTags.length === 0) return null;
+
   const card = document.createElement("section");
-  card.className = "editor-sidebar-card";
+  card.className = "editor-sidebar-card editor-sidebar-auto-card";
 
   const eyebrow = document.createElement("p");
   eyebrow.className = "editor-sidebar-eyebrow";
-  eyebrow.textContent = "Other ways to capture";
+  eyebrow.textContent = "Auto-detected";
 
-  // All three buttons route to the same destination — the Capture page
-  // owns the per-platform setup details. Keeping them as three rows
-  // (rather than a single "See Capture →" link) matches the handoff
-  // and gives the sidebar a visual anchor of comparable height to the
-  // Stats + How-saved cards above it.
-  const LINKS: readonly { title: string; subtitle: string }[] = [
-    { title: "Bookmarklet", subtitle: "Save the page you're reading" },
-    { title: "iOS Share", subtitle: "One-tap from Safari" },
-    { title: "Android", subtitle: "Share to SutraPad" },
-  ];
+  const grid = document.createElement("div");
+  grid.className = "editor-sidebar-auto-grid";
 
-  card.append(eyebrow);
-  for (const entry of LINKS) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "editor-sidebar-link";
-    button.addEventListener("click", () => onOpenCapture());
-
-    const title = document.createElement("strong");
-    title.textContent = entry.title;
-
-    const subtitle = document.createElement("span");
-    subtitle.textContent = entry.subtitle;
-
-    button.append(title, subtitle);
-    card.append(button);
+  for (const tag of autoTags) {
+    grid.append(
+      buildTagPill({
+        tag,
+        kind: "auto",
+        confidence: confidenceForAutoTag(tag),
+      }),
+    );
   }
+
+  card.append(eyebrow, grid);
   return card;
 }

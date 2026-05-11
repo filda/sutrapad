@@ -118,10 +118,9 @@ describe("createApp smoke", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     // Structural landmarks always present after the first render.
-    // (The `.status` <p> from `editor-card.ts` only appears when a note
-    // editor is mounted, which requires a non-empty workspace — so we
-    // don't assert on it here. The sync pill in the topbar is
-    // unconditional.)
+    // The sync pill in the topbar is unconditional; we anchor on that
+    // because the detail-route-only crumbs (`.detail-breadcrumbs`,
+    // `.crumb-sync`) require a non-empty workspace to mount.
     expect(root.querySelector(".topbar")).toBeInstanceOf(HTMLElement);
     expect(root.querySelector(".nav-tabs")).toBeInstanceOf(HTMLElement);
     const syncPill = root.querySelector(".sync-pill");
@@ -218,6 +217,62 @@ describe("editor input contracts", () => {
     expect(root.querySelector(".body-input")).toBe(textarea);
     expect(document.activeElement).toBe(textarea);
     expect(JSON.parse(localStorage.getItem(LOCAL_WORKSPACE_KEY) ?? "{}").notes[0].body).toBe("A");
+  });
+
+  it("renders the detail-topbar sync crumb + right-rail tags card on the detail route", { timeout: 3000 }, async () => {
+    // Pins the structural landmarks that the editor refactor introduced:
+    //   - the topbar crumb row carries a `.crumb-sync` element fed from
+    //     `formatLastChange(note.updatedAt, …)`,
+    //   - the editor card no longer owns a `.status` row,
+    //   - the right-rail sidebar mounts a tags card with the combobox
+    //     input.
+    // Without this anchor, a regression that re-introduces the old
+    // status row or accidentally drops the rail would still pass the
+    // microtask trip-wire and the focus-preservation check above.
+    const workspace = {
+      activeNoteId: "n-detail",
+      notes: [
+        {
+          id: "n-detail",
+          title: "Detail-route smoke",
+          body: "Some body content.",
+          urls: [],
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          tags: ["alpha"],
+        },
+      ],
+    };
+    localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify(workspace));
+    window.history.replaceState({}, "", "/notes/n-detail");
+
+    const { createApp } = await import("../src/app");
+    const root = document.querySelector<HTMLElement>("#app");
+    if (root === null) throw new Error("expected #app");
+
+    createApp(root);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    // New landmarks in place…
+    const syncCrumb = root.querySelector(".crumb-sync");
+    expect(syncCrumb).toBeInstanceOf(HTMLElement);
+    // …with a non-empty formatted string. We don't pin the exact
+    // string (locale / timezone vary across runners) — the prefix
+    // `local · ` is enough to assert the helper executed: the smoke
+    // test's mocked auth never resolves a profile, so `signedIn` is
+    // false and the helper picks the signed-out branch.
+    expect(syncCrumb?.textContent ?? "").toMatch(/^local · /);
+
+    // The legacy `.status` paragraph is gone — anything that selects
+    // it should now return null, which is what the in-place
+    // refreshStatus patcher relies on as its "not on the detail
+    // route" signal.
+    expect(root.querySelector(".editor-card .status")).toBeNull();
+
+    // Right-rail tags card mounted with the combobox input inside.
+    const tagsCard = root.querySelector(".editor-sidebar-tags-card");
+    expect(tagsCard).toBeInstanceOf(HTMLElement);
+    expect(tagsCard?.querySelector(".tag-text-input")).toBeInstanceOf(HTMLInputElement);
   });
 
   it("preserves caret + focus through the new-note geolocation backfill", { timeout: 5000 }, async () => {
