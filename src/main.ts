@@ -67,6 +67,82 @@ function bootstrapMainApp(): void {
   createApp(root);
 
   if (import.meta.env.PROD) {
+    // === SW update timing diagnostic (temporary) ===
+    // Bridges timestamps across the update reload via sessionStorage so we can
+    // see how the time between clicking "Reload" and a usable next page is
+    // distributed across: waiting for `controllerchange`, the navigation
+    // itself, and the post-reload bootstrap. Both the OLD running version and
+    // the NEW served version need this code, so build/deploy once to seed the
+    // running tab, then again to trigger the update banner.
+    const TIMING_KEY = "sw-update-timing-diag";
+
+    const storedTiming = sessionStorage.getItem(TIMING_KEY);
+    if (storedTiming) {
+      try {
+        const t = JSON.parse(storedTiming) as {
+          clickAt: number;
+          controllerChangeAt?: number;
+        };
+        const navStart = performance.timeOrigin;
+        console.log("[sw-update] after reload", {
+          click_to_controllerchange_ms:
+            t.controllerChangeAt != null
+              ? t.controllerChangeAt - t.clickAt
+              : "(never observed — old version did not log it)",
+          controllerchange_to_navStart_ms:
+            t.controllerChangeAt != null
+              ? Math.round(navStart - t.controllerChangeAt)
+              : "(n/a)",
+          click_to_navStart_ms: Math.round(navStart - t.clickAt),
+          click_to_main_ts_ms: Date.now() - t.clickAt,
+        });
+        const clickAt = t.clickAt;
+        window.addEventListener(
+          "DOMContentLoaded",
+          () => {
+            console.log("[sw-update] DOMContentLoaded", {
+              click_to_DOMContentLoaded_ms: Date.now() - clickAt,
+            });
+          },
+          { once: true },
+        );
+        window.addEventListener(
+          "load",
+          () => {
+            console.log("[sw-update] load (all subresources fetched)", {
+              click_to_load_ms: Date.now() - clickAt,
+            });
+          },
+          { once: true },
+        );
+      } catch (err) {
+        console.warn("[sw-update] failed to parse stored timing", err);
+      }
+      sessionStorage.removeItem(TIMING_KEY);
+    }
+
+    // Capture `controllerchange` in the OLD page — workbox-window's own
+    // listener calls `window.location.reload()` here, so this is effectively
+    // the last moment we can record a timestamp before navigation.
+    navigator.serviceWorker?.addEventListener("controllerchange", () => {
+      const raw = sessionStorage.getItem(TIMING_KEY);
+      if (!raw) return;
+      try {
+        const data = JSON.parse(raw) as { clickAt: number };
+        const controllerChangeAt = Date.now();
+        sessionStorage.setItem(
+          TIMING_KEY,
+          JSON.stringify({ ...data, controllerChangeAt }),
+        );
+        console.log("[sw-update] controllerchange", {
+          ms_since_click: controllerChangeAt - data.clickAt,
+        });
+      } catch {
+        // ignore malformed data
+      }
+    });
+    // === /diagnostic ===
+
     // Holds the reload callback produced by `registerSW`. Resolved lazily so the
     // notification controller can reference it before `registerSW` returns.
     let reloadApp: ((reloadPage?: boolean) => Promise<void>) | null = null;
@@ -74,6 +150,11 @@ function bootstrapMainApp(): void {
     const notification = createUpdateNotification({
       onReload: () => {
         notification.setBusy(true);
+        const clickAt = Date.now();
+        sessionStorage.setItem(TIMING_KEY, JSON.stringify({ clickAt }));
+        console.log("[sw-update] click reload", {
+          at: new Date(clickAt).toISOString(),
+        });
         // `updateSW(true)` tells the waiting worker to skipWaiting and then
         // reloads the page once it takes control. If the browser fails to
         // reload for any reason, the button stays in the busy state to avoid
@@ -86,10 +167,15 @@ function bootstrapMainApp(): void {
     reloadApp = registerSW({
       immediate: true,
       onNeedRefresh() {
+        console.log("[sw-update] onNeedRefresh: new SW is in waiting state");
         notification.show();
       },
       onRegisteredSW(_swUrl, registration) {
         if (!registration) return;
+        console.log("[sw-update] onRegisteredSW", {
+          scope: registration.scope,
+          at: new Date().toISOString(),
+        });
         createUpdateCoordinator({
           checkForUpdate: () => registration.update().then(() => undefined),
           environment: createBrowserUpdateEnvironment(),
