@@ -84,7 +84,7 @@ function bootstrapMainApp(): void {
           controllerChangeAt?: number;
         };
         const navStart = performance.timeOrigin;
-        console.log("[sw-update] after reload", {
+        console.warn("[sw-update] after reload", {
           click_to_controllerchange_ms:
             t.controllerChangeAt != null
               ? t.controllerChangeAt - t.clickAt
@@ -100,7 +100,7 @@ function bootstrapMainApp(): void {
         window.addEventListener(
           "DOMContentLoaded",
           () => {
-            console.log("[sw-update] DOMContentLoaded", {
+            console.warn("[sw-update] DOMContentLoaded", {
               click_to_DOMContentLoaded_ms: Date.now() - clickAt,
             });
           },
@@ -109,7 +109,7 @@ function bootstrapMainApp(): void {
         window.addEventListener(
           "load",
           () => {
-            console.log("[sw-update] load (all subresources fetched)", {
+            console.warn("[sw-update] load (all subresources fetched)", {
               click_to_load_ms: Date.now() - clickAt,
             });
           },
@@ -134,7 +134,7 @@ function bootstrapMainApp(): void {
           TIMING_KEY,
           JSON.stringify({ ...data, controllerChangeAt }),
         );
-        console.log("[sw-update] controllerchange", {
+        console.warn("[sw-update] controllerchange", {
           ms_since_click: controllerChangeAt - data.clickAt,
         });
       } catch {
@@ -152,7 +152,7 @@ function bootstrapMainApp(): void {
         notification.setBusy(true);
         const clickAt = Date.now();
         sessionStorage.setItem(TIMING_KEY, JSON.stringify({ clickAt }));
-        console.log("[sw-update] click reload", {
+        console.warn("[sw-update] click reload", {
           at: new Date(clickAt).toISOString(),
         });
         // `updateSW(true)` tells the waiting worker to skipWaiting and then
@@ -167,12 +167,12 @@ function bootstrapMainApp(): void {
     reloadApp = registerSW({
       immediate: true,
       onNeedRefresh() {
-        console.log("[sw-update] onNeedRefresh: new SW is in waiting state");
+        console.warn("[sw-update] onNeedRefresh: new SW is in waiting state");
         notification.show();
       },
       onRegisteredSW(_swUrl, registration) {
         if (!registration) return;
-        console.log("[sw-update] onRegisteredSW", {
+        console.warn("[sw-update] onRegisteredSW", {
           scope: registration.scope,
           at: new Date().toISOString(),
         });
