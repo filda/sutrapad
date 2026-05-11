@@ -20,10 +20,13 @@ import type { GoogleAuthService } from "../services/google-auth";
 import { buildBookmarklet } from "../lib/bookmarklet";
 import {
   extractUrlsFromText,
-  mergeHashtagsIntoTags,
   toggleTaskInBody,
   upsertNote,
 } from "../lib/notebook";
+import {
+  evaluateBodyEdit,
+  isTitleEditNoOp,
+} from "./logic/note-edit-guards";
 import type {
   SutraPadDocument,
   SutraPadTagFilterMode,
@@ -375,6 +378,16 @@ export function createRenderCallbacks({
       syncTagFiltersToLocation(nextSelectedTagFilters);
     },
     onTitleInput: (value: string) => {
+      // No-op guard. The title input fires `input` on every keystroke
+      // but the editor card is also rebuilt on every render, and the
+      // freshly-mounted input is set to the current title value — a
+      // race where the user's keystroke and our re-render arrive in
+      // the same frame would otherwise see the post-render input
+      // event as a "change" against itself. Dropping zero-delta
+      // inputs here keeps `updatedAt` honest (it should reflect real
+      // edits, not phantom DOM noise) and avoids spurious autosaves.
+      const currentNote = getCurrentWorkspaceNote(getWorkspace());
+      if (isTitleEditNoOp(currentNote, value)) return;
       replaceCurrentNote((currentWorkspaceNote) => ({
         ...currentWorkspaceNote,
         title: value,
@@ -384,32 +397,39 @@ export function createRenderCallbacks({
       refreshNotesPanel();
     },
     onBodyInput: (value: string, caretPosition: number | undefined) => {
-      const tagsBefore = getCurrentWorkspaceNote(getWorkspace()).tags;
-      // `caretPosition` is forwarded so a `#tag` that ends right at the
-      // caret (the user is still typing it) is treated as not-yet-
-      // committed. Without this guard, inserting `#auto` mid-prose
-      // commits `#a`, `#au`, `#aut`, `#auto` one after another as the
-      // regex lookahead succeeds against the downstream prose.
-      // `undefined` (sent from blur) skips the caret check entirely,
-      // committing whatever was in flight — leaving the textarea is
-      // the user's "I'm done" signal.
-      const mergedTags = mergeHashtagsIntoTags(tagsBefore, value, {
+      // The body textarea fires `blur` whenever it loses focus — and
+      // critically also when `render()` detaches the focused node
+      // before rebuilding the editor card. The handler can't tell the
+      // two apart, so we ask the data layer instead: would committing
+      // `value` (with this caret position) change anything? If not,
+      // drop the event. This is what stops the "open notebook → click
+      // around → autosaves fire" cascade.
+      //
+      // `caretPosition` carries hashtag-typing semantics. A `#tag`
+      // ending at the caret is held back as "still being typed"; a
+      // `undefined` caret (sent on blur) lifts that restriction so
+      // anything in flight commits naturally when the user leaves the
+      // textarea.
+      const currentNote = getCurrentWorkspaceNote(getWorkspace());
+      const { isNoOp, mergedTags, tagsChanged } = evaluateBodyEdit(
+        currentNote,
+        value,
         caretPosition,
-      });
-      // Only re-render the whole editor when a new hashtag actually appeared
-      // in the body — otherwise every keystroke would swap the textarea and
-      // lose caret/IME state. The notes panel still refreshes for title/body
-      // preview updates even when no new tag is added.
-      const tagsChanged = mergedTags.length !== tagsBefore.length;
+      );
+      if (isNoOp) return;
 
       replaceCurrentNote((currentWorkspaceNote) => ({
         ...currentWorkspaceNote,
         body: value,
         urls: extractUrlsFromText(value),
-        tags: mergedTags,
+        tags: [...mergedTags],
         updatedAt: new Date().toISOString(),
       }));
 
+      // Full re-render only when a new hashtag chip needs to appear —
+      // otherwise every keystroke would swap the textarea and lose
+      // caret/IME state. The notes panel still refreshes for title /
+      // body preview updates even when no new tag is added.
       if (tagsChanged) {
         renderPreservingBodyInputFocus(render);
       } else {

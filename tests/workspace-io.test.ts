@@ -253,3 +253,227 @@ describe("createWorkspaceIO", () => {
     expect(h.setSyncState).toHaveBeenLastCalledWith("idle");
   });
 });
+
+describe("createWorkspaceIO clean-snapshot guard", () => {
+  it("skips a second save when the workspace hasn't changed since the first", async () => {
+    // Regression for the "open notebook → click around → multiple
+    // autosaves fire" cascade. The first save establishes the clean
+    // snapshot; the second save with an identical workspace must
+    // not touch Drive, must not pulse syncState, must not run the
+    // four-index rewrite.
+    const h = makeHarness();
+    let workspace = makeWorkspace([realNote("note-1")]);
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => workspace,
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.saveWorkspace();
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+
+    const syncStateCallsAfterFirst = h.setSyncState.mock.calls.length;
+
+    // Same workspace reference — represents the "blur fired but
+    // value identical" case after fix #1 wouldn't have caught it.
+    await io.saveWorkspace();
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+    // No second syncState pulse — the bail returns before runWorkspaceSave.
+    expect(h.setSyncState.mock.calls.length).toBe(syncStateCallsAfterFirst);
+
+    // A genuine edit (different body) re-arms the save path.
+    workspace = makeWorkspace([
+      { ...realNote("note-1"), body: "actually changed" },
+    ]);
+    await io.saveWorkspace();
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats the empty-draft-only difference as no change (drafts get stripped)", async () => {
+    // The save closure strips empty drafts before comparing against
+    // the snapshot. So a local workspace that picked up a fresh `N`
+    // press (empty draft) after the first save is still "clean" from
+    // the remote's perspective: nothing visible-to-Drive changed.
+    const h = makeHarness();
+    let workspace = makeWorkspace([realNote("note-1")]);
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => workspace,
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.saveWorkspace();
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+
+    workspace = makeWorkspace([realNote("note-1"), emptyDraft("draft-1")]);
+    await io.saveWorkspace();
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips save when the workspace matches the freshly-loaded remote", async () => {
+    // Sign-in restore (and manual Load) pull the remote down. If the
+    // user's local state was already in sync (or got replaced by the
+    // load), the very next autosave timer firing must not push the
+    // same bytes back up.
+    const h = makeHarness();
+    const remoteNote = realNote("remote-only");
+    h.store.loadWorkspace.mockResolvedValueOnce(makeWorkspace([remoteNote]));
+    // After load, the harness keeps returning the loaded workspace
+    // as the local snapshot — that's the post-load steady state.
+    let localWorkspace: SutraPadWorkspace = makeWorkspace([remoteNote]);
+    h.setWorkspace.mockImplementation((next: SutraPadWorkspace) => {
+      localWorkspace = next;
+    });
+
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => localWorkspace,
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.loadWorkspace();
+    expect(h.store.loadWorkspace).toHaveBeenCalledTimes(1);
+
+    // Autosave-style save fires with no local changes — must bail.
+    await io.saveWorkspace("background");
+    expect(h.store.saveWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("re-arms the save path after restoreWorkspaceAfterSignIn pushes a merged result", async () => {
+    // The restore path's save closure must mark the merged workspace
+    // as the new snapshot — otherwise the post-restore autosave
+    // would redundantly push the same merged bytes again.
+    const h = makeHarness();
+    const remoteNote = realNote("remote-1");
+    const localNote = realNote("local-1");
+    h.store.loadWorkspace.mockResolvedValueOnce(makeWorkspace([remoteNote]));
+
+    // The merge of local+remote contains both notes. After the
+    // restore save succeeds, the snapshot equals that merged
+    // workspace. We approximate that here by reporting the merged
+    // shape as the local workspace from then on.
+    let localWorkspace: SutraPadWorkspace = makeWorkspace([localNote]);
+    h.setWorkspace.mockImplementation((next: SutraPadWorkspace) => {
+      localWorkspace = next;
+    });
+
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => localWorkspace,
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.restoreWorkspaceAfterSignIn();
+
+    // Load was hit once; the merge produced changes vs remote
+    // (the local-only note), so the save was also hit once.
+    expect(h.store.loadWorkspace).toHaveBeenCalledTimes(1);
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+
+    // The follow-up background autosave must not double-push.
+    await io.saveWorkspace("background");
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("first-ever save proceeds when no snapshot has been established", async () => {
+    // Boundary: cold start. No load, no prior save → snapshot is
+    // null → the guard MUST fall through and let the save happen.
+    // This is also the mutation-test sentinel for the "if snapshot
+    // !== null" half of the guard — flipping it to `=== null` would
+    // skip every save until the first load happened.
+    const h = makeHarness();
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => makeWorkspace([realNote()]),
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.saveWorkspace();
+
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failed save leaves the snapshot un-updated so the next attempt retries", async () => {
+    // If Drive rejects the save (network blip, 5xx), we did NOT
+    // successfully sync. The snapshot must stay at its previous
+    // value (or null) so the next save retries the same bytes
+    // instead of believing the failed push went through.
+    const h = makeHarness();
+    h.store.saveWorkspace.mockRejectedValueOnce(new Error("drive 503"));
+    const workspace = makeWorkspace([realNote("note-1")]);
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => workspace,
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.saveWorkspace();
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+    expect(h.setSyncState).toHaveBeenCalledWith("error");
+
+    // Retry: same workspace, but the failed first attempt didn't
+    // mark it clean. So this MUST hit Drive again, not bail.
+    await io.saveWorkspace();
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(2);
+  });
+});

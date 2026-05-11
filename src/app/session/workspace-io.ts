@@ -10,7 +10,7 @@
  * `createApp` doesn't have to repeat it three times.
  */
 
-import { stripEmptyDraftNotes } from "../../lib/notebook";
+import { areWorkspacesEqual, stripEmptyDraftNotes } from "../../lib/notebook";
 import type { GoogleDriveStore } from "../../services/drive-store";
 import type { SutraPadWorkspace } from "../../types";
 import { withAuthRetry, type AuthRetryContext } from "./auth-retry";
@@ -67,10 +67,45 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     cancelAutoSave,
   } = deps;
 
+  // Snapshot of the workspace we last successfully synced with Drive
+  // (either pushed via save or pulled via load / restoreAfterSignIn).
+  // The save path consults this before doing any work: if the current
+  // workspace deep-equals the snapshot, the bytes on Drive are already
+  // what we'd be pushing, so we skip the whole `runWorkspaceSave`
+  // pulse — no Drive RTT, no "saving / idle" UI flicker, no
+  // tag/link/task index rewrite.
+  //
+  // Why a single snapshot and not per-note tracking: the autosave path
+  // pushes the entire workspace in one transaction (index file +
+  // derived caches + head pointer), so the "is anything different?"
+  // question is workspace-shaped, not note-shaped. A per-note
+  // snapshot would let us skip individual note uploads inside
+  // `GoogleDriveStore.saveWorkspace` — but that helper already has its
+  // own per-note short-circuit keyed on `updatedAt`, and the outer
+  // wrapper saves a much bigger pulse (the four index files) when it
+  // bails entirely. Workspace-level is the cheaper coarse-grained
+  // gate.
+  //
+  // Updated on: successful load, successful save, the initial load
+  // leg of `restoreWorkspaceAfterSignIn`, and the post-merge save leg
+  // of the same (when one was needed). Deliberately *not* updated on
+  // refresh — the progressive merge produces a workspace that's a mix
+  // of local edits and Drive-fetched notes, so it doesn't represent
+  // "what's on Drive" in a way the save path can use as a baseline.
+  let lastSyncedWorkspace: SutraPadWorkspace | null = null;
+
+  const loadRemoteWorkspaceAndMarkClean = async (): Promise<SutraPadWorkspace> => {
+    const loaded = await withAuthRetry(
+      () => getStore().loadWorkspace(),
+      retryContext,
+    );
+    lastSyncedWorkspace = loaded;
+    return loaded;
+  };
+
   const loadWorkspace = async (): Promise<void> =>
     runWorkspaceLoad({
-      loadRemoteWorkspace: () =>
-        withAuthRetry(() => getStore().loadWorkspace(), retryContext),
+      loadRemoteWorkspace: loadRemoteWorkspaceAndMarkClean,
       setWorkspace,
       persistLocalWorkspace,
       setSyncState,
@@ -81,10 +116,15 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
 
   const restoreWorkspaceAfterSignIn = async (): Promise<void> =>
     runWorkspaceRestoreAfterSignIn({
-      loadRemoteWorkspace: () =>
-        withAuthRetry(() => getStore().loadWorkspace(), retryContext),
-      saveRemoteWorkspace: (ws) =>
-        withAuthRetry(() => getStore().saveWorkspace(ws), retryContext),
+      loadRemoteWorkspace: loadRemoteWorkspaceAndMarkClean,
+      // Note: `runWorkspaceRestoreAfterSignIn` only invokes
+      // `saveRemoteWorkspace` when the merge produced changes versus
+      // the just-loaded remote — so reaching this closure already
+      // means we have new bytes to push.
+      saveRemoteWorkspace: async (ws) => {
+        await withAuthRetry(() => getStore().saveWorkspace(ws), retryContext);
+        lastSyncedWorkspace = ws;
+      },
       getWorkspace,
       setWorkspace,
       persistLocalWorkspace,
@@ -107,23 +147,42 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
   // at the *remote* edge — the local copy is still there so the
   // user can keep typing, and the next nav-away purge sweeps it
   // normally.
-  const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> =>
-    runWorkspaceSave(mode, {
+  const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> => {
+    const toSave = stripEmptyDraftNotes(getWorkspace());
+
+    // Clean-snapshot guard. If the workspace matches what we last
+    // synced with Drive, there's nothing new to push — interactive
+    // and background paths both bail at this point. Returning here
+    // (rather than inside `runWorkspaceSave`) means no syncState
+    // pulse, no cancelAutoSave call: the save attempt simply did not
+    // happen. A future call after a real edit produces a different
+    // workspace and the guard falls through.
+    if (
+      lastSyncedWorkspace !== null &&
+      areWorkspacesEqual(lastSyncedWorkspace, toSave)
+    ) {
+      return;
+    }
+
+    return runWorkspaceSave(mode, {
       persistLocalWorkspace: () => persistLocalWorkspace(getWorkspace()),
-      saveRemoteWorkspace: () =>
-        withAuthRetry(
-          () => getStore().saveWorkspace(stripEmptyDraftNotes(getWorkspace())),
+      saveRemoteWorkspace: async () => {
+        await withAuthRetry(
+          () => getStore().saveWorkspace(toSave),
           {
             ...retryContext,
             mode,
           },
-        ),
+        );
+        lastSyncedWorkspace = toSave;
+      },
       setSyncState,
       setLastError,
       render,
       refreshStatus,
       cancelAutoSave,
     });
+  };
 
   // Progressive refresh: Drive I/O is bound through `withAuthRetry`
   // (interactive mode — focus is a user-driven trigger, so a 401 should
