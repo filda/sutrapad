@@ -9,7 +9,7 @@
 - Verification gate before declaring a task done: run `npm run check` (chains `lint && test && build`, i.e. oxlint + tsc + vitest + vite build). Do not substitute partial runs ("tsc passed elsewhere", "vitest is green in watch"). For truly trivial edits (typo, single-line config tweak) `npm run lint` alone is an acceptable explicit shortcut.
 - A task is not finished when `npm run check` goes green. Every non-trivial change then ends with an explicit **cleanup pass**:
   1. Critical code review — re-read the diff as if it were someone else's PR; look for dead code, stale comments, leaked concerns, overly broad types, TODO leftovers.
-  2. Refactor candidates — if implementation revealed duplication or awkward abstractions, address them while context is fresh.
+  2. Refactor candidates — if implementation revealed duplication or awkward abstractions, address them while the context is fresh.
   3. Code coverage — check the report for the touched area and cover meaningful gaps.
   4. Mutation testing — check Stryker results; a surviving mutant means a missing assertion, so add it.
 
