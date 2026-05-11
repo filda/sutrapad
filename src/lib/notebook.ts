@@ -596,12 +596,20 @@ export function mergeWorkspaces(
  * on Drive right now") plus the subset of note JSONs it has fetched so
  * far, and the result is the workspace state implied by that snapshot.
  *
- *   - **Inventory is authoritative for existence.** Any local note
- *     whose id isn't in `inventory` is dropped (it was deleted from
- *     another device). Conversely, ids present in `inventory` but not
- *     yet in `fetchedNotes` keep their current local copy as a
- *     placeholder — Phase 3 of the refresh will replace it when its
- *     JSON arrives.
+ *   - **Inventory is authoritative for existence, except for
+ *     local-only empty drafts.** Any local note whose id isn't in
+ *     `inventory` is dropped — it was deleted from another device —
+ *     *unless* it is an empty draft (no body, no user tags). Empty
+ *     drafts are filtered out by `stripEmptyDraftNotes` before every
+ *     remote save, so their id is *never* present in Drive's
+ *     inventory. Without the exemption a refresh that lands right
+ *     after the user clicks "+ Add" / "+ New note" / `N` (autosave
+ *     timer null because the draft is still empty, so `canRefresh`
+ *     returns true) would drop the just-spawned draft and bounce the
+ *     detail-route editor straight back to the notes list. Ids
+ *     present in `inventory` but not yet in `fetchedNotes` keep
+ *     their current local copy as a placeholder — Phase 3 of the
+ *     refresh will replace it when its JSON arrives.
  *   - **Per-id conflict rule:** when both `fetched` and `local` carry
  *     the same id, the version with the strictly larger `updatedAt`
  *     wins. The strict-greater check (not `>=`) is what lets a
@@ -642,6 +650,22 @@ export function applyDriveRefresh(
 
   for (const note of local.notes) {
     if (!inventoryIds.has(note.id)) {
+      // Empty drafts are local-only by design: `stripEmptyDraftNotes`
+      // filters them out of every remote save, so their absence from
+      // the Drive inventory is the expected steady state — not a
+      // signal of cross-device deletion. Keeping them here preserves
+      // the just-spawned "+ Add" / "+ New note" / `N` draft when a
+      // visibility-driven refresh fires before the user has typed
+      // anything (autosave timer null ⇒ `canRefresh` returns true).
+      // Auto-backfilled title / location / captureContext do not
+      // count as "user content" in `isEmptyDraftNote`, so a draft
+      // that has already been patched by the async fresh-note
+      // backfill is still considered empty and is still preserved.
+      if (isEmptyDraftNote(note)) {
+        kept.push(note);
+        keptIds.add(note.id);
+        continue;
+      }
       mutated = true;
       continue;
     }

@@ -278,7 +278,11 @@ describe("runWorkspaceRefresh", () => {
   });
 
   it("works when the inventory is empty (brand-new workspace folder, nothing on Drive yet)", async () => {
-    const h = makeHarness(workspace([note("a", "", "2026-05-01T10:00:00.000Z")]));
+    // Local carries a real body so it represents a note that *was*
+    // synced before and is now being cleaned up — not a local-only
+    // empty draft, which `applyDriveRefresh` deliberately preserves
+    // through an empty-inventory refresh.
+    const h = makeHarness(workspace([note("a", "real body", "2026-05-01T10:00:00.000Z")]));
     h.loadInventory.mockResolvedValue([]);
 
     await runWorkspaceRefresh(effects(h));

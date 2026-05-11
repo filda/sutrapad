@@ -208,11 +208,14 @@ describe("applyDriveRefresh", () => {
   it("falls back to the newest note when the active id was dropped from the inventory", () => {
     // The active note was deleted on another device. We can't keep
     // pointing at it; the safest behaviour mirrors mergeWorkspaces —
-    // fall through to the workspace's first (newest) note.
+    // fall through to the workspace's first (newest) note. Both
+    // candidates carry a body so neither qualifies as a local-only
+    // empty draft (those are deliberately preserved by the refresh
+    // — see the "preserves empty draft notes" cases further down).
     const local = workspace(
       [
-        note("survives", "", "2026-05-01T10:00:00.000Z"),
-        note("deleted-elsewhere", "", "2026-04-30T10:00:00.000Z"),
+        note("survives", "still here", "2026-05-01T10:00:00.000Z"),
+        note("deleted-elsewhere", "user typed this", "2026-04-30T10:00:00.000Z"),
       ],
       "deleted-elsewhere",
     );
@@ -223,10 +226,106 @@ describe("applyDriveRefresh", () => {
   });
 
   it("returns activeNoteId null when the inventory is empty", () => {
-    // Drive has zero notes left; nothing to point at.
-    const local = workspace([note("a", "", "2026-05-01T10:00:00.000Z")], "a");
+    // Drive has zero notes left; nothing to point at. The note carries
+    // a body so it doesn't qualify as a local-only empty draft (those
+    // are deliberately preserved; see the "preserves empty draft notes"
+    // cases below).
+    const local = workspace([note("a", "real body", "2026-05-01T10:00:00.000Z")], "a");
     const next = applyDriveRefresh(local, [], []);
     expect(next.notes).toHaveLength(0);
     expect(next.activeNoteId).toBeNull();
+  });
+
+  it("preserves empty draft notes that the user just spawned but hasn't typed into", () => {
+    // Regression: clicking "+ Add" / "+ New note" / `N` creates a
+    // local-only empty draft and opens its editor. The draft is
+    // intentionally never pushed to Drive — `stripEmptyDraftNotes`
+    // filters it out before every remote save — so its id is *never*
+    // present in the Drive inventory.
+    //
+    // Before this fix, a focus-driven refresh that landed while the
+    // user was looking at a fresh draft (autosave timer null because
+    // the draft is still empty, so `canRefresh` returned true) dropped
+    // the draft as "missing from inventory ⇒ deleted on another
+    // device". The detail route then bounced the editor back to the
+    // notes list mid-thought, which is what the user reported as
+    // "clicking New note opens the editor and immediately redirects
+    // me back to the list".
+    const local = workspace(
+      [
+        note("draft", "", "2026-05-01T10:00:00.000Z"),
+        note("a", "alpha", "2026-04-30T10:00:00.000Z"),
+      ],
+      "draft",
+    );
+
+    const next = applyDriveRefresh(local, [], [{ noteId: "a" }]);
+
+    expect(next.notes.map((n) => n.id)).toContain("draft");
+    expect(next.activeNoteId).toBe("draft");
+  });
+
+  it("still drops a non-empty local note that vanished from the inventory (deleted on another device)", () => {
+    // The local-only-draft exemption above must not regress the
+    // cross-device-delete path. A note with real content whose id is
+    // missing from the inventory was deleted on another device and
+    // must disappear here. `isEmptyDraftNote` is the gate: empty body
+    // AND no tags. Anything past that gate is real content.
+    const local = workspace(
+      [
+        note("typed", "user wrote something", "2026-05-01T10:00:00.000Z"),
+        note("a", "alpha", "2026-04-30T10:00:00.000Z"),
+      ],
+      "typed",
+    );
+
+    const next = applyDriveRefresh(local, [], [{ noteId: "a" }]);
+
+    expect(next.notes.map((n) => n.id)).toEqual(["a"]);
+  });
+
+  it("returns the same workspace reference when the only delta is a preserved local-only draft", () => {
+    // Steady-state guard: if the only "difference" between local and
+    // Drive is a local-only empty draft, the refresh is structurally
+    // a no-op and must return the same workspace reference so the
+    // orchestrator can skip the render + persist round. Without
+    // tracking `mutated` correctly inside the draft-preservation
+    // branch, a focus event would otherwise trigger a render every
+    // time the user has a fresh draft open even though nothing
+    // changed.
+    const local = workspace(
+      [
+        note("draft", "", "2026-05-01T10:00:00.000Z"),
+        note("a", "alpha", "2026-04-30T10:00:00.000Z"),
+      ],
+      "draft",
+    );
+
+    const next = applyDriveRefresh(local, [], [{ noteId: "a" }]);
+
+    expect(next).toBe(local);
+  });
+
+  it("preserves a freshly-spawned draft even after the post-`+ Add` title backfill", () => {
+    // The async backfill inside `handleNewNoteCreation` lands a
+    // generated "Tuesday afternoon in Prague"-style title plus
+    // captureContext on the draft *before* the user has typed
+    // anything. `isEmptyDraftNote` deliberately ignores those
+    // metadata fields, so the patched draft is still local-only and
+    // refresh must still keep it.
+    const local = workspace(
+      [
+        note("draft", "", "2026-05-01T10:00:00.000Z", {
+          title: "Monday afternoon in Prague",
+          location: "Prague",
+        }),
+      ],
+      "draft",
+    );
+
+    const next = applyDriveRefresh(local, [], []);
+
+    expect(next.notes.map((n) => n.id)).toContain("draft");
+    expect(next.activeNoteId).toBe("draft");
   });
 });
