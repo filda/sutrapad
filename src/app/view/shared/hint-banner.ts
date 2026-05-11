@@ -21,8 +21,8 @@
  * The DOM shape mirrors the simple one-line banner pattern in
  * `update-notification.ts` — accent strip on the left, eyebrow + title +
  * body in the middle column, CTA + dismiss × on the right. Class names
- * are scoped under `.hint-banner` so the existing `.update-banner` /
- * `.capture-chip` chrome is unaffected.
+ * are scoped under `.hint-banner` so the existing `.update-banner`
+ * chrome is unaffected.
  */
 import {
   loadHintStore,

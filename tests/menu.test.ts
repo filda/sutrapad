@@ -12,9 +12,10 @@ import {
 describe("menu items", () => {
   it("exposes the five primary-nav entries in the expected order", () => {
     // Capture + Settings are intentionally *not* rendered in the nav-tabs
-    // pill group per handoff v2 — they live in the topbar-actions cluster
-    // (capture-chip and settings-gear respectively). They're still valid
-    // MenuItemIds and routable via onSelectMenuItem, just not here.
+    // pill group per handoff v2. Settings lives in the topbar-actions
+    // cluster as a gear icon; Capture is reached from the site footer
+    // (`Use → Capture setup`) and the command palette. Both are still
+    // valid MenuItemIds and routable via onSelectMenuItem, just not here.
     expect(MENU_ITEMS.map((item) => item.id)).toEqual([
       "add",
       "notes",
@@ -49,7 +50,7 @@ describe("menu items", () => {
     expect(HOME_MENU_ITEM).toEqual({ id: "home", label: "Home" });
   });
 
-  it("keeps capture + settings out of the primary nav (they live in topbar-actions)", () => {
+  it("keeps capture + settings out of the primary nav (settings is the topbar gear; capture lives in the footer / palette)", () => {
     expect(MENU_ITEMS.some((item) => item.id === "capture")).toBe(false);
     expect(MENU_ITEMS.some((item) => item.id === "settings")).toBe(false);
   });
@@ -71,7 +72,7 @@ describe("isMenuItemId", () => {
     expect(isMenuItemId("home")).toBe(true);
   });
 
-  it("still accepts capture + settings ids (routable via topbar-actions)", () => {
+  it("still accepts capture + settings ids (settings via topbar-actions gear; capture via footer / palette)", () => {
     expect(isMenuItemId("capture")).toBe(true);
     expect(isMenuItemId("settings")).toBe(true);
   });

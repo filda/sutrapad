@@ -23,10 +23,11 @@ export interface MenuItem {
  * via the clickable SutraPad eyebrow in the top row, so it is intentionally
  * left out of this list.
  *
- * Per handoff v2: Capture + Settings are *not* nav tabs — Capture sits in
- * the right-actions cluster as the `capture-chip`, and Settings sits there
- * as a gear icon. Both are still valid `MenuItemId`s and therefore still
- * reachable via `onSelectMenuItem`; they're just not rendered here.
+ * Per handoff v2: Capture + Settings are *not* nav tabs. Settings sits in
+ * the right-actions cluster as a gear icon; Capture is reached from the
+ * site footer (`Use → Capture setup`) and the command palette. Both are
+ * still valid `MenuItemId`s and therefore still reachable via
+ * `onSelectMenuItem`; they're just not rendered here.
  */
 export const MENU_ITEMS: readonly MenuItem[] = [
   { id: "add", label: "Add" },
