@@ -39,6 +39,8 @@ import type { LinksViewMode } from "./logic/links-view";
 import type { ThemeChoice } from "./logic/theme";
 import type { PersonaPreference } from "./logic/persona";
 import type { CaptureLocationPreference } from "./logic/capture-location";
+import { resolveGeolocationPermissionState } from "../lib/geolocation-permission";
+import { runLocationBackfill } from "./lifecycle/run-location-backfill";
 import type { TagClassId } from "./logic/tag-class";
 import { toggleTagClassVisibility } from "./logic/visible-tag-classes";
 import {
@@ -97,6 +99,14 @@ export interface RenderCallbackOptions {
   setCurrentTheme: (theme: ThemeChoice) => void;
   setPersonaPreference: (preference: PersonaPreference) => void;
   setCaptureLocationPreference: (preference: CaptureLocationPreference) => void;
+  /**
+   * Setter for the transient "browser blocks geolocation" flag. The
+   * `onAllowLocationCapture` handler below toggles it on when the
+   * Permissions API reports `"denied"` so the consent card can swap
+   * to the blocked panel instead of firing a doomed
+   * `getCurrentPosition`.
+   */
+  setLocationConsentBlocked: (blocked: boolean) => void;
   handleNewNote: () => void;
   /**
    * Discards the active note if it's an empty draft (user hit "+ Add"
@@ -149,6 +159,7 @@ export function createRenderCallbacks({
   setCurrentTheme,
   setPersonaPreference,
   setCaptureLocationPreference,
+  setLocationConsentBlocked,
   handleNewNote,
   purgeEmptyDraftNotes,
   loadWorkspace,
@@ -364,6 +375,50 @@ export function createRenderCallbacks({
       syncFilterModeToLocation(mode);
     },
     onNewNote: handleNewNote,
+    /**
+     * Consent card "Allow" handler. Pre-checks the browser's
+     * geolocation permission via the Permissions API: if the user
+     * previously blocked the site, `getCurrentPosition` would silently
+     * fail and look like the click did nothing — so we flip the
+     * blocked flag instead, and the card re-renders as the
+     * "browser blocks location" panel. If the permission state is
+     * granted, prompt, or unknown (older Safari), we set the
+     * preference to `"on"` (which sinks the card on the next render
+     * since `requiresLocationConsent("on")` is false) and kick off
+     * the second-pass backfill that fills the active draft's
+     * `location` and `coordinates` without rewriting the title.
+     */
+    onAllowLocationCapture: async () => {
+      const permissionState = await resolveGeolocationPermissionState();
+      if (permissionState === "denied") {
+        setLocationConsentBlocked(true);
+        return;
+      }
+      setCaptureLocationPreference("on");
+      const activeNoteId = getDetailNoteId();
+      if (activeNoteId === null) {
+        // The user clicked Allow without an active draft (could happen
+        // if they navigated away mid-click — race). Preference is
+        // saved; nothing else to do.
+        return;
+      }
+      await runLocationBackfill({
+        noteId: activeNoteId,
+        getWorkspace,
+        setWorkspace,
+        persistWorkspace,
+        scheduleAutoSave,
+        rerenderPreservingActiveEditorFocus: render,
+      });
+    },
+    /**
+     * Consent card "Not now" handler. Commits the user's choice as
+     * `"off"`; the card disappears on the next render. The user can
+     * still flip it back to `"on"` via Settings → Privacy later.
+     */
+    onDenyLocationCapture: () => {
+      setCaptureLocationPreference("off");
+    },
     onRemoveSelectedFilter: (tag: string) => {
       const nextSelectedTagFilters = getSelectedTagFilters().filter((entry) => entry !== tag);
       setSelectedTagFilters(nextSelectedTagFilters);

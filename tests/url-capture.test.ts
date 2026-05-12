@@ -10,7 +10,9 @@ import {
   getDaypart,
   readNoteCapture,
   readUrlCapture,
+  resolveCurrentCoordinates,
   resolveTitleFromUrl,
+  reverseGeocodeCoordinates,
 } from "../src/lib/url-capture";
 
 describe("url capture helpers", () => {
@@ -353,5 +355,317 @@ describe("url capture helpers", () => {
     ).toBe("Prague");
 
     expect(derivePlaceLabel()).toBeNull();
+  });
+});
+
+// Direct coverage for the two thin wrappers around browser APIs that the rest
+// of the capture pipeline only sees through dependency injection:
+//
+//  - `resolveCurrentCoordinates` — the `navigator.geolocation.getCurrentPosition`
+//    promise-ifier, including the privacy/performance options it passes through.
+//  - `reverseGeocodeCoordinates` — the Nominatim caller with its
+//    `Accept-Language` fallback chain, error handling, and localStorage cache.
+//
+// Both functions are mutated by Stryker (the `src/lib` glob is in scope), but
+// `app.test.ts` and `apply-fresh-note-details.test.ts` cover them only via
+// mocks injected into `generateFreshNoteDetails` / `collectNoteCaptureDetails`,
+// so the wrapper code itself never runs in tests. Without these blocks every
+// mutant inside them is a coverage-free survivor.
+
+describe("resolveCurrentCoordinates", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("returns null when geolocation is missing from the navigator", async () => {
+    vi.stubGlobal("navigator", {});
+    await expect(resolveCurrentCoordinates()).resolves.toBeNull();
+  });
+
+  it("resolves with the position's latitude and longitude on success", async () => {
+    vi.stubGlobal("navigator", {
+      geolocation: {
+        getCurrentPosition: (success: PositionCallback) => {
+          success({
+            coords: {
+              latitude: 50.0755,
+              longitude: 14.4378,
+              accuracy: 12,
+              altitude: null,
+              altitudeAccuracy: null,
+              heading: null,
+              speed: null,
+            },
+            timestamp: 0,
+          } as GeolocationPosition);
+        },
+      },
+    });
+
+    await expect(resolveCurrentCoordinates()).resolves.toEqual({
+      latitude: 50.0755,
+      longitude: 14.4378,
+    });
+  });
+
+  it("resolves with null when the browser invokes the error callback", async () => {
+    vi.stubGlobal("navigator", {
+      geolocation: {
+        getCurrentPosition: (
+          _success: PositionCallback,
+          error?: PositionErrorCallback,
+        ) => {
+          error?.({
+            code: 1,
+            message: "User denied geolocation",
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+          } as GeolocationPositionError);
+        },
+      },
+    });
+
+    await expect(resolveCurrentCoordinates()).resolves.toBeNull();
+  });
+
+  it("passes the privacy and performance options getCurrentPosition expects", () => {
+    // The prompt UX (battery cost, staleness, hang risk) is driven by this
+    // third argument. Flipping `enableHighAccuracy` to true or removing the
+    // timeout changes the live behaviour materially, so pin all three.
+    const getCurrentPosition = vi.fn();
+    vi.stubGlobal("navigator", { geolocation: { getCurrentPosition } });
+
+    // Fire-and-forget — the spy never invokes either callback so the inner
+    // promise never settles. The Promise executor runs synchronously, so the
+    // spy has already been called by the time the next statement executes.
+    void resolveCurrentCoordinates();
+
+    expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+    expect(getCurrentPosition.mock.calls[0][2]).toEqual({
+      enableHighAccuracy: false,
+      timeout: 5000,
+      maximumAge: 60000,
+    });
+  });
+});
+
+const NOMINATIM_CACHE_KEY = "sutrapad-nominatim-cache";
+
+function createNominatimStorageMock(initial: Record<string, string> = {}): Storage {
+  const store = new Map<string, string>(Object.entries(initial));
+  return {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key: string) {
+      return store.get(key) ?? null;
+    },
+    key(index: number) {
+      return [...store.keys()][index] ?? null;
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+  };
+}
+
+interface BrowserStubOptions {
+  storage?: Storage;
+  languages?: readonly string[];
+  language?: string;
+  fetchImpl?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+}
+
+function stubReverseGeocodeGlobals(options: BrowserStubOptions = {}): {
+  storage: Storage;
+  fetchSpy: ReturnType<typeof vi.fn>;
+} {
+  const storage = options.storage ?? createNominatimStorageMock();
+  const fetchSpy = vi.fn(
+    options.fetchImpl ?? (async () => new Response("{}", { status: 200 })),
+  );
+  vi.stubGlobal("window", { localStorage: storage });
+  vi.stubGlobal("localStorage", storage);
+  vi.stubGlobal("navigator", {
+    languages: options.languages,
+    language: options.language,
+  });
+  vi.stubGlobal("fetch", fetchSpy);
+  return { storage, fetchSpy };
+}
+
+function readAcceptLanguage(init: RequestInit | undefined): string | undefined {
+  const headers = init?.headers as Record<string, string> | undefined;
+  return headers?.["Accept-Language"];
+}
+
+describe("reverseGeocodeCoordinates", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("calls Nominatim's reverse endpoint with the requested lat/lon and standard query params", async () => {
+    const { fetchSpy } = stubReverseGeocodeGlobals({
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ address: { city: "Prague" } }), {
+          status: 200,
+        }),
+    });
+
+    await reverseGeocodeCoordinates({ latitude: 50.0755, longitude: 14.4378 });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const url = String(fetchSpy.mock.calls[0][0]);
+    expect(url.startsWith("https://nominatim.openstreetmap.org/reverse?")).toBe(
+      true,
+    );
+    expect(url).toContain("format=jsonv2");
+    expect(url).toContain("zoom=16");
+    expect(url).toContain("addressdetails=1");
+    expect(url).toContain("lat=50.0755");
+    expect(url).toContain("lon=14.4378");
+  });
+
+  it("sends Accept-Language built from navigator.languages joined by comma", async () => {
+    const { fetchSpy } = stubReverseGeocodeGlobals({ languages: ["cs", "en-US"] });
+    await reverseGeocodeCoordinates({ latitude: 0, longitude: 0 });
+    expect(readAcceptLanguage(fetchSpy.mock.calls[0][1] as RequestInit)).toBe(
+      "cs,en-US",
+    );
+  });
+
+  it("falls back to navigator.language when navigator.languages is missing", async () => {
+    const { fetchSpy } = stubReverseGeocodeGlobals({ language: "cs-CZ" });
+    await reverseGeocodeCoordinates({ latitude: 0, longitude: 0 });
+    expect(readAcceptLanguage(fetchSpy.mock.calls[0][1] as RequestInit)).toBe(
+      "cs-CZ",
+    );
+  });
+
+  it("falls back to navigator.language when navigator.languages is an empty list", async () => {
+    // `[].join(",")` is `""` (falsy) — guards the `||` semantics on the
+    // first link of the Accept-Language chain, which an `&&` mutation would
+    // happily flip without this case.
+    const { fetchSpy } = stubReverseGeocodeGlobals({
+      languages: [],
+      language: "cs-CZ",
+    });
+    await reverseGeocodeCoordinates({ latitude: 0, longitude: 0 });
+    expect(readAcceptLanguage(fetchSpy.mock.calls[0][1] as RequestInit)).toBe(
+      "cs-CZ",
+    );
+  });
+
+  it("falls back to 'en' when neither navigator.languages nor navigator.language is set", async () => {
+    const { fetchSpy } = stubReverseGeocodeGlobals();
+    await reverseGeocodeCoordinates({ latitude: 0, longitude: 0 });
+    expect(readAcceptLanguage(fetchSpy.mock.calls[0][1] as RequestInit)).toBe(
+      "en",
+    );
+  });
+
+  it("returns null when the Nominatim response is not ok", async () => {
+    stubReverseGeocodeGlobals({
+      fetchImpl: async () => new Response("{}", { status: 500 }),
+    });
+    expect(
+      await reverseGeocodeCoordinates({ latitude: 0, longitude: 0 }),
+    ).toBeNull();
+  });
+
+  it("returns null when the response carries no usable place label", async () => {
+    stubReverseGeocodeGlobals({
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ address: {} }), { status: 200 }),
+    });
+    expect(
+      await reverseGeocodeCoordinates({ latitude: 0, longitude: 0 }),
+    ).toBeNull();
+  });
+
+  it("swallows fetch errors and returns null", async () => {
+    stubReverseGeocodeGlobals({
+      fetchImpl: async () => {
+        throw new Error("network down");
+      },
+    });
+    expect(
+      await reverseGeocodeCoordinates({ latitude: 0, longitude: 0 }),
+    ).toBeNull();
+  });
+
+  it("persists the resolved label and short-circuits a second call for the same coordinates", async () => {
+    const { fetchSpy, storage } = stubReverseGeocodeGlobals({
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ address: { city: "Prague" } }), {
+          status: 200,
+        }),
+    });
+
+    expect(
+      await reverseGeocodeCoordinates({ latitude: 50.0755, longitude: 14.4378 }),
+    ).toBe("Prague");
+    expect(
+      await reverseGeocodeCoordinates({ latitude: 50.0755, longitude: 14.4378 }),
+    ).toBe("Prague");
+
+    // One network call, one cache entry keyed at ~111 m precision
+    // (`toFixed(3)` on each axis). Asserting the persisted JSON shape pins
+    // both the saveNominatimCache wire-up and the cache key scheme — a
+    // mutant that flipped `toFixed(3)` to `toFixed(2)` (or dropped the
+    // save call entirely) would surface here.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const persisted = JSON.parse(
+      storage.getItem(NOMINATIM_CACHE_KEY) ?? "{}",
+    ) as Record<string, string>;
+    expect(persisted).toEqual({ "50.075,14.438": "Prague" });
+  });
+
+  it("treats coordinates that round to the same ~100 m bucket as a cache hit", async () => {
+    const { fetchSpy } = stubReverseGeocodeGlobals({
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ address: { city: "Prague" } }), {
+          status: 200,
+        }),
+    });
+
+    await reverseGeocodeCoordinates({ latitude: 50.0755, longitude: 14.4378 });
+    // Both axes round to the same `toFixed(3)` slot (`50.075,14.438`), so
+    // the second call must serve from cache without touching the network.
+    await reverseGeocodeCoordinates({ latitude: 50.0754, longitude: 14.4382 });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores a malformed cache entry and overwrites it on the next successful lookup", async () => {
+    const storage = createNominatimStorageMock({
+      [NOMINATIM_CACHE_KEY]: "{not-json",
+    });
+    const { fetchSpy } = stubReverseGeocodeGlobals({
+      storage,
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ address: { city: "Prague" } }), {
+          status: 200,
+        }),
+    });
+
+    expect(
+      await reverseGeocodeCoordinates({ latitude: 50.0755, longitude: 14.4378 }),
+    ).toBe("Prague");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(
+      JSON.parse(storage.getItem(NOMINATIM_CACHE_KEY) ?? "{}") as Record<
+        string,
+        string
+      >,
+    ).toEqual({ "50.075,14.438": "Prague" });
   });
 });

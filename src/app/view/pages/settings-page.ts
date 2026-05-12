@@ -13,8 +13,10 @@ export interface SettingsPageOptions {
   personaPreference: PersonaPreference;
   /**
    * Whether `+ Add` is allowed to call `getCurrentPosition` on note
-   * creation. Default off; user opts in via the toggle inside the
-   * Privacy card.
+   * creation. Tri-state: `"on"`, `"off"`, or `"unanswered"` for first-run
+   * users who haven't yet resolved the in-editor consent card. The
+   * toggle in this card surfaces explicit decisions only; when the
+   * preference is `"unanswered"` neither toggle option lights up.
    */
   captureLocationPreference: CaptureLocationPreference;
   profile: UserProfile | null;
@@ -204,9 +206,11 @@ interface LocationCaptureToggleOptions {
 /**
  * Radio-group toggle for the location-capture preference. Mirrors the
  * Persona card's two-button toggle so the visual language stays
- * consistent. Default ships off — the geolocation prompt should only
- * fire after the user deliberately switches the toggle on, not as a
- * side effect of clicking `+ Add` for the first time.
+ * consistent. Surfaces only the explicit `"on"` / `"off"` values —
+ * first-run users see the dedicated consent card inside the editor
+ * stage, and the preference flips into one of these two when they
+ * resolve it there. Once a decision has been made, this toggle is
+ * the surface for changing your mind.
  */
 function buildLocationCaptureToggle({
   captureLocationPreference,
@@ -223,7 +227,7 @@ function buildLocationCaptureToggle({
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
   hint.textContent =
-    "When on, creating a new note asks the browser for your current location and adds a place label. When off (default), the geolocation prompt is skipped and no coordinates are recorded for new notes. Existing notes keep whatever location they already have.";
+    "When on, creating a new note asks the browser for your current location and adds a place label. When off, the geolocation prompt is skipped and no coordinates are recorded for new notes. Existing notes keep whatever location they already have. First-run users see a consent card inside the editor before this toggle locks in.";
   wrapper.append(hint);
 
   const group = document.createElement("div");

@@ -102,6 +102,17 @@ export interface AppStateStore {
   readonly currentTheme$: Atom<ThemeChoice>;
   readonly personaPreference$: Atom<PersonaPreference>;
   readonly captureLocationPreference$: Atom<CaptureLocationPreference>;
+  /**
+   * Transient flag set when the user clicked "Allow" on the consent
+   * card but the browser's site-permission for geolocation is
+   * `"denied"`. The card swaps to a "browser blocks location → open
+   * site settings" message instead of firing `getCurrentPosition`
+   * (which would reject immediately and look like the click did
+   * nothing). Pure in-memory state: not persisted to localStorage,
+   * resets to `false` on page reload so the user gets the Allow /
+   * Not now card back if they fix their browser settings.
+   */
+  readonly locationConsentBlocked$: Atom<boolean>;
   readonly tasksFilter$: Atom<TasksFilterId>;
   readonly tasksShowDone$: Atom<boolean>;
   readonly tasksOneThingKey$: Atom<string | null>;
@@ -128,6 +139,7 @@ export interface AppStateStore {
   setCurrentTheme(next: ThemeChoice): void;
   setPersonaPreference(next: PersonaPreference): void;
   setCaptureLocationPreference(next: CaptureLocationPreference): void;
+  setLocationConsentBlocked(next: boolean): void;
   setTasksFilter(next: TasksFilterId): void;
   setTasksShowDone(next: boolean): void;
   setTasksOneThingKey(next: string | null): void;
@@ -204,6 +216,11 @@ export function createAppStateStore({
   const captureLocationPreference$ = atom<CaptureLocationPreference>(
     resolveInitialCaptureLocationPreference(),
   );
+  // No persist subscriber: this flag is purely runtime UI state for
+  // the consent card. Reload returns the user to the Allow / Not now
+  // panel — appropriate, because they may have just fixed their
+  // browser permission and want to retry.
+  const locationConsentBlocked$ = atom(false);
   const tasksFilter$ = atom<TasksFilterId>("all");
   const tasksShowDone$ = atom(false);
   const tasksOneThingKey$ = atom<string | null>(null);
@@ -253,6 +270,7 @@ export function createAppStateStore({
     currentTheme$,
     personaPreference$,
     captureLocationPreference$,
+    locationConsentBlocked$,
     tasksFilter$,
     tasksShowDone$,
     tasksOneThingKey$,
@@ -276,6 +294,7 @@ export function createAppStateStore({
     setPersonaPreference: (next) => personaPreference$.set(next),
     setCaptureLocationPreference: (next) =>
       captureLocationPreference$.set(next),
+    setLocationConsentBlocked: (next) => locationConsentBlocked$.set(next),
     setTasksFilter: (next) => tasksFilter$.set(next),
     setTasksShowDone: (next) => tasksShowDone$.set(next),
     setTasksOneThingKey: (next) => tasksOneThingKey$.set(next),
@@ -308,6 +327,7 @@ export function createAppStateStore({
       currentTheme$,
       personaPreference$,
       captureLocationPreference$,
+      locationConsentBlocked$,
     ],
     dispose: () => {
       for (const off of disposers) off();

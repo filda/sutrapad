@@ -30,6 +30,7 @@ const config = {
     // and are deferred until they get focused tests.
     "src/app/lifecycle/palette.ts",
     "src/app/lifecycle/focus-refresh.ts",
+    "src/app/lifecycle/run-location-backfill.ts",
 
     // View modules with dedicated happy-dom tests. Each file below has
     // a `tests/<name>.test.ts` whose `// @vitest-environment happy-dom`
@@ -41,6 +42,7 @@ const config = {
     "src/app/view/pages/privacy-page.ts",
     "src/app/view/pages/tasks-page.ts",
     "src/app/view/shared/link-thumb.ts",
+    "src/app/view/shared/location-consent-card.ts",
     "src/app/view/shared/notes-list.ts",
     "src/app/view/shared/tag-input.ts",
 

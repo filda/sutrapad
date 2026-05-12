@@ -50,11 +50,14 @@ export interface NewNoteHandlerOptions {
   /**
    * Reads the live capture-location preference. Called at the moment
    * the async backfill kicks off (not at handler-construction time)
-   * so toggling the Settings switch takes effect on the very next
-   * `+ Add`. When `"off"`, the geolocation prompt is suppressed —
-   * `generateFreshNoteDetails` is run with a no-op coordinates
-   * resolver so the rest of the title / capture-context backfill
-   * still happens, just without a place label.
+   * so toggling the Settings switch — or the consent card flipping
+   * `"unanswered"` to `"on"` — takes effect on the very next `+ Add`.
+   * Anything other than `"on"` (so both `"off"` and `"unanswered"`)
+   * suppresses the geolocation prompt: `generateFreshNoteDetails` is
+   * run with a no-op coordinates resolver so the rest of the title /
+   * capture-context backfill still happens, just without a place
+   * label. The consent card takes over the "ask the user for
+   * location" job in the `"unanswered"` branch.
    */
   getCaptureLocationPreference: () => CaptureLocationPreference;
 }

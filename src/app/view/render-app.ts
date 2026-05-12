@@ -33,6 +33,8 @@ import { buildLexiconPage } from "./pages/lexicon-page";
 import { buildSiteFooter } from "./chrome/site-footer";
 import { buildDetailTopbar } from "./shared/detail-topbar";
 import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
+import { buildLocationConsentCard } from "./shared/location-consent-card";
+import { requiresLocationConsent } from "../logic/capture-location";
 import { buildEditorSidebar } from "./shared/editor-sidebar";
 import { formatLastChange } from "../logic/editor-sync-crumb";
 import type { SyncState } from "../session/workspace-sync";
@@ -93,10 +95,18 @@ interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   /**
    * Whether `+ Add` (and other fresh-note paths) is allowed to call
    * `getCurrentPosition` to enrich the new note with a place label.
-   * Device-local, default off so the geolocation prompt only appears
-   * after a deliberate opt-in via Settings → Privacy.
+   * Tri-state: `"on"` opts in, `"off"` opts out, `"unanswered"` (the
+   * default) suppresses the prompt and surfaces the in-app consent
+   * card in the editor stage.
    */
   captureLocationPreference: CaptureLocationPreference;
+  /**
+   * Transient flag — true after the user clicked "Allow" but the
+   * browser's geolocation site-permission is `"denied"`. Swaps the
+   * consent card into its blocked panel so we don't fire a doomed
+   * `getCurrentPosition`. Resets on reload.
+   */
+  locationConsentBlocked: boolean;
   onSelectMenuItem: (id: MenuItemId) => void;
   onSignIn: () => void;
   onLoadNotebook: () => void;
@@ -109,6 +119,17 @@ interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   onChangeCaptureLocationPreference: (
     preference: CaptureLocationPreference,
   ) => void;
+  /**
+   * Consent card "Allow" handler. Pre-checks the browser's
+   * geolocation permission, then either flips the blocked flag (when
+   * the site is denied at the browser level) or sets the preference
+   * to `"on"` and runs the second-pass backfill on the active draft.
+   */
+  onAllowLocationCapture: () => void;
+  /**
+   * Consent card "Not now" handler. Sets the preference to `"off"`.
+   */
+  onDenyLocationCapture: () => void;
   onChangeFilterMode: (mode: SutraPadTagFilterMode) => void;
   /**
    * Removes a single active filter — hooked up to the `×` affordance inside
@@ -256,11 +277,14 @@ export function renderAppPage({
   currentTheme,
   personaPreference,
   captureLocationPreference,
+  locationConsentBlocked,
   onSelectMenuItem,
   onToggleTask,
   onChangeTheme,
   onChangePersonaPreference,
   onChangeCaptureLocationPreference,
+  onAllowLocationCapture,
+  onDenyLocationCapture,
   onOpenPalette,
   onApplyTagFilter,
   onOpenCapture,
@@ -560,6 +584,14 @@ export function renderAppPage({
   // would just display tag UI for some unrelated note, so skip it.
   const showSidebar = !(note === null && selectedTagFilters.length > 0);
 
+  appendLocationConsentCardIfNeeded(editorStage, {
+    captureLocationPreference,
+    locationConsentBlocked,
+    onAllowLocationCapture,
+    onDenyLocationCapture,
+    onSelectMenuItem,
+  });
+
   editorStage.append(
     buildEditorCard({
       note,
@@ -585,4 +617,61 @@ export function renderAppPage({
 
   page.append(editorStage);
   finalize();
+}
+
+interface LocationConsentCardSlotOptions {
+  captureLocationPreference: CaptureLocationPreference;
+  locationConsentBlocked: boolean;
+  onAllowLocationCapture: () => void;
+  onDenyLocationCapture: () => void;
+  onSelectMenuItem: (id: MenuItemId) => void;
+}
+
+/**
+ * Appends the in-editor consent card to the editor stage when it
+ * needs to be visible. The card sits above the editor in the same
+ * column so it reads as part of the writing surface, not chrome.
+ *
+ * Three shown / hidden states map directly from the preference plus
+ * the transient blocked flag:
+ *
+ *   - preference `"unanswered"` + not blocked → idle card (Allow /
+ *     Not now / Privacy).
+ *   - blocked is true (regardless of preference) → blocked panel
+ *     ("Your browser is blocking location" + Privacy link). The
+ *     consent flow can only land here after the user clicked Allow,
+ *     so the preference is still `"unanswered"` at this point — but
+ *     the blocked flag wins the precedence test either way.
+ *   - preference `"on"` or `"off"` AND not blocked → card hidden.
+ *     The user has made an explicit decision; Settings is the
+ *     surface for changing it.
+ *
+ * Extracted out of `renderAppPage` to keep that function under the
+ * `complexity` cap; the three-way state mapping is also easier to
+ * read isolated than inlined into the editor-stage build.
+ */
+function appendLocationConsentCardIfNeeded(
+  editorStage: HTMLElement,
+  {
+    captureLocationPreference,
+    locationConsentBlocked,
+    onAllowLocationCapture,
+    onDenyLocationCapture,
+    onSelectMenuItem,
+  }: LocationConsentCardSlotOptions,
+): void {
+  if (
+    !requiresLocationConsent(captureLocationPreference) &&
+    !locationConsentBlocked
+  ) {
+    return;
+  }
+  editorStage.append(
+    buildLocationConsentCard({
+      status: locationConsentBlocked ? "blocked" : "idle",
+      onAllow: onAllowLocationCapture,
+      onDeny: onDenyLocationCapture,
+      onSelectMenuItem,
+    }),
+  );
 }

@@ -20,6 +20,7 @@ import {
   readUrlCapture,
   resolveTitleFromUrl,
   resolveCurrentCoordinates,
+  type Coordinates,
 } from "../../lib/url-capture";
 import {
   buildSilentCaptureBody,
@@ -28,16 +29,36 @@ import {
 import { collectNoteCaptureDetails, generateFreshNoteDetails } from "../capture/fresh-note";
 import type { SutraPadWorkspace } from "../../types";
 
+export interface CaptureImportOptions {
+  /**
+   * Injected coordinates resolver. Defaults to the real
+   * `resolveCurrentCoordinates` (which calls `getCurrentPosition`).
+   * The wiring layer in `app.ts` swaps in `async () => null` when the
+   * capture-location preference is anything other than `"on"`, so
+   * `"unanswered"` and `"off"` users never see a geolocation prompt
+   * inside the bookmarklet / URL-capture flow. The prompt is reserved
+   * for `+ Add` inside the main app, where the consent card frames
+   * it; popping it from a capture iframe with no context would be
+   * worse UX than silently skipping location.
+   */
+  readonly resolveCoordinates?: () => Promise<Coordinates | null>;
+}
+
 export async function captureIncomingWorkspaceFromUrl(
   workspace: SutraPadWorkspace,
+  options: CaptureImportOptions = {},
 ): Promise<SutraPadWorkspace> {
+  const resolveCoordinates =
+    options.resolveCoordinates ?? resolveCurrentCoordinates;
+
   const notePayload = readNoteCapture(window.location.href);
   if (notePayload) {
     const { title, location, coordinates, captureContext } = await generateFreshNoteDetails(
       new Date(),
-      resolveCurrentCoordinates,
+      resolveCoordinates,
       reverseGeocodeCoordinates,
-      async (options) => collectCaptureContext({ ...options, source: "text-capture" }),
+      async (contextOptions) =>
+        collectCaptureContext({ ...contextOptions, source: "text-capture" }),
     );
 
     return createTextNoteWorkspace(workspace, {
@@ -61,7 +82,7 @@ export async function captureIncomingWorkspaceFromUrl(
   const { captureContext } = await collectNoteCaptureDetails({
     source: "url-capture",
     now: new Date(),
-    resolveCoordinates: resolveCurrentCoordinates,
+    resolveCoordinates,
     reverseGeocode: reverseGeocodeCoordinates,
     captureContextBuilder: collectCaptureContext,
     sourceSnapshot: urlPayload.captureContext,

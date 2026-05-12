@@ -40,6 +40,8 @@ import { handleNewNoteCreation } from "./app/lifecycle/handle-new-note";
 import { wirePaletteAccess } from "./app/lifecycle/palette";
 import { wireKeyboardShortcuts } from "./app/lifecycle/keyboard-shortcuts";
 import { captureIncomingWorkspaceFromUrl } from "./app/lifecycle/capture-import";
+import { isLocationCaptureEnabled } from "./app/logic/capture-location";
+import { resolveCurrentCoordinates } from "./lib/url-capture";
 import {
   createBrowserFocusRefreshEnvironment,
   createFocusRefreshCoordinator,
@@ -161,6 +163,7 @@ export function createApp(root: HTMLElement): void {
     currentTheme$,
     personaPreference$,
     captureLocationPreference$,
+    locationConsentBlocked$,
     tasksFilter$,
     tasksShowDone$,
     tasksOneThingKey$,
@@ -184,6 +187,7 @@ export function createApp(root: HTMLElement): void {
   const setCurrentThemeState = store.setCurrentTheme;
   const setPersonaPreferenceState = store.setPersonaPreference;
   const setCaptureLocationPreferenceState = store.setCaptureLocationPreference;
+  const setLocationConsentBlockedState = store.setLocationConsentBlocked;
   const setTasksFilterState = store.setTasksFilter;
   const setTasksShowDoneState = store.setTasksShowDone;
   const setTasksOneThingKeyState = store.setTasksOneThingKey;
@@ -560,6 +564,7 @@ export function createApp(root: HTMLElement): void {
         setCurrentTheme: setCurrentThemeState,
         setPersonaPreference: setPersonaPreferenceState,
         setCaptureLocationPreference: setCaptureLocationPreferenceState,
+        setLocationConsentBlocked: setLocationConsentBlockedState,
         handleNewNote,
         purgeEmptyDraftNotes,
         loadWorkspace,
@@ -608,6 +613,7 @@ export function createApp(root: HTMLElement): void {
         currentTheme: currentTheme$.get(),
         personaPreference: personaPreference$.get(),
         captureLocationPreference: captureLocationPreference$.get(),
+        locationConsentBlocked: locationConsentBlocked$.get(),
         onOpenPalette: () => paletteAccess$.get()?.open(),
         getAccessToken: () => auth.getAccessToken(),
         ...callbacks,
@@ -757,7 +763,21 @@ export function createApp(root: HTMLElement): void {
 
   void runAppBootstrap({
     auth,
-    captureIncomingWorkspaceFromUrl,
+    // Gate the bookmarklet / URL-capture flow on the same consent
+    // preference the main `+ Add` path reads. Read at call time (not
+    // at wire time) so a `localStorage` change between modules sees
+    // the freshest value. `"unanswered"` and `"off"` both fall to the
+    // null resolver — bookmarklet captures never pop a geolocation
+    // prompt inside the capture iframe; the user resolves the
+    // consent the next time they open the main app.
+    captureIncomingWorkspaceFromUrl: (workspace) =>
+      captureIncomingWorkspaceFromUrl(workspace, {
+        resolveCoordinates: isLocationCaptureEnabled(
+          captureLocationPreference$.get(),
+        )
+          ? resolveCurrentCoordinates
+          : async () => null,
+      }),
     getWorkspace: () => workspace$.get(),
     setWorkspace: setWorkspaceState,
     setProfile: setProfileState,
