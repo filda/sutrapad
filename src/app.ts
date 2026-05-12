@@ -1,5 +1,8 @@
 import { GoogleAuthService } from "./services/google-auth";
-import { GoogleDriveStore } from "./services/drive-store";
+import {
+  GoogleDrivePreferencesStore,
+  GoogleDriveStore,
+} from "./services/drive-store";
 import {
   buildCombinedTagIndex,
   stripEmptyDraftNotes,
@@ -22,6 +25,7 @@ import {
 import { runAppBootstrap } from "./app/session/session";
 import type { AuthRetryContext } from "./app/session/auth-retry";
 import { createWorkspaceIO } from "./app/session/workspace-io";
+import { createPreferencesIO } from "./app/session/preferences-io";
 import { persistLocalWorkspace } from "./app/storage/local-workspace";
 import { renderAppPage } from "./app/view/render-app";
 import { syncPillLabel } from "./app/view/chrome/topbar";
@@ -660,6 +664,19 @@ export function createApp(root: HTMLElement): void {
     return new GoogleDriveStore(token);
   };
 
+  // Preferences store returns null instead of throwing when signed out
+  // so the IO layer can treat sign-in state as a soft gate (no-op
+  // schedule / load) rather than a hard error. `getStore` throws for
+  // the workspace path because every call site there is gated on
+  // `profile$` upstream; the preferences path is fired from the
+  // dismissed-tag-aliases atom subscriber, which runs regardless of
+  // sign-in state.
+  const getPreferencesStore = (): GoogleDrivePreferencesStore | null => {
+    const token = auth.getAccessToken();
+    if (!token) return null;
+    return new GoogleDrivePreferencesStore(token);
+  };
+
   const retryContext: AuthRetryContext = {
     refreshSession: () => auth.refreshSession(),
     onProfileRefreshed: (refreshedProfile) => {
@@ -668,22 +685,53 @@ export function createApp(root: HTMLElement): void {
   };
 
   const {
-    loadWorkspace,
-    saveWorkspace,
-    restoreWorkspaceAfterSignIn,
-    refreshWorkspace,
-  } = createWorkspaceIO({
-      getStore,
-      retryContext,
-      getWorkspace: () => workspace$.get(),
-      setWorkspace: (workspace) => withRenderSuppressed(() => setWorkspaceState(workspace)),
-      persistLocalWorkspace,
-      setSyncState: (syncState) => withRenderSuppressed(() => setSyncStateValue(syncState)),
-      setLastError: (lastError) => withRenderSuppressed(() => setLastErrorValue(lastError)),
-      render,
-      refreshStatus,
-      cancelAutoSave,
-    });
+    loadPreferences,
+    schedulePreferencesSave,
+    cancelPreferencesSave,
+  } = createPreferencesIO({
+    getPreferencesStore,
+    retryContext,
+    getDismissedTagAliases: () => dismissedTagAliases$.get(),
+    setDismissedTagAliases: (next) =>
+      withRenderSuppressed(() => setDismissedTagAliasesState(next)),
+    getProfile: () => profile$.get(),
+  });
+
+  // Push dismissed-pair changes to Drive (debounced). Subscribed once;
+  // the IO layer owns the signed-in / clean-snapshot guards so this
+  // wiring stays a one-liner. localStorage persistence keeps running
+  // via its own subscriber registered inside the store.
+  const disposePreferencesAutosave = dismissedTagAliases$.subscribe(() => {
+    schedulePreferencesSave();
+  });
+
+  const workspaceIO = createWorkspaceIO({
+    getStore,
+    retryContext,
+    getWorkspace: () => workspace$.get(),
+    setWorkspace: (workspace) => withRenderSuppressed(() => setWorkspaceState(workspace)),
+    persistLocalWorkspace,
+    setSyncState: (syncState) => withRenderSuppressed(() => setSyncStateValue(syncState)),
+    setLastError: (lastError) => withRenderSuppressed(() => setLastErrorValue(lastError)),
+    render,
+    refreshStatus,
+    cancelAutoSave,
+  });
+
+  // Compose the two IO concerns: every successful Drive workspace
+  // load / sign-in restore also pulls the preferences file. We do
+  // this at the app-wiring layer (rather than threading a callback
+  // into `createWorkspaceIO`) so the workspace IO stays focused on
+  // the notebook concern and the composition is visible at a glance.
+  const loadWorkspace = async (): Promise<void> => {
+    await workspaceIO.loadWorkspace();
+    await loadPreferences();
+  };
+  const restoreWorkspaceAfterSignIn = async (): Promise<void> => {
+    await workspaceIO.restoreWorkspaceAfterSignIn();
+    await loadPreferences();
+  };
+  const { saveWorkspace, refreshWorkspace } = workspaceIO;
 
   // Focus / visibility-driven cross-device refresh. The gate captures
   // every reason we must NOT auto-refresh in the background:
@@ -756,6 +804,8 @@ export function createApp(root: HTMLElement): void {
       paletteAccess$.get()?.dispose();
       disposeKeyboardShortcuts();
       focusRefresh.stop();
+      disposePreferencesAutosave();
+      cancelPreferencesSave();
       for (const dispose of disposeRenderSubscriptions) dispose();
       store.dispose();
     });

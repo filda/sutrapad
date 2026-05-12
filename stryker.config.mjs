@@ -22,6 +22,7 @@ const config = {
     "src/services/google-auth.ts",
     "src/services/drive-store.ts",
     "src/services/drive/client.ts",
+    "src/services/drive/preferences-store.ts",
     "src/services/drive/workspace-store.ts",
 
     // Lifecycle wiring with a dedicated test (`lifecycle-palette`).

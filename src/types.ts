@@ -224,6 +224,30 @@ export interface SutraPadWorkspace {
   activeNoteId: string | null;
 }
 
+/**
+ * Cross-device, user-level preferences synced via Google Drive.
+ *
+ * Lives in a dedicated `sutrapad-preferences.json` file in the SutraPad
+ * folder rather than inside the workspace or head, so additions here
+ * don't have to ride the workspace save path (which is hot and
+ * note-shaped) and so preferences round-trip independently of the
+ * note inventory.
+ *
+ * Currently the only field is `dismissedTagAliases` — the pair keys
+ * the user has explicitly marked "Keep separate" on the Settings → Tag
+ * hygiene card. Listed sorted on write so the on-disk form is stable
+ * across toggles.
+ *
+ * Conflict policy is last-write-wins, matching the workspace: the
+ * Drive copy is the source of truth on load. Local localStorage stays
+ * as an offline cache.
+ */
+export interface SutraPadPreferences {
+  version: 1;
+  savedAt: string;
+  dismissedTagAliases: string[];
+}
+
 export interface UserProfile {
   name: string;
   email: string;

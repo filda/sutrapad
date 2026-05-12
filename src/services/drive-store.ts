@@ -21,3 +21,4 @@ export {
   isAuthExpiredError,
 } from "./drive/client";
 export { GoogleDriveStore } from "./drive/workspace-store";
+export { GoogleDrivePreferencesStore } from "./drive/preferences-store";
