@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildLocationConsentCard } from "../src/app/view/shared/location-consent-card";
 
@@ -158,3 +160,81 @@ describe("buildLocationConsentCard", () => {
     expect(blocked.getAttribute("data-consent-status")).toBe("blocked");
   });
 });
+
+/*
+ * Regression for the "rozsypaný" detail page bug. `.editor-stage` is a
+ * two-column grid (`minmax(0, 1fr) 340px`). When the consent card is
+ * appended as a sibling of the editor card and the sidebar, CSS grid
+ * auto-place puts the consent card in col 1 and the editor card in col
+ * 2 — shoving the editor into the 340 px sidebar slot and pushing the
+ * actual sidebar onto row 2. The fix is a CSS rule that spans the
+ * consent card across both columns. The test reads styles.css directly
+ * because happy-dom doesn't compute grid placement (so a DOM-level
+ * `getComputedStyle` check would silently pass before the fix as well).
+ */
+describe("editor-stage layout for the consent card", () => {
+  // happy-dom rewrites globals enough that `readFile(new URL(..., import.meta.url))`
+  // rejects with "URL must be of scheme file" — `import.meta.url` lands as an
+  // http: URL inside the synthetic document. Resolve against `process.cwd()`
+  // (= project root under vitest) so the read works regardless of the test
+  // environment's URL contract.
+  const stylesheetPath = resolve("src/styles.css");
+
+  it("makes the consent card span both columns of the detail grid", async () => {
+    const css = await readFile(stylesheetPath, "utf-8");
+    // Slice the matching rule body, then assert the column-spanning
+    // declaration is present inside it. Regex over the whole file would
+    // produce a passing match even if the declaration drifted into a
+    // sibling rule.
+    const ruleBody = extractRuleBody(
+      css,
+      ".editor-stage > .location-consent-card",
+    );
+    expect(ruleBody).not.toBeNull();
+    // `1 / -1` is the canonical "span every column" shorthand. Pin the
+    // exact form so a future drift to `1 / span 2` (which silently
+    // breaks the 1-column mobile layout under `@media (max-width: 900px)`
+    // where the grid drops to a single column) gets caught.
+    expect(ruleBody).toMatch(/grid-column:\s*1\s*\/\s*-1/);
+  });
+
+  it("ships a styled .location-consent-card surface so the section isn't unstyled HTML", () => {
+    // Before this fix shipped the class only existed on the DOM element
+    // — no matching rule in the stylesheet meant the section rendered
+    // with default browser margins and no border / padding. Pin the
+    // baseline presence of the rule + its core surface declarations so
+    // a future cleanup that nukes the rule (thinking it's dead) gets
+    // caught.
+    return readFile(stylesheetPath, "utf-8").then((css) => {
+      const ruleBody = extractRuleBody(css, ".location-consent-card");
+      expect(ruleBody).not.toBeNull();
+      // Three baseline declarations that turn the bare <section> into
+      // an actual card surface. We don't pin the exact values (those
+      // can drift with design tweaks), only that the property names
+      // are present.
+      expect(ruleBody).toMatch(/padding\s*:/);
+      expect(ruleBody).toMatch(/border\s*:/);
+      expect(ruleBody).toMatch(/background\s*:/);
+    });
+  });
+});
+
+/**
+ * Finds the body of the first CSS rule whose selector list equals
+ * `selector`. Returns null when no rule matches. Naive — assumes no
+ * nested `{ }` inside the rule body, which is true for the surface
+ * declarations under test. Lifted into a helper so both tests above
+ * read the same way and a future fourth-test addition can reuse it.
+ */
+function extractRuleBody(css: string, selector: string): string | null {
+  // Escape regex metacharacters in the selector so `.`, `>`, `(`, etc.
+  // are treated literally. The selector we care about contains `.` and
+  // `>`, both of which are regex-meta.
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    String.raw`(?:^|\}|\*\/|\n)\s*` + escaped + String.raw`\s*\{([^}]*)\}`,
+    "m",
+  );
+  const match = pattern.exec(css);
+  return match === null ? null : match[1];
+}

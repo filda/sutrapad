@@ -34,24 +34,39 @@ export interface LinkThumbOptions {
    */
   notes: readonly SutraPadDocument[];
   resolver: OgImageResolver;
+  /**
+   * Optional override for the gradient hue seed. The Notes and Tasks
+   * grids compute a per-note seed (`pickNoteThumbSeed` in
+   * `link-thumb-seed.ts`) so two cards from the same domain can still
+   * wear different hues when their tags differ. Links page omits this
+   * because its "one card per URL" model wants hostname-based grouping.
+   * When omitted the seed falls back to hostname/url, matching the
+   * pre-metadata-seed behaviour.
+   */
+  gradientSeed?: string;
 }
 
 export function buildLinkThumb({
   url,
   notes,
   resolver,
+  gradientSeed,
 }: LinkThumbOptions): HTMLElement {
   const thumb = document.createElement("div");
   thumb.className = "link-thumb";
 
-  // Fall back to a neutral seed when the card has no URL: keeps the
-  // gradient deterministic across renders without leaning on `Math.random`,
-  // and the same note id always produces the same hue if the caller
-  // wants to thread one in later. For now we stamp a single seed so
-  // every URL-less card reads as the same calm placeholder; persona
-  // colours layer on top via `applyPersonaStyles` on the parent card.
+  // Seed priority:
+  //   1. caller-supplied `gradientSeed` — Notes/Tasks plumb a per-note
+  //      seed derived from tags / hostname / note.id so cards on a
+  //      dense grid don't all collapse into the one shared `"sutrapad"`
+  //      olive hue that the URL-less branch produced.
+  //   2. hostname — preserved for the Links page (one card per URL).
+  //   3. raw `url` string — defensive guard for malformed URLs where
+  //      hostname parsing fails; still better than the literal fallback.
+  //   4. literal `"sutrapad"` — last-resort. Stable across renders so
+  //      a card that somehow lands here doesn't shimmer between paints.
   const hostname = url === null ? null : deriveLinkHostname(url);
-  const hueSeed = hostname ?? url ?? "sutrapad";
+  const hueSeed = gradientSeed ?? hostname ?? url ?? "sutrapad";
   const hue = hashStringToHue(hueSeed);
   // Two-colour diagonal gradient + a subtle diagonal stripe overlay
   // (handoff: screen_rest.jsx → `.link-thumb`). Inline because the hue
@@ -61,7 +76,20 @@ export function buildLinkThumb({
   // round-trips through browsers and test environments — the shorthand
   // parser in happy-dom collapses multi-gradient values, which would
   // hide the second hue from any DOM-level assertion.
-  thumb.style.backgroundImage = `linear-gradient(135deg, hsl(${hue} 42% 52%), hsl(${(hue + 40) % 360} 60% 38%)), repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 6px, transparent 6px 12px)`;
+  //
+  // Curve tuned 2026-05-12 (second pass): dropped back into the paper
+  // register so the band reads as "tinted paper" rather than a saturated
+  // stamp glued on top of the persona body. Stop 1 lands at `35% 75%`
+  // (light pastel — top edge of the band, fades into the paper-ish
+  // hairline boundary), stop 2 at `55% 50%` (mid saturation, mid
+  // lightness — the bottom edge where the domain chip needs enough
+  // contrast for its white-on-text-shadow legibility). The earlier
+  // 65%/72% saturation lift solved the muddy-olive problem but
+  // overshot into "glaring"; this pass keeps the per-tag hue variety
+  // while pulling the chroma down so warm-paper bodies (cream/tan)
+  // and cool-paper bodies (night grey) both stay in the same family
+  // as the band sitting on top of them.
+  thumb.style.backgroundImage = `linear-gradient(135deg, hsl(${hue} 35% 75%), hsl(${(hue + 40) % 360} 55% 50%)), repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 6px, transparent 6px 12px)`;
 
   if (hostname !== null) {
     const domainLabel = document.createElement("span");

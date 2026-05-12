@@ -133,18 +133,53 @@ describe("buildLinkThumb", () => {
     expect(thumb.classList.contains("link-thumb")).toBe(true);
   });
 
-  it("seeds the gradient from a stable fallback string when neither url nor hostname is present", () => {
+  it("seeds the gradient from a stable fallback string when neither url, hostname, nor gradientSeed is present", () => {
     // Without a deterministic seed every URL-less card would randomise a
     // hue and the grid would shimmer between renders. The fallback string
     // is `"sutrapad"` — pin its hash so a future tweak that loses the
-    // fallback (or swaps it) gets caught.
+    // fallback (or swaps it) gets caught. Notes/Tasks callers usually
+    // supply `gradientSeed`, but the Links page and any caller without
+    // a per-note seed still hits this branch.
     const thumb = buildLinkThumb({
       url: null,
       notes: [],
       resolver: NOOP_RESOLVER,
     });
     const expected = hashStringToHue("sutrapad");
-    expect(thumb.style.backgroundImage).toContain(`hsl(${expected} 42% 52%)`);
+    expect(thumb.style.backgroundImage).toContain(`hsl(${expected} 35% 75%)`);
+  });
+
+  it("uses caller-supplied gradientSeed in preference to the URL/hostname-derived seed", () => {
+    // The Notes/Tasks grids pass a per-note seed (`pickNoteThumbSeed`)
+    // so two cards from the same domain can still wear different hues
+    // when their tags differ. The override has to win over `hostname`
+    // — otherwise the seed-priority chain inside the picker is moot.
+    const thumb = buildLinkThumb({
+      url: "https://www.nytimes.com/article",
+      notes: [],
+      resolver: NOOP_RESOLVER,
+      gradientSeed: "trek",
+    });
+    const expected = hashStringToHue("trek");
+    expect(thumb.style.backgroundImage).toContain(`hsl(${expected} 35% 75%)`);
+    // Sanity: the hostname-derived hue must NOT appear, otherwise the
+    // override was silently ignored.
+    const hostnameHue = hashStringToHue("nytimes.com");
+    expect(thumb.style.backgroundImage).not.toContain(`hsl(${hostnameHue} 35% 75%)`);
+  });
+
+  it("uses caller-supplied gradientSeed even when no URL is present", () => {
+    // The hand-typed branch — the common case on the Notes grid.
+    // Pins that an explicit seed overrides the literal `"sutrapad"`
+    // fallback path too.
+    const thumb = buildLinkThumb({
+      url: null,
+      notes: [],
+      resolver: NOOP_RESOLVER,
+      gradientSeed: "ai",
+    });
+    const expected = hashStringToHue("ai");
+    expect(thumb.style.backgroundImage).toContain(`hsl(${expected} 35% 75%)`);
   });
 
   it("computes the second gradient stop as `(hue + 40) % 360` so the two stops always fall under 360°", () => {
@@ -162,11 +197,11 @@ describe("buildLinkThumb", () => {
     });
     const hue = hashStringToHue("nytimes.com");
     const second = (hue + 40) % 360;
-    expect(thumb.style.backgroundImage).toContain(`hsl(${hue} 42% 52%)`);
-    expect(thumb.style.backgroundImage).toContain(`hsl(${second} 60% 38%)`);
+    expect(thumb.style.backgroundImage).toContain(`hsl(${hue} 35% 75%)`);
+    expect(thumb.style.backgroundImage).toContain(`hsl(${second} 55% 50%)`);
     // Sanity: `hue - 40` would be a different number, and `(hue + 40) * 360`
     // would explode out of any HSL-range value.
-    expect(thumb.style.backgroundImage).not.toContain(`hsl(${hue - 40} 60% 38%)`);
+    expect(thumb.style.backgroundImage).not.toContain(`hsl(${hue - 40} 55% 50%)`);
   });
 
   it("paints the og:image into background-image / size / position and stamps `has-og-image` once the probe loads", async () => {

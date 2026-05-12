@@ -50,6 +50,11 @@ import {
   createBrowserFocusRefreshEnvironment,
   createFocusRefreshCoordinator,
 } from "./app/lifecycle/focus-refresh";
+import { loadOgImageCache } from "./app/logic/og-image-cache";
+import {
+  planOgImagePrewarm,
+  runOgImagePrewarm,
+} from "./app/logic/og-image-prewarm";
 import type { PaletteAccess as ExtractedPaletteAccess } from "./app/view/palette-types";
 
 export { generateFreshNoteDetails } from "./app/capture/fresh-note";
@@ -718,6 +723,24 @@ export function createApp(root: HTMLElement): void {
     cancelAutoSave,
   });
 
+  // Fire-and-forget prewarm of the og:image cache. Walks every note
+  // whose primary URL isn't yet cached and runs the existing resolver
+  // pipeline in parallel so a card grid painted right after this fires
+  // already has its og:images on the first paint instead of waiting
+  // for per-card allorigins round-trips. Lazy resolution still kicks
+  // in for URLs the user types in *after* load.
+  const scheduleOgImagePrewarm = (): void => {
+    const targets = planOgImagePrewarm(
+      workspace$.get().notes,
+      loadOgImageCache(),
+    );
+    if (targets.length === 0) return;
+    // No await — the load path doesn't care when the prewarm finishes,
+    // only that it has started. Cache writes happen incrementally so a
+    // page render mid-prewarm sees partial-but-monotonic warming.
+    void runOgImagePrewarm(targets);
+  };
+
   // Compose the two IO concerns: every successful Drive workspace
   // load / sign-in restore also pulls the preferences file. We do
   // this at the app-wiring layer (rather than threading a callback
@@ -726,10 +749,12 @@ export function createApp(root: HTMLElement): void {
   const loadWorkspace = async (): Promise<void> => {
     await workspaceIO.loadWorkspace();
     await loadPreferences();
+    scheduleOgImagePrewarm();
   };
   const restoreWorkspaceAfterSignIn = async (): Promise<void> => {
     await workspaceIO.restoreWorkspaceAfterSignIn();
     await loadPreferences();
+    scheduleOgImagePrewarm();
   };
   const { saveWorkspace, refreshWorkspace } = workspaceIO;
 

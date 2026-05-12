@@ -14,6 +14,7 @@ import {
   type EnrichedTask,
   type TasksFilterId,
 } from "../../logic/tasks-filter";
+import { pickNoteThumbSeed } from "../../logic/link-thumb-seed";
 import { deriveNotePrimaryUrl } from "../../logic/note-primary-url";
 import { createOgImageResolver } from "../../logic/og-image-resolver";
 import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
@@ -487,12 +488,16 @@ function buildTaskCard(
   // Thumb header — same shape as the Links page, fed off the source
   // note's primary URL. URL-less notes still render the gradient (no
   // domain chip) so the visual rhythm of the grid stays consistent.
+  // `gradientSeed` lifts the hue off per-note metadata so a column of
+  // tasks from different source notes wears distinct bands, mirroring
+  // the Notes grid (see `pickNoteThumbSeed`).
   const primaryUrl = deriveNotePrimaryUrl(group.note);
   card.append(
     buildLinkThumb({
       url: primaryUrl,
       notes: [group.note],
       resolver,
+      gradientSeed: pickNoteThumbSeed(group.note),
     }),
   );
 

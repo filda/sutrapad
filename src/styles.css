@@ -3869,13 +3869,11 @@ button.tag-pill {
  */
 .notes-list--persona {
   /*
-   * The inline `--nc-rotation` breaks out of the grid cell slightly, so add a
-   * little vertical breathing room to avoid rotated corners clipping their
-   * neighbours. Mirrors the design-handoff layout without widening gaps on
-   * the flat-card mode.
+   * Slightly wider gap than the flat-card mode so the paper-coloured tiles
+   * read as discrete sheets rather than a continuous wall. No padding-block:
+   * cards no longer rotate, so they don't break out of their grid cells.
    */
   gap: 14px;
-  padding-block: 4px;
 }
 
 .notes-list--persona .note-list-item {
@@ -3883,15 +3881,16 @@ button.tag-pill {
    * Paper colour + ink come from the persona derivation. Fallbacks resolve to
    * the original flat style so a half-rendered card (e.g. if the persona lib
    * ever fails) still looks reasonable.
+   *
+   * The persona's `--nc-rotation` is intentionally not applied here. In a
+   * dense multi-column grid the ±0.8° tilt makes the `.link-thumb` band
+   * bottoms wobble across adjacent cards, which reads as ragged. Other
+   * persona surfaces (home timeline, tasks/links cards) still consume the
+   * variable from `applyPersonaStyles` — only this grid opts out.
    */
   background: var(--nc-bg, var(--surface-soft));
   color: var(--nc-ink, var(--primary));
   border-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 18%, transparent);
-  /*
-   * Small signed rotation makes the grid feel like a loose pinboard. Hovering
-   * straightens the card so interaction targets stay predictable.
-   */
-  transform: rotate(var(--nc-rotation, 0deg));
   transition:
     transform 200ms ease,
     border-color 150ms ease,
@@ -3902,7 +3901,7 @@ button.tag-pill {
 }
 
 .notes-list--persona .note-list-item:hover {
-  transform: rotate(0deg) translateY(-1px);
+  transform: translateY(-1px);
   border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 55%, transparent);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 }
@@ -5761,6 +5760,53 @@ button.tag-pill {
   }
 }
 
+/*
+ * Location-consent card lives as a sibling of the editor card and sidebar
+ * inside `.editor-stage`, and `.editor-stage` is a two-column grid. Without
+ * a `grid-column` override the consent card auto-places into col 1, which
+ * shoves the editor card into the 340px sidebar column and pushes the
+ * actual sidebar onto its own row — the "rozsypaný" detail page. Span
+ * both columns so the consent card sits as a full-width banner above the
+ * editor / sidebar pair, regardless of which slot CSS would otherwise
+ * assign it.
+ */
+.editor-stage > .location-consent-card {
+  grid-column: 1 / -1;
+}
+
+.location-consent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper-1, var(--surface-soft));
+}
+
+.location-consent-heading {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.location-consent-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  max-width: 70ch;
+}
+
+.location-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
 .editor-sidebar-card {
   display: flex;
   flex-direction: column;
@@ -6387,6 +6433,16 @@ button.tag-pill {
 
 .note-list-item > .link-thumb {
   margin: -14px -15px 12px;
+  /*
+   * Hairline at the bottom of the band so its 88px footprint reads the same
+   * regardless of the paper colour underneath. Without it, an olive gradient
+   * over cream/tan persona paper (evening/summer) blends through the boundary
+   * and the eye guesses the band ends ~20px lower than it actually does; the
+   * same gradient over a cool grey paper (night) snaps to a crisp edge and
+   * looks "shorter" by comparison. The inset shadow forces a sharp line at
+   * y=88 on every card so the row reads as aligned bands.
+   */
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
 }
 
 /*

@@ -4,6 +4,7 @@ import {
   type NotebookPersona,
 } from "../../../lib/notebook-persona";
 import { formatDate } from "../../logic/formatting";
+import { pickNoteThumbSeed } from "../../logic/link-thumb-seed";
 import { deriveNotePrimaryUrl } from "../../logic/note-primary-url";
 import type { NotesViewMode } from "../../logic/notes-view";
 import {
@@ -105,10 +106,20 @@ function buildCardItem(
   // grid keeps a consistent rhythm across notebooks. The resolver is
   // null on legacy callers (e.g. tags-page renders a list, not the
   // grid) — guard it so we don't allocate a thumb in those slots.
+  //
+  // `gradientSeed` lifts the band hue off per-note metadata (tag →
+  // hostname → note.id) so a grid full of hand-typed notes no longer
+  // collapses to one shared olive bucket — see
+  // `pickNoteThumbSeed` for the priority chain.
   if (resolver !== null) {
     const primaryUrl = deriveNotePrimaryUrl(note);
     button.append(
-      buildLinkThumb({ url: primaryUrl, notes: [note], resolver }),
+      buildLinkThumb({
+        url: primaryUrl,
+        notes: [note],
+        resolver,
+        gradientSeed: pickNoteThumbSeed(note),
+      }),
     );
   }
 
