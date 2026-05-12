@@ -28,6 +28,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCAL_WORKSPACE_KEY } from "../src/app/storage/local-workspace";
+import { hashStringToHue } from "../src/app/logic/link-card";
 
 // Stub `GoogleAuthService` — the real one tries to load
 // `https://accounts.google.com/gsi/client` and call `/userinfo`, both
@@ -77,17 +78,19 @@ describe("createApp smoke", () => {
     vi.unstubAllGlobals();
   });
 
-  // Per-test timeout sits at the 5s vitest default. Success path runs
-  // ~0.9-1.4s on Linux (dominated by the cold dynamic
+  // Per-test timeout sits above the 5s vitest default. Success path runs
+  // ~0.9-1.4s on Linux without coverage (dominated by the cold dynamic
   // `import("../src/app")` transforming the whole module graph). The
   // earlier 3s ceiling tripped on Filip's Windows machine
   // (2026-05-03), where module transform is meaningfully slower than
-  // Linux — same regime as macOS GitHub Actions runners. The
-  // microtask-loop trip-wire still works at 5s; it just fails ~2s
+  // Linux — same regime as macOS GitHub Actions runners. Istanbul
+  // coverage adds another transform pass and can push this file past
+  // Vitest's default 5s ceiling on Windows. The microtask-loop trip-wire
+  // still works at 7s; it just fails ~4s
   // slower in the genuinely-broken case, which is a fine trade for
   // not flaking on slow hosts. Raise again if it flakes — the fix is
   // almost certainly happy-dom warm-up, not the test itself.
-  it("renders without looping and surfaces the bootstrap-error pulse", { timeout: 5000 }, async () => {
+  it("renders without looping and surfaces the bootstrap-error pulse", { timeout: 7000 }, async () => {
     // Dynamic import so the `vi.mock` above is in effect when `app.ts`
     // imports `../src/services/google-auth`.
     const { createApp } = await import("../src/app");
@@ -273,6 +276,123 @@ describe("editor input contracts", () => {
     const tagsCard = root.querySelector(".editor-sidebar-tags-card");
     expect(tagsCard).toBeInstanceOf(HTMLElement);
     expect(tagsCard?.querySelector(".tag-text-input")).toBeInstanceOf(HTMLInputElement);
+  });
+
+  it("extends the note persona and card band across the detail page below app chrome", { timeout: 3000 }, async () => {
+    const workspace = {
+      activeNoteId: "n-persona-detail",
+      notes: [
+        {
+          id: "n-persona-detail",
+          title: "Persona detail",
+          body: "Paper should reach the whole detail page.",
+          urls: [],
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          tags: ["trek"],
+        },
+      ],
+    };
+    localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify(workspace));
+    localStorage.setItem("sutrapad-persona-enabled", "on");
+    window.history.replaceState({}, "", "/notes/n-persona-detail");
+
+    const { createApp } = await import("../src/app");
+    const root = document.querySelector<HTMLElement>("#app");
+    if (root === null) throw new Error("expected #app");
+
+    createApp(root);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const page = root.querySelector<HTMLElement>(".page--note-detail");
+    expect(page).toBeInstanceOf(HTMLElement);
+    expect(page?.classList.contains("page--notebook-persona")).toBe(true);
+    expect(page?.style.getPropertyValue("--nc-bg")).toMatch(/^#[0-9a-f]{6}$/i);
+
+    const appTopbar = root.querySelector<HTMLElement>(".topbar");
+    expect(appTopbar).toBeInstanceOf(HTMLElement);
+    expect(appTopbar?.style.getPropertyValue("--nc-bg")).toBe("");
+
+    const hero = page?.firstElementChild;
+    expect(hero).toBeInstanceOf(HTMLElement);
+    expect(hero?.classList.contains("note-detail-hero")).toBe(true);
+    expect(hero?.classList.contains("link-thumb")).toBe(true);
+    expect((hero as HTMLElement).style.backgroundImage).toContain(
+      `hsl(${hashStringToHue("trek")} 35% 75%)`,
+    );
+
+    const detailShell = page?.querySelector<HTMLElement>(".note-detail-shell");
+    expect(detailShell).toBeInstanceOf(HTMLElement);
+    expect(detailShell?.querySelector(".detail-topbar")).toBeInstanceOf(HTMLElement);
+    expect(detailShell?.querySelector(".editor-stage")).toBeInstanceOf(HTMLElement);
+
+    const editor = root.querySelector<HTMLElement>(".editor-card.detail-editor.has-persona");
+    expect(editor).toBeInstanceOf(HTMLElement);
+    expect(editor?.style.getPropertyValue("--nc-bg")).toBe(
+      page?.style.getPropertyValue("--nc-bg"),
+    );
+  });
+
+  it("resets scroll when entering detail without scrolling again on same-note edits", { timeout: 3000 }, async () => {
+    const workspace = {
+      activeNoteId: "n-a",
+      notes: [
+        {
+          id: "n-a",
+          title: "First",
+          body: "First body.",
+          urls: [],
+          createdAt: "2026-04-13T10:00:00.000Z",
+          updatedAt: "2026-04-13T10:00:00.000Z",
+          tags: [],
+        },
+        {
+          id: "n-b",
+          title: "Second",
+          body: "Second body.",
+          urls: [],
+          createdAt: "2026-04-13T11:00:00.000Z",
+          updatedAt: "2026-04-13T11:00:00.000Z",
+          tags: [],
+        },
+      ],
+    };
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    try {
+      localStorage.setItem(LOCAL_WORKSPACE_KEY, JSON.stringify(workspace));
+      window.history.replaceState({}, "", "/notes");
+
+      const { createApp } = await import("../src/app");
+      const root = document.querySelector<HTMLElement>("#app");
+      if (root === null) throw new Error("expected #app");
+
+      createApp(root);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      scrollTo.mockClear();
+
+      const firstCard = root.querySelector<HTMLElement>(".note-list-item, .notebook-row");
+      if (firstCard === null) throw new Error("expected a note card");
+      firstCard.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+      expect(scrollTo).toHaveBeenCalledWith({
+        top: 0,
+        left: 0,
+        behavior: "auto",
+      });
+
+      const bodyInput = root.querySelector<HTMLTextAreaElement>(".body-input");
+      if (bodyInput === null) throw new Error("expected body input");
+      bodyInput.value = "Edited without route change.";
+      bodyInput.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+    } finally {
+      scrollTo.mockRestore();
+    }
   });
 
   it("preserves caret + focus through the new-note geolocation backfill", { timeout: 5000 }, async () => {

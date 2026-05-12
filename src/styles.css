@@ -3328,6 +3328,77 @@ button.tag-pill {
 }
 
 /*
+ * Persona on the editor card. Mirrors the notes-grid persona overlay so
+ * the detail view wears the same paper / ink / typography as the card
+ * the user clicked into. Custom properties land on the section element
+ * via `applyPersonaStyles` (called from `buildEditorCard` when
+ * `personaOptions` is supplied); the rules below consume them. When the
+ * preference is off, `has-persona` is absent and the editor falls back
+ * to the flat serif-on-paper baseline above — every rule here is inert
+ * in that case.
+ */
+.editor-card.detail-editor.has-persona {
+  /*
+   * Paper colour from the persona's when-bucket. The ruled-line pattern
+   * still rides on top, but its tint switches from `--primary-rgb` to
+   * an ink-derived mix so the lines read against whichever paper the
+   * note happens to wear (faint olive on sage, faint coffee on cream,
+   * etc.) instead of always tracking the page's primary colour and
+   * looking out of place on a warm-paper card.
+   */
+  background-color: var(--nc-bg, var(--surface-soft));
+  color: var(--nc-ink, var(--primary));
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent 0 31px,
+    color-mix(in oklab, var(--nc-ink, var(--primary)) 8%, transparent) 31px 32px
+  );
+  border-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 18%, transparent);
+}
+
+.editor-card.detail-editor.has-persona .editor-title {
+  font-family: var(--nc-title-font, var(--serif));
+  color: var(--nc-ink, var(--primary));
+}
+
+.editor-card.detail-editor.has-persona .editor-body {
+  font-family: var(--nc-body-font, var(--serif));
+  color: var(--nc-ink, var(--primary));
+}
+
+.editor-card.detail-editor.has-persona .editor-title::placeholder,
+.editor-card.detail-editor.has-persona .editor-body::placeholder {
+  /*
+   * The default placeholder mixes off `--muted` which is tied to the
+   * page primary; on a warm-paper persona it reads cooler than the ink
+   * around it. Re-derive from the active ink so the placeholder fades
+   * into the same family as the typed text would.
+   */
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 50%, transparent);
+}
+
+.editor-card.detail-editor.has-persona .note-metadata {
+  /* Same family as the placeholder rule above, just slightly darker so
+   * the footer crumbs (word count etc.) read as muted-but-present. */
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 62%, transparent);
+}
+
+/*
+ * Handwritten font tier — bumps title size + airs leading the same way
+ * the grid card does. Mirrors `.notes-list--persona .note-list-item[data-font-tier="handwritten"]`
+ * so a `#poetry` note on the grid and the same note open in the editor
+ * share the same display feel.
+ */
+.editor-card.detail-editor.has-persona[data-font-tier="handwritten"] .editor-title {
+  font-size: clamp(2.2rem, 3.4vw, 2.8rem);
+  line-height: 1.15;
+}
+
+.editor-card.detail-editor.has-persona[data-font-tier="mono"] .editor-title {
+  letter-spacing: 0;
+}
+
+/*
  * Sits above the editor card on the note-detail route. Left side: the
  * "← Back to notes" affordance. Right side: a muted breadcrumb row of stats
  * (word count, read time, tasks, links, tags). Mirrors the handoff's
@@ -5710,6 +5781,102 @@ button.tag-pill {
 /*
  * Detail route layout: editor card + right-rail sidebar.
  *
+ * The topbar stays as app chrome, but the detail page below it can now wear
+ * the opened notebook's own paper. The outer `.page--note-detail` goes
+ * full-width so that colour reaches both viewport edges; `.note-detail-shell`
+ * re-introduces the normal 1280px working measure for the editor and rail.
+ */
+.page--note-detail {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 48px;
+}
+
+.note-detail-shell,
+.page--note-detail > .site-footer {
+  width: min(1280px, calc(100% - 32px));
+  margin-inline: auto;
+}
+
+.note-detail-shell {
+  padding-top: 32px;
+}
+
+.note-detail-hero + .note-detail-shell {
+  padding-top: 18px;
+}
+
+.page--notebook-persona {
+  background-color: var(--nc-bg, var(--surface-soft));
+  color: var(--nc-ink, var(--primary));
+}
+
+.note-detail-hero.link-thumb {
+  height: clamp(92px, 12vw, 148px);
+  padding-block: 14px;
+  padding-inline: max(16px, calc((100vw - 1280px) / 2 + 16px));
+  border-bottom: 1px solid rgba(0, 0, 0, 0.18);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.note-detail-hero.link-thumb .link-thumb-domain {
+  max-width: min(42ch, 100%);
+}
+
+.page--notebook-persona .detail-breadcrumbs,
+.page--notebook-persona .editor-back-button,
+.page--notebook-persona .site-footer {
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 62%, transparent);
+}
+
+.page--notebook-persona .detail-breadcrumbs .crumb-sep {
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 32%, transparent);
+}
+
+.page--notebook-persona .editor-back-button {
+  border-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 16%, transparent);
+}
+
+.page--notebook-persona .editor-back-button:hover {
+  color: var(--nc-ink, var(--primary));
+  border-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 30%, transparent);
+  background: color-mix(in oklab, var(--nc-ink, var(--primary)) 6%, transparent);
+}
+
+.page--notebook-persona .editor-card.detail-editor.has-persona {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.page--notebook-persona .editor-sidebar-card,
+.page--notebook-persona .location-consent-card {
+  background: color-mix(
+    in oklab,
+    var(--nc-bg, var(--surface-soft)) 82%,
+    var(--surface-strong)
+  );
+  border-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 14%, transparent);
+}
+
+.page--notebook-persona .site-footer {
+  border-top-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 14%, transparent);
+}
+
+.page--notebook-persona .site-footer-rule {
+  border-top-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 14%, transparent);
+}
+
+.page--notebook-persona .site-footer-wordmark,
+.page--notebook-persona .site-footer-link {
+  color: var(--nc-ink, var(--primary));
+}
+
+/*
+ * Detail route layout: editor card + right-rail sidebar.
+ *
  * Two-column grid with an intentionally narrow sidebar so the editor
  * column keeps prose at a comfortable measure. Below 900 px the grid
  * collapses to a single column and the sidebar flows *underneath* the
@@ -6080,6 +6247,29 @@ button.tag-pill {
     flex-wrap: wrap;
     gap: 8px;
     padding: 10px 0;
+  }
+
+  .page.page--note-detail {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .note-detail-shell,
+  .page--note-detail > .site-footer {
+    width: 100%;
+    padding-inline: 16px;
+  }
+
+  .note-detail-shell {
+    padding-top: 14px;
+  }
+
+  .note-detail-hero + .note-detail-shell {
+    padding-top: 12px;
+  }
+
+  .note-detail-hero.link-thumb {
+    height: 84px;
+    padding: 12px 16px;
   }
 
   .editor-card {
@@ -6578,4 +6768,3 @@ button.tag-pill {
 .link-card .note-list-stickers {
   margin-top: 4px;
 }
-

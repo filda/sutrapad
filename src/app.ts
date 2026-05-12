@@ -252,6 +252,7 @@ export function createApp(root: HTMLElement): void {
   // then render again on the next tick" double-up.
   let renderScheduled = false;
   let renderSuppressionDepth = 0;
+  let lastRenderedDetailRouteKey: string | null = null;
   const withRenderSuppressed = (action: () => void): void => {
     renderSuppressionDepth += 1;
     try {
@@ -493,6 +494,7 @@ export function createApp(root: HTMLElement): void {
     // no-op when focus was outside the editor card, so it's safe to
     // run unconditionally.
     const focusSnapshot = captureActiveEditorFocus();
+    let shouldResetDetailScroll = false;
     try {
       syncSelectedTagFilters();
       const detailRoute = syncDetailRouteSelection(
@@ -524,6 +526,13 @@ export function createApp(root: HTMLElement): void {
       const filterMode = filterMode$.get();
       const activeMenuItem = activeMenuItem$.get();
       const detailNoteId = detailNoteId$.get();
+      const detailRouteKey =
+        activeMenuItem === "notes" && detailNoteId !== null
+          ? `notes:${detailNoteId}`
+          : null;
+      shouldResetDetailScroll =
+        detailRouteKey !== null && detailRouteKey !== lastRenderedDetailRouteKey;
+      lastRenderedDetailRouteKey = detailRouteKey;
       const notesViewMode = notesViewMode$.get();
       const linksViewMode = linksViewMode$.get();
       const syncState = syncState$.get();
@@ -641,6 +650,9 @@ export function createApp(root: HTMLElement): void {
       // against whatever DOM landed before the failure. Restore is a
       // no-op when the snapshot was taken outside the editor card.
       focusSnapshot.restore();
+      if (shouldResetDetailScroll) {
+        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      }
     }
   };
 

@@ -12,8 +12,19 @@ import type { CaptureLocationPreference } from "../logic/capture-location";
 import type { TagClassId } from "../logic/tag-class";
 import { suggestTagAliases } from "../logic/tag-aliases";
 import type { TasksFilterId } from "../logic/tasks-filter";
-import type { SutraPadTagFilterMode, UserProfile } from "../../types";
+import type {
+  SutraPadDocument,
+  SutraPadTagFilterMode,
+  UserProfile,
+} from "../../types";
+import {
+  deriveNotebookPersona,
+  type NotebookPersona,
+} from "../../lib/notebook-persona";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
+import { createOgImageResolver } from "../logic/og-image-resolver";
+import { pickNoteThumbSeed } from "../logic/link-thumb-seed";
+import { deriveNotePrimaryUrl } from "../logic/note-primary-url";
 import { buildTopbar } from "./chrome/topbar";
 import { buildMobileFab, buildMobileTabbar } from "./chrome/mobile-nav";
 import { buildHomePage } from "./pages/home-page";
@@ -36,6 +47,8 @@ import { buildEditorCard, type EditorCardOptions } from "./shared/editor-card";
 import { buildLocationConsentCard } from "./shared/location-consent-card";
 import { requiresLocationConsent } from "../logic/capture-location";
 import { buildEditorSidebar } from "./shared/editor-sidebar";
+import { buildLinkThumb } from "./shared/link-thumb";
+import { applyPersonaStyles } from "./shared/persona-decor";
 import { formatLastChange } from "../logic/editor-sync-crumb";
 import type { SyncState } from "../session/workspace-sync";
 import {
@@ -564,7 +577,86 @@ export function renderAppPage({
     ? formatLastChange(topbarNote.updatedAt, { signedIn: profile !== null })
     : null;
 
-  page.append(
+  appendNoteDetailPage(page, {
+    topbarNote,
+    syncCrumb,
+    note,
+    currentNote,
+    selectedTagFilters,
+    workspace,
+    personaOptions,
+    captureLocationPreference,
+    locationConsentBlocked,
+    onAllowLocationCapture,
+    onDenyLocationCapture,
+    onSelectMenuItem,
+    onBackToNotes,
+    onTitleInput,
+    onBodyInput,
+    onAddTag,
+    onRemoveTag,
+  });
+  finalize();
+}
+
+interface NoteDetailPageOptions {
+  topbarNote: SutraPadDocument | null;
+  syncCrumb: string | null;
+  note: SutraPadDocument | null;
+  currentNote: SutraPadDocument;
+  selectedTagFilters: string[];
+  workspace: RenderAppOptions["workspace"];
+  personaOptions: EditorCardOptions["personaOptions"];
+  captureLocationPreference: CaptureLocationPreference;
+  locationConsentBlocked: boolean;
+  onAllowLocationCapture: () => void;
+  onDenyLocationCapture: () => void;
+  onSelectMenuItem: (id: MenuItemId) => void;
+  onBackToNotes: () => void;
+  onTitleInput: (value: string) => void;
+  onBodyInput: (value: string, caretPosition: number | undefined) => void;
+  onAddTag: (value: string) => void;
+  onRemoveTag: (tag: string) => void;
+}
+
+function appendNoteDetailPage(
+  page: HTMLElement,
+  {
+    topbarNote,
+    syncCrumb,
+    note,
+    currentNote,
+    selectedTagFilters,
+    workspace,
+    personaOptions,
+    captureLocationPreference,
+    locationConsentBlocked,
+    onAllowLocationCapture,
+    onDenyLocationCapture,
+    onSelectMenuItem,
+    onBackToNotes,
+    onTitleInput,
+    onBodyInput,
+    onAddTag,
+    onRemoveTag,
+  }: NoteDetailPageOptions,
+): void {
+  page.classList.add("page--note-detail");
+
+  const detailPersona = deriveNoteDetailPersona(topbarNote, personaOptions);
+  if (detailPersona !== null) {
+    page.classList.add("page--notebook-persona");
+    applyPersonaStyles(page, detailPersona, { rotationFactor: 0 });
+  }
+
+  if (topbarNote !== null) {
+    page.append(buildNoteDetailHero(topbarNote));
+  }
+
+  const detailShell = document.createElement("div");
+  detailShell.className = "note-detail-shell";
+
+  detailShell.append(
     buildDetailTopbar({
       note: topbarNote,
       syncCrumb,
@@ -599,6 +691,7 @@ export function renderAppPage({
       selectedTagFilters,
       onTitleInput,
       onBodyInput,
+      personaOptions,
     }),
   );
 
@@ -615,8 +708,31 @@ export function renderAppPage({
     editorStage.classList.add("editor-stage-solo");
   }
 
-  page.append(editorStage);
-  finalize();
+  detailShell.append(editorStage);
+  page.append(detailShell);
+}
+
+function deriveNoteDetailPersona(
+  note: SutraPadDocument | null,
+  personaOptions: EditorCardOptions["personaOptions"],
+): NotebookPersona | null {
+  if (note === null || personaOptions === undefined) return null;
+  return deriveNotebookPersona(note, {
+    allNotes: personaOptions.allNotes,
+    dark: personaOptions.dark,
+  });
+}
+
+function buildNoteDetailHero(note: SutraPadDocument): HTMLElement {
+  const primaryUrl = deriveNotePrimaryUrl(note);
+  const hero = buildLinkThumb({
+    url: primaryUrl,
+    notes: [note],
+    resolver: createOgImageResolver(),
+    gradientSeed: pickNoteThumbSeed(note),
+  });
+  hero.classList.add("note-detail-hero");
+  return hero;
 }
 
 interface LocationConsentCardSlotOptions {

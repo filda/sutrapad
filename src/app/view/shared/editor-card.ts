@@ -1,8 +1,10 @@
 import { buildNoteMetadata } from "../../logic/note-metadata";
 import { detectKind } from "../../../lib/detect-kind";
+import { deriveNotebookPersona } from "../../../lib/notebook-persona";
 import type { SutraPadDocument } from "../../../types";
 import { EMPTY_COPY, buildEmptyState } from "./empty-state";
 import { buildKindChipForNote } from "./kind-chip";
+import { applyPersonaStyles } from "./persona-decor";
 
 export interface EditorCardOptions {
   note: SutraPadDocument | null;
@@ -40,6 +42,29 @@ export interface EditorCardOptions {
    * call site.
    */
   onInputsChange?: (title: string, body: string) => void;
+  /**
+   * Persona derivation context. When provided AND a real note is being
+   * edited (not the empty-filter-miss state), the editor card picks up
+   * the same paper / ink / font / accent as that note's grid card, so
+   * the detail page reads as "this notebook, full-bleed". Mirrors the
+   * shape `buildNotesList` already accepts so the caller composes the
+   * value once per render and threads it into both surfaces.
+   *
+   * Omit (or pass `undefined`) when the persona preference is off — the
+   * card falls back to the flat serif-on-paper baseline.
+   */
+  personaOptions?: {
+    /**
+     * Full notebook list, used by sticker rules like `regular` /
+     * `first-of-kind` that need to count occurrences across the
+     * workspace. The editor card itself doesn't render stickers today,
+     * but the persona derivation cost is paid once and the same value
+     * is consumed by the metadata for typography + paper anyway.
+     */
+    allNotes: readonly SutraPadDocument[];
+    /** Whether the active theme resolved to a dark palette. */
+    dark: boolean;
+  };
 }
 
 /**
@@ -56,6 +81,7 @@ export function buildEditorCard({
   onTitleInput,
   onBodyInput,
   onInputsChange,
+  personaOptions,
 }: EditorCardOptions): HTMLElement {
   const editor = document.createElement("section");
   editor.className = "editor-card detail-editor";
@@ -72,6 +98,22 @@ export function buildEditorCard({
   }
 
   const displayedNote = note ?? currentNote;
+
+  // Apply the persona BEFORE building the inner controls — the inputs
+  // pick up `--nc-title-font` / `--nc-body-font` via the cascading
+  // selectors in `styles.css` once the custom properties are inline on
+  // the parent. `rotationFactor: 0` skips the tilt: the editor is a
+  // 920 px writing surface, a 0.8° rotation there would shimmy the
+  // ruled-line background against the textarea content (and the textarea
+  // doesn't rotate the IME caret with it on any browser worth testing).
+  if (personaOptions) {
+    const persona = deriveNotebookPersona(displayedNote, {
+      allNotes: personaOptions.allNotes,
+      dark: personaOptions.dark,
+    });
+    applyPersonaStyles(editor, persona, { rotationFactor: 0 });
+    editor.classList.add("has-persona");
+  }
 
   const kindChip = buildKindChipForNote(displayedNote.title, displayedNote.body);
 
