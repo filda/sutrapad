@@ -1,3 +1,5 @@
+import { deriveLinkHostname } from "../../logic/link-card";
+import { deriveNotePrimaryUrl } from "../../logic/note-primary-url";
 import { computeNoteStats, type NoteStats } from "../../logic/note-stats";
 import { detectKind } from "../../../lib/detect-kind";
 import type { SutraPadDocument } from "../../../types";
@@ -60,7 +62,15 @@ export function buildDetailTopbar({
     topbar.append(kindChip.element);
   }
 
+  // Domain chip lives in the same horizontal row as the back-button /
+  // kind-chip / breadcrumbs so the hero stays a pure image canvas and
+  // the note's source metadata reads as a sibling of the other
+  // metadata pills. The hero's own `.link-thumb-domain` is hidden via
+  // CSS (see `.note-detail-hero .link-thumb-domain { display: none }`
+  // in styles.css) so we don't render the same hostname twice.
   if (note) {
+    const domainChip = buildDomainChip(note);
+    if (domainChip) topbar.append(domainChip);
     topbar.append(buildDetailBreadcrumbs(computeNoteStats(note), syncCrumb));
   }
 
@@ -126,6 +136,25 @@ function buildDetailBreadcrumbs(
   }
 
   return crumbs;
+}
+
+/**
+ * Returns a `.detail-domain-chip` carrying the note's primary-URL
+ * hostname, or `null` when the note has no parseable URL (hand-typed
+ * notes, malformed URLs). Hostname is trimmed of the leading `www.`
+ * the same way `deriveLinkHostname` does for the link-thumb chip — so
+ * the topbar pill and any other surface that surfaces the hostname
+ * (links page, grid card thumb) stay in sync visually.
+ */
+function buildDomainChip(note: SutraPadDocument): HTMLElement | null {
+  const url = deriveNotePrimaryUrl(note);
+  if (url === null) return null;
+  const hostname = deriveLinkHostname(url);
+  if (hostname === null) return null;
+  const chip = document.createElement("span");
+  chip.className = "detail-domain-chip";
+  chip.textContent = hostname;
+  return chip;
 }
 
 function appendCrumb(parent: HTMLElement, text: string): void {

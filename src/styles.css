@@ -3455,7 +3455,15 @@ button.tag-pill {
   align-items: center;
   font-size: 0.78rem;
   color: var(--muted);
-  flex: 1;
+  /*
+   * Content-sized; lays out left-to-right right after whichever chip
+   * came before it (domain on URL notes, kind on hand-typed). No
+   * auto-margin push to the right edge — that left a `vinyl` gap in
+   * the middle of the row for hand-typed notes (no domain chip → big
+   * empty space between kind and breadcrumbs). `flex: 1` would
+   * stretch the pill to absorb leftover width and read as a giant
+   * banner on narrow notes; both were tried and discarded.
+   */
   min-width: 0;
 }
 
@@ -5856,14 +5864,83 @@ button.tag-pill {
 
 .note-detail-hero.link-thumb {
   height: calc(var(--detail-topbar-underlap) + clamp(92px, 12vw, 148px));
-  padding-block: calc(var(--detail-topbar-underlap) + 14px) 14px;
+  /*
+   * Reserve the underlap as top padding so the OG image / gradient
+   * content box starts at the app-chrome edge and the visible strip
+   * carries the artwork. The chip that `.link-thumb` would normally
+   * render is suppressed (the hostname moved to a `.detail-domain-chip`
+   * inside the detail-topbar) — so `align-items` / `padding-bottom`
+   * positioning is moot now and we keep the rule minimal.
+   */
+  padding-block: var(--detail-topbar-underlap) 0;
   padding-inline: max(16px, calc((100vw - 1280px) / 2 + 16px));
   border-bottom: 1px solid rgba(0, 0, 0, 0.18);
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
 }
 
+/*
+ * The hero's own domain pill is hidden — the same hostname renders as
+ * `.detail-domain-chip` inside the detail-topbar so it shares the row
+ * with the back-button / kind-chip / breadcrumbs. Keeping the chip in
+ * the DOM (just hidden) instead of dropping it via a builder option
+ * means `buildLinkThumb` stays one-shape across the grid card / tasks
+ * grid / detail hero, and only this one CSS rule diverges. The
+ * previous `max-width: min(42ch, 100%)` here became dead under
+ * `display: none` and was retired.
+ */
 .note-detail-hero.link-thumb .link-thumb-domain {
-  max-width: min(42ch, 100%);
+  display: none;
+}
+
+/*
+ * Pill in the detail-topbar carrying the note's hostname. Sits between
+ * the kind chip and the breadcrumbs; styling mirrors `.detail-kind-chip`
+ * so the row reads as a single horizontal strip of metadata. The
+ * hostname is mono-spaced because that's the convention we use
+ * everywhere a URL or domain appears (grid card thumb, link thumb chip,
+ * link card title) — keeps the eye from re-parsing the same string
+ * differently in different surfaces.
+ */
+.detail-topbar .detail-domain-chip {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-strong);
+  /* Sits darker than the breadcrumbs row next to it (which uses
+   * `--muted`) — the hostname is metadata you'd actually scan for
+   * ("did this come from where I think it did?") rather than a
+   * passive count, so it gets full primary weight. */
+  color: var(--primary);
+  font-family: var(--mono);
+  font-size: 12px;
+  /* Same weight as `.link-thumb-domain` — keeps the hostname reading
+   * with the same emphasis whether it surfaces on a grid card thumb,
+   * the editor hero, or here in the detail topbar row. */
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(28ch, 50%);
+}
+
+/*
+ * Same backdrop-filter / paper-aware treatment as the other topbar
+ * chips when the detail page wears a notebook persona. Keeps the
+ * domain pill readable against the hero image behind the sliding
+ * topbar, and tints it with the note's `--nc-bg` so it visually
+ * belongs to this notebook.
+ */
+.note-detail-hero + .note-detail-shell .detail-domain-chip {
+  border-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 14%, transparent);
+  background: color-mix(in oklab, var(--nc-bg, var(--surface-strong)) 72%, transparent);
+  /* 92% of ink — markedly darker than the breadcrumbs row at 62%,
+   * because the hostname is "where this came from" (a thing you'd
+   * actually click into) not a passive count. */
+  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 92%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .note-detail-hero + .note-detail-shell .detail-topbar {
@@ -5871,7 +5948,15 @@ button.tag-pill {
 }
 
 .note-detail-hero + .note-detail-shell .detail-breadcrumbs {
-  padding: 6px 10px;
+  /* Padding-block matches `.detail-domain-chip`'s 4px so the two pills
+   * read at the same height when they sit next to each other in the
+   * row. Previously 6px here made the stats pill ~5 px taller, which
+   * was visually distracting. Font-size pinned to 12px (instead of
+   * the base `0.78rem` ≈ 12.5 px) for the same reason — the half-pixel
+   * difference vs domain chip's 12 px would push the pill another
+   * line-height-unit out of sync. */
+  padding: 4px 10px;
+  font-size: 12px;
   border: 1px solid color-mix(in oklab, var(--nc-ink, var(--primary)) 12%, transparent);
   border-radius: 999px;
   background: color-mix(in oklab, var(--nc-bg, var(--surface-strong)) 78%, transparent);
