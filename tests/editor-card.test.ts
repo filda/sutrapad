@@ -167,6 +167,50 @@ describe("buildEditorCard", () => {
     expect(onInputsChange).toHaveBeenLastCalledWith("t1", "b1");
   });
 
+  it("omits the title input when showTitleInput is false", () => {
+    // Detail-route opts out of the editor-card's title input because
+    // the editable title moves up into `.note-detail-hero-title`. Pin
+    // this so a refactor doesn't accidentally always render the title
+    // input (which would re-introduce the duplicate field the dedup
+    // pass killed).
+    const note = makeNote({ id: "n1", title: "Hello", body: "world" });
+    const card = buildEditorCard({
+      note,
+      currentNote: note,
+      selectedTagFilters: [],
+      onTitleInput: () => {},
+      onBodyInput: () => {},
+      showTitleInput: false,
+    });
+    expect(card.querySelector(".editor-title")).toBeNull();
+    // Body still renders — only the title input was opted out.
+    expect(card.querySelector(".editor-body")).not.toBeNull();
+  });
+
+  it("still wires the body input's onInputsChange using the note's title when no title input is present", () => {
+    // When the title input lives elsewhere (hero), the editor-card's
+    // body listener still fires `onInputsChange(title, body)` so the
+    // detail-topbar kind chip can refresh on body keystrokes. Title
+    // here comes from `displayedNote.title` rather than a live input —
+    // pin that handoff so kind-detection stays meaningful.
+    const note = makeNote({ id: "n1", title: "Trek notebook", body: "" });
+    const onInputsChange = vi.fn();
+    const card = buildEditorCard({
+      note,
+      currentNote: note,
+      selectedTagFilters: [],
+      onTitleInput: () => {},
+      onBodyInput: () => {},
+      onInputsChange,
+      showTitleInput: false,
+    });
+    const bodyInput = card.querySelector<HTMLTextAreaElement>(".editor-body");
+    if (!bodyInput) throw new Error("missing body textarea");
+    bodyInput.value = "first note";
+    bodyInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(onInputsChange).toHaveBeenCalledWith("Trek notebook", "first note");
+  });
+
   it("renders the filter-miss empty state when there is no note and a tag filter is active", () => {
     // The empty-state branch short-circuits before any persona logic
     // runs — pin it so a refactor doesn't accidentally try to derive a

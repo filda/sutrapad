@@ -48,6 +48,13 @@ export interface EditorCardOptions {
    */
   showKindChip?: boolean;
   /**
+   * Render the title `<input>` inside the card. The detail route turns this
+   * off because the editable title moves up into the hero (`.note-detail-hero-title`)
+   * so the writing surface stays body-only. When omitted, the card keeps
+   * the historical "title above body" shape that standalone callers expect.
+   */
+  showTitleInput?: boolean;
+  /**
    * Persona derivation context. When provided AND a real note is being
    * edited (not the empty-filter-miss state), the editor card picks up
    * the same paper / ink / font / accent as that note's grid card, so
@@ -88,6 +95,7 @@ export function buildEditorCard({
   onInputsChange,
   personaOptions,
   showKindChip = true,
+  showTitleInput = true,
 }: EditorCardOptions): HTMLElement {
   const editor = document.createElement("section");
   editor.className = "editor-card detail-editor";
@@ -125,10 +133,21 @@ export function buildEditorCard({
     ? buildKindChipForNote(displayedNote.title, displayedNote.body)
     : null;
 
-  const titleInput = document.createElement("input");
-  titleInput.className = "title-input editor-title";
-  titleInput.placeholder = "Note title";
-  titleInput.value = displayedNote.title;
+  // Title input is conditional. The detail route opts out via
+  // `showTitleInput: false` because the editable title moves up to
+  // `.note-detail-hero-title` so the writing surface stays body-only.
+  // When omitted, the kind-chip / onInputsChange paths read the title
+  // from `displayedNote` instead of a live input — fine because the
+  // outer render keeps `displayedNote.title` in sync with whatever
+  // surface owns the edit.
+  const titleInput = showTitleInput
+    ? document.createElement("input")
+    : null;
+  if (titleInput) {
+    titleInput.className = "title-input editor-title";
+    titleInput.placeholder = "Note title";
+    titleInput.value = displayedNote.title;
+  }
 
   const bodyInput = document.createElement("textarea");
   bodyInput.className = "body-input editor-body";
@@ -144,12 +163,15 @@ export function buildEditorCard({
   // surfaces (for example the detail-topbar kind chip) can hook in without a
   // second listener pair.
   const refreshLiveDerived = (): void => {
-    const title = titleInput.value;
+    // When the title input lives elsewhere (detail route), fall back to
+    // `displayedNote.title` so kind-detection has *some* title signal —
+    // matching what the outer render pass would see after a settle.
+    const title = titleInput?.value ?? displayedNote.title;
     const body = bodyInput.value;
     kindChip?.setKind(detectKind({ title, body }));
     onInputsChange?.(title, body);
   };
-  titleInput.addEventListener("input", () => {
+  titleInput?.addEventListener("input", () => {
     onTitleInput(titleInput.value);
     refreshLiveDerived();
   });
@@ -180,7 +202,8 @@ export function buildEditorCard({
   noteMetadata.textContent = buildNoteMetadata(displayedNote);
 
   if (kindChip) editor.append(kindChip.element);
-  editor.append(titleInput, bodyInput, noteMetadata);
+  if (titleInput) editor.append(titleInput);
+  editor.append(bodyInput, noteMetadata);
 
   return editor;
 }

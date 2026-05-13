@@ -97,6 +97,12 @@ export function captureActiveEditorFocus(): ActiveEditorFocusSnapshot {
   const active = document.activeElement;
   const isTitle =
     active instanceof HTMLInputElement && active.classList.contains("title-input");
+  // Detail-route hero title is a `<textarea>` (not `<input>`) so long
+  // titles can wrap inside the banner. Focus / caret restoration is
+  // identical otherwise; only the element type differs.
+  const isHeroTitle =
+    active instanceof HTMLTextAreaElement &&
+    active.classList.contains("note-detail-hero-title");
   const isBody =
     active instanceof HTMLTextAreaElement && active.classList.contains("body-input");
   const isTag =
@@ -104,8 +110,10 @@ export function captureActiveEditorFocus(): ActiveEditorFocusSnapshot {
 
   // Reading selectionStart on a non-text input throws in some engines,
   // so we gate it on the matched type rather than a broad union.
-  const savedStart = isTitle || isBody ? active.selectionStart : 0;
-  const savedEnd = isTitle || isBody ? active.selectionEnd : 0;
+  const savedStart =
+    isTitle || isHeroTitle || isBody ? active.selectionStart : 0;
+  const savedEnd =
+    isTitle || isHeroTitle || isBody ? active.selectionEnd : 0;
   const savedTagValue = isTag ? active.value : "";
 
   return {
@@ -117,6 +125,20 @@ export function captureActiveEditorFocus(): ActiveEditorFocusSnapshot {
         if (nextTitle && document.activeElement !== nextTitle) {
           nextTitle.focus();
           nextTitle.setSelectionRange(savedStart, savedEnd);
+        }
+        return;
+      }
+      if (isHeroTitle) {
+        // Detail route: the editable title lives in the hero, not the
+        // editor card. Same focus-survives-render contract as the
+        // editor-card title input above — keystroke renders should not
+        // steal the caret out of the user's input.
+        const nextHeroTitle = document.querySelector<HTMLTextAreaElement>(
+          ".note-detail-hero-title",
+        );
+        if (nextHeroTitle && document.activeElement !== nextHeroTitle) {
+          nextHeroTitle.focus();
+          nextHeroTitle.setSelectionRange(savedStart, savedEnd);
         }
         return;
       }

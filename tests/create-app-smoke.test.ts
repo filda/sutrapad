@@ -471,7 +471,9 @@ describe("editor input contracts", () => {
     // time-of-day title. If we still see the placeholder, the patch
     // path didn't run and the focus assertion below would be
     // testing nothing.
-    const titleInput = root.querySelector<HTMLInputElement>(".title-input");
+    const titleInput = root.querySelector<HTMLInputElement>(
+      ".note-detail-hero-title",
+    );
     expect(titleInput?.value).toBeTruthy();
     expect(titleInput?.value).not.toBe("Untitled note");
 
@@ -716,7 +718,9 @@ describe("editor hashtag contracts", () => {
     createApp(root);
     await new Promise((resolve) => setTimeout(resolve, 30));
 
-    const titleInput = root.querySelector<HTMLInputElement>(".title-input");
+    const titleInput = root.querySelector<HTMLInputElement>(
+      ".note-detail-hero-title",
+    );
     if (titleInput === null) throw new Error("expected title input");
     titleInput.focus();
     titleInput.value = "Original edited";
@@ -742,7 +746,9 @@ describe("editor hashtag contracts", () => {
     // Some test environments redirect back to the list rather than the
     // detail route on menu re-entry; only enforce the focus contract
     // when the title input is still mounted.
-    const refreshedTitle = root.querySelector<HTMLInputElement>(".title-input");
+    const refreshedTitle = root.querySelector<HTMLInputElement>(
+      ".note-detail-hero-title",
+    );
     if (refreshedTitle === null) return;
 
     // If the editor is mounted, focus + caret must come back on the

@@ -651,18 +651,27 @@ function appendNoteDetailPage(
     applyPersonaStyles(page, detailPersona, { rotationFactor: 0 });
   }
 
-  if (topbarNote !== null) {
-    page.append(buildNoteDetailHero(topbarNote));
-  }
-
-  const detailShell = document.createElement("div");
-  detailShell.className = "note-detail-shell";
-
+  // The detail-topbar is built first because its `setKind` handle is
+  // wired into both the hero (above the shell) and the editor card
+  // (below) — typing in either surface refreshes the in-topbar kind
+  // chip without an outer render pass.
   const detailTopbar = buildDetailTopbar({
     note: topbarNote,
     syncCrumb,
     onBackToNotes,
   });
+
+  if (topbarNote !== null) {
+    page.append(
+      buildNoteDetailHero(topbarNote, {
+        onTitleInput,
+        onInputsChange: detailTopbar.setKind,
+      }),
+    );
+  }
+
+  const detailShell = document.createElement("div");
+  detailShell.className = "note-detail-shell";
   detailShell.append(detailTopbar.element);
 
   // Editor + right-rail sidebar share a grid row so the sidebar's
@@ -695,6 +704,11 @@ function appendNoteDetailPage(
       onInputsChange: detailTopbar.setKind,
       personaOptions,
       showKindChip: false,
+      // Title moved up into the hero so the writing surface stays
+      // body-only. The editor-card still listens to `onTitleInput`
+      // for the (unused) input case where standalone callers turn
+      // it back on, so the contract is forward-compatible.
+      showTitleInput: false,
     }),
   );
 
@@ -726,7 +740,21 @@ function deriveNoteDetailPersona(
   });
 }
 
-function buildNoteDetailHero(note: SutraPadDocument): HTMLElement {
+interface NoteDetailHeroOptions {
+  /** Fires on every title keystroke. Same callback the editor-card
+   *  used to receive — wiring is identical, the input element just
+   *  lives in the hero now. */
+  onTitleInput: (value: string) => void;
+  /** Fired after the title input updates so the detail-topbar kind
+   *  chip can refresh without an outer render pass. Mirrors the
+   *  editor-card body input's `onInputsChange` hook. */
+  onInputsChange?: (title: string, body: string) => void;
+}
+
+function buildNoteDetailHero(
+  note: SutraPadDocument,
+  options: NoteDetailHeroOptions,
+): HTMLElement {
   const primaryUrl = deriveNotePrimaryUrl(note);
   const hero = buildLinkThumb({
     url: primaryUrl,
@@ -735,6 +763,54 @@ function buildNoteDetailHero(note: SutraPadDocument): HTMLElement {
     gradientSeed: pickNoteThumbSeed(note),
   });
   hero.classList.add("note-detail-hero");
+
+  // Editable title input lives inside the hero so the banner doubles
+  // as a "what notebook am I in" header AND the primary edit surface
+  // for the title. The editor-card opts out of its own title input
+  // (showTitleInput: false in render-app) to avoid the two-fields-
+  // for-one-value duplication that earlier experiments produced.
+  //
+  // `<textarea>` (not `<input>`) because long titles need to wrap onto
+  // a second line inside the banner — a single-line input would let
+  // the text run past the sidebar that overlaps the hero on the
+  // right. We strip any newlines on keystroke + prevent Enter so the
+  // value stays semantically single-line while the rendering wraps
+  // visually.
+  //
+  // Body lookup for `onInputsChange`: read the editor textarea via
+  // the DOM each keystroke. Slightly less hygienic than threading a
+  // state ref through, but the textarea is a sibling further down
+  // the same page subtree — a single `querySelector` per keystroke
+  // is cheap, and it keeps the hero builder's surface area small.
+  const titleInput = document.createElement("textarea");
+  titleInput.className = "note-detail-hero-title";
+  titleInput.rows = 1;
+  titleInput.placeholder = "Note title";
+  titleInput.value = note.title;
+  titleInput.addEventListener("input", () => {
+    // Some platforms (paste, IME commits) can sneak a newline into the
+    // textarea even without an Enter press — collapse to spaces before
+    // propagating so the workspace title field stays one-line.
+    if (titleInput.value.includes("\n")) {
+      titleInput.value = titleInput.value.replace(/\n+/g, " ");
+    }
+    const value = titleInput.value;
+    options.onTitleInput(value);
+    const bodyEl = document.querySelector(".editor-body");
+    const body =
+      bodyEl instanceof HTMLTextAreaElement ? bodyEl.value : note.body;
+    options.onInputsChange?.(value, body);
+  });
+  titleInput.addEventListener("keydown", (event) => {
+    // Enter would insert a newline; the title is conceptually one line
+    // (wrapping is visual only). Blocking the keystroke is cleaner
+    // than stripping after the fact because the caret stays where the
+    // user expects.
+    if (event.key === "Enter") {
+      event.preventDefault();
+    }
+  });
+  hero.append(titleInput);
   return hero;
 }
 

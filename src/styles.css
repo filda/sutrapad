@@ -3342,7 +3342,21 @@ button.tag-pill {
  * past a comfortable measure.
  */
 .editor-card.detail-editor {
-  padding: clamp(28px, 5vw, 56px) clamp(24px, 6vw, 72px) 36px;
+  /*
+   * Padding-top bumped from clamp(28, 5vw, 56) to clamp(96, 10vw, 130)
+   * to clear the hero. With shell `margin-top: clamp(-180, -13vw, -130)`
+   * pulling everything up, editor-stage starts ~116 px above hero
+   * bottom on a 1200 px viewport. The hero's title input sits at hero
+   * bottom (24 px padding), so without this larger top-padding the
+   * body content would render at y=editor-stage-top + ~30 = hero
+   * bottom − 86, which is INSIDE the title's y range. Bumping
+   * padding-top to ~120 px on the typical viewport pushes the body
+   * down past the title with ~15 px breathing room.
+   *
+   * Horizontal padding + bottom kept as before. Max-width / margin /
+   * background-image / background-attachment unchanged.
+   */
+  padding: clamp(96px, 10vw, 130px) clamp(24px, 6vw, 72px) 36px;
   /* Slight cap bump from 860 to 920 px — the right-rail tags column
    * widened from 300 to 340 px at the same time, so editor + rail are
    * each a bit more generous. The cap only bites on viewports wider
@@ -5853,7 +5867,12 @@ button.tag-pill {
 }
 
 .note-detail-hero + .note-detail-shell {
-  margin-top: clamp(-96px, -7vw, -58px);
+  /*
+   * Bumped to clamp(-180, -13vw, -130) so the pills ride further up
+   * the hero — closer to the app-chrome edge — with the title still
+   * sitting just below them inside the slimmer banner.
+   */
+  margin-top: clamp(-180px, -13vw, -130px);
   padding-top: 0;
 }
 
@@ -5863,19 +5882,128 @@ button.tag-pill {
 }
 
 .note-detail-hero.link-thumb {
-  height: calc(var(--detail-topbar-underlap) + clamp(92px, 12vw, 148px));
   /*
-   * Reserve the underlap as top padding so the OG image / gradient
-   * content box starts at the app-chrome edge and the visible strip
-   * carries the artwork. The chip that `.link-thumb` would normally
-   * render is suppressed (the hostname moved to a `.detail-domain-chip`
-   * inside the detail-topbar) — so `align-items` / `padding-bottom`
-   * positioning is moot now and we keep the rule minimal.
+   * Visible strip bumped to clamp(160, 16vw, 200) so there's room for
+   * the title's content box AFTER reserving space for the pills that
+   * overlap into the top of the visible strip (via the shell's
+   * negative margin).
+   *
+   * `padding-block-start` reserves underlap (hidden behind app chrome)
+   * + clamp(60, 7vw, 90) for the pills overlap. Content box then starts
+   * BELOW the pills bottom, so `align-items: center` lands the title
+   * in the middle of the gap between pills and the hero hairline —
+   * which is the "vertically centered" feel a user would expect when
+   * the pills are visually part of the chrome above the title.
    */
-  padding-block: var(--detail-topbar-underlap) 0;
+  height: calc(var(--detail-topbar-underlap) + clamp(160px, 16vw, 200px));
+  padding-block:
+    calc(var(--detail-topbar-underlap) + clamp(60px, 7vw, 90px)) 20px;
   padding-inline: max(16px, calc((100vw - 1280px) / 2 + 16px));
+  align-items: center;
   border-bottom: 1px solid rgba(0, 0, 0, 0.18);
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/*
+ * In-hero editable title. Renders inside `.note-detail-hero` (a flex
+ * container with `align-items: flex-end`), so it naturally lands at
+ * the bottom of the visible strip — just below where the detail-topbar's
+ * negative margin pulls the pills. The element is an `<input>` so the
+ * banner doubles as the primary edit affordance for the title; the
+ * editor-card opts out of its own title input on the detail route to
+ * avoid the two-fields-for-one-value duplication earlier passes had.
+ *
+ * White-with-shadow text style mirrors `.link-thumb-domain` for the
+ * same reason: the hero's background can be any hue or any OG image,
+ * so the title has to read against unpredictable artwork. The shadow
+ * is heavier than the chip's because the title is bigger and absorbs
+ * the contrast hit on busy backgrounds.
+ */
+.note-detail-hero-title {
+  /* Reset the browser default `<textarea>` chrome — no border, no
+   * fill, no inset shadow. We want a "text on banner" look, not a
+   * form field rectangle. */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  /* Textarea auto-sizes to content (long titles wrap onto more lines
+   * + the textarea grows vertically with them). `resize: none` kills
+   * the bottom-right drag handle. `overflow: hidden` kills the default
+   * vertical scrollbar — `field-sizing: content` already makes the
+   * height match the wrapped text exactly, so the scrollbar would
+   * only ever be decorative chrome with nothing to scroll. */
+  resize: none;
+  field-sizing: content;
+  overflow: hidden;
+  min-height: 0;
+  /*
+   * The detail-shell renders at z-index 1 (so its negative-margin
+   * topbar overlays the hero), and the editor-stage inside the shell
+   * is transparent above the editor-card — but it still captures
+   * pointer events across that empty strip. That strip happens to
+   * cover the y-band where the title input sits, so without an
+   * explicit z-index here clicks land on the editor-stage rectangle
+   * and the title reads as un-editable (cursor never lands in it).
+   * `position: relative; z-index: 2` lifts the title above the shell
+   * for pointer purposes; the surrounding hero area (no title) still
+   * lets shell elements catch clicks normally.
+   */
+  position: relative;
+  z-index: 2;
+  font-family: var(--nc-title-font, var(--serif));
+  font-size: clamp(1.7rem, 2.8vw, 2.2rem);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: rgb(255, 255, 255);
+  /*
+   * Triple-stack text shadow for legibility on unpredictable OG image
+   * backgrounds:
+   *   1. `0 0 1px` — tight halo that reads as a stroke, gives each
+   *      glyph a dark edge even on bright backdrops.
+   *   2. `0 1px 3px` — short drop shadow that anchors the type to its
+   *      vertical position; reads as "weight" on dark backdrops.
+   *   3. `0 2px 18px` — wide soft glow that dims the surrounding image
+   *      so the contrast hit is local rather than global (we don't
+   *      want to dim the whole hero, just the area around the type).
+   * Opacities ramped up from the previous pass (0.5/0.3 → 0.8/0.7/0.55)
+   * because on bright OG images the lighter shadows washed out.
+   */
+  text-shadow:
+    0 0 1px rgba(0, 0, 0, 0.8),
+    0 1px 3px rgba(0, 0, 0, 0.7),
+    0 2px 18px rgba(0, 0, 0, 0.55);
+}
+
+/*
+ * On wide viewports the sidebar (340 px) rides up into the right side
+ * of the hero. Cap the title width so a long title wraps onto a
+ * second line before it would run under the tags card. The 368 px
+ * reserve accounts for the sidebar + grid gap (340 + 28). Below the
+ * 900 px breakpoint the sidebar wraps below the editor card (single-
+ * column grid), so the cap is lifted — title can use the whole hero
+ * width.
+ */
+@media (min-width: 901px) {
+  .note-detail-hero-title {
+    max-width: calc(100% - 368px);
+  }
+}
+
+.note-detail-hero-title::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+}
+
+.note-detail-hero-title:focus-visible {
+  /* Subtle focus indicator that respects the white-on-banner aesthetic
+   * — a hairline underline instead of the browser's blue ring. */
+  box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.55);
 }
 
 /*
@@ -6072,6 +6200,18 @@ button.tag-pill {
   position: sticky;
   /* Clears the app topbar (~56) + detail topbar (~40) + breathing room. */
   top: 120px;
+}
+
+/*
+ * On the detail route, pull the sidebar up so its first card aligns
+ * roughly with the detail-topbar pills row that sits inside the hero.
+ * The negative margin matches the topbar's natural height (~50 px),
+ * so what was "tags card below the topbar" becomes "tags card next to
+ * the topbar". `top` for sticky is lowered to match.
+ */
+.page--note-detail .editor-sidebar {
+  margin-top: -52px;
+  top: 70px;
 }
 
 @media (max-width: 900px) {
