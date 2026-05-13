@@ -6547,7 +6547,17 @@ button.tag-pill {
   }
 
   .page.page--note-detail {
-    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+    /*
+     * Detail-page on mobile: drop the `.page`'s 14 px top + 16 px inline
+     * padding so the hero banner bleeds edge-to-edge of the viewport
+     * (no white margin on either side, no gap above). Shell + footer
+     * carry their own `padding-inline: 16px` further down this media
+     * block, so editor / sidebar content still stays inset 16 px from
+     * the viewport edge — only the banner reaches the bezels.
+     *
+     * Bottom padding keeps the 96 px tabbar clearance via shorthand.
+     */
+    padding: 0 0 calc(96px + env(safe-area-inset-bottom, 0px));
   }
 
   .note-detail-shell,
@@ -6560,20 +6570,57 @@ button.tag-pill {
     padding-top: 14px;
   }
 
+  /*
+   * Drop the desktop's negative-margin overlap on mobile. The pill
+   * cluster (back / kind / domain / breadcrumbs) doesn't fit on one
+   * row at 412 px wide and wraps into three rows — the previous
+   * -48 px overlap pulled only the first row into the hero, so the
+   * rest of the row scattered onto the cream paper below. With
+   * margin-top: 0 the entire topbar sits in its natural place under
+   * the hero, all pills together. The title gets the full visible
+   * strip to itself (no need to reserve padding-top for pills).
+   */
   .note-detail-hero + .note-detail-shell {
-    margin-top: -48px;
+    margin-top: 0;
     padding-top: 0;
   }
 
   .note-detail-hero.link-thumb {
-    height: calc(var(--detail-topbar-underlap) + 84px);
-    padding-block: calc(var(--detail-topbar-underlap) + 10px) 10px;
+    /*
+     * Visible strip bumped from 84 px to clamp(100, 28vw, 140) so
+     * 2-line titles still fit. Padding-block-end stays small (12 px)
+     * because the title is centered in the box (`align-items: center`
+     * already on this selector at desktop scope) and doesn't need
+     * the breathing room a flex-end-aligned title would.
+     */
+    height: calc(var(--detail-topbar-underlap) + clamp(100px, 28vw, 140px));
+    padding-block: var(--detail-topbar-underlap) 12px;
     padding-inline: 16px;
+  }
+
+  .note-detail-hero-title {
+    /* Smaller title on mobile so a typical 2-line title fits in the
+     * shrunk visible strip. */
+    font-size: clamp(1.35rem, 6vw, 1.8rem);
   }
 
   .editor-card {
     padding: 18px;
     border-radius: 20px;
+  }
+
+  /*
+   * Detail-route editor on mobile: undo the desktop's
+   * `clamp(96px, 10vw, 130px)` top padding. That value existed to push
+   * the body below the hero overlap zone on desktop; on mobile the
+   * overlap is gone (shell margin-top: 0 above), so the body can sit
+   * close to the topbar pills. The base `.editor-card` rule above sets
+   * 18 px all-round but has lower specificity than the
+   * `.editor-card.detail-editor` desktop rule, so we override
+   * explicitly here.
+   */
+  .editor-card.detail-editor {
+    padding: 20px 16px 28px;
   }
 
   .editor-card h1,
@@ -6585,6 +6632,21 @@ button.tag-pill {
   .editor-card .editor-body {
     font-size: 17px;
     line-height: 1.6;
+  }
+
+  .detail-breadcrumbs {
+    font-size: 11px;
+  }
+
+  /*
+   * Sync crumb drops out on mobile — app-chrome carries the same
+   * sticky indicator above. `:has(+ .crumb-sync)` matches the
+   * separator that immediately precedes the sync crumb so dropping
+   * it doesn't leave a dangling " · " at the end of the row.
+   */
+  .detail-breadcrumbs .crumb-sync,
+  .detail-breadcrumbs .crumb-sep:has(+ .crumb-sync) {
+    display: none;
   }
 
   /* ---------- Links ---------- */
