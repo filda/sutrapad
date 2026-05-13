@@ -36,12 +36,17 @@ export interface EditorCardOptions {
    * Called after every title/body keystroke with the current (not yet
    * persisted) values. The right-rail sidebar no longer owns live stats
    * (those moved to the detail-topbar breadcrumbs and only refresh on
-   * the next render pass), so the remaining live consumer is the kind
+   * the next render pass), so the remaining default live consumer is the kind
    * chip — which lives inside this card. Kept as an optional callback
    * so future live-derived surfaces can attach without rewiring every
    * call site.
    */
   onInputsChange?: (title: string, body: string) => void;
+  /**
+   * Keep the default in-card chip for standalone editor-card consumers. The
+   * detail route disables it because the chip moves into the topbar there.
+   */
+  showKindChip?: boolean;
   /**
    * Persona derivation context. When provided AND a real note is being
    * edited (not the empty-filter-miss state), the editor card picks up
@@ -82,6 +87,7 @@ export function buildEditorCard({
   onBodyInput,
   onInputsChange,
   personaOptions,
+  showKindChip = true,
 }: EditorCardOptions): HTMLElement {
   const editor = document.createElement("section");
   editor.className = "editor-card detail-editor";
@@ -115,7 +121,9 @@ export function buildEditorCard({
     editor.classList.add("has-persona");
   }
 
-  const kindChip = buildKindChipForNote(displayedNote.title, displayedNote.body);
+  const kindChip = showKindChip
+    ? buildKindChipForNote(displayedNote.title, displayedNote.body)
+    : null;
 
   const titleInput = document.createElement("input");
   titleInput.className = "title-input editor-title";
@@ -132,12 +140,13 @@ export function buildEditorCard({
   // most keystrokes (it would thrash the textarea's caret / IME state).
   // `setKind` no-ops when the displayed kind hasn't changed, so the DOM
   // stays still unless something actually crossed a threshold. The
-  // optional onInputsChange callback fires too so any future live-derived
-  // surface (none today) can hook in without a second listener.
+  // optional onInputsChange callback fires too so external live-derived
+  // surfaces (for example the detail-topbar kind chip) can hook in without a
+  // second listener pair.
   const refreshLiveDerived = (): void => {
     const title = titleInput.value;
     const body = bodyInput.value;
-    kindChip.setKind(detectKind({ title, body }));
+    kindChip?.setKind(detectKind({ title, body }));
     onInputsChange?.(title, body);
   };
   titleInput.addEventListener("input", () => {
@@ -170,7 +179,8 @@ export function buildEditorCard({
   noteMetadata.className = "note-metadata";
   noteMetadata.textContent = buildNoteMetadata(displayedNote);
 
-  editor.append(kindChip.element, titleInput, bodyInput, noteMetadata);
+  if (kindChip) editor.append(kindChip.element);
+  editor.append(titleInput, bodyInput, noteMetadata);
 
   return editor;
 }

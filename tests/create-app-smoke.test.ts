@@ -86,11 +86,11 @@ describe("createApp smoke", () => {
   // Linux — same regime as macOS GitHub Actions runners. Istanbul
   // coverage adds another transform pass and can push this file past
   // Vitest's default 5s ceiling on Windows. The microtask-loop trip-wire
-  // still works at 7s; it just fails ~4s
+  // still works at 9s; it just fails ~6s
   // slower in the genuinely-broken case, which is a fine trade for
   // not flaking on slow hosts. Raise again if it flakes — the fix is
   // almost certainly happy-dom warm-up, not the test itself.
-  it("renders without looping and surfaces the bootstrap-error pulse", { timeout: 7000 }, async () => {
+  it("renders without looping and surfaces the bootstrap-error pulse", { timeout: 9000 }, async () => {
     // Dynamic import so the `vi.mock` above is in effect when `app.ts`
     // imports `../src/services/google-auth`.
     const { createApp } = await import("../src/app");
@@ -257,6 +257,14 @@ describe("editor input contracts", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
 
     // New landmarks in place…
+    const detailKindChip = root.querySelector<HTMLElement>(".detail-topbar .detail-kind-chip");
+    expect(detailKindChip).toBeInstanceOf(HTMLElement);
+    expect(detailKindChip?.dataset.kind).toBe("fleeting");
+    expect(
+      detailKindChip?.querySelector(".kind-chip-label")?.textContent,
+    ).toBe("Fleeting");
+    expect(root.querySelector(".editor-card > .kind-chip")).toBeNull();
+
     const syncCrumb = root.querySelector(".crumb-sync");
     expect(syncCrumb).toBeInstanceOf(HTMLElement);
     // …with a non-empty formatted string. We don't pin the exact
@@ -276,6 +284,15 @@ describe("editor input contracts", () => {
     const tagsCard = root.querySelector(".editor-sidebar-tags-card");
     expect(tagsCard).toBeInstanceOf(HTMLElement);
     expect(tagsCard?.querySelector(".tag-text-input")).toBeInstanceOf(HTMLInputElement);
+
+    const bodyInput = root.querySelector<HTMLTextAreaElement>(".body-input");
+    if (bodyInput === null) throw new Error("expected body input");
+    bodyInput.value = "- [ ] Ship the top chip";
+    bodyInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(detailKindChip?.dataset.kind).toBe("tasks");
+    expect(
+      detailKindChip?.querySelector(".kind-chip-label")?.textContent,
+    ).toBe("Tasks");
   });
 
   it("extends the note persona and card band across the detail page below app chrome", { timeout: 3000 }, async () => {
@@ -303,6 +320,8 @@ describe("editor input contracts", () => {
 
     createApp(root);
     await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(root.classList.contains("app--note-detail")).toBe(true);
 
     const page = root.querySelector<HTMLElement>(".page--note-detail");
     expect(page).toBeInstanceOf(HTMLElement);
@@ -369,6 +388,7 @@ describe("editor input contracts", () => {
       createApp(root);
       await new Promise((resolve) => setTimeout(resolve, 30));
       scrollTo.mockClear();
+      expect(root.classList.contains("app--note-detail")).toBe(false);
 
       const firstCard = root.querySelector<HTMLElement>(".note-list-item, .notebook-row");
       if (firstCard === null) throw new Error("expected a note card");
@@ -382,6 +402,7 @@ describe("editor input contracts", () => {
         left: 0,
         behavior: "auto",
       });
+      expect(root.classList.contains("app--note-detail")).toBe(true);
 
       const bodyInput = root.querySelector<HTMLTextAreaElement>(".body-input");
       if (bodyInput === null) throw new Error("expected body input");

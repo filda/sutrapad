@@ -1,5 +1,7 @@
 import { computeNoteStats, type NoteStats } from "../../logic/note-stats";
+import { detectKind } from "../../../lib/detect-kind";
 import type { SutraPadDocument } from "../../../types";
+import { buildKindChipForNote } from "./kind-chip";
 
 export interface DetailTopbarOptions {
   /**
@@ -21,10 +23,16 @@ export interface DetailTopbarOptions {
   onBackToNotes?: () => void;
 }
 
+export interface DetailTopbarHandle {
+  element: HTMLElement;
+  setKind: (title: string, body: string) => void;
+}
+
 /**
  * Horizontal strip above the editor card: "← Back to notes" on the left, a
- * compact breadcrumb row on the right with word count, read time, tasks,
- * links, tag count, and a trailing "synced HH:mm" pill. Mirrors the
+ * live kind chip near the page title zone, then a compact breadcrumb row on
+ * the right with word count, read time, tasks, links, tag count, and a
+ * trailing "synced HH:mm" pill. Mirrors the
  * handoff's `.detail-topbar` but omits the duplicate/export/delete action
  * cluster — those are out of scope here. The sync crumb is rendered last
  * so the eye lands on it after scanning the size signals.
@@ -33,9 +41,10 @@ export function buildDetailTopbar({
   note,
   syncCrumb,
   onBackToNotes,
-}: DetailTopbarOptions): HTMLElement {
+}: DetailTopbarOptions): DetailTopbarHandle {
   const topbar = document.createElement("div");
   topbar.className = "detail-topbar";
+  const kindChip = note ? buildKindChipForNote(note.title, note.body) : null;
 
   if (onBackToNotes) {
     const backButton = document.createElement("button");
@@ -46,11 +55,21 @@ export function buildDetailTopbar({
     topbar.append(backButton);
   }
 
+  if (kindChip) {
+    kindChip.element.classList.add("detail-kind-chip");
+    topbar.append(kindChip.element);
+  }
+
   if (note) {
     topbar.append(buildDetailBreadcrumbs(computeNoteStats(note), syncCrumb));
   }
 
-  return topbar;
+  return {
+    element: topbar,
+    setKind: (title, body) => {
+      kindChip?.setKind(detectKind({ title, body }));
+    },
+  };
 }
 
 function buildDetailBreadcrumbs(

@@ -320,6 +320,8 @@ export function renderAppPage({
   getAccessToken,
 }: RenderAppOptions): void {
   root.innerHTML = "";
+  const isNoteDetailRoute = activeMenuItem === "notes" && detailNoteId !== null;
+  root.classList.toggle("app--note-detail", isNoteDetailRoute);
 
   // Persona decoration only runs when the user opted in *and* we have a
   // concrete dark/light answer to feed the paper-palette chooser. `auto`
@@ -656,13 +658,12 @@ function appendNoteDetailPage(
   const detailShell = document.createElement("div");
   detailShell.className = "note-detail-shell";
 
-  detailShell.append(
-    buildDetailTopbar({
-      note: topbarNote,
-      syncCrumb,
-      onBackToNotes,
-    }),
-  );
+  const detailTopbar = buildDetailTopbar({
+    note: topbarNote,
+    syncCrumb,
+    onBackToNotes,
+  });
+  detailShell.append(detailTopbar.element);
 
   // Editor + right-rail sidebar share a grid row so the sidebar's
   // sticky positioning anchors to the page column (not the viewport
@@ -691,7 +692,9 @@ function appendNoteDetailPage(
       selectedTagFilters,
       onTitleInput,
       onBodyInput,
+      onInputsChange: detailTopbar.setKind,
       personaOptions,
+      showKindChip: false,
     }),
   );
 
