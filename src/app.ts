@@ -13,6 +13,12 @@ import { resolveDisplayedNote } from "./app/logic/displayed-note";
 import { formatBuildStamp } from "./app/logic/formatting";
 import { formatLastChange } from "./app/logic/editor-sync-crumb";
 import {
+  planScrollTransition,
+  routeScrollKey,
+  serializeRouteKey,
+  type RouteScrollKey,
+} from "./app/logic/route-scroll-memory";
+import {
   ensureVisibleActiveNoteSelection,
   getAppStatusText,
   getCurrentWorkspaceNote,
@@ -252,7 +258,13 @@ export function createApp(root: HTMLElement): void {
   // then render again on the next tick" double-up.
   let renderScheduled = false;
   let renderSuppressionDepth = 0;
-  let lastRenderedDetailRouteKey: string | null = null;
+  // Per-page scroll memory. The serialized route key (page:notes,
+  // note-detail:<id>, …) maps to the last `window.scrollY` captured for
+  // that route, so the user lands at the same spot when they revisit a
+  // list page. See `route-scroll-memory.ts` for the decision logic;
+  // app.ts is only responsible for the side-effecting capture/restore.
+  let previousScrollKey: RouteScrollKey | null = null;
+  const scrollMemory = new Map<string, number>();
   const withRenderSuppressed = (action: () => void): void => {
     renderSuppressionDepth += 1;
     try {
@@ -494,7 +506,7 @@ export function createApp(root: HTMLElement): void {
     // no-op when focus was outside the editor card, so it's safe to
     // run unconditionally.
     const focusSnapshot = captureActiveEditorFocus();
-    let shouldResetDetailScroll = false;
+    let scrollRestoreY: number | null = null;
     try {
       syncSelectedTagFilters();
       const detailRoute = syncDetailRouteSelection(
@@ -526,13 +538,22 @@ export function createApp(root: HTMLElement): void {
       const filterMode = filterMode$.get();
       const activeMenuItem = activeMenuItem$.get();
       const detailNoteId = detailNoteId$.get();
-      const detailRouteKey =
-        activeMenuItem === "notes" && detailNoteId !== null
-          ? `notes:${detailNoteId}`
-          : null;
-      shouldResetDetailScroll =
-        detailRouteKey !== null && detailRouteKey !== lastRenderedDetailRouteKey;
-      lastRenderedDetailRouteKey = detailRouteKey;
+      // Per-page scroll memory: decide whether to capture `window.scrollY`
+      // for the page we're leaving, and whether to restore a stored value
+      // for the page we're entering. The plan is computed *before*
+      // `renderAppPage` tears down the DOM so the captured scrollY still
+      // corresponds to the page the user was actually looking at.
+      const currentScrollKey = routeScrollKey(activeMenuItem, detailNoteId);
+      const scrollPlan = planScrollTransition({
+        previousKey: previousScrollKey,
+        currentKey: currentScrollKey,
+        memoryRead: (key) => scrollMemory.get(serializeRouteKey(key)),
+      });
+      if (scrollPlan.capturePrevious && previousScrollKey !== null) {
+        scrollMemory.set(serializeRouteKey(previousScrollKey), window.scrollY);
+      }
+      previousScrollKey = currentScrollKey;
+      scrollRestoreY = scrollPlan.restoreScrollY;
       const notesViewMode = notesViewMode$.get();
       const linksViewMode = linksViewMode$.get();
       const syncState = syncState$.get();
@@ -650,8 +671,12 @@ export function createApp(root: HTMLElement): void {
       // against whatever DOM landed before the failure. Restore is a
       // no-op when the snapshot was taken outside the editor card.
       focusSnapshot.restore();
-      if (shouldResetDetailScroll) {
-        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      // `scrollRestoreY === null` means "this is a same-page re-render
+      // (or first render) — leave scroll alone so an autosave doesn't
+      // yank the user". A concrete number means "scroll there"; 0 is
+      // the standard fallback for fresh pages and detail entries.
+      if (scrollRestoreY !== null) {
+        window.scrollTo({ top: scrollRestoreY, left: 0, behavior: "auto" });
       }
     }
   };
