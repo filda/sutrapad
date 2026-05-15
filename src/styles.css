@@ -2357,7 +2357,7 @@ button.tag-pill {
  * previous per-page rules were doing slightly different things (-1px on
  * Notes, accent border on Links) and the unification picks one answer.
  *
- * Persona rules (`.notes-list--persona .note-list-item`, `.task-card.has-persona`,
+ * Persona rules (`.note-list-item.has-persona`, `.task-card.has-persona`,
  * `.link-card.has-persona`) still win via their higher-specificity selectors
  * so the paper-coloured look on persona-enabled cards is preserved.
  */
@@ -3495,7 +3495,7 @@ button.tag-pill {
 
 /*
  * Handwritten font tier — bumps title size + airs leading the same way
- * the grid card does. Mirrors `.notes-list--persona .note-list-item[data-font-tier="handwritten"]`
+ * the grid card does. Mirrors `.note-list-item.has-persona[data-font-tier="handwritten"]`
  * so a `#poetry` note on the grid and the same note open in the editor
  * share the same display feel.
  */
@@ -4051,8 +4051,13 @@ button.tag-pill {
  * inline on the button and data attributes for per-kind styling, so this
  * stylesheet stays static — only the values change per card.
  *
- * When the persona is off, the `.notes-list--persona` class is absent and
- * every rule below is inert: cards keep the flat `.note-list-item` look.
+ * Step 4 of cards-unification: persona on each card is signalled by the
+ * `has-persona` class on `.note-list-item` itself, matching the Links and
+ * Tasks renderers (`.link-card.has-persona`, `.task-card.has-persona`).
+ * The list-level `.notes-list--persona` modifier below stays — it carries
+ * grid-level concerns (gap) that don't belong on the per-card surface.
+ * When persona is off, neither class is present and every rule below is
+ * inert: cards keep the flat `.note-list-item` look.
  */
 .notes-list--persona {
   /*
@@ -4063,7 +4068,7 @@ button.tag-pill {
   gap: 14px;
 }
 
-.notes-list--persona .note-list-item {
+.note-list-item.has-persona {
   /*
    * Paper colour + ink come from the persona derivation. Fallbacks resolve to
    * the original flat style so a half-rendered card (e.g. if the persona lib
@@ -4087,42 +4092,42 @@ button.tag-pill {
   overflow: hidden;
 }
 
-.notes-list--persona .note-list-item:hover {
+.note-list-item.has-persona:hover {
   transform: translateY(-1px);
   border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 55%, transparent);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
-.notes-list--persona .note-list-item.is-active {
+.note-list-item.has-persona.is-active {
   border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 65%, transparent);
   box-shadow:
     inset 0 0 0 1px
       color-mix(in oklab, var(--nc-accent, var(--accent)) 25%, transparent);
 }
 
-.notes-list--persona .note-list-item > .note-list-title {
+.note-list-item.has-persona > .note-list-title {
   font-family: var(--nc-title-font, var(--serif));
   color: var(--nc-ink, var(--primary));
   letter-spacing: 0.005em;
 }
 
-.notes-list--persona .note-list-item > p {
+.note-list-item.has-persona > p {
   font-family: var(--nc-body-font, var(--serif));
   color: color-mix(in oklab, var(--nc-ink, var(--primary)) 80%, transparent);
 }
 
-.notes-list--persona .note-list-item > .note-list-meta,
-.notes-list--persona .note-list-item .note-list-tag {
+.note-list-item.has-persona > .note-list-meta,
+.note-list-item.has-persona .note-list-tag {
   color: color-mix(in oklab, var(--nc-ink, var(--primary)) 62%, transparent);
 }
 
-.notes-list--persona .note-list-item[data-font-tier="handwritten"] > .note-list-title {
+.note-list-item.has-persona[data-font-tier="handwritten"] > .note-list-title {
   /* Bigger, slightly airier leading reads right for the hand-drawn face. */
   font-size: 1.15rem;
   line-height: 1.1;
 }
 
-.notes-list--persona .note-list-item[data-font-tier="mono"] > .note-list-title {
+.note-list-item.has-persona[data-font-tier="mono"] > .note-list-title {
   font-size: 0.95rem;
   letter-spacing: 0;
 }
@@ -4242,7 +4247,7 @@ button.tag-pill {
  * handoff (coffee-ring, pencil-marks, date-stamp, pin) degrade to a subtle
  * texture cue rather than a full illustration.
  */
-.notes-list--persona .note-list-item[data-patina~="folded-corner"]::after {
+.note-list-item.has-persona[data-patina~="folded-corner"]::after {
   content: "";
   position: absolute;
   right: 0;
@@ -4258,7 +4263,7 @@ button.tag-pill {
   pointer-events: none;
 }
 
-.notes-list--persona .note-list-item[data-patina~="washi"]::before {
+.note-list-item.has-persona[data-patina~="washi"]::before {
   content: "";
   position: absolute;
   top: -8px;
@@ -4276,7 +4281,7 @@ button.tag-pill {
   pointer-events: none;
 }
 
-.notes-list--persona .note-list-item[data-patina~="highlight"] > .note-list-title {
+.note-list-item.has-persona[data-patina~="highlight"] > .note-list-title {
   background-image: linear-gradient(
     120deg,
     transparent 0%,
@@ -4290,7 +4295,7 @@ button.tag-pill {
   padding-inline: 2px;
 }
 
-.notes-list--persona .note-list-item[data-patina~="coffee-ring"]::after {
+.note-list-item.has-persona[data-patina~="coffee-ring"]::after {
   content: "";
   position: absolute;
   right: 16px;
@@ -4309,7 +4314,7 @@ button.tag-pill {
  * an SVG with a radial gradient; this CSS-only approximation reads the same
  * at list-item scale without the extra markup.
  */
-.notes-list--persona .note-list-item[data-patina~="pin"]::before {
+.note-list-item.has-persona[data-patina~="pin"]::before {
   content: "";
   position: absolute;
   top: 6px;
@@ -4329,8 +4334,7 @@ button.tag-pill {
  * decoration that reuses the sticker row — we just drop the pin overlay to
  * avoid a silently-broken render.
  */
-.notes-list--persona
-  .note-list-item[data-patina~="washi"][data-patina~="pin"]::before {
+.note-list-item.has-persona[data-patina~="washi"][data-patina~="pin"]::before {
   content: "";
   top: -8px;
   left: -14px;
@@ -7069,7 +7073,7 @@ button.tag-pill {
  * (`applyPersonaStyles`) writes the same CSS variables it always has;
  * these rules consume them on `.task-card.has-persona` and
  * `.link-card.has-persona` the same way the existing
- * `.notes-list--persona .note-list-item` rules do.
+ * `.note-list-item.has-persona` rules do.
  * ========================================================================== */
 
 /* Tasks ------------------------------------------------------------------- */

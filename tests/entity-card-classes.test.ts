@@ -173,3 +173,34 @@ describe("entity-card shared shell — Step 2 semantics", () => {
     expect(time?.dateTime).toBe(createdAt);
   });
 });
+
+describe("entity-card shared shell — Step 4 persona symmetry", () => {
+  // Pins the `has-persona` class contract on Notes cards. Pre-Step 4 the
+  // class only sat on the list wrapper (`notes-list--persona`); after the
+  // migration each card carries `has-persona` directly, matching the
+  // Links / Tasks pattern (`.link-card.has-persona` / `.task-card.has-persona`).
+
+  it("Notes card gets `has-persona` when personaOptions is provided", () => {
+    const note = makeNote();
+    const list = buildNotesList(
+      "n1",
+      [note],
+      () => undefined,
+      "cards",
+      { allNotes: [note], dark: false },
+    );
+    const card = list.querySelector<HTMLElement>(".note-list-item");
+    expect(card?.classList.contains("has-persona")).toBe(true);
+  });
+
+  it("Notes card omits `has-persona` when personaOptions is undefined", () => {
+    const list = buildNotesList(
+      "n1",
+      [makeNote()],
+      () => undefined,
+      "cards",
+    );
+    const card = list.querySelector<HTMLElement>(".note-list-item");
+    expect(card?.classList.contains("has-persona")).toBe(false);
+  });
+});

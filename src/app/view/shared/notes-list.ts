@@ -104,7 +104,15 @@ function buildCardItem(
   // (`surface-strong` + `var(--r-md)` + `shadow-card` + hover lift);
   // `note-list-item` keeps the inner-content selectors and the
   // `.is-active` highlight.
-  button.className = `entity-card entity-card--note note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
+  //
+  // Step 4 adds `has-persona` to the card itself when persona is on (rather
+  // than relying on `.notes-list--persona` to scope the per-card rules via
+  // descendant selectors). This matches the Links / Tasks renderers and
+  // means a Notes card rendered outside of its usual list wrapper still
+  // gets the persona paper / ink / patina without depending on its parent.
+  // `.notes-list--persona` stays on the list for list-level concerns (the
+  // `gap` value the persona grid wants).
+  button.className = `entity-card entity-card--note note-list-item${note.id === currentNoteId ? " is-active" : ""}${persona ? " has-persona" : ""}`;
   button.type = "button";
 
   if (persona) applyPersonaStyles(button, persona);
