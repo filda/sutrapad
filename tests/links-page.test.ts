@@ -305,7 +305,7 @@ describe("buildLinksPage eyebrow / toolbar / page-header / persona class", () =>
 describe("buildLinksPage cards layout", () => {
   // The list mode is exhaustively tested above; the cards mode (the
   // default linksViewMode in production) needs its own structural
-  // coverage so the .link-card / .link-card-title / .link-card-desc /
+  // coverage so the .link-card / .link-card-title / .card-excerpt /
   // .link-card-url / .link-card-saved / .link-card-source classNames
   // stay pinned.
 

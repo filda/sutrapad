@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildLinkCardDescription,
   deriveLinkHostname,
   hashStringToHue,
 } from "../src/app/logic/link-card";
+
+// `buildLinkCardDescription` moved to `app/logic/card-excerpt.ts` as
+// `buildCardExcerpt` in Step 6 of cards-unification — its tests now
+// live in `tests/card-excerpt.test.ts`.
 
 describe("deriveLinkHostname", () => {
   it("extracts the hostname from a typical URL", () => {
@@ -89,98 +92,5 @@ describe("hashStringToHue", () => {
     expect(hashStringToHue("nytimes.com")).toBe(99);
     expect(hashStringToHue("github.com")).toBe(63);
     expect(hashStringToHue("abc")).toBe(29);
-  });
-});
-
-describe("buildLinkCardDescription", () => {
-  it("returns null when the body is just the URL", () => {
-    // The "captured-via-bookmarklet, body = URL" case. The thumb
-    // already shows the hostname, so a description line reading
-    // "https://…" would be pure duplication.
-    expect(
-      buildLinkCardDescription("https://nytimes.com/article", "https://nytimes.com/article"),
-    ).toBeNull();
-  });
-
-  it("returns null when the body is empty", () => {
-    expect(buildLinkCardDescription("", "https://nytimes.com/")).toBeNull();
-  });
-
-  it("treats an empty url as 'nothing to strip' instead of degenerating into a per-character split", () => {
-    // Regression guard: `body.split("").join("")` re-stitches the body
-    // codepoint-by-codepoint and would corrupt grapheme clusters
-    // (combining diacritics, ZWJ emoji sequences). The empty-url
-    // branch must short-circuit and return the trimmed body verbatim.
-    const body = "café 👨‍👩‍👧 fin";
-    expect(buildLinkCardDescription(body, "")).toBe("café 👨‍👩‍👧 fin");
-    // Whitespace-only body still folds to null on the empty-url path.
-    expect(buildLinkCardDescription("   \n\n   ", "")).toBeNull();
-  });
-
-  it("strips the URL out of the body while keeping surrounding prose", () => {
-    // The doubled-space left behind where the URL was is collapsed by
-    // the whitespace-normalisation step, so "Read: <url> — nice" ends
-    // up as "Read: — nice" with a single space, not ":  —".
-    const body = "Read this tomorrow: https://nytimes.com/article — looks juicy.";
-    expect(
-      buildLinkCardDescription(body, "https://nytimes.com/article"),
-    ).toBe("Read this tomorrow: — looks juicy.");
-  });
-
-  it("collapses newlines/runs of whitespace to a single space", () => {
-    // The card body is visually one line, so preserving paragraph
-    // breaks buys nothing and just truncates more aggressively.
-    const body = "Paragraph one.\n\nParagraph two.\n\nParagraph three.";
-    expect(buildLinkCardDescription(body, "https://other.com")).toBe(
-      "Paragraph one. Paragraph two. Paragraph three.",
-    );
-  });
-
-  it("truncates long bodies with an ellipsis at the caller-specified max", () => {
-    const body = "a".repeat(200);
-    const result = buildLinkCardDescription(body, "https://unused.com", 50);
-    if (result === null) throw new Error("expected non-null result");
-    // Length <= max; ends with the single ellipsis char.
-    expect(result.length).toBeLessThanOrEqual(50);
-    expect(result.endsWith("\u2026")).toBe(true);
-  });
-
-  it("leaves short bodies untruncated (no trailing ellipsis)", () => {
-    const body = "A short paragraph.";
-    const result = buildLinkCardDescription(body, "https://unused.com");
-    if (result === null) throw new Error("expected non-null result");
-    expect(result).toBe("A short paragraph.");
-    expect(result.endsWith("\u2026")).toBe(false);
-  });
-
-  it("does not truncate when the body is exactly at the max-char budget", () => {
-    // Boundary pin: exactly `maxChars` long → return unchanged. If the
-    // comparison flips from `<=` to `<`, a body landing on the exact
-    // limit would grow a phantom ellipsis.
-    const body = "a".repeat(50);
-    const result = buildLinkCardDescription(body, "https://unused.com", 50);
-    if (result === null) throw new Error("expected non-null result");
-    expect(result).toBe(body);
-    expect(result.length).toBe(50);
-    expect(result.endsWith("\u2026")).toBe(false);
-  });
-
-  it("trims leading and trailing whitespace from the result", () => {
-    // A body like "  hello world  " should read as "hello world" in
-    // the card — leading spaces would look like a layout bug, not
-    // preserved intent. Pins the outer .trim() step.
-    expect(
-      buildLinkCardDescription("   hello world   ", "https://unused.com"),
-    ).toBe("hello world");
-  });
-
-  it("defaults to 160 chars when no max is given", () => {
-    // Pin the default — dashboards/cards are designed around this
-    // budget; changing it silently would reflow the whole Links grid.
-    const body = "a".repeat(200);
-    const result = buildLinkCardDescription(body, "https://unused.com");
-    if (result === null) throw new Error("expected non-null result");
-    expect(result.length).toBeLessThanOrEqual(160);
-    expect(result.length).toBe(160);
   });
 });

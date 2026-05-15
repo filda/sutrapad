@@ -4,11 +4,9 @@ import {
   filterNotesByTags,
 } from "../../../lib/notebook";
 import { deriveNotebookPersona } from "../../../lib/notebook-persona";
+import { buildCardExcerpt } from "../../logic/card-excerpt";
 import { formatDate } from "../../logic/formatting";
-import {
-  buildLinkCardDescription,
-  deriveLinkHostname,
-} from "../../logic/link-card";
+import { deriveLinkHostname } from "../../logic/link-card";
 import { buildCardDate, buildCardTitle } from "../shared/card-header";
 import type { LinksViewMode } from "../../logic/links-view";
 import { buildFaviconUrl, type CachedOgImageEntry } from "../../logic/og-image";
@@ -272,7 +270,7 @@ interface LinkEntry {
  * Title derives from the most recent source note's title so the card
  * reads "why you saved it" — much more useful than the raw URL.
  * Description is the first line of that note's body with the URL
- * itself stripped out (see `buildLinkCardDescription`), or the
+ * itself stripped out (see `buildCardExcerpt`), or the
  * URL itself if the body is empty/unrecoverable.
  */
 function buildLinksGrid(
@@ -304,7 +302,7 @@ function buildLinkCard(
   const card = document.createElement("article");
   // Shared `entity-card` shell + Links variant — see notes-list.ts for the
   // Step 1 cards-unification rationale. `link-card` stays so the existing
-  // inner selectors (.link-card-title, .link-card-desc, .link-card-source,
+  // inner selectors (.link-card-title, .link-card-source,
   // and the persona overrides) keep working unchanged.
   card.className = "entity-card entity-card--link link-card";
 
@@ -374,12 +372,16 @@ function buildLinkBody(
     }),
   );
 
+  // Step 6: excerpt comes from the shared `buildCardExcerpt` (Notes
+  // uses the same helper). Element is `<p class="card-excerpt">` —
+  // semantic paragraph + shared styling hook. Tasks doesn't have an
+  // excerpt; its task list takes that slot.
   const description = primaryNote
-    ? buildLinkCardDescription(primaryNote.body, entry.url)
+    ? buildCardExcerpt(primaryNote.body, { stripUrl: entry.url })
     : null;
   if (description !== null) {
-    const desc = document.createElement("div");
-    desc.className = "link-card-desc";
+    const desc = document.createElement("p");
+    desc.className = "card-excerpt";
     desc.textContent = description;
     body.append(desc);
   }

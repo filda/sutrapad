@@ -73,7 +73,7 @@ describe("buildNotesList — XSS guards", () => {
     document.body.append(list);
 
     expect(list.querySelectorAll("svg")).toHaveLength(0);
-    const excerpt = list.querySelector(".note-list-item p");
+    const excerpt = list.querySelector(".note-list-item .card-excerpt");
     expect(excerpt?.textContent).toBe(malicious.slice(0, 72));
 
     expect((window as unknown as { __pwned_body?: boolean }).__pwned_body).toBeUndefined();
@@ -203,15 +203,16 @@ describe("buildNotesList — structural rendering", () => {
   });
 
   it("falls back to 'Empty note' for the body excerpt when the note body is whitespace-only", () => {
-    // Pin the `||` short-circuit on line 115. Both replacement
-    // mutants (`note.body` alone, `""` for the fallback) flow
-    // through the same observable: the rendered excerpt text.
+    // Step 6: the helper returns null on a whitespace-only body and
+    // `buildCardItem` uses `?? "Empty note"` so the card stays
+    // visually balanced. Mutating the fallback or skipping it would
+    // surface as either an empty `<p>` or the text "null".
     const list = buildNotesList(
       "a",
       [makeNote({ id: "a", body: "   \n\t  " })],
       () => undefined,
     );
-    const excerpt = list.querySelector(".note-list-item p");
+    const excerpt = list.querySelector(".note-list-item .card-excerpt");
     expect(excerpt?.textContent).toBe("Empty note");
   });
 

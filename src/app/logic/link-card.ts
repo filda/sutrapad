@@ -53,40 +53,8 @@ export function hashStringToHue(input: string): number {
   return hash % 360;
 }
 
-/**
- * Trims + truncates a note body into a one-paragraph blurb suitable
- * for the card's secondary line. Strips the URL that's already shown
- * on the card so the blurb isn't just "https://…". Returns `null`
- * when the remaining body is empty — the caller then omits the
- * description line entirely rather than rendering an empty string.
+/*
+ * Card excerpt logic lives in `src/app/logic/card-excerpt.ts` (Step 6 of
+ * cards-unification — Notes and Links share the same trim/strip/truncate
+ * pipeline). Callers import `buildCardExcerpt` directly from there.
  */
-export function buildLinkCardDescription(
-  body: string,
-  url: string,
-  maxChars = 160,
-): string | null {
-  // Remove the URL we're describing — the user already sees it on
-  // the thumb chip. Preserve surrounding whitespace / punctuation so
-  // "Read: <url> — fascinating" becomes "Read: — fascinating" rather
-  // than "Read:fascinating".
-  //
-  // Defense-in-depth on the empty-url branch: `body.split("")` splits
-  // *between every character* and `join("")` then re-stitches the body
-  // codepoint-by-codepoint — a no-op for ASCII but a subtle grapheme-
-  // splitter trap on emoji / combining-diacritic input. The call sites
-  // today never pass an empty url, so this is a guard against a future
-  // regression rather than a hot path; truncation logic below still
-  // applies because we only short-circuit the split/join.
-  const withoutUrl = url === "" ? body.trim() : body.split(url).join("").trim();
-  if (withoutUrl === "") return null;
-
-  // Collapse runs of whitespace to single spaces — the card body is a
-  // single line visually, so preserving paragraph breaks buys nothing.
-  const flattened = withoutUrl.replace(/\s+/g, " ");
-  if (flattened.length <= maxChars) return flattened;
-
-  // Hard truncate at `maxChars - 1` and append a single ellipsis
-  // character (not three dots) so the line doesn't grow beyond the
-  // caller-specified budget.
-  return `${flattened.slice(0, maxChars - 1).trimEnd()}\u2026`;
-}

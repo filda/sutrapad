@@ -11,6 +11,7 @@ import {
   createOgImageResolver,
   type OgImageResolver,
 } from "../../logic/og-image-resolver";
+import { buildCardExcerpt } from "../../logic/card-excerpt";
 import { describeTaskChip } from "../../logic/task-chip";
 import type { SutraPadDocument } from "../../../types";
 import { buildCardDate, buildCardTitle } from "./card-header";
@@ -139,7 +140,14 @@ function buildCardItem(
     );
   }
 
-  const excerpt = note.body.trim() || "Empty note";
+  // Step 6 of cards-unification: excerpt comes from the shared
+  // `buildCardExcerpt` helper (same pipeline as Links). Notes keeps a
+  // 72-char budget for its single-line excerpt — Links uses the
+  // default 160 chars and clamps with CSS. When the helper returns
+  // `null` (body is empty after trim) Notes still renders the
+  // "Empty note" placeholder so the card never collapses to bare
+  // title + meta.
+  const excerptText = buildCardExcerpt(note.body, { maxChars: 72 });
   // Branching/labelling lives in describeTaskChip so the UI stays purely
   // presentational: pick the class, drop in text + aria-label, or omit.
   const taskChip = describeTaskChip(countTasksInNote(note));
@@ -178,7 +186,8 @@ function buildCardItem(
   }
 
   const excerptEl = document.createElement("p");
-  excerptEl.textContent = excerpt.slice(0, 72);
+  excerptEl.className = "card-excerpt";
+  excerptEl.textContent = excerptText ?? "Empty note";
 
   button.append(titleEl, meta, excerptEl);
 

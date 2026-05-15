@@ -2513,9 +2513,21 @@ button.tag-pill {
   overflow: hidden;
 }
 
-.link-card-desc {
-  font-size: 12.5px;
+/*
+ * Step 6 of cards-unification: shared `.card-excerpt` class for Notes
+ * + Links body previews (built via the shared `buildCardExcerpt`
+ * helper). The base rule holds the colour + margin reset; per-surface
+ * overrides further down pin font-size / line-clamp / margin so each
+ * card retains its visual rhythm. Tasks doesn't have an excerpt — its
+ * task list takes the same slot.
+ */
+.card-excerpt {
+  margin: 0;
   color: var(--muted);
+}
+
+.link-card .card-excerpt {
+  font-size: 12.5px;
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -3985,7 +3997,7 @@ button.tag-pill {
 
 .note-list-item > .note-list-title,
 .note-list-item > .card-meta,
-.note-list-item > p {
+.note-list-item > .card-excerpt {
   display: block;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -4013,9 +4025,13 @@ button.tag-pill {
   font-size: 0.82rem;
 }
 
-.note-list-item > p {
-  margin: 0;
-  color: var(--muted);
+/*
+ * Notes excerpt picks up the shared `.card-excerpt` base (margin / colour)
+ * and adds its own size. Selector reaches via the descendant chain so
+ * Notes-specific tuning never bleeds into Links (which lives under
+ * `.link-card .card-excerpt`).
+ */
+.note-list-item > .card-excerpt {
   font-size: 0.9rem;
   line-height: 1.35;
 }
@@ -4130,7 +4146,7 @@ button.tag-pill {
   letter-spacing: 0.005em;
 }
 
-.note-list-item.has-persona > p {
+.note-list-item.has-persona > .card-excerpt {
   font-family: var(--nc-body-font, var(--serif));
   color: color-mix(in oklab, var(--nc-ink, var(--primary)) 80%, transparent);
 }
@@ -7184,7 +7200,7 @@ button.tag-pill {
   color: var(--nc-ink, var(--ink-900));
 }
 
-.link-card.has-persona .link-card-desc,
+.link-card.has-persona .card-excerpt,
 .link-card.has-persona .link-card-saved {
   font-family: var(--nc-body-font, inherit);
   color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 70%, transparent);
