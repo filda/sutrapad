@@ -215,18 +215,21 @@ describe("buildNotesList — structural rendering", () => {
     expect(excerpt?.textContent).toBe("Empty note");
   });
 
-  it("stamps `note-list-meta` on the meta wrapper and `note-list-date` on the date span", () => {
-    // Lines 130 / 133 carry the className StringLiterals.
+  it("stamps `card-meta` on the meta wrapper and `note-list-date` on the date element", () => {
+    // The meta wrapper class is the Step 5 shared `.card-meta` (was
+    // `.note-list-meta` before — see notes-list.ts buildCardItem).
+    // The date element keeps its surface-specific class (Notes side
+    // uses `.note-list-date`, Links side uses `.link-card-saved`).
     const list = buildNotesList(
       "a",
       [makeNote({ id: "a" })],
       () => undefined,
     );
-    expect(list.querySelector(".note-list-meta")).not.toBeNull();
+    expect(list.querySelector(".card-meta")).not.toBeNull();
     expect(list.querySelector(".note-list-date")).not.toBeNull();
   });
 
-  it("renders one `.note-list-tag` per non-empty tag in the cards layout", () => {
+  it("renders one `.tag-chip` per non-empty tag in the cards layout", () => {
     // Pin the tags-row branch (line 150-onwards). A workspace with
     // empty tags must NOT render `.note-list-tags`; a workspace with
     // tags must render exactly one chip per tag.
@@ -242,7 +245,7 @@ describe("buildNotesList — structural rendering", () => {
       [makeNote({ id: "a", tags: ["x", "y", "z"] })],
       () => undefined,
     );
-    const chips = Array.from(tagged.querySelectorAll(".note-list-tag"));
+    const chips = Array.from(tagged.querySelectorAll(".tag-chip"));
     expect(chips.map((c) => c.textContent)).toEqual(["x", "y", "z"]);
   });
 
@@ -290,7 +293,7 @@ describe("buildNotesList — structural rendering", () => {
       () => undefined,
       "list",
     );
-    const chips = Array.from(list.querySelectorAll(".nr-tags .note-list-tag"));
+    const chips = Array.from(list.querySelectorAll(".nr-tags .tag-chip"));
     expect(chips.map((c) => c.textContent)).toEqual([
       "one",
       "two",

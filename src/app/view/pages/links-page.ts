@@ -405,8 +405,13 @@ function buildLinkMeta(
   primaryNote: SutraPadDocument | null,
   onOpenNote: (noteId: string) => void,
 ): HTMLElement {
+  // Step 5: shared `.card-meta` wrapper (Notes + Links). The inner
+  // contents (date + source-note chip on Links, date + task chip on
+  // Notes) still differ per surface, but the wrapper layout — flex
+  // row, gap, baseline alignment — is identical, so a single class
+  // carries the styling.
   const meta = document.createElement("div");
-  meta.className = "link-meta";
+  meta.className = "card-meta";
 
   if (entry.latestUpdatedAt) {
     meta.append(buildCardDate(entry.latestUpdatedAt, "link"));

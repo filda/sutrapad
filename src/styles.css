@@ -2545,11 +2545,25 @@ button.tag-pill {
   text-decoration: underline;
 }
 
-.link-meta {
+/*
+ * Step 5 of cards-unification: `.card-meta` is the shared flex row that
+ * carries the date + secondary chip on every entity-card surface
+ * (Notes' date + task chip, Links' date + source-note chip). The base
+ * rule holds what's identical (flex row, wrap, 8px gap); per-surface
+ * overrides below pin the rest (Notes wants baseline alignment + a
+ * margin-bottom that gates to the excerpt, Links wants center
+ * alignment + a `margin-top: auto` that pins the meta to the bottom
+ * of the card). Tasks meta lives in `.task-card-sub` instead — its
+ * separator + badge layout doesn't fit the same wrapper contract.
+ */
+.card-meta {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.link-card .card-meta {
+  align-items: center;
   margin-top: auto;
   padding-top: 6px;
   font-size: 11.5px;
@@ -3970,7 +3984,7 @@ button.tag-pill {
 }
 
 .note-list-item > .note-list-title,
-.note-list-item > .note-list-meta,
+.note-list-item > .card-meta,
 .note-list-item > p {
   display: block;
   max-width: 100%;
@@ -3992,11 +4006,8 @@ button.tag-pill {
   font-weight: 700;
 }
 
-.note-list-item > .note-list-meta {
-  display: flex;
-  flex-wrap: wrap;
+.note-list-item > .card-meta {
   align-items: baseline;
-  gap: 8px;
   margin-bottom: 8px;
   color: var(--muted);
   font-size: 0.82rem;
@@ -4035,7 +4046,15 @@ button.tag-pill {
   margin-top: 8px;
 }
 
-.note-list-tag {
+/*
+ * Step 5 of cards-unification: tag chip class is now `.tag-chip` so it
+ * isn't pinned to a single surface. The Notes cards/row-mode renderers
+ * both stamp the same class, and Tasks / Links can adopt it if/when
+ * tags arrive on those surfaces. The wrapper class (`.note-list-tags`)
+ * stays Notes-scoped — it carries the gap + margin layout that's tied
+ * to the Notes card's body grid.
+ */
+.tag-chip {
   padding: 1px 8px;
   background: rgba(var(--accent-rgb), 0.1);
   border: 1px solid rgba(var(--accent-rgb), 0.28);
@@ -4116,8 +4135,8 @@ button.tag-pill {
   color: color-mix(in oklab, var(--nc-ink, var(--primary)) 80%, transparent);
 }
 
-.note-list-item.has-persona > .note-list-meta,
-.note-list-item.has-persona .note-list-tag {
+.note-list-item.has-persona > .card-meta,
+.note-list-item.has-persona .tag-chip {
   color: color-mix(in oklab, var(--nc-ink, var(--primary)) 62%, transparent);
 }
 

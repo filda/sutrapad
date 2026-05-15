@@ -158,8 +158,14 @@ function buildCardItem(
   // which closes a tiny rendering discrepancy with Links / Tasks.
   const titleEl = buildCardTitle(note.title, "note");
 
-  const meta = document.createElement("span");
-  meta.className = "note-list-meta";
+  // Step 5: shared `.card-meta` wrapper class (Notes + Links). Was
+  // `.note-list-meta` (a `<span>` with `display: flex`, which is
+  // semantically a block container in disguise); the element is now a
+  // `<div>` to match what its layout already was. Tasks uses
+  // `.task-card-sub` instead because its meta carries separators and
+  // badges that the flat date/chip wrapper can't express.
+  const meta = document.createElement("div");
+  meta.className = "card-meta";
 
   meta.append(buildCardDate(note.updatedAt, "note"));
 
@@ -181,7 +187,7 @@ function buildCardItem(
     tagsRow.className = "note-list-tags";
     for (const tag of note.tags) {
       const chip = document.createElement("span");
-      chip.className = "note-list-tag";
+      chip.className = "tag-chip";
       chip.textContent = tag;
       tagsRow.append(chip);
     }
@@ -241,7 +247,7 @@ function buildRowItem(
     // the full set stays discoverable once the note is opened.
     for (const tag of note.tags.slice(0, 4)) {
       const chip = document.createElement("span");
-      chip.className = "note-list-tag";
+      chip.className = "tag-chip";
       chip.textContent = tag;
       tagsRow.append(chip);
     }
