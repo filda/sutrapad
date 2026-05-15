@@ -2430,7 +2430,7 @@ button.tag-pill {
 
 .links-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 }
 
@@ -2839,8 +2839,8 @@ button.tag-pill {
 /* ---------- Task card grid ---------- */
 .task-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 /*
  * `.task-card` base + hover are delivered by `.entity-card` /
@@ -3851,7 +3851,8 @@ button.tag-pill {
  * empty rectangles.
  */
 .notes-list--cards {
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
 }
 
 /*
@@ -4097,27 +4098,28 @@ button.tag-pill {
 .notes-list--persona {
   /*
    * Slightly wider gap than the flat-card mode so the paper-coloured tiles
-   * read as discrete sheets rather than a continuous wall. No padding-block:
-   * cards no longer rotate, so they don't break out of their grid cells.
+   * read as discrete sheets rather than a continuous wall. `padding-block`
+   * gives rotated corners room to breathe so they don't clip into the
+   * neighbour row — matches `.task-grid--persona` / `.links-page--persona
+   * .links-grid`.
    */
   gap: 14px;
+  padding-block: 4px;
 }
 
 .note-list-item.has-persona {
   /*
-   * Paper colour + ink come from the persona derivation. Fallbacks resolve to
-   * the original flat style so a half-rendered card (e.g. if the persona lib
-   * ever fails) still looks reasonable.
-   *
-   * The persona's `--nc-rotation` is intentionally not applied here. In a
-   * dense multi-column grid the ±0.8° tilt makes the `.link-thumb` band
-   * bottoms wobble across adjacent cards, which reads as ragged. Other
-   * persona surfaces (home timeline, tasks/links cards) still consume the
-   * variable from `applyPersonaStyles` — only this grid opts out.
+   * Paper colour + ink + rotation come from the persona derivation. Fallbacks
+   * land on the canonical paper/ink tokens so a half-rendered card (e.g. if
+   * the persona lib ever fails) still looks reasonable. All three persona
+   * card surfaces (Notes / Links / Tasks) share the same fallback set:
+   * `--paper-0` background, `--ink-700` body ink, `--ink-900` title ink,
+   * accent 50 % on hover.
    */
-  background: var(--nc-bg, var(--surface-soft));
-  color: var(--nc-ink, var(--primary));
-  border-color: color-mix(in oklab, var(--nc-ink, var(--primary)) 18%, transparent);
+  background: var(--nc-bg, var(--paper-0));
+  color: var(--nc-ink, var(--ink-700));
+  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 18%, transparent);
+  transform: rotate(var(--nc-rotation, 0deg));
   transition:
     transform 200ms ease,
     border-color 150ms ease,
@@ -4128,9 +4130,11 @@ button.tag-pill {
 }
 
 .note-list-item.has-persona:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 55%, transparent);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+  /* Same -2px lift + rotation cancel as `.link-card.has-persona:hover` and
+     `.task-card.has-persona:hover`. Border accent magnitude matches the
+     other two (50 %). */
+  transform: rotate(0deg) translateY(-2px);
+  border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 50%, transparent);
 }
 
 .note-list-item.has-persona.is-active {
@@ -4142,18 +4146,18 @@ button.tag-pill {
 
 .note-list-item.has-persona > .note-list-title {
   font-family: var(--nc-title-font, var(--serif));
-  color: var(--nc-ink, var(--primary));
+  color: var(--nc-ink, var(--ink-900));
   letter-spacing: 0.005em;
 }
 
 .note-list-item.has-persona > .card-excerpt {
   font-family: var(--nc-body-font, var(--serif));
-  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 80%, transparent);
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 70%, transparent);
 }
 
 .note-list-item.has-persona > .card-meta,
 .note-list-item.has-persona .tag-chip {
-  color: color-mix(in oklab, var(--nc-ink, var(--primary)) 62%, transparent);
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 62%, transparent);
 }
 
 .note-list-item.has-persona[data-font-tier="handwritten"] > .note-list-title {
@@ -4292,7 +4296,7 @@ button.tag-pill {
   background: linear-gradient(
     135deg,
     transparent 50%,
-    color-mix(in oklab, var(--nc-ink, var(--primary)) 22%, transparent) 50%
+    color-mix(in oklab, var(--nc-ink, var(--ink-700)) 22%, transparent) 50%
   );
   opacity: calc(0.55 + var(--nc-wear, 0.3) * 0.45);
   pointer-events: none;
@@ -6749,7 +6753,7 @@ button.tag-pill {
   /* ---------- Links ---------- */
   .links-grid {
     /* Drop the min track width on small screens so cards stack into a
-     * single column instead of getting squeezed into a 240px-but-not-
+     * single column instead of getting squeezed into a 280px-but-not-
      * quite-fitting layout. */
     grid-template-columns: 1fr;
   }
@@ -7123,9 +7127,9 @@ button.tag-pill {
 }
 
 .task-card.has-persona {
-  background: var(--nc-bg, var(--surface-strong));
-  color: var(--nc-ink, var(--ink-900));
-  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 18%, transparent);
+  background: var(--nc-bg, var(--paper-0));
+  color: var(--nc-ink, var(--ink-700));
+  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 18%, transparent);
   transform: rotate(var(--nc-rotation, 0deg));
   transition:
     transform 200ms ease,
@@ -7137,7 +7141,7 @@ button.tag-pill {
 
 .task-card.has-persona:hover {
   transform: rotate(0deg) translateY(-2px);
-  border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 55%, transparent);
+  border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 50%, transparent);
 }
 
 .task-card.has-persona .task-card-title {
@@ -7147,25 +7151,25 @@ button.tag-pill {
 
 .task-card.has-persona .task-card-sub,
 .task-card.has-persona .task-card-count {
-  color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 62%, transparent);
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 62%, transparent);
 }
 
 .task-card.has-persona .task-item .t {
   font-family: var(--nc-body-font, inherit);
-  color: var(--nc-ink, var(--ink-900));
+  color: var(--nc-ink, var(--ink-700));
 }
 
 .task-card.has-persona .task-item.done .t {
-  color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 45%, transparent);
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 45%, transparent);
 }
 
 .task-card.has-persona .task-card-foot {
-  border-top-color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 22%, transparent);
+  border-top-color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 22%, transparent);
 }
 
 .task-card.has-persona .task-card-add {
-  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 25%, transparent);
-  color: color-mix(in oklab, var(--nc-ink, var(--ink-900)) 80%, transparent);
+  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 25%, transparent);
+  color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 80%, transparent);
 }
 
 /* Links ------------------------------------------------------------------- */
