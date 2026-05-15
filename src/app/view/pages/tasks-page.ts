@@ -21,6 +21,7 @@ import {
 import { pickNoteThumbSeed } from "../../logic/link-thumb-seed";
 import { deriveNotePrimaryUrl } from "../../logic/note-primary-url";
 import { createOgImageResolver } from "../../logic/og-image-resolver";
+import { buildCardTitle } from "../shared/card-header";
 import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
 import { buildLinkThumb } from "../shared/link-thumb";
 import {
@@ -535,12 +536,13 @@ function buildTaskCardHead(
   const title = document.createElement("div");
   title.style.minWidth = "0";
 
-  const heading = document.createElement("h3");
-  // Step 2 of cards-unification: align the empty-title fallback with
-  // Notes/Links via the shared `DEFAULT_NOTE_TITLE` constant. The
-  // previous "Untitled" string was an out-of-sync local default.
-  heading.textContent = group.note.title.trim() || DEFAULT_NOTE_TITLE;
-  title.append(heading);
+  // Step 3 of cards-unification: heading comes from the shared
+  // `buildCardTitle` helper so the trim + `DEFAULT_NOTE_TITLE` fallback
+  // funnel through one place. The helper also stamps the
+  // `.task-card-title` class for symmetry with the Notes / Links title
+  // hooks — `.task-card-head h3` keeps matching, so existing CSS
+  // resolves unchanged.
+  title.append(buildCardTitle(group.note.title, "task"));
 
   const sub = document.createElement("div");
   sub.className = "task-card-sub";

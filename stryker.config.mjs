@@ -42,6 +42,7 @@ const config = {
     "src/app/view/pages/links-page.ts",
     "src/app/view/pages/privacy-page.ts",
     "src/app/view/pages/tasks-page.ts",
+    "src/app/view/shared/card-header.ts",
     "src/app/view/shared/editor-card.ts",
     "src/app/view/shared/link-thumb.ts",
     "src/app/view/shared/location-consent-card.ts",

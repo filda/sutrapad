@@ -2497,7 +2497,7 @@ button.tag-pill {
 
 /*
  * Rendered as `<h3>` since Step 2 of cards-unification, alongside Notes
- * (`.note-list-title`) and Tasks (`.task-card-head h3`). `margin: 0`
+ * (`.note-list-title`) and Tasks (`.task-card-title`). `margin: 0`
  * cancels the user-agent default top/bottom margins so the title sits
  * flush with the link-body's 12px gutter.
  */
@@ -2827,7 +2827,16 @@ button.tag-pill {
   justify-content: space-between;
   gap: 10px;
 }
-.task-card-head h3 {
+/*
+ * Step 3 of cards-unification: select via the `.task-card-title` class
+ * (stamped by `buildCardTitle("task", …)`) so the three cards-surface
+ * title rules form a symmetric class-based set:
+ * `.note-list-title` / `.link-card-title` / `.task-card-title`.
+ * The descendant variant (`.task-card-head h3`) used to be element-
+ * based and would still match the same DOM today; switching to the
+ * class hook here trades the redundant element pin for consistency.
+ */
+.task-card-title {
   margin: 0;
   font-family: var(--serif);
   font-size: 19px;
@@ -7092,7 +7101,7 @@ button.tag-pill {
   border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 55%, transparent);
 }
 
-.task-card.has-persona .task-card-head h3 {
+.task-card.has-persona .task-card-title {
   font-family: var(--nc-title-font, var(--serif));
   color: var(--nc-ink, var(--ink-900));
 }

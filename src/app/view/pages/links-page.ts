@@ -9,6 +9,7 @@ import {
   buildLinkCardDescription,
   deriveLinkHostname,
 } from "../../logic/link-card";
+import { buildCardDate, buildCardTitle } from "../shared/card-header";
 import type { LinksViewMode } from "../../logic/links-view";
 import { buildFaviconUrl, type CachedOgImageEntry } from "../../logic/og-image";
 import { buildIcon, type IconName } from "../shared/icons";
@@ -357,24 +358,21 @@ function buildLinkBody(
   const body = document.createElement("div");
   body.className = "link-body";
 
-  // Step 2 of cards-unification: title is a heading element on every
-  // entity-card surface. Tasks already shipped `<h3>`; Notes adopted it
-  // in this step; Links matches here. `.link-card-title` class is the
-  // styling hook (margin reset lives in styles.css so the h3 default
-  // top/bottom margins don't push the body around).
-  const title = document.createElement("h3");
-  title.className = "link-card-title";
-  // Fall back to the bare URL if we have no source note (shouldn't
-  // happen in practice — every indexed link has at least one source —
-  // but the render must stay safe if the data ever drifts).
-  const resolvedTitle =
-    primaryNote && primaryNote.title.trim() !== ""
-      ? primaryNote.title
-      : primaryNote
-        ? DEFAULT_NOTE_TITLE
-        : entry.url;
-  title.textContent = resolvedTitle;
-  body.append(title);
+  // Step 3 of cards-unification: title comes from the shared
+  // `buildCardTitle` helper. The fallback chain (primaryNote's
+  // DEFAULT_NOTE_TITLE when the note has no title, otherwise the bare
+  // URL when there's no source note at all — shouldn't happen in
+  // practice but stays safe if the data ever drifts) is expressed via
+  // the helper's `fallback` option, which the helper picks when the
+  // trimmed input is empty. Passing `primaryNote?.title ?? ""` reads
+  // through both branches cleanly: with a note we hand off the note's
+  // title (helper trims + falls back to "Untitled note" if empty);
+  // without a note we pass "" and let the URL fallback fire.
+  body.append(
+    buildCardTitle(primaryNote?.title ?? "", "link", {
+      fallback: primaryNote ? DEFAULT_NOTE_TITLE : entry.url,
+    }),
+  );
 
   const description = primaryNote
     ? buildLinkCardDescription(primaryNote.body, entry.url)
@@ -411,11 +409,7 @@ function buildLinkMeta(
   meta.className = "link-meta";
 
   if (entry.latestUpdatedAt) {
-    const saved = document.createElement("time");
-    saved.className = "link-card-saved";
-    saved.dateTime = entry.latestUpdatedAt;
-    saved.textContent = formatDate(entry.latestUpdatedAt);
-    meta.append(saved);
+    meta.append(buildCardDate(entry.latestUpdatedAt, "link"));
   }
 
   if (primaryNote) {

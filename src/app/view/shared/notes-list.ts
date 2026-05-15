@@ -13,6 +13,7 @@ import {
 } from "../../logic/og-image-resolver";
 import { describeTaskChip } from "../../logic/task-chip";
 import type { SutraPadDocument } from "../../../types";
+import { buildCardDate, buildCardTitle } from "./card-header";
 import { EMPTY_COPY, buildEmptyState } from "./empty-state";
 import { buildLinkThumb } from "./link-thumb";
 import { applyPersonaStyles, appendPersonaStickers } from "./persona-decor";
@@ -141,25 +142,18 @@ function buildCardItem(
   // page (or a hand-crafted `?selection=…` URL) would land an active payload
   // in the cards view that runs every time the notes list renders. See
   // tests/notes-list-xss.test.ts for the regression.
-  // Step 2 of cards-unification: title is the card's heading, so use
-  // `<h3>` to match Tasks and the handoff (`screen_rest.jsx`). Links
-  // gets the same treatment in its renderer. `note-list-title` class is
-  // the styling hook (kept stable so persona / data-font-tier rules
-  // resolve unchanged).
-  const titleEl = document.createElement("h3");
-  titleEl.className = "note-list-title";
-  titleEl.textContent = note.title || DEFAULT_NOTE_TITLE;
+  // Step 3 of cards-unification: title + date come from the shared
+  // `card-header` helper so the trim + `DEFAULT_NOTE_TITLE` fallback and
+  // the `<h3>` / `<time dateTime>` semantics live in one place. Notes
+  // pre-helper used a bare `note.title ||` check — switching to the
+  // helper means whitespace-only titles also fall back to the default,
+  // which closes a tiny rendering discrepancy with Links / Tasks.
+  const titleEl = buildCardTitle(note.title, "note");
 
   const meta = document.createElement("span");
   meta.className = "note-list-meta";
 
-  // `<time dateTime>` for machine-readable timestamps — Links already
-  // ships this; Notes adopts it in Step 2 so cross-page semantics align.
-  const dateEl = document.createElement("time");
-  dateEl.className = "note-list-date";
-  dateEl.dateTime = note.updatedAt;
-  dateEl.textContent = formatDate(note.updatedAt);
-  meta.append(dateEl);
+  meta.append(buildCardDate(note.updatedAt, "note"));
 
   if (taskChip !== null) {
     const chipEl = document.createElement("span");
