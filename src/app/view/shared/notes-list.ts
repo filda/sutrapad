@@ -80,12 +80,12 @@ export function buildNotesList(
         })
       : null;
 
-    const button = renderAsRow
+    const item = renderAsRow
       ? buildRowItem(note, persona, currentNoteId)
       : buildCardItem(note, persona, currentNoteId, resolver);
 
-    button.addEventListener("click", () => onSelectNote(note.id));
-    notesList.append(button);
+    item.addEventListener("click", () => onSelectNote(note.id));
+    notesList.append(item);
   }
 
   return notesList;
@@ -96,8 +96,18 @@ function buildCardItem(
   persona: NotebookPersona | null,
   currentNoteId: string,
   resolver: OgImageResolver | null,
-): HTMLButtonElement {
-  const button = document.createElement("button");
+): HTMLElement {
+  // Element is `<article>` (not `<button>`) to match the Links/Tasks card
+  // renderers and avoid the WebKit/Chromium UA quirks that bit the og:image
+  // rendering on the Notes grid — buttons apply enough non-standard handling
+  // around `overflow: hidden` + `border-radius` + multi-layer backgrounds
+  // that the top edge of a `cover`-fitted og:image clipped imperceptibly
+  // differently than a plain `<article>`/`<div>` would, leaving a thin
+  // sliver of the persona paper showing above the band. Switching to
+  // `<article>` resolves it. Click + Enter/Space behaviour is added
+  // explicitly below since `<article>` doesn't carry the implicit button
+  // semantics; the wrapper still reads as a single-action surface to AT.
+  const card = document.createElement("article");
   // Step 1 of cards-unification: every primary entity surface (Notes here,
   // plus Links and Tasks on their own pages) carries the shared
   // `entity-card entity-card--{kind}` shell alongside its legacy
@@ -113,10 +123,17 @@ function buildCardItem(
   // gets the persona paper / ink / patina without depending on its parent.
   // `.notes-list--persona` stays on the list for list-level concerns (the
   // `gap` value the persona grid wants).
-  button.className = `entity-card entity-card--note note-list-item${note.id === currentNoteId ? " is-active" : ""}${persona ? " has-persona" : ""}`;
-  button.type = "button";
+  card.className = `entity-card entity-card--note note-list-item${note.id === currentNoteId ? " is-active" : ""}${persona ? " has-persona" : ""}`;
+  card.setAttribute("role", "button");
+  card.tabIndex = 0;
+  card.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      card.click();
+    }
+  });
 
-  if (persona) applyPersonaStyles(button, persona);
+  if (persona) applyPersonaStyles(card, persona);
 
   // Thumb header — same shape as Links/Tasks cards. Notes without a URL
   // (hand-typed) still get the gradient (no domain chip) so the card
@@ -130,7 +147,7 @@ function buildCardItem(
   // `pickNoteThumbSeed` for the priority chain.
   if (resolver !== null) {
     const primaryUrl = deriveNotePrimaryUrl(note);
-    button.append(
+    card.append(
       buildLinkThumb({
         url: primaryUrl,
         notes: [note],
@@ -189,7 +206,7 @@ function buildCardItem(
   excerptEl.className = "card-excerpt";
   excerptEl.textContent = excerptText ?? "Empty note";
 
-  button.append(titleEl, meta, excerptEl);
+  card.append(titleEl, meta, excerptEl);
 
   if (note.tags.length > 0) {
     const tagsRow = document.createElement("div");
@@ -200,12 +217,12 @@ function buildCardItem(
       chip.textContent = tag;
       tagsRow.append(chip);
     }
-    button.append(tagsRow);
+    card.append(tagsRow);
   }
 
-  if (persona) appendPersonaStickers(button, persona);
+  if (persona) appendPersonaStickers(card, persona);
 
-  return button;
+  return card;
 }
 
 /**

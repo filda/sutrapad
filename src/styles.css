@@ -4131,8 +4131,7 @@ button.tag-pill {
 
 .note-list-item.has-persona:hover {
   /* Same -2px lift + rotation cancel as `.link-card.has-persona:hover` and
-     `.task-card.has-persona:hover`. Border accent magnitude matches the
-     other two (50 %). */
+     `.task-card.has-persona:hover`. Accent magnitude matches Links (50 %). */
   transform: rotate(0deg) translateY(-2px);
   border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 50%, transparent);
 }
