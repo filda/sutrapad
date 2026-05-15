@@ -2341,6 +2341,73 @@ button.tag-pill {
 }
 
 /*
+ * ---------- Entity card (Notes / Links / Tasks shared shell) ----------
+ * Canonical card surface introduced as Step 1 of the cards-unification
+ * refactor. All three primary entity surfaces (Notes list, Links grid,
+ * Tasks grid) opt into this shell via `entity-card entity-card--{kind}`
+ * and let per-type modifiers carry their differences (Links is bg-less
+ * because its thumb dominates; Tasks bumps the radius + padding to match
+ * the larger card it has always been per handoff v2).
+ *
+ * Base values pulled from handoff v2 (`.notebook-card`, `.task-card`,
+ * `.link-card` in docs/design_handoff_sutrapad2/src/screens.css): the
+ * common ground is `surface-strong` background, `var(--r-md)` corners, a
+ * 1px ink-tinted border, and `shadow-card`. Hover lift (`translateY(-2px)`
+ * with an expanded shadow) is canonical for "I am clickable" — the
+ * previous per-page rules were doing slightly different things (-1px on
+ * Notes, accent border on Links) and the unification picks one answer.
+ *
+ * Persona rules (`.notes-list--persona .note-list-item`, `.task-card.has-persona`,
+ * `.link-card.has-persona`) still win via their higher-specificity selectors
+ * so the paper-coloured look on persona-enabled cards is preserved.
+ */
+.entity-card {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  transition:
+    transform 150ms ease,
+    box-shadow 200ms ease,
+    border-color 150ms ease;
+}
+
+.entity-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 26px 54px -30px rgba(58, 44, 28, 0.45),
+    var(--shadow-card);
+}
+
+.entity-card--note {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  padding: 14px 15px;
+  color: var(--primary);
+}
+
+.entity-card--link {
+  /* Thumb dominates the top half; the gradient/og:image already carries
+     the surface fill, so the entity-card background is left transparent
+     and padding is zero (the inner `.link-body` handles its own
+     12px/14px gutters). */
+  background: transparent;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.entity-card--task {
+  border-radius: var(--r-lg);
+  padding: 18px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/*
  * ---------- Links cards ----------
  * Ported from docs/design_handoff_sutrapad2/src/screen_rest.jsx (the
  * LinksScreen grid) and screens.css (`.links-grid`, `.link-card`,
@@ -2367,21 +2434,13 @@ button.tag-pill {
   gap: 16px;
 }
 
-.link-card {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--paper-0);
-  overflow: hidden;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
-}
-
-.link-card:hover {
-  border-color: color-mix(in oklab, var(--accent) 40%, var(--line));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
-  transform: translateY(-1px);
-}
+/*
+ * `.link-card` base + hover are delivered by `.entity-card` /
+ * `.entity-card--link` above. The remaining `.link-card` selectors below
+ * (and `.link-card-*` children) describe inner structure that is still
+ * Links-specific. Once the inner head/meta helper lands (Step 3+), this
+ * cluster shrinks further.
+ */
 
 /*
  * Gradient thumb — the hue is set inline per card (hashed off the
@@ -2436,7 +2495,14 @@ button.tag-pill {
   flex: 1;
 }
 
+/*
+ * Rendered as `<h3>` since Step 2 of cards-unification, alongside Notes
+ * (`.note-list-title`) and Tasks (`.task-card-head h3`). `margin: 0`
+ * cancels the user-agent default top/bottom margins so the title sits
+ * flush with the link-body's 12px gutter.
+ */
 .link-card-title {
+  margin: 0;
   font-size: 14.5px;
   font-weight: 600;
   color: var(--ink-900, var(--ink-700));
@@ -2750,21 +2816,11 @@ button.tag-pill {
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 18px;
 }
-.task-card {
-  background: var(--surface-strong);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
-  padding: 18px 18px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  transition: transform 150ms ease, box-shadow 150ms ease;
-}
-.task-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-card), 0 12px 28px -16px rgba(var(--primary-rgb), 0.28);
-}
+/*
+ * `.task-card` base + hover are delivered by `.entity-card` /
+ * `.entity-card--task` above. The selectors below describe inner head /
+ * sub / foot structure that is still Tasks-specific.
+ */
 .task-card-head {
   display: flex;
   align-items: flex-start;
@@ -3892,35 +3948,19 @@ button.tag-pill {
 }
 
 
-.note-list-item {
-  width: 100%;
-  min-width: 0;
-  text-align: left;
-  border: 1px solid rgba(var(--primary-rgb), 0.1);
-  background: var(--surface-soft);
-  border-radius: 20px;
-  padding: 14px 15px;
-  color: var(--primary);
-  transition:
-    transform 150ms ease,
-    border-color 150ms ease,
-    background 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.note-list-item:hover {
-  transform: translateY(-1px);
-  border-color: rgba(var(--accent-rgb), 0.45);
-  box-shadow: 0 10px 24px rgba(var(--primary-rgb), 0.06);
-}
-
+/*
+ * `.note-list-item` base + hover are delivered by `.entity-card` /
+ * `.entity-card--note` above (Step 1 of cards-unification). The selectors
+ * below describe inner content (title / meta / excerpt) and the active
+ * state, which stays Notes-specific.
+ */
 .note-list-item.is-active {
   border-color: rgba(var(--accent-rgb), 0.58);
   background: var(--surface-active);
   box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.18);
 }
 
-.note-list-item > strong,
+.note-list-item > .note-list-title,
 .note-list-item > .note-list-meta,
 .note-list-item > p {
   display: block;
@@ -3929,9 +3969,18 @@ button.tag-pill {
   word-break: break-word;
 }
 
-.note-list-item > strong {
-  margin-bottom: 6px;
+/*
+ * `.note-list-title` is rendered as an `<h3>` (Step 2 of cards-unification —
+ * Notes / Links / Tasks all use a real heading element for their card
+ * titles). The class is the styling hook so the persona / data-font-tier
+ * rules below keep working without referencing `> h3` directly. The
+ * margin reset undoes the user-agent default top/bottom margins on h3
+ * (`1em` / `~17px`) — without it the title pushes the meta row down.
+ */
+.note-list-item > .note-list-title {
+  margin: 0 0 6px 0;
   font-size: 0.98rem;
+  font-weight: 700;
 }
 
 .note-list-item > .note-list-meta {
@@ -4042,7 +4091,7 @@ button.tag-pill {
       color-mix(in oklab, var(--nc-accent, var(--accent)) 25%, transparent);
 }
 
-.notes-list--persona .note-list-item > strong {
+.notes-list--persona .note-list-item > .note-list-title {
   font-family: var(--nc-title-font, var(--serif));
   color: var(--nc-ink, var(--primary));
   letter-spacing: 0.005em;
@@ -4058,13 +4107,13 @@ button.tag-pill {
   color: color-mix(in oklab, var(--nc-ink, var(--primary)) 62%, transparent);
 }
 
-.notes-list--persona .note-list-item[data-font-tier="handwritten"] > strong {
+.notes-list--persona .note-list-item[data-font-tier="handwritten"] > .note-list-title {
   /* Bigger, slightly airier leading reads right for the hand-drawn face. */
   font-size: 1.15rem;
   line-height: 1.1;
 }
 
-.notes-list--persona .note-list-item[data-font-tier="mono"] > strong {
+.notes-list--persona .note-list-item[data-font-tier="mono"] > .note-list-title {
   font-size: 0.95rem;
   letter-spacing: 0;
 }
@@ -4218,7 +4267,7 @@ button.tag-pill {
   pointer-events: none;
 }
 
-.notes-list--persona .note-list-item[data-patina~="highlight"] > strong {
+.notes-list--persona .note-list-item[data-patina~="highlight"] > .note-list-title {
   background-image: linear-gradient(
     120deg,
     transparent 0%,
@@ -6970,18 +7019,15 @@ button.tag-pill {
  * Notes — `.note-list-item` is the shared card shape used by the Notes
  * cards-mode grid AND the Tags-page filtered notes list. List/row mode
  * uses a different element (`.notebook-row`) so it keeps its compact
- * rail untouched. The negative margin matches `.note-list-item` padding
- * (14px 15px), and `overflow: hidden` plus the existing 20px border-radius
- * clips the thumb's straight top into rounded corners.
+ * rail untouched. The negative margin matches `.entity-card--note`
+ * padding (14px 15px); `overflow: hidden` and `var(--r-md)` come from
+ * `.entity-card`, so the thumb's straight top clips into rounded
+ * corners without these rules needing to redeclare either.
  *
  * Scoping by element rather than container class means a future caller
  * (Home timeline, etc.) that drops a `.note-list-item` into a different
  * parent layout still gets the bleed for free.
  */
-.note-list-item {
-  overflow: hidden;
-}
-
 .note-list-item > .link-thumb {
   margin: -14px -15px 12px;
   /*
@@ -7001,10 +7047,6 @@ button.tag-pill {
  * `.task-card` carries 18px 18px 14px padding; the same negative-margin
  * trick bleeds the thumb to all three rounded edges of the card top.
  */
-.task-card {
-  overflow: hidden;
-}
-
 .task-card > .link-thumb {
   margin: -18px -18px 4px;
 }
@@ -7098,7 +7140,10 @@ button.tag-pill {
 }
 
 .link-card.has-persona:hover {
-  transform: rotate(0deg) translateY(-1px);
+  /* Same -2px lift as `.entity-card:hover` and `.task-card.has-persona:hover`.
+     The persona rule has to spell out its own transform because of the
+     accompanying rotate-to-zero, but the magnitude is canonical now. */
+  transform: rotate(0deg) translateY(-2px);
   border-color: color-mix(in oklab, var(--nc-accent, var(--accent)) 50%, transparent);
 }
 

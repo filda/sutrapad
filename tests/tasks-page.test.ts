@@ -291,7 +291,10 @@ describe("buildTasksPage structural / chip / one-thing", () => {
     expect(items?.[1].querySelector(".t")?.textContent).toBe("two");
   });
 
-  it("falls back to 'Untitled' on a card head when the source note has a blank title", () => {
+  it("falls back to 'Untitled note' on a card head when the source note has a blank title", () => {
+    // Step 2 of cards-unification aligned this with the Notes / Links
+    // / one-thing fallback (`DEFAULT_NOTE_TITLE` in lib/notebook.ts).
+    // The previous local "Untitled" string was the only deviation.
     const note = makeNote({
       id: "n",
       title: "",
@@ -301,7 +304,7 @@ describe("buildTasksPage structural / chip / one-thing", () => {
     const page = buildPage(makeWorkspace([note]));
     expect(
       page.querySelector(".task-card-head h3")?.textContent,
-    ).toBe("Untitled");
+    ).toBe("Untitled note");
   });
 
   it("clicking a task checkbox routes onToggleTask with the note id and line index", () => {

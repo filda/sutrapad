@@ -1,4 +1,4 @@
-import { countTasksInNote } from "../../../lib/notebook";
+import { DEFAULT_NOTE_TITLE, countTasksInNote } from "../../../lib/notebook";
 import {
   deriveNotebookPersona,
   type NotebookPersona,
@@ -96,7 +96,14 @@ function buildCardItem(
   resolver: OgImageResolver | null,
 ): HTMLButtonElement {
   const button = document.createElement("button");
-  button.className = `note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
+  // Step 1 of cards-unification: every primary entity surface (Notes here,
+  // plus Links and Tasks on their own pages) carries the shared
+  // `entity-card entity-card--{kind}` shell alongside its legacy
+  // per-page class. The shell delivers the canonical surface
+  // (`surface-strong` + `var(--r-md)` + `shadow-card` + hover lift);
+  // `note-list-item` keeps the inner-content selectors and the
+  // `.is-active` highlight.
+  button.className = `entity-card entity-card--note note-list-item${note.id === currentNoteId ? " is-active" : ""}`;
   button.type = "button";
 
   if (persona) applyPersonaStyles(button, persona);
@@ -134,14 +141,23 @@ function buildCardItem(
   // page (or a hand-crafted `?selection=…` URL) would land an active payload
   // in the cards view that runs every time the notes list renders. See
   // tests/notes-list-xss.test.ts for the regression.
-  const titleEl = document.createElement("strong");
-  titleEl.textContent = note.title || "Untitled note";
+  // Step 2 of cards-unification: title is the card's heading, so use
+  // `<h3>` to match Tasks and the handoff (`screen_rest.jsx`). Links
+  // gets the same treatment in its renderer. `note-list-title` class is
+  // the styling hook (kept stable so persona / data-font-tier rules
+  // resolve unchanged).
+  const titleEl = document.createElement("h3");
+  titleEl.className = "note-list-title";
+  titleEl.textContent = note.title || DEFAULT_NOTE_TITLE;
 
   const meta = document.createElement("span");
   meta.className = "note-list-meta";
 
-  const dateEl = document.createElement("span");
+  // `<time dateTime>` for machine-readable timestamps — Links already
+  // ships this; Notes adopts it in Step 2 so cross-page semantics align.
+  const dateEl = document.createElement("time");
   dateEl.className = "note-list-date";
+  dateEl.dateTime = note.updatedAt;
   dateEl.textContent = formatDate(note.updatedAt);
   meta.append(dateEl);
 
@@ -203,7 +219,7 @@ function buildRowItem(
 
   const title = document.createElement("span");
   title.className = "nr-title";
-  title.textContent = note.title || "Untitled note";
+  title.textContent = note.title || DEFAULT_NOTE_TITLE;
   body.append(title);
 
   const excerpt = note.body.trim().replace(/\n+/g, " ");

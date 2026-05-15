@@ -54,8 +54,10 @@ describe("buildNotesList — XSS guards", () => {
     expect(list.querySelectorAll("img")).toHaveLength(0);
     const item = list.querySelector(".note-list-item");
     if (item === null) throw new Error("expected .note-list-item");
-    const strong = item.querySelector("strong");
-    expect(strong?.textContent).toBe(malicious);
+    // Title is an `<h3 class="note-list-title">` since Step 2 of
+    // cards-unification (was `<strong>` before).
+    const titleEl = item.querySelector(".note-list-title");
+    expect(titleEl?.textContent).toBe(malicious);
 
     // Belt-and-braces — the global side-effect of the onerror payload must not have fired.
     expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
@@ -103,8 +105,8 @@ describe("buildNotesList — XSS guards", () => {
     const list = buildNotesList("note-1", [note], () => undefined);
     document.body.append(list);
 
-    const strong = list.querySelector(".note-list-item strong");
-    expect(strong?.textContent).toBe("Untitled note");
+    const titleEl = list.querySelector(".note-list-item .note-list-title");
+    expect(titleEl?.textContent).toBe("Untitled note");
 
     list.remove();
   });

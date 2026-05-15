@@ -1,4 +1,8 @@
-import { buildLinkIndex, filterNotesByTags } from "../../../lib/notebook";
+import {
+  DEFAULT_NOTE_TITLE,
+  buildLinkIndex,
+  filterNotesByTags,
+} from "../../../lib/notebook";
 import { deriveNotebookPersona } from "../../../lib/notebook-persona";
 import { formatDate } from "../../logic/formatting";
 import {
@@ -297,7 +301,11 @@ function buildLinkCard(
   personaOptions: NotesListPersonaOptions | undefined,
 ): HTMLElement {
   const card = document.createElement("article");
-  card.className = "link-card";
+  // Shared `entity-card` shell + Links variant — see notes-list.ts for the
+  // Step 1 cards-unification rationale. `link-card` stays so the existing
+  // inner selectors (.link-card-title, .link-card-desc, .link-card-source,
+  // and the persona overrides) keep working unchanged.
+  card.className = "entity-card entity-card--link link-card";
 
   // First note id in `entry.noteIds` is the most recently updated one
   // (buildLinkIndex sorts notes by recency before walking URLs), so
@@ -349,7 +357,12 @@ function buildLinkBody(
   const body = document.createElement("div");
   body.className = "link-body";
 
-  const title = document.createElement("div");
+  // Step 2 of cards-unification: title is a heading element on every
+  // entity-card surface. Tasks already shipped `<h3>`; Notes adopted it
+  // in this step; Links matches here. `.link-card-title` class is the
+  // styling hook (margin reset lives in styles.css so the h3 default
+  // top/bottom margins don't push the body around).
+  const title = document.createElement("h3");
   title.className = "link-card-title";
   // Fall back to the bare URL if we have no source note (shouldn't
   // happen in practice — every indexed link has at least one source —
@@ -358,7 +371,7 @@ function buildLinkBody(
     primaryNote && primaryNote.title.trim() !== ""
       ? primaryNote.title
       : primaryNote
-        ? "Untitled note"
+        ? DEFAULT_NOTE_TITLE
         : entry.url;
   title.textContent = resolvedTitle;
   body.append(title);
@@ -412,7 +425,7 @@ function buildLinkMeta(
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = "link-card-source";
-    const title = primaryNote.title.trim() || "Untitled note";
+    const title = primaryNote.title.trim() || DEFAULT_NOTE_TITLE;
     chip.textContent =
       entry.count === 1 ? title : `${title} · +${entry.count - 1}`;
     chip.setAttribute(
@@ -508,7 +521,7 @@ function buildLinkListItem(
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = "link-notebook-chip";
-    chip.textContent = note.title.trim() || "Untitled note";
+    chip.textContent = note.title.trim() || DEFAULT_NOTE_TITLE;
     chip.addEventListener("click", () => onOpenNote(noteId));
     references.append(chip);
   }

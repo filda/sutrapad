@@ -1,4 +1,8 @@
-import { buildTaskIndex, filterNotesByTags } from "../../../lib/notebook";
+import {
+  DEFAULT_NOTE_TITLE,
+  buildTaskIndex,
+  filterNotesByTags,
+} from "../../../lib/notebook";
 import { deriveNotebookPersona } from "../../../lib/notebook-persona";
 import type { SutraPadWorkspace } from "../../../types";
 import {
@@ -304,7 +308,7 @@ function buildOneThing({
     meta.append(from);
     const noteLink = document.createElement("a");
     noteLink.href = "#";
-    noteLink.textContent = oneThing.note.title.trim() || "Untitled note";
+    noteLink.textContent = oneThing.note.title.trim() || DEFAULT_NOTE_TITLE;
     noteLink.addEventListener("click", (event) => {
       event.preventDefault();
       onOpenNote(oneThing.note.id);
@@ -469,7 +473,11 @@ function buildTaskCard(
   resolver: ReturnType<typeof createOgImageResolver>,
 ): HTMLElement {
   const card = document.createElement("article");
-  card.className = "task-card";
+  // Shared `entity-card` shell + Tasks variant — see notes-list.ts for the
+  // Step 1 cards-unification rationale. `task-card` stays so the existing
+  // inner selectors (.task-card-head, .task-card-sub, .task-card-foot,
+  // and the persona overrides) keep working unchanged.
+  card.className = "entity-card entity-card--task task-card";
 
   // Persona attaches to the source note so the same notebook reads with
   // the same paper/ink across Notes ↔ Tasks. When persona is off the card
@@ -528,7 +536,10 @@ function buildTaskCardHead(
   title.style.minWidth = "0";
 
   const heading = document.createElement("h3");
-  heading.textContent = group.note.title.trim() || "Untitled";
+  // Step 2 of cards-unification: align the empty-title fallback with
+  // Notes/Links via the shared `DEFAULT_NOTE_TITLE` constant. The
+  // previous "Untitled" string was an out-of-sync local default.
+  heading.textContent = group.note.title.trim() || DEFAULT_NOTE_TITLE;
   title.append(heading);
 
   const sub = document.createElement("div");
@@ -536,11 +547,18 @@ function buildTaskCardHead(
 
   // The handoff uses the oldest task's `daysOld` as the card's temporal
   // anchor; we mirror that ("3 days ago" on a mixed-age card means the
-  // oldest open task on it is 3 days old).
-  const anchor = group.tasks[0]?.daysOld ?? 0;
-  const anchorSpan = document.createElement("span");
-  anchorSpan.textContent = formatRelativeDays(anchor);
-  sub.append(anchorSpan);
+  // oldest open task on it is 3 days old). Step 2 wraps it in `<time>`
+  // with the source note's createdAt as the machine-readable timestamp
+  // (which is exactly what `daysOld` is derived from in `enrichTasks`),
+  // so the relative label has a precise anchor for a11y / hover tools.
+  // An empty `dateTime` is HTML-valid (renders no datetime); the
+  // optional-chain keeps the render safe if a group ever lands without
+  // any tasks even though the data model invariant disallows it.
+  const anchor = group.tasks[0];
+  const anchorTime = document.createElement("time");
+  anchorTime.dateTime = anchor?.note.createdAt ?? "";
+  anchorTime.textContent = formatRelativeDays(anchor?.daysOld ?? 0);
+  sub.append(anchorTime);
 
   // Location is an optional string on the note; the handoff strips a
   // leading "City — " prefix so the sub-label reads as just the venue.
