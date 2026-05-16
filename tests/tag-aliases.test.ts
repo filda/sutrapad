@@ -486,3 +486,142 @@ describe("mergeTagInWorkspace", () => {
     expect(suggestTagAliases(index(entries))).toEqual([]);
   });
 });
+
+// Second pass — pins the survivors flagged by the full-baseline stryker
+// run on 2026-05-16 (45 attackable on this file at 77.27 %). Targets
+// the killable ones: the matched-false BooleanLiteral, the Math.max →
+// Math.min longerLen flip, the `entry.kind === undefined` sub-conditional
+// (existing test passed `undefined` through a defaulted helper param, so
+// the default kicked in and the kind=undefined path stayed uncovered),
+// the count-≥-2 gate via asymmetric singleton + valid pair, the
+// all-aliases-dismissed cluster boundary, and the buildReason
+// signal/format mutants that the toMatch assertions left wide open.
+describe("suggestTagAliases edge-case kills (second pass)", () => {
+  it("does NOT cluster a pair whose Levenshtein distance exceeds maxEditDistance (kills `matched: false → true`)", () => {
+    // Default maxEditDistance is 2; `kitten` ↔ `sitting` is the textbook
+    // distance-3 pair. Original: matched=false → no cluster. Mutant
+    // flipping the early-return's `matched: false` to `true` claims a
+    // match and the cluster forms.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("kitten", ["n1", "n2"]),
+        entry("sitting", ["n3", "n4"]),
+      ]),
+    );
+    expect(suggestions).toEqual([]);
+  });
+
+  it("uses Math.max — not Math.min — on the normalized lengths for the relative-distance gate", () => {
+    // Crafted asymmetric pair: normalized lengths 5 (`abcde`) and 7
+    // (`abcdefg`), Levenshtein distance 2. Original `Math.max(5, 7) = 7`
+    // → 2/7 = 0.286 ≤ 0.34 → matches and clusters. Mutant
+    // `Math.min(5, 7) = 5` → 2/5 = 0.4 > 0.34 → rejects.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("abcde", ["n1", "n2"]),
+        entry("abcdefg", ["n3", "n4"]),
+      ]),
+    );
+    expect(suggestions).toHaveLength(1);
+  });
+
+  it("treats entries with NO `kind` property at all as user-kind (kills the `entry.kind === undefined` Conditional)", () => {
+    // The existing "missing kind" test passes `undefined` through the
+    // helper's defaulted param, which JS resolves to `"user"`. To
+    // exercise the `entry.kind === undefined` sub-conditional the entry
+    // must literally lack the property — bypassing the helper.
+    const noKindIndex: SutraPadTagIndex = {
+      version: 1,
+      savedAt: "2026-04-23T12:00:00.000Z",
+      tags: [
+        { tag: "writing", noteIds: ["n1", "n2"], count: 2 },
+        { tag: "writting", noteIds: ["n3", "n4"], count: 2 },
+      ],
+    };
+    const suggestions = suggestTagAliases(noKindIndex);
+    expect(suggestions).toHaveLength(1);
+  });
+
+  it("excludes singleton tags even when paired with a valid (count ≥ 2) candidate that fuzzy-matches", () => {
+    // The existing "ignores singletons" test uses two singletons whose
+    // tags don't fuzzy-match anyway (cafe vs coffee = distance 3),
+    // so it can't tell apart the count-gate from the distance-gate.
+    // Here the singleton WOULD fuzzy-match the valid candidate (`cafe`
+    // ↔ `café` via normalization) — so dropping the count gate to
+    // `true` would produce a spurious suggestion.
+    const suggestions = suggestTagAliases(
+      index([entry("cafe", ["n1"]), entry("café", ["n2", "n3"])]),
+    );
+    expect(suggestions).toEqual([]);
+  });
+
+});
+
+describe("buildReason output discrimination", () => {
+  it("a normalized-only cluster's reason does NOT mention 'near-identical spelling' (kills the rootHasLevenshtein fallback + push)", () => {
+    // cafe ↔ café — identical after normalization. The Levenshtein
+    // signal is never set for the root. Original: rootHasLevenshtein
+    // returns undefined ?? false → signals.hasLevenshtein = false →
+    // the second part is NOT appended. Mutants flipping the `?? false`
+    // fallback to `?? true` (or forcing the inner Conditional to
+    // `true`) wrongly stamp the Levenshtein blurb on a normalized-only
+    // cluster.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("cafe", ["n1", "n2"]),
+        entry("café", ["n3", "n4"]),
+      ]),
+    );
+    expect(suggestions[0].reason).toMatch(/case and diacritics/);
+    expect(suggestions[0].reason).not.toMatch(/near-identical spelling/);
+  });
+
+  it("an edit-distance-only cluster's reason does NOT mention 'case and diacritics' (kills the rootHasNormalized fallback + push)", () => {
+    // writing ↔ writting — normalized forms differ (single vs double
+    // `t`), but Levenshtein distance is 1. signals.normalizedEqual
+    // must stay false. Mutants forcing the Conditional `true` (or the
+    // `?? false` → `?? true`) push the normalized blurb wrongly.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("writing", ["n1", "n2", "n3"]),
+        entry("writting", ["n4", "n5"]),
+      ]),
+    );
+    expect(suggestions[0].reason).toMatch(/near-identical spelling/i);
+    expect(suggestions[0].reason).not.toMatch(/case and diacritics/i);
+  });
+
+  it("a multi-signal cluster's reason equals the canonical joined+capitalised string", () => {
+    // Co-occurring normalized pair triggers TWO parts:
+    //   "same spelling after case and diacritics"
+    //   "used together on at least one note"
+    // Joined with "; ", capitalised at index 0. Pinning the full
+    // string kills the parts-init ArrayDeclaration mutant ("Stryker
+    // was here" prefix), the "; " → "" separator mutant, the
+    // .toUpperCase → .toLowerCase mutant, and the
+    // .charAt(0)/.slice(1) MethodExpression mutants in one assertion.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("cafe", ["n1", "n2"]),
+        entry("café", ["n1", "n3"]),
+      ]),
+    );
+    expect(suggestions[0].reason).toBe(
+      "Same spelling after case and diacritics; used together on at least one note",
+    );
+  });
+
+  it("a no-signal cluster (Levenshtein-only edit-distance, no co-occurrence) reads exactly as `Near-identical spelling`", () => {
+    // writing ↔ writting, disjoint noteIds → only the Levenshtein
+    // signal fires. Reason is one part, capitalised. Pinning the
+    // exact string is a second line of defence against the
+    // toUpperCase / slice / charAt mutants for the single-part path.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("writing", ["n1", "n2", "n3"]),
+        entry("writting", ["n4", "n5"]),
+      ]),
+    );
+    expect(suggestions[0].reason).toBe("Near-identical spelling");
+  });
+});
