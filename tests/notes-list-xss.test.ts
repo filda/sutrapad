@@ -329,3 +329,247 @@ describe("buildNotesList — structural rendering", () => {
     expect(chip?.getAttribute("aria-label")).not.toBe("");
   });
 });
+
+// Second structural pass — pins the survivors flagged by the 2026-05-16
+// focused stryker run on notes-list.ts (76.42 % baseline): cards-only
+// thumb/excerpt details, the role="button" + keydown polyfill on the
+// `<article>` card, the non-all-done chip branch, the per-card persona
+// ObjectLiteral, and the buildRowItem inline-style/className contract
+// plus its body sub-text transformations.
+describe("buildNotesList — second structural pass", () => {
+  it("stamps `role='button'` on the card so AT reads the article as a single-action surface", () => {
+    // Pins the StringLiteral on `setAttribute("role", "button")`.
+    // Mutating "button" to "" drops the AT semantics.
+    const list = buildNotesList("a", [makeNote({ id: "a" })], () => undefined);
+    const card = list.querySelector(".note-list-item");
+    expect(card?.getAttribute("role")).toBe("button");
+  });
+
+  it("pressing Enter on a card fires click + preventDefault", () => {
+    // The card is `<article>`, not `<button>`, so the keydown handler
+    // polyfills the button keyboard contract: Enter → click +
+    // preventDefault (so the page doesn't scroll a stray newline).
+    // Without this test the entire keydown BlockStatement, the
+    // Enter/Space ConditionalExpression family, and both key
+    // StringLiteral mutants stay uncovered.
+    const onSelect = vi.fn();
+    const list = buildNotesList("a", [makeNote({ id: "a" })], onSelect);
+    const card = list.querySelector(".note-list-item") as HTMLElement;
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      cancelable: true,
+      bubbles: true,
+    });
+    card.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(onSelect).toHaveBeenCalledWith("a");
+  });
+
+  it("pressing Space on a card fires click + preventDefault", () => {
+    const onSelect = vi.fn();
+    const list = buildNotesList("a", [makeNote({ id: "a" })], onSelect);
+    const card = list.querySelector(".note-list-item") as HTMLElement;
+    const event = new KeyboardEvent("keydown", {
+      key: " ",
+      cancelable: true,
+      bubbles: true,
+    });
+    card.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(onSelect).toHaveBeenCalledWith("a");
+  });
+
+  it("pressing an unrelated key on a card does NOT fire click and does NOT preventDefault", () => {
+    // Pins the inner conditional: only Enter/Space trigger the
+    // polyfill. Any other key must drop through.
+    const onSelect = vi.fn();
+    const list = buildNotesList("a", [makeNote({ id: "a" })], onSelect);
+    const card = list.querySelector(".note-list-item") as HTMLElement;
+    const event = new KeyboardEvent("keydown", {
+      key: "x",
+      cancelable: true,
+      bubbles: true,
+    });
+    card.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("renders a `.link-thumb` inside each card in cards/no-mode but NOT inside a list-mode row", () => {
+    // Pin the `if (resolver !== null)` BlockStatement — cards mode
+    // builds a resolver and appends a thumb to every card; list mode
+    // passes null and skips the thumb entirely.
+    const cardsList = buildNotesList(
+      "a",
+      [makeNote({ id: "a" })],
+      () => undefined,
+    );
+    expect(
+      cardsList.querySelector(".note-list-item .link-thumb"),
+    ).not.toBeNull();
+
+    const listView = buildNotesList(
+      "a",
+      [makeNote({ id: "a" })],
+      () => undefined,
+      "list",
+    );
+    expect(listView.querySelector(".link-thumb")).toBeNull();
+  });
+
+  it("caps the cards excerpt at 72 chars (kills the `{ maxChars: 72 }` → `{}` ObjectLiteral mutant)", () => {
+    // buildCardExcerpt's DEFAULT_MAX_CHARS is 160. Notes' 72-char cap
+    // is the difference between the single-line Notes ribbon and the
+    // multi-line Links/Tasks excerpt. Mutating to `{}` falls back to
+    // the default and lets the excerpt overrun the Notes budget.
+    const longBody = "a".repeat(200);
+    const note = makeNote({ id: "long", body: longBody });
+    const list = buildNotesList("long", [note], () => undefined);
+    const excerpt = list.querySelector(".note-list-item .card-excerpt");
+    expect((excerpt?.textContent ?? "").length).toBeLessThanOrEqual(72);
+  });
+
+  it("the task chip does NOT carry `is-all-done` when at least one task is still open", () => {
+    // Pin the tone ternary on the chip className. Original only tags
+    // all-done chips; mutating the Conditional to `true` would stamp
+    // every chip with `is-all-done`.
+    const note = makeNote({ id: "mixed", body: "[ ] open\n[x] done" });
+    const list = buildNotesList("mixed", [note], () => undefined);
+    const chip = list.querySelector(".note-list-tasks");
+    expect(chip).not.toBeNull();
+    expect(chip?.classList.contains("is-all-done")).toBe(false);
+  });
+
+  it("stamps `note-list-tags` className on the cards tags-row wrapper", () => {
+    // The existing test only asserts the inner `.tag-chip` elements;
+    // mutating the wrapper className to "" leaves the chips queryable
+    // but breaks the row container that owns the layout.
+    const note = makeNote({ id: "tagged", tags: ["x"] });
+    const list = buildNotesList("tagged", [note], () => undefined);
+    expect(list.querySelector(".note-list-item .note-list-tags")).not.toBeNull();
+  });
+
+  it("persona dark vs light yields different paper inline styles on the card (kills the ObjectLiteral `{}` mutant)", () => {
+    // The card threads { allNotes, dark } into `deriveNotebookPersona`.
+    // Mutating that ObjectLiteral to `{}` makes both calls derive the
+    // same persona (dark=undefined → light fallback), so the cards
+    // collide on identical `--nc-bg` values.
+    const note = makeNote({ id: "p", title: "Persona note" });
+    const lightCard = buildNotesList("p", [note], () => undefined, undefined, {
+      allNotes: [note],
+      dark: false,
+    }).querySelector<HTMLElement>(".note-list-item");
+    const darkCard = buildNotesList("p", [note], () => undefined, undefined, {
+      allNotes: [note],
+      dark: true,
+    }).querySelector<HTMLElement>(".note-list-item");
+    expect(lightCard?.style.getPropertyValue("--nc-bg")).not.toBe("");
+    expect(lightCard?.style.getPropertyValue("--nc-bg")).not.toBe(
+      darkCard?.style.getPropertyValue("--nc-bg"),
+    );
+  });
+
+  it("the row's `has-persona` class is appended only when personaOptions is provided", () => {
+    // Pin the empty-other-branch StringLiteral on
+    // `${persona ? " has-persona" : ""}` inside buildRowItem.
+    // Mutating the empty string to "Stryker was here!" would land
+    // garbage class tokens on every non-persona row.
+    const note = makeNote({ id: "a" });
+    const withoutPersona = buildNotesList(
+      "a",
+      [note],
+      () => undefined,
+      "list",
+    );
+    const rowNoPersona = withoutPersona.querySelector(".notebook-row");
+    expect(rowNoPersona?.classList.contains("has-persona")).toBe(false);
+
+    const withPersona = buildNotesList("a", [note], () => undefined, "list", {
+      allNotes: [note],
+      dark: false,
+    });
+    const rowWithPersona = withPersona.querySelector(".notebook-row");
+    expect(rowWithPersona?.classList.contains("has-persona")).toBe(true);
+  });
+
+  it("stamps `aria-hidden='true'` (exact value) on the row swatch", () => {
+    // Pin the StringLiteral on `setAttribute("aria-hidden", "true")`.
+    // Mutating "true" to "" leaves the attribute present but with
+    // an empty value, which AT reads as opt-in (visible to screen
+    // readers) — exactly the opposite of the intent.
+    const list = buildNotesList(
+      "a",
+      [makeNote({ id: "a" })],
+      () => undefined,
+      "list",
+    );
+    const swatch = list.querySelector(".nr-swatch");
+    expect(swatch?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("stamps `nr-body` className on the row body wrapper", () => {
+    // The wrapper carries the title + sub elements; without it the
+    // CSS rail layout breaks. Mutating the StringLiteral to "" leaves
+    // the inner span elements queryable but the parent un-classed.
+    const list = buildNotesList(
+      "a",
+      [makeNote({ id: "a" })],
+      () => undefined,
+      "list",
+    );
+    expect(list.querySelector(".notebook-row .nr-body")).not.toBeNull();
+  });
+
+  it("trims leading + trailing whitespace from the row excerpt (`.trim()` is load-bearing)", () => {
+    // Pin the `.trim()` call on `note.body.trim().replace(...)`. The
+    // MethodExpression mutant drops `.trim()` and only runs the
+    // newline-collapse regex, so whitespace at the edges leaks into
+    // the rendered sub-text.
+    const note = makeNote({
+      id: "ws",
+      body: "    hello world    ",
+    });
+    const list = buildNotesList("ws", [note], () => undefined, "list");
+    const sub = list.querySelector(".nr-sub");
+    expect(sub?.textContent).toBe("hello world");
+  });
+
+  it("collapses runs of newlines into a single space in the row excerpt", () => {
+    // Pin the `/\n+/g` regex. Mutant `/\n/g` (no `+`) replaces each
+    // newline individually, so a `\n\n` gap becomes two spaces, not
+    // one. The collapsed-form keeps the sub-text dense.
+    const note = makeNote({
+      id: "multi-newlines",
+      body: "line one\n\n\nline two",
+    });
+    const list = buildNotesList(
+      "multi-newlines",
+      [note],
+      () => undefined,
+      "list",
+    );
+    const sub = list.querySelector(".nr-sub");
+    expect(sub?.textContent).toBe("line one line two");
+  });
+
+  it("caps the row sub-text at 140 chars even for long bodies (kills the `.slice(0, 140)` mutant)", () => {
+    // Pin the slice on `excerpt.slice(0, 140)`. The MethodExpression
+    // mutant drops the slice and lets the full body land on the row,
+    // pushing the right-side date off the rail on narrow viewports.
+    const longBody = "x".repeat(300);
+    const note = makeNote({ id: "long", body: longBody });
+    const list = buildNotesList("long", [note], () => undefined, "list");
+    const sub = list.querySelector(".nr-sub");
+    expect((sub?.textContent ?? "").length).toBeLessThanOrEqual(140);
+    expect(sub?.textContent).toBe("x".repeat(140));
+  });
+
+  it("omits the `.nr-tags` wrapper entirely when the row note has zero tags", () => {
+    // Pin the `if (note.tags.length > 0)` guard. Conditional `true`
+    // or EqualityOperator `>= 0` mutants would render the tags-row
+    // wrapper as an empty `<div>`, breaking spacing on the row.
+    const note = makeNote({ id: "no-tags", tags: [] });
+    const list = buildNotesList("no-tags", [note], () => undefined, "list");
+    expect(list.querySelector(".notebook-row .nr-tags")).toBeNull();
+  });
+});
