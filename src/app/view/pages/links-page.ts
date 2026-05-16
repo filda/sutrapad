@@ -389,6 +389,25 @@ function buildLinkBody(
   body.append(buildLinkUrl(entry.url));
   body.append(buildLinkMeta(entry, primaryNote, onOpenNote));
 
+  // Tag chips reflect the primary source note's tags (the most recently
+  // updated note containing this URL — same note that drives the title,
+  // excerpt and persona above). Renders the full set without a cap so
+  // the row matches the Notes card behaviour; `.tag-chip` is the shared
+  // styling hook (see styles.css → "Step 5 of cards-unification"). The
+  // wrapper class is Links-scoped because the row's gap/margin sits in
+  // the link-body grid, not Notes' card body.
+  if (primaryNote && primaryNote.tags.length > 0) {
+    const tagsRow = document.createElement("div");
+    tagsRow.className = "link-card-tags";
+    for (const tag of primaryNote.tags) {
+      const chip = document.createElement("span");
+      chip.className = "tag-chip";
+      chip.textContent = tag;
+      tagsRow.append(chip);
+    }
+    body.append(tagsRow);
+  }
+
   return body;
 }
 

@@ -392,6 +392,71 @@ describe("buildLinksPage cards layout", () => {
     page.querySelector<HTMLButtonElement>(".link-card-source")?.click();
     expect(onOpenNote).toHaveBeenCalledWith("primary");
   });
+
+  it("renders a `.link-card-tags` row with the primary source note's tags in order", () => {
+    const note = makeNote({
+      id: "n1",
+      title: "T",
+      tags: ["work", "urgent", "today"],
+      urls: ["https://example.com/a"],
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      linksViewMode: "cards",
+    });
+    const row = page.querySelector(".link-card-tags");
+    expect(row).not.toBeNull();
+    const chips = Array.from(row?.querySelectorAll(".tag-chip") ?? []);
+    expect(chips.map((chip) => chip.textContent)).toEqual([
+      "work",
+      "urgent",
+      "today",
+    ]);
+  });
+
+  it("omits the `.link-card-tags` row entirely when the primary source note has no tags", () => {
+    // No empty wrapper should slip into the DOM — otherwise the bottom
+    // margin still consumes vertical rhythm and the cards drift out of
+    // alignment with Notes (which only renders the row when there are
+    // tags to show).
+    const note = makeNote({
+      id: "n1",
+      title: "T",
+      tags: [],
+      urls: ["https://example.com/a"],
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      linksViewMode: "cards",
+    });
+    expect(page.querySelector(".link-card-tags")).toBeNull();
+  });
+
+  it("uses the most-recently-updated source note's tags (not an aggregate across all notes)", () => {
+    // Two notes share the same URL but carry different tag sets. The
+    // card surfaces the primary note's slate — same note that drives
+    // title/excerpt/persona — so the rendered tags should match `a`,
+    // not the older `b`.
+    const recent = makeNote({
+      id: "a",
+      title: "Most recent",
+      tags: ["alpha"],
+      urls: ["https://example.com/x"],
+      updatedAt: "2026-04-30T12:00:00.000Z",
+    });
+    const older = makeNote({
+      id: "b",
+      title: "Older",
+      tags: ["beta"],
+      urls: ["https://example.com/x"],
+      updatedAt: "2026-04-29T12:00:00.000Z",
+    });
+    const page = buildPage(makeWorkspace([recent, older]), [], {
+      linksViewMode: "cards",
+    });
+    const chips = Array.from(
+      page.querySelectorAll(".link-card-tags .tag-chip"),
+    );
+    expect(chips.map((chip) => chip.textContent)).toEqual(["alpha"]);
+  });
 });
 
 describe("buildLinksPage view-toggle", () => {

@@ -2607,6 +2607,19 @@ button.tag-pill {
 }
 
 /*
+ * Tags row at the bottom of the link-body (mirrors `.note-list-tags`
+ * on Notes cards). Per-surface wrapper because the gap/margin sit on
+ * top of the link-body column-gap (which is 6px); the row needs its
+ * own breathing space. Chip styling is shared via `.tag-chip`.
+ */
+.link-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+/*
  * ---------- Tasks screen ----------
  * Ported from docs/design_handoff_sutrapad2/src/screens.css §1176–1385.
  * Pulls from the full handoff token set (ink-300/400/700, paper-0,
