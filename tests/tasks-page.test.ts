@@ -360,7 +360,7 @@ describe("buildTasksPage structural / chip / one-thing", () => {
     const onOpenNote = vi.fn();
     const page = buildPage(makeWorkspace([note]), [], { onOpenNote });
     page
-      .querySelector<HTMLButtonElement>(".task-card-head .task-card-open")
+      .querySelector<HTMLButtonElement>(".task-card-head .entity-card-open")
       ?.click();
     expect(onOpenNote).toHaveBeenCalledWith("src");
   });
@@ -676,14 +676,14 @@ describe("buildTasksPage prose contracts and branch coverage", () => {
 // location stripping, stale badge, filter-miss copy variants. Split
 // out from the previous describe to stay under the 350-line lint cap.
 describe("buildTasksPage task-card and filter-miss contracts", () => {
-  it("renders the task-card-open arrow with `Open note` aria-label and matching title", () => {
+  it("renders the entity-card-open arrow with `Open note` aria-label and matching title", () => {
     const note = makeNote({
       id: "n",
       tags: [],
       body: "- [ ] hi",
     });
     const page = buildPage(makeWorkspace([note]));
-    const open = page.querySelector<HTMLButtonElement>(".task-card-open");
+    const open = page.querySelector<HTMLButtonElement>(".entity-card-open");
     expect(open?.getAttribute("aria-label")).toBe("Open note");
     expect(open?.title).toBe("Open note");
   });
@@ -703,20 +703,21 @@ describe("buildTasksPage task-card and filter-miss contracts", () => {
     expect(count?.textContent).toBe("2 of 3 open");
   });
 
-  it("renders an 'Open & add' button in the task-card footer that routes onOpenNote", () => {
+  it("renders no 'Open & add' button in the task-card footer anymore (#9 removed the duplicate of the head's `.entity-card-open` arrow)", () => {
+    // The foot pre-#9 carried a button labelled "Open & add" that
+    // routed onOpenNote — same action as the head's arrow. The
+    // button was deleted; the foot keeps just the open/total
+    // counter. Test pins both: no `.task-card-add` element remains
+    // anywhere, and the foot still exists with its `.task-card-count`.
     const note = makeNote({
       id: "src",
       tags: [],
       body: "- [ ] hi",
     });
-    const onOpenNote = vi.fn();
-    const page = buildPage(makeWorkspace([note]), [], { onOpenNote });
-    const add = page.querySelector<HTMLButtonElement>(
-      ".task-card-foot .task-card-add",
-    );
-    expect(add?.textContent).toBe("Open & add");
-    add?.click();
-    expect(onOpenNote).toHaveBeenCalledWith("src");
+    const page = buildPage(makeWorkspace([note]));
+    expect(page.querySelector(".task-card-add")).toBeNull();
+    expect(page.querySelector(".task-card-foot")).not.toBeNull();
+    expect(page.querySelector(".task-card-foot .task-card-count")).not.toBeNull();
   });
 
   it("renders a `stale` badge inside the task-card head when at least one of the card's open tasks crossed the staleness threshold", () => {
@@ -843,12 +844,15 @@ describe("buildTasksPage task-card and filter-miss contracts", () => {
 describe("buildTasksPage inline-SVG icon contract", () => {
   it("renderIcon stamps the canonical SVG attribute set on every icon", () => {
     const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
-    // task-card-open is the most reliably-present icon (always renders
-    // on the card head). Asserting once here pins the full attribute
-    // recipe — width/height are exercised by the per-icon size tests
-    // below.
+    // `.task-promote` is the most reliably-present renderIcon-built
+    // icon (every open task on every card carries the sparkle). The
+    // `.entity-card-open` arrow used to anchor this test pre-#9, but
+    // it now routes through `buildIcon` (from `icons.ts`) which only
+    // sets `class`, `viewBox`, `aria-hidden`, `focusable` and leans
+    // on the `.i` CSS for stroke / fill — so it no longer carries
+    // the inline attribute recipe pinned below.
     const page = buildPage(makeWorkspace([note]));
-    const svg = page.querySelector(".task-card-open svg");
+    const svg = page.querySelector(".task-promote svg");
     expect(svg).not.toBeNull();
     expect(svg?.getAttribute("class")).toBe("i");
     expect(svg?.getAttribute("viewBox")).toBe("0 0 24 24");
@@ -861,21 +865,23 @@ describe("buildTasksPage inline-SVG icon contract", () => {
     expect(svg?.getAttribute("focusable")).toBe("false");
   });
 
-  it("renderIcon size param controls width AND height — task-card-open uses 12", () => {
+  it("the entity-card-open arrow renders the `arrow` icon from `icons.ts` (the new home of the chevron paths post-#9)", () => {
+    // Arrow path silhouette = horizontal shaft + chevron head:
+    //   "M5 12h14" + "m13 6 6 6-6 6"
+    // pinned at the source-of-truth in `icons.ts` → ICON_SHAPES.arrow.
+    // The test queries the rendered `<svg>` under the entity-card-open
+    // button and asserts both `<path>` children carry the expected `d`.
     const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
     const page = buildPage(makeWorkspace([note]));
-    const svg = page.querySelector(".task-card-open svg");
-    expect(svg?.getAttribute("width")).toBe("12");
-    expect(svg?.getAttribute("height")).toBe("12");
-  });
-
-  it("ICON_ARROW path renders inside the task-card-open svg", () => {
-    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
-    const page = buildPage(makeWorkspace([note]));
-    const svg = page.querySelector(".task-card-open svg");
-    // ICON_ARROW = '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>'
-    expect(svg?.innerHTML).toContain('d="M5 12h14"');
-    expect(svg?.innerHTML).toContain('d="m13 6 6 6-6 6"');
+    const svg = page.querySelector(".entity-card-open svg");
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("class")).toBe("i i-12");
+    expect(svg?.getAttribute("viewBox")).toBe("0 0 24 24");
+    const paths = Array.from(svg?.querySelectorAll("path") ?? []);
+    expect(paths.map((p) => p.getAttribute("d"))).toEqual([
+      "M5 12h14",
+      "m13 6 6 6-6 6",
+    ]);
   });
 
   it("ICON_SPARKLE path renders inside the empty pick CTA icon (size 14)", () => {

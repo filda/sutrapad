@@ -306,10 +306,12 @@ describe("buildLinksPage cards layout", () => {
   // The list mode is exhaustively tested above; the cards mode (the
   // default linksViewMode in production) needs its own structural
   // coverage so the .link-card / .link-card-title / .card-excerpt /
-  // .link-card-url / .link-card-saved / .link-card-source classNames
-  // stay pinned.
+  // .link-card-url / .link-card-saved / .entity-card-open /
+  // .link-card-notebooks classNames stay pinned. The pre-#9
+  // `.link-card-source` chip was deleted with the shared
+  // `.entity-card-open` arrow + whole-card click pattern.
 
-  it("renders one .link-card per indexed URL with a title, URL anchor, save date, and source-note chip", () => {
+  it("renders one .link-card per indexed URL with a title, URL anchor, save date, and arrow open-button", () => {
     const note = makeNote({
       id: "n1",
       title: "Why I saved it",
@@ -330,30 +332,21 @@ describe("buildLinksPage cards layout", () => {
       "https://example.com/a",
     );
     expect(card.querySelector(".link-card-saved")).not.toBeNull();
-    const sourceChip = card.querySelector<HTMLButtonElement>(".link-card-source");
-    expect(sourceChip?.textContent).toBe("Why I saved it");
-  });
-
-  it("falls back to 'Untitled note' on the source chip when the note has a blank title", () => {
-    const note = makeNote({
-      id: "n1",
-      title: "   ",
-      body: "context",
-      tags: [],
-      urls: ["https://example.com/a"],
-    });
-    const page = buildPage(makeWorkspace([note]), [], {
-      linksViewMode: "cards",
-    });
-    expect(page.querySelector(".link-card-source")?.textContent).toBe(
-      "Untitled note",
+    // Arrow open-button sits in the shared `.entity-card-head` next
+    // to the title and carries the per-surface aria-label.
+    const arrow = card.querySelector<HTMLButtonElement>(
+      ".entity-card-head .entity-card-open",
     );
+    expect(arrow?.getAttribute("aria-label")).toBe("Open source note");
+    // No `.link-card-source` chip anywhere — pins the deletion so a
+    // future regression that reintroduces the chip would fail.
+    expect(card.querySelector(".link-card-source")).toBeNull();
   });
 
-  it("appends ` · +N` to the source chip text when the URL is captured in multiple notebooks", () => {
-    // The chip text uses `${title} · +${count - 1}` for count > 1.
-    // Mutating the StringLiteral or the count math would either drop
-    // the suffix or land a wrong number.
+  it("renders a `.link-card-notebooks` indicator with the count when the URL is captured in multiple notebooks", () => {
+    // Replaces the pre-#9 `.link-card-source` chip's `+N` suffix.
+    // Single-source URLs stay implicit (title in head already names
+    // the source note) — pinned below in the inverse test.
     const a = makeNote({
       id: "a",
       title: "Most recent",
@@ -371,14 +364,26 @@ describe("buildLinksPage cards layout", () => {
     const page = buildPage(makeWorkspace([a, b]), [], {
       linksViewMode: "cards",
     });
-    const chip = page.querySelector(".link-card-source");
-    expect(chip?.textContent).toBe("Most recent · +1");
-    expect(chip?.getAttribute("aria-label")).toBe(
-      "Open Most recent, saved in 2 notebooks",
-    );
+    const indicator = page.querySelector(".link-card-notebooks");
+    expect(indicator?.textContent).toBe("Saved in 2 notebooks");
   });
 
-  it("invokes onOpenNote with the primary note id when the source chip is clicked", () => {
+  it("omits the `.link-card-notebooks` indicator entirely for single-source URLs", () => {
+    // count === 1 means the title in head already names the source —
+    // no need to repeat "Saved in 1 notebook" alongside the date.
+    const note = makeNote({
+      id: "n",
+      title: "Only",
+      tags: [],
+      urls: ["https://example.com/once"],
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      linksViewMode: "cards",
+    });
+    expect(page.querySelector(".link-card-notebooks")).toBeNull();
+  });
+
+  it("invokes onOpenNote with the primary note id when the arrow open-button is clicked", () => {
     const note = makeNote({
       id: "primary",
       title: "T",
@@ -389,8 +394,57 @@ describe("buildLinksPage cards layout", () => {
       linksViewMode: "cards",
       onOpenNote,
     });
-    page.querySelector<HTMLButtonElement>(".link-card-source")?.click();
+    page
+      .querySelector<HTMLButtonElement>(".link-card .entity-card-open")
+      ?.click();
     expect(onOpenNote).toHaveBeenCalledWith("primary");
+    // The arrow's own `stopPropagation` plus the card's
+    // `closest("a, button")` guard keep onOpenNote from double-firing
+    // through the whole-card shortcut.
+    expect(onOpenNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("invokes onOpenNote with the primary note id when the card body (dead space) is clicked", () => {
+    // Whole-card click → open source note. Pre-#9 the card surface
+    // was inert; only the (deleted) source chip was clickable.
+    const note = makeNote({
+      id: "primary",
+      title: "T",
+      urls: ["https://example.com/a"],
+    });
+    const onOpenNote = vi.fn();
+    const page = buildPage(makeWorkspace([note]), [], {
+      linksViewMode: "cards",
+      onOpenNote,
+    });
+    page.querySelector<HTMLElement>(".link-card")?.click();
+    expect(onOpenNote).toHaveBeenCalledWith("primary");
+  });
+
+  it("clicking the URL anchor does NOT route through the card-level open-source-note shortcut", () => {
+    // The `<a class="link-card-url">` is an external nav target; the
+    // card-level click handler bails via `target.closest("a, button")`
+    // so the user isn't yanked off to the source note while clicking
+    // through to the external page.
+    const note = makeNote({
+      id: "primary",
+      title: "T",
+      urls: ["https://example.com/a"],
+    });
+    const onOpenNote = vi.fn();
+    const page = buildPage(makeWorkspace([note]), [], {
+      linksViewMode: "cards",
+      onOpenNote,
+    });
+    // happy-dom will follow the href as a real nav, which would crash
+    // the test; prevent the default before dispatching. The click event
+    // still bubbles and the closest() guard is what we're asserting.
+    const url = page.querySelector<HTMLAnchorElement>(
+      ".link-card .link-card-url",
+    );
+    url?.addEventListener("click", (event) => event.preventDefault());
+    url?.click();
+    expect(onOpenNote).not.toHaveBeenCalled();
   });
 
   it("renders a `.link-card-tags` row with the primary source note's tags in order", () => {

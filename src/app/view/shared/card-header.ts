@@ -1,5 +1,6 @@
 import { DEFAULT_NOTE_TITLE } from "../../../lib/notebook";
 import { formatDate } from "../../logic/formatting";
+import { buildIcon } from "./icons";
 
 /**
  * The three primary entity surfaces ("kind"s) that share the
@@ -82,4 +83,96 @@ export function buildCardDate(
   el.dateTime = iso;
   el.textContent = formatDate(iso);
   return el;
+}
+
+/**
+ * Builds the shared tags-row wrapper used by Notes / Links cards (a
+ * flat `<div>` of `.tag-chip` spans). Returns `null` when `tags` is
+ * empty so callers can drop the row entirely instead of leaving an
+ * empty `<div>` in the DOM — pre-helper Notes used a `tags.length > 0`
+ * guard, Links the same guard plus a `primaryNote` null-check; both
+ * funnel through this return value now.
+ *
+ * The wrapper className is per-surface (`note-list-tags` /
+ * `link-card-tags`) because the row's margin + layout slot differs
+ * between Notes' card body grid and Links' link-body column. Tag chip
+ * element class is the shared `.tag-chip` — see
+ * `styles.css` → "Step 5 of cards-unification". `textContent` (not
+ * `innerHTML`) keeps the helper safe from `<script>`-tag XSS via
+ * malicious tag strings; the same property the original copy-paste
+ * relied on.
+ *
+ * Tasks doesn't call this — the cards there don't carry tags per the
+ * #6 decision (1=b: Links only). The notebook-row in Notes' list view
+ * also doesn't use this because it caps at 4 (`.slice(0, 4)`) and
+ * has its own row class; widening the helper's signature for one
+ * extra caller wasn't worth the contract surface.
+ */
+export function buildTagChipsRow(
+  tags: readonly string[],
+  wrapperClass: string,
+): HTMLDivElement | null {
+  if (tags.length === 0) return null;
+  const row = document.createElement("div");
+  row.className = wrapperClass;
+  for (const tag of tags) {
+    const chip = document.createElement("span");
+    chip.className = "tag-chip";
+    chip.textContent = tag;
+    row.append(chip);
+  }
+  return row;
+}
+
+/**
+ * Shared "open source note" affordance — a small icon button with a
+ * right-pointing arrow that lives in the head row of every entity-card
+ * surface (Notes / Links / Tasks). Pre-share, Tasks had its own inline
+ * `<button class="task-card-open">` built off `ICON_ARROW` in
+ * `tasks-page.ts`, and Links had a text-chip in the meta row
+ * (`.link-card-source`) that doubled as the open affordance. Both are
+ * funnelled through this helper now so the visual + a11y contract
+ * (focus ring, hover tint, aria-label) lives in one place.
+ *
+ * Click `stopPropagation` is intentional: every card that hosts this
+ * button also carries a `closest("button, a")` guard on its
+ * card-level click listener, but a defensive `stopPropagation` keeps
+ * any future card-level handler from double-firing if it ever forgets
+ * the guard. Click handlers (not anchor href) suit our routing —
+ * navigating to the source note is an in-app state change driven
+ * through the page-router, not a real navigation.
+ */
+export function buildCardOpenButton(
+  ariaLabel: string,
+  onClick: () => void,
+): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "entity-card-open";
+  btn.setAttribute("aria-label", ariaLabel);
+  btn.title = ariaLabel;
+  btn.append(buildIcon("arrow", 12));
+  btn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    onClick();
+  });
+  return btn;
+}
+
+/**
+ * Wraps the card's title heading in a shared `.entity-card-head` flex
+ * row so Notes / Links / Tasks all carry the same `[title …………… [→]]`
+ * layout. The title block sits on the left (the caller can pass a
+ * single `<h3>` or a `<div>` that contains both the title and a
+ * sub-line — see Tasks, which packs `task-card-sub` underneath the
+ * heading); the open-button sits on the right.
+ */
+export function buildCardHead(
+  titleBlock: HTMLElement,
+  openButton: HTMLButtonElement,
+): HTMLDivElement {
+  const head = document.createElement("div");
+  head.className = "entity-card-head";
+  head.append(titleBlock, openButton);
+  return head;
 }

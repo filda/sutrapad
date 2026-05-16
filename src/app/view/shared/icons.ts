@@ -32,7 +32,8 @@ export type IconName =
   | "check"
   | "close"
   | "menu"
-  | "list";
+  | "list"
+  | "arrow";
 
 type IconShape =
   | { kind: "paths"; paths: readonly string[] }
@@ -120,6 +121,12 @@ const ICON_SHAPES: Readonly<Record<IconName, IconShape>> = {
       { tag: "circle", cx: 4, cy: 18, r: 1 },
     ],
   },
+  // Right-pointing arrow used by the shared `.entity-card-open` button on
+  // every card surface (Notes / Links / Tasks). Two paths: a horizontal
+  // shaft and a chevron head. Pre-shared this was inlined as `ICON_ARROW`
+  // in `tasks-page.ts`; lifted here so all three card builders pull the
+  // same silhouette through `buildCardOpenButton`.
+  arrow: { kind: "paths", paths: ["M5 12h14", "m13 6 6 6-6 6"] },
 };
 
 export type IconSize = 12 | 14 | 16 | 20;

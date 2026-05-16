@@ -72,8 +72,13 @@ describe("buildNotesList — XSS guards", () => {
     const list = buildNotesList("note-1", [note], () => undefined);
     document.body.append(list);
 
-    expect(list.querySelectorAll("svg")).toHaveLength(0);
+    // Scope the SVG-absence assertion to `.card-excerpt`: post-#9 the
+    // card also carries the `.entity-card-open` arrow which is itself
+    // an `<svg>` (built via `buildIcon`). A page-wide `querySelectorAll`
+    // would pick that legitimate icon up and false-positive. The attack
+    // surface is the excerpt body text — pin SVG absence there.
     const excerpt = list.querySelector(".note-list-item .card-excerpt");
+    expect(excerpt?.querySelectorAll("svg")).toHaveLength(0);
     expect(excerpt?.textContent).toBe(malicious.slice(0, 72));
 
     expect((window as unknown as { __pwned_body?: boolean }).__pwned_body).toBeUndefined();
@@ -332,67 +337,71 @@ describe("buildNotesList — structural rendering", () => {
 
 // Second structural pass — pins the survivors flagged by the 2026-05-16
 // focused stryker run on notes-list.ts (76.42 % baseline): cards-only
-// thumb/excerpt details, the role="button" + keydown polyfill on the
-// `<article>` card, the non-all-done chip branch, the per-card persona
-// ObjectLiteral, and the buildRowItem inline-style/className contract
-// plus its body sub-text transformations.
+// thumb/excerpt details, the inner `.entity-card-open` arrow open-button
+// + whole-card click semantics (#9 replaced the `role="button"` +
+// keydown polyfill the `<article>` card carried), the non-all-done chip
+// branch, the per-card persona ObjectLiteral, and the buildRowItem
+// inline-style/className contract plus its body sub-text transformations.
 describe("buildNotesList — second structural pass", () => {
-  it("stamps `role='button'` on the card so AT reads the article as a single-action surface", () => {
-    // Pins the StringLiteral on `setAttribute("role", "button")`.
-    // Mutating "button" to "" drops the AT semantics.
+  it("does NOT carry `role='button'` on the card — kbd activation now lives on the inner arrow open-button (#9 a11y fix)", () => {
+    // Pre-#9 the `<article>` carried `role="button"` + `tabIndex=0` +
+    // an Enter/Space keydown polyfill. Nesting an inner real `<button>`
+    // (the `.entity-card-open` arrow) inside a `role=button` ancestor
+    // is an a11y anti-pattern — kbd users tab to the arrow now and
+    // activate it natively. This test pins that the role + tabIndex
+    // are *gone*.
     const list = buildNotesList("a", [makeNote({ id: "a" })], () => undefined);
     const card = list.querySelector(".note-list-item");
-    expect(card?.getAttribute("role")).toBe("button");
+    expect(card?.getAttribute("role")).toBeNull();
+    expect(card?.getAttribute("tabindex")).toBeNull();
   });
 
-  it("pressing Enter on a card fires click + preventDefault", () => {
-    // The card is `<article>`, not `<button>`, so the keydown handler
-    // polyfills the button keyboard contract: Enter → click +
-    // preventDefault (so the page doesn't scroll a stray newline).
-    // Without this test the entire keydown BlockStatement, the
-    // Enter/Space ConditionalExpression family, and both key
-    // StringLiteral mutants stay uncovered.
+  it("renders an `.entity-card-open` arrow open-button inside the card head with `Open note` aria-label", () => {
+    // The shared `.entity-card-open` arrow is the new keyboard-reachable
+    // affordance — pins its presence, the per-surface aria-label, and
+    // the head-row wrapper that holds it next to the title.
+    const list = buildNotesList("a", [makeNote({ id: "a" })], () => undefined);
+    const head = list.querySelector(".note-list-item .entity-card-head");
+    expect(head).not.toBeNull();
+    const arrow = head?.querySelector<HTMLButtonElement>(".entity-card-open");
+    expect(arrow?.getAttribute("aria-label")).toBe("Open note");
+    expect(arrow?.title).toBe("Open note");
+  });
+
+  it("clicking the inner arrow open-button routes onSelectNote with the card's note id", () => {
     const onSelect = vi.fn();
     const list = buildNotesList("a", [makeNote({ id: "a" })], onSelect);
-    const card = list.querySelector(".note-list-item") as HTMLElement;
-    const event = new KeyboardEvent("keydown", {
-      key: "Enter",
-      cancelable: true,
-      bubbles: true,
-    });
-    card.dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(true);
+    list
+      .querySelector<HTMLButtonElement>(".note-list-item .entity-card-open")
+      ?.click();
     expect(onSelect).toHaveBeenCalledWith("a");
   });
 
-  it("pressing Space on a card fires click + preventDefault", () => {
+  it("clicking the card body outside any interactive child fires onSelectNote (whole-card click shortcut)", () => {
+    // Mouse / tap convenience handler: clicking dead-space anywhere on
+    // the card (thumb gradient, between rows) triggers the open. Kbd
+    // activation still has to go through the arrow button — only the
+    // arrow is tabbable.
     const onSelect = vi.fn();
     const list = buildNotesList("a", [makeNote({ id: "a" })], onSelect);
-    const card = list.querySelector(".note-list-item") as HTMLElement;
-    const event = new KeyboardEvent("keydown", {
-      key: " ",
-      cancelable: true,
-      bubbles: true,
-    });
-    card.dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(true);
+    const card = list.querySelector<HTMLElement>(".note-list-item");
+    card?.click();
     expect(onSelect).toHaveBeenCalledWith("a");
   });
 
-  it("pressing an unrelated key on a card does NOT fire click and does NOT preventDefault", () => {
-    // Pins the inner conditional: only Enter/Space trigger the
-    // polyfill. Any other key must drop through.
+  it("clicking an inner button does NOT double-fire onSelectNote through the card-level shortcut", () => {
+    // The arrow's own click listener carries `event.stopPropagation`,
+    // but the card-level handler also guards via
+    // `target.closest("a, button")`. Belt-and-braces: even if a
+    // future mutant or refactor removes the `stopPropagation`, the
+    // guard absorbs the bubble path so the handler fires exactly
+    // once. Test asserts onSelect was called only once, not twice.
     const onSelect = vi.fn();
     const list = buildNotesList("a", [makeNote({ id: "a" })], onSelect);
-    const card = list.querySelector(".note-list-item") as HTMLElement;
-    const event = new KeyboardEvent("keydown", {
-      key: "x",
-      cancelable: true,
-      bubbles: true,
-    });
-    card.dispatchEvent(event);
-    expect(event.defaultPrevented).toBe(false);
-    expect(onSelect).not.toHaveBeenCalled();
+    list
+      .querySelector<HTMLButtonElement>(".note-list-item .entity-card-open")
+      ?.click();
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
   it("renders a `.link-thumb` inside each card in cards/no-mode but NOT inside a list-mode row", () => {

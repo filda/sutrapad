@@ -2386,6 +2386,13 @@ button.tag-pill {
   text-align: left;
   padding: 14px 15px;
   color: var(--primary);
+  /* Whole-card click → open this note. Pre-#9 the card carried
+     `role="button"` which gave the pointer cursor implicitly;
+     dropping the role (it nested poorly inside the new
+     `.entity-card-open` arrow) means we declare the cursor
+     ourselves. The card-level click handler in `notes-list.ts`
+     guards inner buttons / anchors via `target.closest()`. */
+  cursor: pointer;
 }
 
 .entity-card--link {
@@ -2397,6 +2404,11 @@ button.tag-pill {
   padding: 0;
   display: flex;
   flex-direction: column;
+  /* #9: whole-card click → open primary source note (same action the
+     `.entity-card-open` arrow performs). The URL anchor and arrow
+     button stay independently clickable via a `target.closest()`
+     guard in the card-level click handler in `links-page.ts`. */
+  cursor: pointer;
 }
 
 .entity-card--task {
@@ -2586,24 +2598,18 @@ button.tag-pill {
   font-variant-numeric: tabular-nums;
 }
 
-.link-card-source {
-  font: inherit;
-  color: var(--primary);
-  background: rgba(var(--accent-rgb), 0.10);
-  border: 1px solid rgba(var(--accent-rgb), 0.25);
-  border-radius: 999px;
-  padding: 2px 8px;
-  cursor: pointer;
-  max-width: 70%;
+/*
+ * `.link-card-notebooks` — plain "Saved in N notebooks" indicator that
+ * replaced the old clickable `.link-card-source` chip when #9 moved
+ * the "open source note" action onto the shared `.entity-card-open`
+ * arrow + whole-card click. Rendered only when a URL appears in more
+ * than one notebook (count > 1); the single-source case is implicit
+ * (title in head already names the note). Inherits the meta row's
+ * muted colour so the indicator reads as secondary information.
+ */
+.link-card-notebooks {
+  color: var(--muted);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background 0.12s, border-color 0.12s;
-}
-
-.link-card-source:hover {
-  background: rgba(var(--accent-rgb), 0.18);
-  border-color: rgba(var(--accent-rgb), 0.5);
 }
 
 /*
@@ -2866,6 +2872,23 @@ button.tag-pill {
   justify-content: space-between;
   gap: 10px;
 }
+
+/*
+ * Shared head row for Notes / Links / Tasks cards: title block on the
+ * left, the `.entity-card-open` arrow button on the right. Tasks
+ * carries both `.entity-card-head` and `.task-card-head` so the
+ * existing Tasks-specific rules below (title size, sub-line layout)
+ * keep resolving unchanged; the shared class delivers the flex
+ * layout. Notes / Links use only `.entity-card-head` — their inner
+ * `.note-list-title` / `.link-card-title` styling already lives in
+ * their own per-surface rules.
+ */
+.entity-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
 /*
  * Step 3 of cards-unification: select via the `.task-card-title` class
  * (stamped by `buildCardTitle("task", …)`) so the three cards-surface
@@ -2915,7 +2938,7 @@ button.tag-pill {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-.task-card-open {
+.entity-card-open {
   flex-shrink: 0;
   width: 26px;
   height: 26px;
@@ -2929,11 +2952,11 @@ button.tag-pill {
   padding: 0;
   transition: background 120ms ease, color 120ms ease;
 }
-.task-card-open:hover {
+.entity-card-open:hover {
   background: var(--surface-inset);
   color: var(--accent);
 }
-.task-card-open:focus-visible {
+.entity-card-open:focus-visible {
   outline: 2px solid rgba(var(--accent-rgb), 0.65);
   outline-offset: 2px;
 }
@@ -3017,36 +3040,22 @@ button.tag-pill {
   outline-offset: 2px;
 }
 
+/*
+ * Foot row carries the open/total task count. Pre-#9 it also had the
+ * "Open & add" button on the right, which duplicated the head's
+ * `.entity-card-open` arrow as an "open source note" affordance; the
+ * button was deleted with the foot kept so the count keeps its own
+ * line (visually separates it from the task list above).
+ */
 .task-card-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   margin-top: 4px;
   padding-top: 10px;
   border-top: 1px dashed var(--line);
 }
 .task-card-count {
   color: var(--ink-500);
-}
-.task-card-add {
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--ink-700);
-  border-radius: 8px;
-  padding: 4px 10px;
-  font-family: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
-}
-.task-card-add:hover {
-  background: var(--surface-inset);
-  border-color: rgba(var(--accent-rgb), 0.35);
-  color: var(--accent);
-}
-.task-card-add:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.65);
-  outline-offset: 2px;
 }
 
 .task-empty {
@@ -4009,7 +4018,7 @@ button.tag-pill {
   box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.18);
 }
 
-.note-list-item > .note-list-title,
+.note-list-item .note-list-title,
 .note-list-item > .card-meta,
 .note-list-item > .card-excerpt {
   display: block;
@@ -4025,8 +4034,14 @@ button.tag-pill {
  * rules below keep working without referencing `> h3` directly. The
  * margin reset undoes the user-agent default top/bottom margins on h3
  * (`1em` / `~17px`) — without it the title pushes the meta row down.
+ *
+ * Selector dropped the `>` direct-child operator with #9: the title now
+ * lives inside `.entity-card-head` (a flex row containing the heading
+ * and the `.entity-card-open` arrow), so it's a grandchild of
+ * `.note-list-item`. The descendant chain still scopes the rule to
+ * Notes cards.
  */
-.note-list-item > .note-list-title {
+.note-list-item .note-list-title {
   margin: 0 0 6px 0;
   font-size: 0.98rem;
   font-weight: 700;
@@ -4156,7 +4171,7 @@ button.tag-pill {
       color-mix(in oklab, var(--nc-accent, var(--accent)) 25%, transparent);
 }
 
-.note-list-item.has-persona > .note-list-title {
+.note-list-item.has-persona .note-list-title {
   font-family: var(--nc-title-font, var(--serif));
   color: var(--nc-ink, var(--ink-900));
   letter-spacing: 0.005em;
@@ -4172,13 +4187,13 @@ button.tag-pill {
   color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 62%, transparent);
 }
 
-.note-list-item.has-persona[data-font-tier="handwritten"] > .note-list-title {
+.note-list-item.has-persona[data-font-tier="handwritten"] .note-list-title {
   /* Bigger, slightly airier leading reads right for the hand-drawn face. */
   font-size: 1.15rem;
   line-height: 1.1;
 }
 
-.note-list-item.has-persona[data-font-tier="mono"] > .note-list-title {
+.note-list-item.has-persona[data-font-tier="mono"] .note-list-title {
   font-size: 0.95rem;
   letter-spacing: 0;
 }
@@ -4332,7 +4347,7 @@ button.tag-pill {
   pointer-events: none;
 }
 
-.note-list-item.has-persona[data-patina~="highlight"] > .note-list-title {
+.note-list-item.has-persona[data-patina~="highlight"] .note-list-title {
   background-image: linear-gradient(
     120deg,
     transparent 0%,
@@ -7179,11 +7194,6 @@ button.tag-pill {
   border-top-color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 22%, transparent);
 }
 
-.task-card.has-persona .task-card-add {
-  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 25%, transparent);
-  color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 80%, transparent);
-}
-
 /* Links ------------------------------------------------------------------- */
 
 .links-page--persona .links-grid {
@@ -7220,12 +7230,6 @@ button.tag-pill {
 .link-card.has-persona .link-card-saved {
   font-family: var(--nc-body-font, inherit);
   color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 70%, transparent);
-}
-
-.link-card.has-persona .link-card-source {
-  background: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 8%, transparent);
-  border-color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 22%, transparent);
-  color: color-mix(in oklab, var(--nc-ink, var(--ink-700)) 80%, transparent);
 }
 
 /*

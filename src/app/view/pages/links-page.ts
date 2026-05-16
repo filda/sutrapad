@@ -7,7 +7,13 @@ import { deriveNotebookPersona } from "../../../lib/notebook-persona";
 import { buildCardExcerpt } from "../../logic/card-excerpt";
 import { formatDate } from "../../logic/formatting";
 import { deriveLinkHostname } from "../../logic/link-card";
-import { buildCardDate, buildCardTitle } from "../shared/card-header";
+import {
+  buildCardDate,
+  buildCardHead,
+  buildCardOpenButton,
+  buildCardTitle,
+  buildTagChipsRow,
+} from "../shared/card-header";
 import type { LinksViewMode } from "../../logic/links-view";
 import { buildFaviconUrl, type CachedOgImageEntry } from "../../logic/og-image";
 import { buildIcon, type IconName } from "../shared/icons";
@@ -302,8 +308,10 @@ function buildLinkCard(
   const card = document.createElement("article");
   // Shared `entity-card` shell + Links variant — see notes-list.ts for the
   // Step 1 cards-unification rationale. `link-card` stays so the existing
-  // inner selectors (.link-card-title, .link-card-source,
-  // and the persona overrides) keep working unchanged.
+  // inner selectors (.link-card-title, .link-card-saved,
+  // .link-card-notebooks, and the persona overrides) keep working
+  // unchanged. Pre-#9 this list also named `.link-card-source` — that
+  // chip was deleted with the arrow + whole-card click pattern.
   card.className = "entity-card entity-card--link link-card";
 
   // First note id in `entry.noteIds` is the most recently updated one
@@ -338,6 +346,23 @@ function buildLinkCard(
     applyPersonaStyles(card, persona);
   }
 
+  // #9: whole-card click routes to the primary source note (the same
+  // action the inner `.entity-card-open` arrow performs and the
+  // pre-#9 `.link-card-source` chip used to perform). The
+  // `closest("a, button")` guard keeps the URL anchor and arrow from
+  // double-firing through this handler — `<a href>`s and `<button>`s
+  // own their click, the card-level shortcut only fires on
+  // dead-space clicks (thumb gradient, between rows of metadata).
+  // No handler when there's no source note to open — `entry.noteIds`
+  // empty / unresolvable would be data weirdness, but the render
+  // still has to survive it.
+  if (primaryNote) {
+    card.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("a, button")) return;
+      onOpenNote(primaryNote.id);
+    });
+  }
+
   card.append(
     buildLinkThumb({ url: entry.url, notes: notesForUrl, resolver }),
   );
@@ -366,11 +391,27 @@ function buildLinkBody(
   // through both branches cleanly: with a note we hand off the note's
   // title (helper trims + falls back to "Untitled note" if empty);
   // without a note we pass "" and let the URL fallback fire.
-  body.append(
-    buildCardTitle(primaryNote?.title ?? "", "link", {
-      fallback: primaryNote ? DEFAULT_NOTE_TITLE : entry.url,
-    }),
-  );
+  //
+  // #9: title now lives inside the shared `.entity-card-head` flex row
+  // next to the `.entity-card-open` arrow when there's a source note
+  // to open. URL-without-source falls back to the bare title (no
+  // arrow) — opening "the source note" isn't a meaningful action when
+  // there isn't one.
+  const titleEl = buildCardTitle(primaryNote?.title ?? "", "link", {
+    fallback: primaryNote ? DEFAULT_NOTE_TITLE : entry.url,
+  });
+  if (primaryNote) {
+    body.append(
+      buildCardHead(
+        titleEl,
+        buildCardOpenButton("Open source note", () =>
+          onOpenNote(primaryNote.id),
+        ),
+      ),
+    );
+  } else {
+    body.append(titleEl);
+  }
 
   // Step 6: excerpt comes from the shared `buildCardExcerpt` (Notes
   // uses the same helper). Element is `<p class="card-excerpt">` —
@@ -387,25 +428,19 @@ function buildLinkBody(
   }
 
   body.append(buildLinkUrl(entry.url));
-  body.append(buildLinkMeta(entry, primaryNote, onOpenNote));
+  body.append(buildLinkMeta(entry));
 
   // Tag chips reflect the primary source note's tags (the most recently
   // updated note containing this URL — same note that drives the title,
-  // excerpt and persona above). Renders the full set without a cap so
-  // the row matches the Notes card behaviour; `.tag-chip` is the shared
-  // styling hook (see styles.css → "Step 5 of cards-unification"). The
-  // wrapper class is Links-scoped because the row's gap/margin sits in
-  // the link-body grid, not Notes' card body.
-  if (primaryNote && primaryNote.tags.length > 0) {
-    const tagsRow = document.createElement("div");
-    tagsRow.className = "link-card-tags";
-    for (const tag of primaryNote.tags) {
-      const chip = document.createElement("span");
-      chip.className = "tag-chip";
-      chip.textContent = tag;
-      tagsRow.append(chip);
-    }
-    body.append(tagsRow);
+  // excerpt and persona above). Full set, no cap — matches the Notes
+  // card. The row construction itself lives in `buildTagChipsRow`
+  // (shared with Notes); the wrapper class is Links-scoped because
+  // the row's gap/margin sits in the link-body grid, not Notes' card
+  // body. Returns `null` when there are no tags so we can skip the
+  // empty `<div>` entirely.
+  if (primaryNote) {
+    const tagsRow = buildTagChipsRow(primaryNote.tags, "link-card-tags");
+    if (tagsRow) body.append(tagsRow);
   }
 
   return body;
@@ -421,16 +456,21 @@ function buildLinkUrl(url: string): HTMLElement {
   return anchor;
 }
 
-function buildLinkMeta(
-  entry: LinkEntry,
-  primaryNote: SutraPadDocument | null,
-  onOpenNote: (noteId: string) => void,
-): HTMLElement {
+function buildLinkMeta(entry: LinkEntry): HTMLElement {
   // Step 5: shared `.card-meta` wrapper (Notes + Links). The inner
   // contents (date + source-note chip on Links, date + task chip on
   // Notes) still differ per surface, but the wrapper layout — flex
   // row, gap, baseline alignment — is identical, so a single class
   // carries the styling.
+  //
+  // #9: the source-note chip (`<button class="link-card-source">`)
+  // was deleted with the move to whole-card click + shared
+  // `.entity-card-open` arrow. The chip used to triple as title
+  // duplicate / click target / "+N notebooks" indicator; the title
+  // and click are now elsewhere, only the "+N" signal survives — as
+  // plain text in `.link-card-notebooks` so it's read but not
+  // confused with an interactive element. Singular case (count === 1)
+  // stays implicit: the head already names the source note.
   const meta = document.createElement("div");
   meta.className = "card-meta";
 
@@ -438,22 +478,11 @@ function buildLinkMeta(
     meta.append(buildCardDate(entry.latestUpdatedAt, "link"));
   }
 
-  if (primaryNote) {
-    // Make the source-note chip actionable — the handoff's mock is
-    // static, but a real "open the note that captured this" affordance
-    // is the link card's most useful click target.
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "link-card-source";
-    const title = primaryNote.title.trim() || DEFAULT_NOTE_TITLE;
-    chip.textContent =
-      entry.count === 1 ? title : `${title} · +${entry.count - 1}`;
-    chip.setAttribute(
-      "aria-label",
-      entry.count === 1 ? `Open ${title}` : `Open ${title}, saved in ${entry.count} notebooks`,
-    );
-    chip.addEventListener("click", () => onOpenNote(primaryNote.id));
-    meta.append(chip);
+  if (entry.count > 1) {
+    const indicator = document.createElement("span");
+    indicator.className = "link-card-notebooks";
+    indicator.textContent = `Saved in ${entry.count} notebooks`;
+    meta.append(indicator);
   }
 
   return meta;

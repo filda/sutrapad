@@ -14,7 +14,13 @@ import {
 import { buildCardExcerpt } from "../../logic/card-excerpt";
 import { describeTaskChip } from "../../logic/task-chip";
 import type { SutraPadDocument } from "../../../types";
-import { buildCardDate, buildCardTitle } from "./card-header";
+import {
+  buildCardDate,
+  buildCardHead,
+  buildCardOpenButton,
+  buildCardTitle,
+  buildTagChipsRow,
+} from "./card-header";
 import { EMPTY_COPY, buildEmptyState } from "./empty-state";
 import { buildLinkThumb } from "./link-thumb";
 import { applyPersonaStyles, appendPersonaStickers } from "./persona-decor";
@@ -82,9 +88,16 @@ export function buildNotesList(
 
     const item = renderAsRow
       ? buildRowItem(note, persona, currentNoteId)
-      : buildCardItem(note, persona, currentNoteId, resolver);
+      : buildCardItem(note, persona, currentNoteId, resolver, onSelectNote);
 
-    item.addEventListener("click", () => onSelectNote(note.id));
+    // Row mode has no inner interactives — wire the click here. Cards
+    // mode wires its own click inside `buildCardItem` so the
+    // `target.closest("a, button")` guard sits next to the arrow open
+    // button (added with #9) and tag chips, keeping the inner-bail
+    // logic colocated with the affordances it has to dodge.
+    if (renderAsRow) {
+      item.addEventListener("click", () => onSelectNote(note.id));
+    }
     notesList.append(item);
   }
 
@@ -96,6 +109,7 @@ function buildCardItem(
   persona: NotebookPersona | null,
   currentNoteId: string,
   resolver: OgImageResolver | null,
+  onSelectNote: (noteId: string) => void,
 ): HTMLElement {
   // Element is `<article>` (not `<button>`) to match the Links/Tasks card
   // renderers and avoid the WebKit/Chromium UA quirks that bit the og:image
@@ -104,9 +118,19 @@ function buildCardItem(
   // that the top edge of a `cover`-fitted og:image clipped imperceptibly
   // differently than a plain `<article>`/`<div>` would, leaving a thin
   // sliver of the persona paper showing above the band. Switching to
-  // `<article>` resolves it. Click + Enter/Space behaviour is added
-  // explicitly below since `<article>` doesn't carry the implicit button
-  // semantics; the wrapper still reads as a single-action surface to AT.
+  // `<article>` resolves it.
+  //
+  // #9 dropped the `role="button"` + `tabIndex=0` + Enter/Space keydown
+  // handler the card used to carry: nesting an inner `<button>` (the
+  // `.entity-card-open` arrow) inside a `role=button` ancestor is a
+  // a11y anti-pattern (screen readers announce the wrapper's button
+  // semantics and then the inner button separately, which reads as
+  // duplicate actions). Keyboard activation now flows through the
+  // inner arrow button — focused via Tab, activated with Enter/Space
+  // like any real `<button>`. Whole-card click stays as a
+  // mouse/touch convenience handler; the `target.closest("a, button")`
+  // guard keeps it from double-firing when the inner arrow or any
+  // future inline anchor handles the click itself.
   const card = document.createElement("article");
   // Step 1 of cards-unification: every primary entity surface (Notes here,
   // plus Links and Tasks on their own pages) carries the shared
@@ -124,13 +148,16 @@ function buildCardItem(
   // `.notes-list--persona` stays on the list for list-level concerns (the
   // `gap` value the persona grid wants).
   card.className = `entity-card entity-card--note note-list-item${note.id === currentNoteId ? " is-active" : ""}${persona ? " has-persona" : ""}`;
-  card.setAttribute("role", "button");
-  card.tabIndex = 0;
-  card.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      card.click();
-    }
+  card.addEventListener("click", (event) => {
+    // Inner interactives (the arrow open-button, any future anchors)
+    // handle their own click → bail so the card-level shortcut
+    // doesn't double-fire alongside the inner listener. The
+    // arrow's `stopPropagation` already prevents bubbling for the
+    // mouse path; the guard belongs to here too so a keyboard or
+    // synthetic event that bypasses `stopPropagation` still routes
+    // through one handler only.
+    if ((event.target as HTMLElement).closest("a, button")) return;
+    onSelectNote(note.id);
   });
 
   if (persona) applyPersonaStyles(card, persona);
@@ -181,7 +208,16 @@ function buildCardItem(
   // pre-helper used a bare `note.title ||` check — switching to the
   // helper means whitespace-only titles also fall back to the default,
   // which closes a tiny rendering discrepancy with Links / Tasks.
+  //
+  // #9: the title now lives inside a shared `.entity-card-head` flex
+  // row next to the `.entity-card-open` arrow button. Same affordance
+  // as Tasks (which always had the arrow) and Links (which moved off
+  // its `.link-card-source` text chip to the arrow pattern).
   const titleEl = buildCardTitle(note.title, "note");
+  const head = buildCardHead(
+    titleEl,
+    buildCardOpenButton("Open note", () => onSelectNote(note.id)),
+  );
 
   // Step 5: shared `.card-meta` wrapper class (Notes + Links). Was
   // `.note-list-meta` (a `<span>` with `display: flex`, which is
@@ -206,19 +242,10 @@ function buildCardItem(
   excerptEl.className = "card-excerpt";
   excerptEl.textContent = excerptText ?? "Empty note";
 
-  card.append(titleEl, meta, excerptEl);
+  card.append(head, meta, excerptEl);
 
-  if (note.tags.length > 0) {
-    const tagsRow = document.createElement("div");
-    tagsRow.className = "note-list-tags";
-    for (const tag of note.tags) {
-      const chip = document.createElement("span");
-      chip.className = "tag-chip";
-      chip.textContent = tag;
-      tagsRow.append(chip);
-    }
-    card.append(tagsRow);
-  }
+  const tagsRow = buildTagChipsRow(note.tags, "note-list-tags");
+  if (tagsRow) card.append(tagsRow);
 
   if (persona) appendPersonaStickers(card, persona);
 

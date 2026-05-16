@@ -21,7 +21,7 @@ import {
 import { pickNoteThumbSeed } from "../../logic/link-thumb-seed";
 import { deriveNotePrimaryUrl } from "../../logic/note-primary-url";
 import { createOgImageResolver } from "../../logic/og-image-resolver";
-import { buildCardTitle } from "../shared/card-header";
+import { buildCardOpenButton, buildCardTitle } from "../shared/card-header";
 import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
 import { buildLinkThumb } from "../shared/link-thumb";
 import {
@@ -42,7 +42,9 @@ const ICON_CLOSE = '<path d="M6 6l12 12M18 6 6 18"/>';
 const ICON_CHECK = '<path d="m5 12 5 5L20 7"/>';
 const ICON_PIN =
   '<path d="M12 22s7-7.5 7-13a7 7 0 0 0-14 0c0 5.5 7 13 7 13Z"/><circle cx="12" cy="9" r="2.5"/>';
-const ICON_ARROW = '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>';
+// `ICON_ARROW` lived here until #9 — moved to `icons.ts` as the
+// reusable `"arrow"` shape so `buildCardOpenButton` can build the
+// same affordance on Notes / Links / Tasks. Inline copy deleted.
 
 function renderIcon(pathHtml: string, size = 14): string {
   return `<svg class="i" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${pathHtml}</svg>`;
@@ -519,7 +521,7 @@ function buildTaskCard(
   }
   card.append(list);
 
-  card.append(buildTaskCardFoot(group, options));
+  card.append(buildTaskCardFoot(group));
 
   if (persona) appendPersonaStickers(card, persona);
 
@@ -530,8 +532,13 @@ function buildTaskCardHead(
   group: EnrichedNoteGroup,
   options: TasksPageOptions,
 ): HTMLElement {
+  // `.entity-card-head` carries the shared flex-row layout the Notes
+  // and Links cards now also use (#9); `.task-card-head` keeps the
+  // Tasks-specific tweaks (title size, sub-line wrap). The element
+  // stays `<header>` so the sub-line and arrow read as a semantic
+  // header on AT.
   const head = document.createElement("header");
-  head.className = "task-card-head";
+  head.className = "entity-card-head task-card-head";
 
   const title = document.createElement("div");
   title.style.minWidth = "0";
@@ -594,14 +601,15 @@ function buildTaskCardHead(
   title.append(sub);
   head.append(title);
 
-  const open = document.createElement("button");
-  open.type = "button";
-  open.className = "task-card-open";
-  open.setAttribute("aria-label", "Open note");
-  open.title = "Open note";
-  open.innerHTML = renderIcon(ICON_ARROW, 12);
-  open.addEventListener("click", () => options.onOpenNote(group.note.id));
-  head.append(open);
+  // #9: arrow open-button now comes from the shared
+  // `buildCardOpenButton`. Pre-share it was inlined here with
+  // `task-card-open` + `ICON_ARROW`; the helper carries the same
+  // visual contract (`.entity-card-open` class — renamed from
+  // `.task-card-open`) and a `stopPropagation` on click so any
+  // future card-level click handler stays untouched.
+  head.append(
+    buildCardOpenButton("Open note", () => options.onOpenNote(group.note.id)),
+  );
 
   return head;
 }
@@ -659,10 +667,7 @@ function buildTaskItem(
   return item;
 }
 
-function buildTaskCardFoot(
-  group: EnrichedNoteGroup,
-  options: TasksPageOptions,
-): HTMLElement {
+function buildTaskCardFoot(group: EnrichedNoteGroup): HTMLElement {
   const foot = document.createElement("footer");
   foot.className = "task-card-foot";
 
@@ -671,16 +676,12 @@ function buildTaskCardFoot(
   count.textContent = `${group.openCount} of ${group.totalCount} open`;
   foot.append(count);
 
-  // "Add" routes to the source note — creating a new task inline would
-  // require a cursor-at-end contract we don't have yet, and the handoff
-  // itself leaves this as a thin jump to the note.
-  const add = document.createElement("button");
-  add.type = "button";
-  add.className = "task-card-add";
-  add.textContent = "Open & add";
-  add.addEventListener("click", () => options.onOpenNote(group.note.id));
-  foot.append(add);
-
+  // #9 deleted the foot's "Open & add" button — it duplicated the
+  // head's `.entity-card-open` arrow as an "open source note"
+  // affordance (creating a new task inline was never wired). The
+  // foot keeps the open/total count so the divider keeps reading as
+  // a card boundary; if the dashed border ever feels too heavy with
+  // just a count, the whole foot could collapse into the head sub-line.
   return foot;
 }
 
