@@ -833,6 +833,800 @@ describe("buildTasksPage task-card and filter-miss contracts", () => {
   });
 });
 
+// Pin the inline-SVG icon contract — every renderIcon call lands one of
+// the five ICON_* path constants inside an <svg class="i" …> with the
+// shared stroke/linecap recipe. Without these asserts the path
+// StringLiterals at the top of the module (ICON_SPARKLE / CLOSE / CHECK /
+// PIN / ARROW) and the renderIcon template all survive because the
+// existing structural tests only look at button classes / aria, not the
+// SVG markup the buttons carry.
+describe("buildTasksPage inline-SVG icon contract", () => {
+  it("renderIcon stamps the canonical SVG attribute set on every icon", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    // task-card-open is the most reliably-present icon (always renders
+    // on the card head). Asserting once here pins the full attribute
+    // recipe — width/height are exercised by the per-icon size tests
+    // below.
+    const page = buildPage(makeWorkspace([note]));
+    const svg = page.querySelector(".task-card-open svg");
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("class")).toBe("i");
+    expect(svg?.getAttribute("viewBox")).toBe("0 0 24 24");
+    expect(svg?.getAttribute("fill")).toBe("none");
+    expect(svg?.getAttribute("stroke")).toBe("currentColor");
+    expect(svg?.getAttribute("stroke-width")).toBe("1.8");
+    expect(svg?.getAttribute("stroke-linecap")).toBe("round");
+    expect(svg?.getAttribute("stroke-linejoin")).toBe("round");
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
+    expect(svg?.getAttribute("focusable")).toBe("false");
+  });
+
+  it("renderIcon size param controls width AND height — task-card-open uses 12", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    const svg = page.querySelector(".task-card-open svg");
+    expect(svg?.getAttribute("width")).toBe("12");
+    expect(svg?.getAttribute("height")).toBe("12");
+  });
+
+  it("ICON_ARROW path renders inside the task-card-open svg", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    const svg = page.querySelector(".task-card-open svg");
+    // ICON_ARROW = '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>'
+    expect(svg?.innerHTML).toContain('d="M5 12h14"');
+    expect(svg?.innerHTML).toContain('d="m13 6 6 6-6 6"');
+  });
+
+  it("ICON_SPARKLE path renders inside the empty pick CTA icon (size 14)", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    const svg = page.querySelector(".one-thing-icon svg");
+    expect(svg?.getAttribute("width")).toBe("14");
+    expect(svg?.getAttribute("height")).toBe("14");
+    // ICON_SPARKLE = '<path d="M12 3v6M12 15v6M3 12h6M15 12h6M6 6l3 3M15 15l3 3M6 18l3-3M15 9l3-3"/>'
+    expect(svg?.innerHTML).toContain('d="M12 3v6M12 15v6M3 12h6M15 12h6');
+    expect(svg?.innerHTML).toContain("M15 9l3-3");
+  });
+
+  it("ICON_SPARKLE in the filled one-thing-label uses size 12", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const svg = page.querySelector(".one-thing-label svg");
+    expect(svg?.getAttribute("width")).toBe("12");
+    expect(svg?.innerHTML).toContain('d="M12 3v6');
+  });
+
+  it("ICON_SPARKLE in the per-task promote button uses size 11", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    const svg = page.querySelector(".task-promote svg");
+    expect(svg?.getAttribute("width")).toBe("11");
+    expect(svg?.innerHTML).toContain('d="M12 3v6');
+  });
+
+  it("ICON_CLOSE path renders inside the one-thing-clear button at size 12", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const svg = page.querySelector(".one-thing-clear svg");
+    expect(svg?.getAttribute("width")).toBe("12");
+    // ICON_CLOSE = '<path d="M6 6l12 12M18 6 6 18"/>'
+    expect(svg?.innerHTML).toContain('d="M6 6l12 12M18 6 6 18"');
+  });
+
+  it("ICON_CHECK path renders inside the done one-thing checkbox at size 16", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [x] done" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksShowDone: true,
+      tasksOneThingKey: "n::0",
+    });
+    const svg = page.querySelector(".one-thing .task-check.lg svg");
+    expect(svg?.getAttribute("width")).toBe("16");
+    // ICON_CHECK = '<path d="m5 12 5 5L20 7"/>'
+    expect(svg?.innerHTML).toContain('d="m5 12 5 5L20 7"');
+  });
+
+  it("ICON_CHECK path renders inside the per-list done task-check at size 12", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [x] done" });
+    const page = buildPage(makeWorkspace([note]), [], { tasksShowDone: true });
+    const svg = page.querySelector(".task-list .task-check.checked svg");
+    expect(svg?.getAttribute("width")).toBe("12");
+    expect(svg?.innerHTML).toContain('d="m5 12 5 5L20 7"');
+  });
+
+  it("ICON_PIN path renders inside the task-card-pin span at size 11", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+      location: "Karlin office",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const svg = page.querySelector(".task-card-pin svg");
+    expect(svg?.getAttribute("width")).toBe("11");
+    // ICON_PIN = '<path d="M12 22s7-7.5 7-13a7 7 0 0 0-14 0c0 5.5 7 13 7 13Z"/><circle cx="12" cy="9" r="2.5"/>'
+    expect(svg?.innerHTML).toContain('d="M12 22s7-7.5 7-13');
+    expect(svg?.innerHTML).toContain('cx="12"');
+    expect(svg?.innerHTML).toContain('r="2.5"');
+  });
+});
+
+// Pin the structural class names + small inline-style + href contracts
+// that the structural describe above leaves on the table. Each
+// className StringLiteral is its own mutant; without an explicit
+// assertion they survive because the existing tests only walk the
+// surface via querySelector — which still matches when the class string
+// has been truncated to `""` (selector returns null but tests guard with
+// optional-chains).
+describe("buildTasksPage structural class names + inline styles", () => {
+  it("stamps `entity-card entity-card--task task-card` on the card root <article>", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    const card = page.querySelector(".task-card");
+    expect(card?.tagName).toBe("ARTICLE");
+    expect(card?.classList.contains("entity-card")).toBe(true);
+    expect(card?.classList.contains("entity-card--task")).toBe(true);
+    expect(card?.classList.contains("task-card")).toBe(true);
+  });
+
+  it("stamps `one-thing-body` on the filled one-thing body wrapper", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    expect(page.querySelector(".one-thing-body")).not.toBeNull();
+  });
+
+  it("stamps `one-thing-icon` on the empty pick CTA icon span", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    expect(page.querySelector(".one-thing.empty .one-thing-icon")).not.toBeNull();
+  });
+
+  it("renders the filled one-thing checkbox with `task-check lg` (no list-item check carries `lg`)", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const one = page.querySelector(".one-thing .task-check");
+    expect(one?.classList.contains("task-check")).toBe(true);
+    expect(one?.classList.contains("lg")).toBe(true);
+    expect(one?.classList.contains("checked")).toBe(false);
+    const list = page.querySelector(".task-list .task-check");
+    expect(list?.classList.contains("task-check")).toBe(true);
+    expect(list?.classList.contains("lg")).toBe(false);
+  });
+
+  it("renders the filled one-thing checkbox with `task-check lg checked` + `Mark open` aria-label when the task is done", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [x] done" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksShowDone: true,
+      tasksOneThingKey: "n::0",
+    });
+    const check = page.querySelector(".one-thing .task-check");
+    expect(check?.className).toBe("task-check lg checked");
+    expect(check?.getAttribute("aria-label")).toBe("Mark open");
+    expect((check as HTMLButtonElement)?.querySelector("svg")).not.toBeNull();
+  });
+
+  it("renders the filled one-thing checkbox in its OPEN state with `Mark done` and no inner SVG", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] still open" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const check = page.querySelector(".one-thing .task-check");
+    expect(check?.className).toBe("task-check lg");
+    expect(check?.getAttribute("aria-label")).toBe("Mark done");
+    expect((check as HTMLButtonElement)?.innerHTML).toBe("");
+  });
+
+  it("stamps `task-item` on every list row, adding ` done` suffix only when the task is done", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] open\n- [x] done",
+    });
+    const page = buildPage(makeWorkspace([note]), [], { tasksShowDone: true });
+    const items = page.querySelectorAll(".task-list .task-item");
+    expect(items[0].className).toBe("task-item");
+    expect(items[1].className).toBe("task-item done");
+  });
+
+  it("stamps `task-body` on the per-row body wrapper and renders the text inside `.t`", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] do it" });
+    const page = buildPage(makeWorkspace([note]));
+    const body = page.querySelector(".task-list .task-body");
+    expect(body).not.toBeNull();
+    expect(body?.querySelector(".t")?.textContent).toBe("do it");
+  });
+
+  it("stamps `task-card-pin` on the pin span (icon-only — pin span text content is empty)", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+      location: "Karlin office",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const pin = page.querySelector(".task-card-sub .task-card-pin");
+    expect(pin).not.toBeNull();
+    expect(pin?.textContent).toBe("");
+  });
+
+  it("sets non-empty `flex` + `minWidth` inline styles on the filled one-thing text wrapper", () => {
+    // The text wrapper is the un-classed div between `.task-check` and
+    // `.one-thing-clear` inside `.one-thing-body`. Its inline styles are
+    // load-bearing — the row depends on flex:1/minWidth:0 to keep long
+    // task text from pushing the clear `×` off the card. We assert
+    // non-empty rather than `===`'1' because happy-dom expands `flex:1`
+    // into the CSS shorthand `"1 1 0%"` and may normalise `0` to `0px`;
+    // the StringLiteral mutants we're killing replace with `""`, which
+    // is observable as the property being cleared.
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] do it" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const body = page.querySelector<HTMLElement>(".one-thing-body");
+    const text = body?.querySelector<HTMLElement>(".one-thing-text")?.parentElement;
+    expect(text?.style.flex).not.toBe("");
+    expect(text?.style.flexGrow).toBe("1");
+    expect(text?.style.minWidth).not.toBe("");
+  });
+
+  it("sets `title.style.minWidth='0'` on the task-card-head title wrapper", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    const head = page.querySelector(".task-card-head");
+    const title = head?.firstElementChild as HTMLElement | null;
+    expect(title?.style.minWidth).toBe("0");
+  });
+
+  it("the filled one-thing source-note link has href='#' (prevents the click from navigating away)", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const link = page.querySelector<HTMLAnchorElement>(".one-thing-meta a");
+    // happy-dom resolves the bare "#" to a full URL terminating in #.
+    expect(link?.getAttribute("href")).toBe("#");
+  });
+
+  it("stamps `task-empty` on the dashed tag-filter miss empty state (parity with the chip-filter miss)", () => {
+    const note = makeNote({ id: "n", tags: ["work"], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]), ["nope"]);
+    const miss = page.querySelector(".empty-state.task-empty");
+    expect(miss).not.toBeNull();
+  });
+
+  it("the per-task promote button carries `task-promote` className and both aria-label / title set to 'Pick for today'", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    const promote = page.querySelector<HTMLButtonElement>(".task-promote");
+    expect(promote?.classList.contains("task-promote")).toBe(true);
+    expect(promote?.getAttribute("aria-label")).toBe("Pick for today");
+    expect(promote?.title).toBe("Pick for today");
+  });
+});
+
+// Pin the chip-row gating logic, the canShowDone branch arms, and the
+// "promote sparkle is hidden on done / on the one-thing" negative
+// branches. These survive because the structural tests only assert the
+// positive shape (chip renders, sparkle appears) but never the negation
+// (chip is skipped, sparkle is omitted, click fires for non-active chip).
+describe("buildTasksPage gating + branch coverage", () => {
+  it("skips a non-active chip whose count is zero (and the All chip always renders)", () => {
+    // Workspace with a single fresh, neutral open task — Stale &
+    // Waiting buckets are empty and not active, so they MUST NOT
+    // render. All + Recent still render (All is always shown, Recent
+    // has count > 0). Task body is deliberately verbless to avoid
+    // tripping the `WAITING_PERSON_REGEX` (call/ask/email/text/write).
+    const today = new Date().toISOString();
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] Buy milk",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const labels = Array.from(
+      page.querySelectorAll<HTMLButtonElement>(".task-filters .task-filter"),
+    ).map((c) => (c.firstElementChild as HTMLSpanElement)?.textContent);
+    expect(labels).toEqual(["All", "Recent"]);
+    expect(labels).not.toContain("Stale");
+    expect(labels).not.toContain("Waiting for");
+  });
+
+  it("renders an active chip even when its own count is zero (the user never sees the filter they're standing on disappear)", () => {
+    // Only fresh + done tasks → "stale" bucket has count 0. With
+    // tasksFilter === "stale" the chip MUST still render, otherwise the
+    // user is stranded on a filter UI they can't reach.
+    const today = new Date().toISOString();
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] fresh task",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksFilter: "stale",
+    });
+    const labels = Array.from(
+      page.querySelectorAll<HTMLButtonElement>(".task-filters .task-filter"),
+    ).map((c) => (c.firstElementChild as HTMLSpanElement)?.textContent);
+    expect(labels).toContain("Stale");
+    const stale = Array.from(
+      page.querySelectorAll<HTMLButtonElement>(".task-filters .task-filter"),
+    ).find((c) => (c.firstElementChild as HTMLSpanElement)?.textContent === "Stale");
+    expect(stale?.classList.contains("is-active")).toBe(true);
+    expect(stale?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("non-active chip has aria-pressed='false' (exact string, not empty) and no `is-active` class", () => {
+    // The "All" chip is the default active filter. Recent must render
+    // (fresh open task above) and must carry aria-pressed='false'.
+    const today = new Date().toISOString();
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] fresh",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const recent = Array.from(
+      page.querySelectorAll<HTMLButtonElement>(".task-filters .task-filter"),
+    ).find((c) => (c.firstElementChild as HTMLSpanElement)?.textContent === "Recent");
+    expect(recent?.classList.contains("is-active")).toBe(false);
+    expect(recent?.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("clicking a NON-active chip fires onChangeTasksFilter with the chip's id", () => {
+    // The existing test only clicks the active chip (which guards
+    // against re-firing). Without this, the 'click' listener wiring +
+    // the inner `if (filter !== def.id) onChangeFilter(def.id)` block
+    // survive mutation.
+    const today = new Date().toISOString();
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] fresh",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const onChangeTasksFilter = vi.fn();
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksFilter: "all",
+      onChangeTasksFilter,
+    });
+    const recent = Array.from(
+      page.querySelectorAll<HTMLButtonElement>(".task-filters .task-filter"),
+    ).find((c) => (c.firstElementChild as HTMLSpanElement)?.textContent === "Recent");
+    recent?.click();
+    expect(onChangeTasksFilter).toHaveBeenCalledWith("recent");
+  });
+
+  it("does NOT attach a click handler to the disabled empty pick CTA when there are no open tasks", () => {
+    // The `if (totalOpen > 0)` gate prevents the click listener from
+    // attaching when the backlog is empty. Without this assert the
+    // mutant `totalOpen >= 0` / Conditional `true` survive because
+    // happy-dom's HTMLButtonElement.click() honours `disabled` and
+    // silently no-ops — onSetOneThing not being called below is the
+    // observable consequence of the gate.
+    const note = makeNote({ id: "n", tags: [], body: "- [x] all done" });
+    const onSetOneThing = vi.fn();
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksShowDone: true,
+      onSetOneThing,
+    });
+    page.querySelector<HTMLButtonElement>(".one-thing.empty")?.click();
+    expect(onSetOneThing).not.toHaveBeenCalled();
+  });
+
+  it("renders the filter-miss with NO CTA when canShowDone is false AND tasksFilter is 'all' (no Show all CTA to offer)", () => {
+    // tasksFilter='all' + tasksShowDone=true on a workspace with only
+    // done tasks → all done tasks are visible, the (empty) "all" filter
+    // is the safety net. There's nothing for the empty-state CTA to do,
+    // so it must be absent. Mutants that flip
+    // `options.tasksFilter !== "all"` to `true` make a stray "Show all"
+    // button appear.
+    const note = makeNote({ id: "n", tags: [], body: "- [x] only done" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksFilter: "all",
+      tasksShowDone: true,
+    });
+    // There's nothing matching the "all" filter when all tasks are done
+    // and shown — and crucially: no chip-driven miss should appear at
+    // all because there ARE rendered task groups. The card grid wins.
+    expect(page.querySelector(".task-empty")).toBeNull();
+    expect(page.querySelectorAll(".task-card").length).toBeGreaterThan(0);
+  });
+
+  it("renders 'Try another chip, or clear the filter to see everything.' sub-copy when canShowDone is false", () => {
+    // tasksFilter !== "all" + tasksShowDone = true + no done tasks
+    // → canShowDone is false. The empty-state must use the non-canShowDone
+    // sub copy, not the "Flip Show done…" one.
+    const today = new Date().toISOString();
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] open today",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksFilter: "stale",
+      tasksShowDone: true,
+    });
+    const miss = page.querySelector(".task-empty");
+    expect(miss?.textContent).toContain(
+      "Try another chip, or clear the filter to see everything.",
+    );
+    expect(miss?.textContent).not.toContain("Flip Show done");
+  });
+
+  it("renders 'Flip Show done to widen the search, or pick a different chip.' sub-copy when canShowDone is true", () => {
+    // tasksShowDone=false + at least one done task exists + active chip
+    // narrows to zero → canShowDone = true. Sub copy must be the
+    // "Flip Show done" prompt, not the generic one.
+    const note = makeNote({ id: "n", tags: [], body: "- [x] only done" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksFilter: "stale",
+      tasksShowDone: false,
+    });
+    const miss = page.querySelector(".task-empty");
+    expect(miss?.textContent).toContain(
+      "Flip Show done to widen the search, or pick a different chip.",
+    );
+    expect(miss?.textContent).not.toContain("Try another chip");
+  });
+
+  it("hides the per-task promote sparkle on the task that is already the one-thing", () => {
+    // `isOneThing` gate: matching key → no promote button.
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] only one",
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksOneThingKey: "n::0",
+    });
+    const item = page.querySelector(".task-list .task-item");
+    expect(item?.querySelector(".task-promote")).toBeNull();
+  });
+
+  it("hides the per-task promote sparkle on done tasks (no point promoting work that's finished)", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [x] done" });
+    const page = buildPage(makeWorkspace([note]), [], { tasksShowDone: true });
+    const item = page.querySelector(".task-list .task-item");
+    expect(item?.querySelector(".task-promote")).toBeNull();
+  });
+
+  it("hides the per-task promote sparkle on a task that is both done AND the one-thing", () => {
+    // Pins the LogicalOperator `&&` mutant on `!entry.task.done && !isOneThing`.
+    // The original (AND) returns false when EITHER condition is false,
+    // so a done one-thing yields false → no promote. Mutating to OR
+    // yields true → promote renders. Covering this edge case kills both
+    // the AND branch and the Conditional `true` mutant in one go.
+    const note = makeNote({ id: "n", tags: [], body: "- [x] done" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksShowDone: true,
+      tasksOneThingKey: "n::0",
+    });
+    const item = page.querySelector(".task-list .task-item");
+    expect(item?.querySelector(".task-promote")).toBeNull();
+  });
+
+  it("does NOT render the 'waiting for' mini-tag on open tasks that don't mention a person", () => {
+    // Pin the `entry.hasPerson && !entry.task.done` AND-clause. Without
+    // a negative case the Conditional `true` and LogicalOperator `||`
+    // mutants survive (both make the tag appear when it shouldn't).
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] no person here" });
+    const page = buildPage(makeWorkspace([note]));
+    expect(page.querySelector(".task-list .mini-tag")).toBeNull();
+  });
+
+  it("the 'All' chip renders even when counts.all is 0 AND it's not the active filter (kills the `def.id !== \"all\"` → true mutant)", () => {
+    // Setup: 1 done task + showDone=false + tasksFilter="stale". The
+    // "all" bucket count is 0 (applyTaskFilter "all" hides done when
+    // showDone is false). filter-row still renders because
+    // allEnriched.length is 1. Original: "all" chip always renders
+    // (first sub-condition `def.id !== "all"` is false → skip never
+    // triggers). Mutant: first sub-condition replaced with `true` →
+    // "all" chip skipped because counts.all === 0 AND filter !== "all".
+    const note = makeNote({ id: "n", tags: [], body: "- [x] done" });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksShowDone: false,
+      tasksFilter: "stale",
+    });
+    const labels = Array.from(
+      page.querySelectorAll<HTMLButtonElement>(".task-filters .task-filter"),
+    ).map((c) => (c.firstElementChild as HTMLSpanElement)?.textContent);
+    expect(labels).toContain("All");
+  });
+
+  it("when showDone is already true, the filter-miss offers 'Show all' (canShowDone short-circuits on `!options.tasksShowDone`)", () => {
+    // Pin the LogicalOperator `&&` in
+    //   `const canShowDone = !options.tasksShowDone && totalDone > 0;`
+    // With original `&&`: showDone=true → !showDone=false → canShowDone=false
+    // regardless of totalDone. With mutant `||`: !showDone(false) ||
+    // totalDone>0(true) → canShowDone=true → CTA collapses to
+    // "Show N done" + the "Flip Show done" sub-copy.
+    const stale = makeNote({
+      id: "stale",
+      tags: [],
+      body: "- [x] old done",
+      createdAt: "2026-04-20T00:00:00.000Z",
+      updatedAt: "2026-04-20T00:00:00.000Z",
+    });
+    const page = buildPage(makeWorkspace([stale]), [], {
+      tasksFilter: "stale",
+      tasksShowDone: true,
+    });
+    const miss = page.querySelector(".task-empty");
+    const cta = miss?.querySelector<HTMLButtonElement>("button");
+    expect(cta?.textContent).toBe("Show all");
+    expect(cta?.textContent).not.toBe("Show 1 done");
+    expect(miss?.textContent).not.toContain("Flip Show done");
+  });
+
+  it("when there are no done tasks at all, the filter-miss offers 'Show all' (not 'Show 0 done')", () => {
+    // Pin the `totalDone > 0` Conditional+Equality mutants in canShowDone.
+    // With mutant `true` / `>= 0`: canShowDone = !showDone(true) && true
+    // = true → CTA becomes "Show 0 done" + the "Flip Show done" sub.
+    // Original: false → falls through to the `filter !== "all"` branch
+    // and offers "Show all".
+    const today = new Date().toISOString();
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] open today",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      tasksFilter: "stale",
+      tasksShowDone: false,
+    });
+    const miss = page.querySelector(".task-empty");
+    const cta = miss?.querySelector<HTMLButtonElement>("button");
+    expect(cta?.textContent).toBe("Show all");
+    expect(cta?.textContent).not.toBe("Show 0 done");
+    expect(miss?.textContent).not.toContain("Flip Show done");
+  });
+});
+
+// Pin the per-card temporal anchor + location stripping + stale-badge
+// markup details that the existing tests only verify in the positive
+// shape. The mutation report flagged ICON_PIN sibling sep classNames /
+// textContent, the regex replacement string, the stale guard, the
+// daysOld fallback and a missing dateTime contract — every one survives
+// in the current suite because querySelector matches still resolve when
+// classNames or textContents are subtly wrong.
+describe("buildTasksPage temporal anchor + location + persona", () => {
+  it("stamps `time` element with dateTime=anchor.note.createdAt and the relative-days label as its text", () => {
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+      createdAt: "2026-04-21T09:00:00.000Z",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const time = page.querySelector<HTMLTimeElement>(".task-card-sub time");
+    expect(time).not.toBeNull();
+    expect(time?.dateTime).toBe("2026-04-21T09:00:00.000Z");
+    // formatRelativeDays produces a non-empty descriptor — pin that it
+    // ran (vs `formatRelativeDays(0)` returning a fixed today/yesterday
+    // string in the LogicalOperator-mutated branch).
+    expect((time?.textContent ?? "").length).toBeGreaterThan(0);
+  });
+
+  it("the temporal anchor reflects the OLDEST task's daysOld (not 0) on a multi-day-old card", () => {
+    // Pin the `?? 0` fallback and the LogicalOperator mutant on
+    // `anchor?.daysOld && 0`. With the mutant the textContent collapses
+    // to `formatRelativeDays(0)` for every card, regardless of age. We
+    // assert the LONG-ago note produces a different label than the
+    // brand-new note — that's enough to discriminate.
+    const today = new Date().toISOString();
+    const fresh = makeNote({
+      id: "fresh",
+      tags: [],
+      body: "- [ ] new",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const old = makeNote({
+      id: "old",
+      tags: [],
+      body: "- [ ] forgotten",
+      createdAt: "2026-04-20T00:00:00.000Z",
+      updatedAt: "2026-04-20T00:00:00.000Z",
+    });
+    const page = buildPage(makeWorkspace([fresh, old]));
+    const subs = Array.from(page.querySelectorAll(".task-card-sub time"));
+    const labels = subs.map((s) => s.textContent);
+    expect(new Set(labels).size).toBeGreaterThan(1);
+  });
+
+  it("trims whitespace-only locations so a `' '` location renders no chip (the `.trim()` is load-bearing)", () => {
+    // Without `.trim()`, a `" "` location passes the truthy check and
+    // also doesn't equal `"—"`, so the pin would render with an empty
+    // venue. Mutating `.trim()` away survives unless we test this.
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+      location: "   ",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    expect(page.querySelector(".task-card-sub .task-card-pin")).toBeNull();
+  });
+
+  it("location chip's sep span carries `sep` class and `·` text", () => {
+    // Use a fresh (non-stale) createdAt so the only `.sep` in the sub
+    // line is the location one — otherwise the stale-badge sep masks
+    // a mutated location sep className and the assertion passes
+    // against the wrong element.
+    const today = new Date().toISOString();
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+      location: "Karlin office",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const sub = page.querySelector(".task-card-sub");
+    const seps = sub?.querySelectorAll(".sep");
+    expect(seps?.length).toBe(1);
+    expect(seps?.[0].textContent).toBe("·");
+  });
+
+  it("stale-badge sep span carries `sep` class and `·` text (matches the location sep)", () => {
+    const old = makeNote({
+      id: "old",
+      tags: [],
+      body: "- [ ] forgotten",
+      createdAt: "2026-04-20T00:00:00.000Z",
+      updatedAt: "2026-04-20T00:00:00.000Z",
+    });
+    const page = buildPage(makeWorkspace([old]));
+    const sub = page.querySelector(".task-card-sub");
+    const seps = sub?.querySelectorAll(".sep");
+    expect(seps?.length).toBe(1);
+    expect(seps?.[0].textContent).toBe("·");
+  });
+
+  it("does NOT render a stale-badge on a card whose only open task is brand-new", () => {
+    // Pin `if (group.hasStaleOpen)` — Conditional `true` mutant makes
+    // every card carry a stale badge regardless of age.
+    const today = new Date().toISOString();
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] fresh",
+      createdAt: today,
+      updatedAt: today,
+    });
+    const page = buildPage(makeWorkspace([note]));
+    expect(page.querySelector(".task-card-sub .stale-badge")).toBeNull();
+  });
+
+  it("location replacement produces EXACTLY the trailing venue (no leading 'Stryker was here!' or other prefix)", () => {
+    // The existing `.toContain("Karlin office")` test passes even when
+    // the regex replacement string is mutated to "Stryker was here!"
+    // — the resulting "Stryker was here!Karlin office" still contains
+    // the expected substring. Pin EXACT venue text inside the trailing
+    // `<span>` to kill the mutant.
+    const note = makeNote({
+      id: "n",
+      tags: [],
+      body: "- [ ] hi",
+      location: "Praha — Karlin office",
+    });
+    const page = buildPage(makeWorkspace([note]));
+    const sub = page.querySelector(".task-card-sub");
+    const spans = sub?.querySelectorAll("span");
+    // Walk to the trailing un-classed span (after the pin span). Its
+    // textContent is the stripped venue.
+    const trailing = Array.from(spans ?? []).find(
+      (s) => s.textContent === "Karlin office",
+    );
+    expect(trailing).toBeDefined();
+  });
+
+  it("stamps `has-persona` and inline --nc-* CSS vars on the card when personaOptions is provided", () => {
+    // Pins the `if (persona)` BlockStatement and the
+    // `card.classList.add("has-persona")` StringLiteral. With the
+    // mutant the block becomes empty, no vars are written, no class
+    // added — observable via getPropertyValue + classList contains.
+    const note = makeNote({
+      id: "n",
+      title: "Persona note",
+      tags: [],
+      body: "- [ ] hi",
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      personaOptions: { allNotes: [note], dark: false },
+    });
+    const card = page.querySelector<HTMLElement>(".task-card");
+    expect(card?.classList.contains("has-persona")).toBe(true);
+    expect(card?.style.getPropertyValue("--nc-bg")).not.toBe("");
+    expect(card?.style.getPropertyValue("--nc-ink")).not.toBe("");
+    expect(card?.style.getPropertyValue("--nc-rotation")).toContain("deg");
+    expect(card?.dataset.fontTier).not.toBe(undefined);
+  });
+
+  it("does NOT stamp `has-persona` nor inline --nc-* vars when personaOptions is absent", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    const card = page.querySelector<HTMLElement>(".task-card");
+    expect(card?.classList.contains("has-persona")).toBe(false);
+    expect(card?.style.getPropertyValue("--nc-bg")).toBe("");
+    expect(card?.style.getPropertyValue("--nc-ink")).toBe("");
+  });
+
+  it("dark vs light personaOptions produce different --nc-bg values (deriveNotebookPersona consumes the dark flag)", () => {
+    // Pins the ObjectLiteral mutant on
+    // `{ allNotes: …, dark: … } → {}`. Without `dark` flowing through,
+    // the persona would compute against `dark: undefined` for both
+    // calls — same output. We assert dark vs light produce DIFFERENT
+    // CSS vars on the same source note.
+    const note = makeNote({
+      id: "n",
+      title: "Persona note",
+      tags: [],
+      body: "- [ ] hi",
+    });
+    const light = buildPage(makeWorkspace([note]), [], {
+      personaOptions: { allNotes: [note], dark: false },
+    }).querySelector<HTMLElement>(".task-card");
+    const dark = buildPage(makeWorkspace([note]), [], {
+      personaOptions: { allNotes: [note], dark: true },
+    }).querySelector<HTMLElement>(".task-card");
+    expect(light?.style.getPropertyValue("--nc-bg")).not.toBe(
+      dark?.style.getPropertyValue("--nc-bg"),
+    );
+  });
+
+  it("renders the canonical page subtitle exactly (pinning the StringLiteral)", () => {
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]));
+    const subtitle = page.querySelector(".page-header .page-subtitle");
+    expect(subtitle?.textContent).toBe(
+      "Every “- [ ]” in a note shows up here, in the context it came from. No artificial buckets — a task is as urgent as the note you wrote it in.",
+    );
+  });
+
+  it("persists the page-intro state under the 'tasks' pageId (pins the StringLiteral via the localStorage write)", () => {
+    // buildPageHeader records a visit through `recordVisit(loadIntroStore(), pageId)`
+    // and persists immediately. The persisted JSON keys the entry by
+    // pageId — so the literal "tasks" shows up in the serialised store.
+    // Mutating it to "" would write an empty-string key instead, which
+    // we'd see here as missing "tasks" in the stored payload.
+    window.localStorage.removeItem("sp.intros.v1");
+    const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
+    buildPage(makeWorkspace([note]));
+    const stored = window.localStorage.getItem("sp.intros.v1") ?? "";
+    expect(stored).toContain('"tasks"');
+  });
+
+  it("renders the tag-filter miss with the canonical sub copy ('Loosen the tag set or clear filters to see everything.')", () => {
+    const note = makeNote({ id: "n", tags: ["work"], body: "- [ ] hi" });
+    const page = buildPage(makeWorkspace([note]), ["nope"]);
+    const miss = page.querySelector(".task-empty");
+    expect(miss?.textContent).toContain(
+      "Loosen the tag set or clear filters to see everything.",
+    );
+  });
+});
+
 describe("buildTasksPage tag filter", () => {
   it("renders a card per source note when no filter is active", () => {
     const work = makeNote({
