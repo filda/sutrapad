@@ -761,3 +761,196 @@ describe("buildTagInput blur path", () => {
     expect(onAddTag).not.toHaveBeenCalled();
   });
 });
+
+// Final cheap-wins describe targeting the four mutants memo singled out
+// after the 2026-04-30 pass: scrollIntoView on the active option, the
+// 3-suggestion ArrowUp wrap math, and the L168 / L182 conditional-true
+// keydown guards. Each test below pairs an open-listbox or populated-
+// tags fixture with a key/click event that exercises the negative
+// branch — the side the existing 2-suggestion + Backspace-only tests
+// don't reach.
+describe("buildTagInput cheap-wins second pass", () => {
+  it("ArrowUp from index 0 wraps to the LAST option in a 3-suggestion list (kills the `- 1` → `+ 1` Arithmetic mutant)", () => {
+    // The existing wrap test uses the 2-item SUGGESTIONS fixture, where
+    // `(0 - 1 + 2) % 2 === (0 + 1) % 2 === 1` so the wrap math is
+    // symmetric and `- 1` ↔ `+ 1` is observationally identical. A
+    // 3-item fixture breaks the symmetry: original lands on index 2,
+    // mutant lands on index 1.
+    const THREE: SutraPadTagEntry[] = [
+      { tag: "alpha", noteIds: ["1"], count: 1, kind: "user" },
+      { tag: "alphabet", noteIds: ["2"], count: 1, kind: "user" },
+      { tag: "anchor", noteIds: ["3"], count: 1, kind: "user" },
+    ];
+    const note = makeNote({ tags: [] });
+    const { wrapper, input } = mount(note, THREE);
+
+    input.value = "a";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const options = Array.from(
+      wrapper.querySelectorAll<HTMLLIElement>(".tag-suggestion"),
+    );
+    expect(options.length).toBe(3);
+    // ArrowUp from default highlightedIndex=0.
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowUp",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    const after = Array.from(
+      wrapper.querySelectorAll<HTMLLIElement>(".tag-suggestion"),
+    );
+    // Original: (0 - 1 + 3) % 3 = 2 → last option active.
+    // Mutant:   (0 + 1 + 3) % 3 = 1 → middle option active.
+    expect(after[2].classList.contains("is-active")).toBe(true);
+    expect(after[1].classList.contains("is-active")).toBe(false);
+  });
+
+  it("highlighting a suggestion scrolls only the ACTIVE option into view with `{ block: 'nearest' }`", () => {
+    // Pin three L116 mutants on `if (active) option.scrollIntoView({ block: "nearest" })`:
+    //   - Conditional `true`: every option in the loop calls scrollIntoView
+    //     (would see 2 calls for the 2-suggestion fixture).
+    //   - Conditional `false`: no option scrolls.
+    //   - ObjectLiteral `{}`: scrollIntoView called with `{}` instead of
+    //     `{ block: "nearest" }`.
+    const spy = vi
+      .spyOn(HTMLElement.prototype, "scrollIntoView")
+      .mockImplementation(() => undefined);
+    try {
+      const note = makeNote({ tags: [] });
+      const { input } = mount(note);
+
+      // Open the listbox (both fixture entries match "w").
+      input.value = "w";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      // Drop any incidental calls from the initial render.
+      spy.mockClear();
+
+      // ArrowDown moves highlightedIndex 0 → 1; updateHighlight loops
+      // over both options and only the now-active one scrolls.
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith({ block: "nearest" });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("a non-Enter/Tab key with the listbox open does NOT commit the highlighted suggestion", () => {
+    // Pin the `(e.key === "Enter" || e.key === "Tab") && hasOpenSuggestions`
+    // conjunction at L168. Conditional `true` makes the block fire on
+    // every key, so any keydown with an open listbox would commit the
+    // current highlight via `addTag(currentSuggestions[highlightedIndex].tag)`.
+    const note = makeNote({ tags: [] });
+    const { input, onAddTag } = mount(note);
+
+    // Open the listbox.
+    input.value = "w";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "x",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(onAddTag).not.toHaveBeenCalled();
+  });
+
+  it("a non-Backspace key with a populated input does NOT remove the trailing tag", () => {
+    // Pin the `e.key === "Backspace" && input.value === ""` conjunction
+    // at L182. Conditional `true` makes the Backspace-removal block
+    // fire on every key (and regardless of the typed input), so any
+    // keydown would pop the most recent tag.
+    const note = makeNote({ tags: ["existing"] });
+    const { input, onRemoveTag } = mount(note);
+
+    input.value = "typing";
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "x",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+
+    expect(onRemoveTag).not.toHaveBeenCalled();
+  });
+
+  it("a NON-Backspace key with an EMPTY input still leaves the trailing tag in place (kills the inner `e.key === \"Backspace\"` Conditional `true` mutant)", () => {
+    // The existing Backspace tests pin the value-empty / value-typed
+    // axis but always send Backspace. The sub-conditional Conditional
+    // `true` mutant collapses the AND-clause to `if (input.value === "")`
+    // — so any keypress with an empty input would trigger the remove.
+    // Send a non-Backspace key with an empty input + a tag present.
+    const note = makeNote({ tags: ["existing"] });
+    const { input, onRemoveTag } = mount(note);
+    input.value = "";
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "x",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(onRemoveTag).not.toHaveBeenCalled();
+  });
+
+  it("blurring with whitespace-only input preserves `input.value` (kills the L208 trim-truthy gate mutants)", () => {
+    // L208 `if (input.value.trim())` guards the blur flush — original
+    // keeps the input untouched on a whitespace-only blur, addTag
+    // never runs. Mutants forcing the guard to `true` (or dropping
+    // `.trim()` so the raw truthy string passes) call `addTag("  ")`
+    // which inside its own body sets `input.value = ""` *before* it
+    // bails on the empty-tag guard. Observable side effect: the
+    // whitespace gets cleared. The existing whitespace-blur test only
+    // asserts that onAddTag wasn't called, so the input-clearing side
+    // effect goes uncaught.
+    vi.useFakeTimers();
+    try {
+      const note = makeNote({ tags: [] });
+      const { input, onAddTag } = mount(note);
+
+      input.value = "   ";
+      input.dispatchEvent(new Event("blur", { bubbles: true }));
+      vi.advanceTimersByTime(100);
+
+      expect(onAddTag).not.toHaveBeenCalled();
+      expect(input.value).toBe("   ");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clicking on an existing tag chip (not the row background) does NOT focus the input", () => {
+    // Pin `if (e.target === row) input.focus()` at L218. Conditional
+    // `true` would focus the input on every click in the row,
+    // including chip clicks, which interrupts the chip's `×` remove
+    // flow and steals focus on hover / accidental taps.
+    const note = makeNote({ tags: ["existing"] });
+    const { wrapper, input } = mount(note);
+
+    const focusSpy = vi.spyOn(input, "focus");
+    try {
+      const chip = wrapper.querySelector(".tag-pill");
+      if (!chip) throw new Error("expected a rendered .tag-pill");
+      chip.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+      expect(focusSpy).not.toHaveBeenCalled();
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
+});
