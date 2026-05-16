@@ -1325,3 +1325,269 @@ describe("coffee-ring patina threshold", () => {
     expect(persona.patina).not.toContain("coffee-ring");
   });
 });
+
+// Per-topic positive cases for the literal arrays gating `highlight`
+// and `date-stamp` patinas. The existing suite covers one positive
+// (poetry → highlight, research → date-stamp) plus an unrelated-topic
+// negative; without the per-string asserts below, the remaining
+// literals (`manifesto`, `craft`; `reading`, `philosophy`, `writing`)
+// mutate to `""` undetectably because the array `.includes(topic)` test
+// still returns true on the *one* literal the test happens to use.
+describe("highlight + date-stamp per-topic gating", () => {
+  // Mirrors `patinaFor` from the suite above. Local copy keeps this
+  // describe self-contained — splitting test files is overkill for
+  // ~5 tiny tests.
+  const FRESH_CREATED = "2026-04-21T07:30:00.000Z";
+  const FRESH_UPDATED = "2026-04-21T07:31:00.000Z";
+  function patinaFor(
+    id: string,
+    overrides: Partial<SutraPadDocument> = {},
+  ): readonly string[] {
+    const note = makeNote({
+      id,
+      createdAt: FRESH_CREATED,
+      updatedAt: FRESH_UPDATED,
+      ...overrides,
+    });
+    return deriveNotebookPersona(note, { now: NOW }).patina;
+  }
+
+  // persona-11:highlight = 0.9794 (> 0.4), so highlight fires for any
+  // topic in the gate's array. Each test below swaps the topic to a
+  // different literal in `["manifesto", "poetry", "craft"]`.
+
+  it("highlight applies on a 'manifesto' topic (pins the literal in the array)", () => {
+    expect(patinaFor("persona-11", { tags: ["manifesto"] })).toContain("highlight");
+  });
+
+  it("highlight applies on a 'craft' topic (pins the literal in the array)", () => {
+    expect(patinaFor("persona-11", { tags: ["craft"] })).toContain("highlight");
+  });
+
+  // persona-18:stamp = 0.001 (< 0.35), so date-stamp fires for any
+  // topic in the gate's array.
+
+  it("date-stamp applies on a 'reading' topic (pins the literal in the array)", () => {
+    expect(patinaFor("persona-18", { tags: ["reading"] })).toContain("date-stamp");
+  });
+
+  it("date-stamp applies on a 'philosophy' topic (pins the literal in the array)", () => {
+    expect(patinaFor("persona-18", { tags: ["philosophy"] })).toContain("date-stamp");
+  });
+
+  it("date-stamp applies on a 'writing' topic (pins the literal in the array)", () => {
+    expect(patinaFor("persona-18", { tags: ["writing"] })).toContain("date-stamp");
+  });
+});
+
+// Boundary tests for `OPEN_TASK_PATTERN = /^\s*-\s*\[\s\]/m`. The
+// existing suite uses one canonical task line (`- [ ] task`) which
+// happens to satisfy every plausible regex mutant — line-start anchor
+// removed, `\s*` → `\S*`, `\s*` → `\s`. The three tests below craft
+// inputs that discriminate each variant.
+describe("OPEN_TASK_PATTERN regex boundaries (via toGoSticker)", () => {
+  it("does NOT match `- [ ]` in the middle of a single-line note (pins the `^` line anchor)", () => {
+    // Body without a newline before the task — mutant `/\s*-\s*\[\s\]/m`
+    // (no `^`) would match the mid-line "- [ ]" and add `to-go` anyway.
+    const note = makeNote({ body: "Some intro text - [ ] task" });
+    const persona = deriveNotebookPersona(note, { now: NOW });
+    expect(persona.stickers.map((s) => s.kind)).not.toContain("to-go");
+  });
+
+  it("matches `- [ ]` even with leading whitespace on the line (pins `\\s*` over `\\S*`)", () => {
+    // Two leading spaces before the dash — original `\s*` matches the
+    // indent. Mutant `\S*` requires non-whitespace leading the dash,
+    // so the indented task slips past and the sticker disappears.
+    const note = makeNote({ body: "  - [ ] indented task" });
+    const persona = deriveNotebookPersona(note, { now: NOW });
+    expect(persona.stickers.map((s) => s.kind)).toContain("to-go");
+  });
+
+  it("matches `-[ ]` with zero whitespace between the dash and the bracket (pins `\\s*` over `\\s`)", () => {
+    // No space between `-` and `[`. Original `\s*` allows zero. Mutant
+    // `\s` (no `*` quantifier) requires exactly one whitespace, so the
+    // dash-bracket-no-space form slips past.
+    const note = makeNote({ body: "-[ ] tight task" });
+    const persona = deriveNotebookPersona(note, { now: NOW });
+    expect(persona.stickers.map((s) => s.kind)).toContain("to-go");
+  });
+});
+
+// Edge cases the existing suite leaves uncovered: dark default, an
+// August-summer boundary, the place-based handwritten font tier, a
+// place-mismatch regular sticker, the `some`/`every` lookup inside
+// firstOfKindSticker, and the `topicHits === 1` final ternary.
+describe("notebook-persona uncovered branches", () => {
+  it("defaults to LIGHT paper when `dark` is omitted (kills the BooleanLiteral default mutant)", () => {
+    // Calling deriveNotebookPersona without `dark` resolves to the
+    // light variant. Mutating the default to `true` would silently
+    // flip every persona to its dark paper. We assert specific hex
+    // values rather than "not dark" so the StringLiteral mutants on
+    // PAPERS get a free incidental kill.
+    const note = makeNote({ createdAt: "2026-04-21T07:30:00.000Z" });
+    const persona = deriveNotebookPersona(note, { now: NOW });
+    // PAPERS.morning.light = { bg: "#fbf4e6", ink: "#3a2e22" }
+    expect(persona.paper.bg).toBe("#fbf4e6");
+    expect(persona.paper.ink).toBe("#3a2e22");
+  });
+
+  it("picks summer for August afternoons (kills the `month <= 7` → `< 7` mutant)", () => {
+    // The existing suite covers July (month=6, 0-indexed) which both
+    // original (`month <= 7`) and mutant (`month < 7`) accept. August
+    // is month=7: original keeps it as summer, mutant kicks it out.
+    expect(pickWhenBucket("2026-08-21T14:00:00")).toBe("summer");
+  });
+
+  it("picks handwritten font tier when the note's place autoTag hits the park family", () => {
+    // pickFontTier has TWO independent gates: source === "text-capture"
+    // and a place-regex match. Every existing handwritten test uses
+    // the source gate, so the place-regex branch's ConditionalExpression
+    // and BlockStatement mutants both survive. Setting location to
+    // "Letná park" gives a slugged auto-tag like "letna-park" which
+    // matches the `letná|park` alternation.
+    const note = makeNote({
+      id: "park-note",
+      location: "Letná park",
+    });
+    const persona = deriveNotebookPersona(note, { now: NOW });
+    expect(persona.fontTier).toBe("handwritten");
+  });
+
+  it("regular sticker requires the location autoTag's value to MATCH facets.place (kills the inner Conditional/Logical mutants)", () => {
+    // 5 siblings each with a DIFFERENT location. The original guard
+    // (`prefix === "location" && value === facets.place`) only counts
+    // siblings whose slugged location matches the subject's — 1 hit
+    // (the subject itself) under the original, well below the
+    // threshold. Mutants that drop either half of the conjunction (or
+    // collapse the AND to OR) start counting every location autoTag,
+    // pushing placeHits over 5 and emitting a false regular sticker.
+    const subject = makeNote({
+      id: "subject",
+      location: "Karlin office",
+    });
+    const siblings = [
+      makeNote({ id: "s1", location: "Praha — Vinohrady" }),
+      makeNote({ id: "s2", location: "Praha — Náplavka" }),
+      makeNote({ id: "s3", location: "Praha — Letná" }),
+      makeNote({ id: "s4", location: "Praha — Žižkov" }),
+      makeNote({ id: "s5", location: "Praha — Riegrovy sady" }),
+    ];
+    const persona = deriveNotebookPersona(subject, {
+      now: NOW,
+      allNotes: [subject, ...siblings],
+    });
+    expect(persona.stickers.map((s) => s.kind)).not.toContain("regular");
+  });
+
+  it("firstOfKind counts notes via `.some` (a multi-tag note still contributes one hit)", () => {
+    // Multi-tag note + single-tag sibling sharing the topic. With the
+    // original `.some()` both notes count → topicHits=2 → no sticker.
+    // Mutating to `.every()` makes the multi-tag note's "extra" tag
+    // fail the all-must-match check, so only the sibling counts and
+    // topicHits=1 — emitting a spurious first-of-kind sticker.
+    const note = makeNote({ id: "multi", tags: ["topic-x", "extra"] });
+    const sibling = makeNote({ id: "single", tags: ["topic-x"] });
+    const persona = deriveNotebookPersona(note, {
+      now: NOW,
+      allNotes: [note, sibling],
+    });
+    expect(persona.stickers.map((s) => s.kind)).not.toContain("first-of-kind");
+  });
+
+  it("firstOfKind returns null when topicHits is 0 — the `=== 1` ternary must be strict", () => {
+    // Subject has a topic but allNotes intentionally excludes the
+    // subject AND contains only notes with unrelated tags, so the
+    // loop never bumps topicHits. Original: 0 !== 1 → null. Mutant
+    // flipping the ternary's condition to `true` would emit a sticker
+    // anyway.
+    const note = makeNote({ id: "lonely", tags: ["only-here"] });
+    const sibling = makeNote({ id: "s", tags: ["different"] });
+    const persona = deriveNotebookPersona(note, {
+      now: NOW,
+      // Intentionally omit `note` from allNotes so its own tag doesn't
+      // contribute to topicHits. Still nonempty → bypasses the
+      // `allNotes.length === 0` early-return.
+      allNotes: [sibling],
+    });
+    expect(persona.stickers.map((s) => s.kind)).not.toContain("first-of-kind");
+  });
+
+  it("does NOT add reading when the note has the 'reading' tag but NO urls (kills the `urls.length === 0` early-return mutant)", () => {
+    // Original: readingSticker bails on the urls check. Mutant flipping
+    // the Conditional to `false` skips that guard, so it falls through
+    // to the `!userTags.includes("reading")` check, finds the tag, and
+    // emits a sticker. Without this negative case both branches look
+    // alike from the outside.
+    const note = makeNote({
+      id: "no-urls",
+      urls: [],
+      tags: ["reading"],
+    });
+    const persona = deriveNotebookPersona(note, { now: NOW });
+    expect(persona.stickers.map((s) => s.kind)).not.toContain("reading");
+  });
+
+  it("does NOT add reading when the note has urls but NO 'reading' tag", () => {
+    // Pins the second early-return on `!facets.userTags.includes("reading")`.
+    // Mutant flipping that Conditional to `false` would skip the tag
+    // check and emit a reading sticker for every linked note.
+    const note = makeNote({
+      id: "urls-no-tag",
+      urls: ["https://example.com/article"],
+      tags: ["news"],
+    });
+    const persona = deriveNotebookPersona(note, { now: NOW });
+    expect(persona.stickers.map((s) => s.kind)).not.toContain("reading");
+  });
+
+  it("wear stays non-negative when createdAt is in the future (kills the `ageMs > 0` Conditional `true` mutant)", () => {
+    // computeWear's `ageMs > 0 ? ageMs / day : 0` ternary guards
+    // against future-dated notes contributing negative wear. Mutant
+    // forcing the ternary to `true` always divides → negative
+    // ageDays → negative ageWear → final wear can dip below zero.
+    // persona-65:wear has a deliberately small jitter (~0.006), so the
+    // mutant's -ageWear*0.6 isn't masked by the random offset.
+    const futureCreated = new Date(
+      NOW.getTime() + 30 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const note = makeNote({
+      id: "persona-65",
+      createdAt: futureCreated,
+      updatedAt: futureCreated,
+    });
+    const persona = deriveNotebookPersona(note, { now: NOW });
+    expect(persona.wear).toBeGreaterThanOrEqual(0);
+  });
+
+  it("patina list stays capped at 3 entries even when many rules fire at once (kills `patina.slice(0, 3)` → `patina`)", () => {
+    // Sweep a range of ids on a fixture that stacks coffee-ring (stale
+    // + open task), date-stamp (reading topic), pin (open task) AND
+    // pencil-marks (handwritten via text-capture) — that's four
+    // guaranteed-or-probable patinas before the per-id pseudoRandom
+    // rules (folded-corner, washi) are even in play. The cap is what
+    // keeps every rendered persona at ≤ 3 entries; without it, at
+    // least one id in the sweep will overshoot.
+    const updatedAt = new Date(
+      NOW.getTime() - 30 * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const createdAt = updatedAt;
+    let maxLen = 0;
+    for (let i = 0; i < 200; i += 1) {
+      const note = makeNote({
+        id: `cap-${i}`,
+        createdAt,
+        updatedAt,
+        tags: ["reading"],
+        body: "- [ ] follow up",
+        captureContext: { source: "text-capture" },
+      });
+      const persona = deriveNotebookPersona(note, { now: NOW });
+      if (persona.patina.length > maxLen) maxLen = persona.patina.length;
+      expect(persona.patina.length).toBeLessThanOrEqual(3);
+    }
+    // Sanity check: the fixture must actually hit the cap for the
+    // assertion above to discriminate between sliced and unsliced
+    // output. If maxLen stays below 3 we've built a useless test.
+    expect(maxLen).toBe(3);
+  });
+});
