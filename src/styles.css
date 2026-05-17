@@ -3731,7 +3731,6 @@ button.tag-pill {
 .page-subtitle {
   margin: 6px 0 0;
   color: var(--muted);
-  max-width: 60ch;
   font-size: 0.95rem;
   line-height: 1.5;
 }
