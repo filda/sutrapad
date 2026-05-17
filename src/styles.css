@@ -502,6 +502,17 @@ button {
   padding: 32px 0 48px;
 }
 
+/*
+ * Experiment: the Notes index uses the full viewport width (minus 16px
+ * gutters) so the cards grid auto-fills more columns on wide monitors —
+ * ~6 cards on FullHD, ~12 on 4K with the existing 280px minmax. Only
+ * the notes index route opts in; note detail keeps the 1280 cap so the
+ * editor + right-rail measure stays comfortable.
+ */
+.page--notes-wide {
+  width: calc(100% - 32px);
+}
+
 h1 {
   margin: 0;
   max-width: 11ch;

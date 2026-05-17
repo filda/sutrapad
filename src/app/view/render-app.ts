@@ -553,6 +553,7 @@ export function renderAppPage({
   }
 
   if (detailNoteId === null) {
+    page.classList.add("page--notes-wide");
     page.append(
       buildNotesPanel({
         workspace,
