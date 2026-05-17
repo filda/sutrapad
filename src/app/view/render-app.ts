@@ -405,6 +405,7 @@ export function renderAppPage({
   };
 
   if (activeMenuItem === "home") {
+    page.classList.add("page--wide");
     // The hint context (workspace signals + callbacks) is built in a
     // dedicated helper so the workspace-walking loops have their own
     // scope and don't shadow the outer `note` parameter destructured
