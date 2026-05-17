@@ -9,23 +9,27 @@ describe("describeTaskChip", () => {
   });
 
   it("describes an open-tasks chip when at least one task is still open", () => {
+    // `text` is just the open/total count now — the view renders the
+    // leading icon (an empty checkbox SVG) alongside it, so the glyph is
+    // no longer baked into the string.
     const chip = describeTaskChip({ open: 2, done: 3 });
 
     expect(chip).toEqual({
       tone: "has-open",
-      text: "☐ 2/5",
+      text: "2/5",
       ariaLabel: "2 of 5 tasks open",
     });
   });
 
   it("describes an all-done chip when every task is completed", () => {
-    // Completed notebooks use a muted ✓ variant so they read as "finished",
-    // not as a pending to-do.
+    // Completed notebooks use the muted `is-all-done` class + the
+    // shared `check` SVG so they read as "finished", not as a pending
+    // to-do. `text` carries done/total without the leading glyph.
     const chip = describeTaskChip({ open: 0, done: 4 });
 
     expect(chip).toEqual({
       tone: "all-done",
-      text: "✓ 4/4",
+      text: "4/4",
       ariaLabel: "4 tasks, all completed",
     });
   });

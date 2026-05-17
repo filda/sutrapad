@@ -98,8 +98,15 @@ describe("buildNotesList — XSS guards", () => {
     const chip = list.querySelector(".note-list-tasks");
     if (chip === null) throw new Error("expected .note-list-tasks");
     expect(chip.classList.contains("is-all-done")).toBe(true);
-    // Chip is a single text-bearing span with no nested elements.
-    expect(chip.children).toHaveLength(0);
+    // Chip carries exactly two children: the SVG icon (tone-dependent —
+    // `check` for all-done, `checkbox` for open) and a `.note-list-tasks-count`
+    // span with the textual count. Neither side should ever be a parsed HTML
+    // fragment.
+    expect(chip.children).toHaveLength(2);
+    expect(chip.children[0].tagName.toLowerCase()).toBe("svg");
+    const countEl = chip.querySelector(".note-list-tasks-count");
+    expect(countEl?.children).toHaveLength(0);
+    expect(countEl?.textContent).toBe("2/2");
 
     list.remove();
   });
@@ -447,6 +454,88 @@ describe("buildNotesList — second structural pass", () => {
     const chip = list.querySelector(".note-list-tasks");
     expect(chip).not.toBeNull();
     expect(chip?.classList.contains("is-all-done")).toBe(false);
+  });
+
+  it("interleaves `.sep` separators between each `.card-meta` child (date / chip / location)", () => {
+    // Pin the `for (const [index, child] of metaChildren.entries())`
+    // separator-interleaving loop in buildCardItem (#11). With all
+    // three children present the meta row reads as
+    // `[date] [sep] [chip] [sep] [location]` — exactly two sep spans,
+    // never at the leading edge. A `index > 0` mutant flipped to
+    // `>= 0` would prepend a sep before the date; an `index >= 0`
+    // mutant flipped to `> 0` would still be correct here, so the
+    // assertion that follows pins the count alone.
+    const note = makeNote({
+      id: "all",
+      body: "[ ] still open",
+      location: "Praha — Karlin office",
+    });
+    const list = buildNotesList("all", [note], () => undefined);
+    const meta = list.querySelector(".note-list-item .card-meta");
+    if (meta === null) throw new Error("expected .card-meta");
+    const seps = meta.querySelectorAll(":scope > .sep");
+    expect(seps).toHaveLength(2);
+    expect(seps[0].getAttribute("aria-hidden")).toBe("true");
+    // Glyph is the middle-dot `·` (U+00B7), not the bullet `•` or an
+    // ASCII period — pins the StringLiteral so a Stryker mutant to
+    // `""` or `"Stryker was here!"` blows up here.
+    expect(seps[0].textContent).toBe("·");
+    // First child is the date <time>, not a separator (the leading-edge
+    // mutant of the `index > 0` guard would fail this).
+    expect(meta.firstElementChild?.tagName.toLowerCase()).toBe("time");
+  });
+
+  it("renders no `.sep` separators in the meta row when only the date is present", () => {
+    // The interleave runs `metaChildren.length - 1` separators, so a
+    // notes-only card (no tasks, no location) carries zero. Without
+    // this assertion an `index >= 0` mutant could stamp one leading
+    // separator and the date-only test would never catch it.
+    const note = makeNote({ id: "bare", body: "no tasks here", location: undefined });
+    const list = buildNotesList("bare", [note], () => undefined);
+    const meta = list.querySelector(".note-list-item .card-meta");
+    expect(meta?.querySelectorAll(":scope > .sep")).toHaveLength(0);
+  });
+
+  it("renders the task chip with a tone-driven leading SVG icon (open=checkbox, all-done=check)", () => {
+    // Pre-#11 the chip's text was `☐ 2/5` / `✓ 5/5` — a Unicode-glyph
+    // prefix baked into `taskChip.text`. Geometric-shapes coverage is
+    // unreliable across font stacks, so the glyph fell back to tofu
+    // on the same surfaces that rendered the SVG `pin` icon next to
+    // it just fine. The chip now carries an actual SVG followed by
+    // the count text in its own span — and the icon identity is
+    // tone-driven so a mutant that swaps the ternary (or flips it to
+    // a constant) gets pinned by the `d`-attr asserts below.
+    //
+    // The two `d`-strings come from `src/app/view/shared/icons.ts`:
+    //   - `check`:     `m5 12 5 5L20 7`
+    //   - `checkbox`:  `M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z`
+    // Anchoring on the leading byte (`m5` vs `M6`) keeps the assertion
+    // legible without re-stringifying the full path.
+    const openNote = makeNote({ id: "open", body: "[ ] one\n[x] two" });
+    const openChip = buildNotesList("open", [openNote], () => undefined)
+      .querySelector(".note-list-tasks");
+    if (openChip === null) throw new Error("expected open chip");
+    const openIcon = openChip.firstElementChild;
+    expect(openIcon?.tagName.toLowerCase()).toBe("svg");
+    expect(openIcon?.querySelector("path")?.getAttribute("d")).toBe(
+      "M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z",
+    );
+    expect(openChip.querySelector(".note-list-tasks-count")?.textContent).toBe(
+      "1/2",
+    );
+
+    const doneNote = makeNote({ id: "done", body: "[x] one" });
+    const doneChip = buildNotesList("done", [doneNote], () => undefined)
+      .querySelector(".note-list-tasks");
+    if (doneChip === null) throw new Error("expected done chip");
+    const doneIcon = doneChip.firstElementChild;
+    expect(doneIcon?.tagName.toLowerCase()).toBe("svg");
+    expect(doneIcon?.querySelector("path")?.getAttribute("d")).toBe(
+      "m5 12 5 5L20 7",
+    );
+    expect(doneChip.querySelector(".note-list-tasks-count")?.textContent).toBe(
+      "1/1",
+    );
   });
 
   it("renders a `.card-location` chip in the meta row when the note has a location (#10)", () => {

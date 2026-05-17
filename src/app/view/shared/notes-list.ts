@@ -23,6 +23,7 @@ import {
   buildTagChipsRow,
 } from "./card-header";
 import { EMPTY_COPY, buildEmptyState } from "./empty-state";
+import { buildIcon } from "./icons";
 import { buildLinkThumb } from "./link-thumb";
 import { applyPersonaStyles, appendPersonaStickers } from "./persona-decor";
 
@@ -103,6 +104,21 @@ export function buildNotesList(
   }
 
   return notesList;
+}
+
+/**
+ * Builds a `·`-glyph `<span class="sep" aria-hidden="true">` interleaved
+ * between `.card-meta` children (date, task chip, location). `aria-hidden`
+ * so screen readers don't announce the dot between the chunks; the
+ * surrounding flex `gap` still applies on either side. Matches the
+ * `.task-card-sub .sep` separator pattern Tasks already uses inline.
+ */
+function buildMetaSeparator(): HTMLSpanElement {
+  const sep = document.createElement("span");
+  sep.className = "sep";
+  sep.setAttribute("aria-hidden", "true");
+  sep.textContent = "·";
+  return sep;
 }
 
 function buildCardItem(
@@ -226,17 +242,36 @@ function buildCardItem(
   // `<div>` to match what its layout already was. Tasks uses
   // `.task-card-sub` instead because its meta carries separators and
   // badges that the flat date/chip wrapper can't express.
+  //
+  // #11 adds an explicit `·` separator span between meta children so
+  // the three pieces (date, task chip, location) read as a delimited
+  // list rather than three items the flex `gap` slapped together. The
+  // separators are aria-hidden so screen readers still hear three
+  // distinct chunks (the date's absolute timestamp, the chip's
+  // aria-label, the venue text) without the dot interrupting them.
   const meta = document.createElement("div");
   meta.className = "card-meta";
 
-  meta.append(buildCardDate(note.updatedAt, "note"));
+  const metaChildren: HTMLElement[] = [buildCardDate(note.updatedAt, "note")];
 
   if (taskChip !== null) {
+    // Tone drives both the muted `is-all-done` class AND the icon
+    // identity (`check` for completed, `checkbox` outline for still-
+    // open). Pre-#11 the leading glyph was a Unicode codepoint baked
+    // into `taskChip.text` (`☐`/`✓`) — that fell back to tofu on font
+    // stacks without the geometric-shapes block, so the chip looked
+    // visibly broken next to the SVG `pin` icon in `.card-location`.
     const chipEl = document.createElement("span");
     chipEl.className = `note-list-tasks${taskChip.tone === "all-done" ? " is-all-done" : ""}`;
     chipEl.setAttribute("aria-label", taskChip.ariaLabel);
-    chipEl.textContent = taskChip.text;
-    meta.append(chipEl);
+    chipEl.append(
+      buildIcon(taskChip.tone === "all-done" ? "check" : "checkbox", 12),
+    );
+    const countEl = document.createElement("span");
+    countEl.className = "note-list-tasks-count";
+    countEl.textContent = taskChip.text;
+    chipEl.append(countEl);
+    metaChildren.push(chipEl);
   }
 
   // #10: optional pin + venue chip from the shared `buildLocationLine`
@@ -245,7 +280,12 @@ function buildCardItem(
   // context trails as ambient information. The helper returns `null`
   // when there's nothing to show (blank / `"—"` placeholder).
   const locationEl = buildLocationLine(note.location);
-  if (locationEl) meta.append(locationEl);
+  if (locationEl) metaChildren.push(locationEl);
+
+  for (const [index, child] of metaChildren.entries()) {
+    if (index > 0) meta.append(buildMetaSeparator());
+    meta.append(child);
+  }
 
   const excerptEl = document.createElement("p");
   excerptEl.className = "card-excerpt";

@@ -30,6 +30,7 @@ export type IconName =
   | "today"
   | "search"
   | "check"
+  | "checkbox"
   | "close"
   | "menu"
   | "list"
@@ -103,6 +104,17 @@ const ICON_SHAPES: Readonly<Record<IconName, IconShape>> = {
     ],
   },
   check: { kind: "paths", paths: ["m5 12 5 5L20 7"] },
+  // Empty rounded checkbox outline used by the Notes list "open tasks"
+  // chip (`.note-list-tasks`). Pre-#11 the chip prefixed its count with
+  // the U+2610 BALLOT BOX glyph (`☐`), but that codepoint falls back to
+  // tofu on font stacks that don't cover the geometric-shapes block.
+  // Going through `buildIcon` puts the silhouette in the same SVG
+  // pipeline as the `pin` icon next to it, so the two chips share
+  // stroke weight + colour inheritance.
+  checkbox: {
+    kind: "paths",
+    paths: ["M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"],
+  },
   close: { kind: "paths", paths: ["M6 6l12 12M18 6 6 18"] },
   // The handoff names this `menu` (3 full-width horizontal lines) and uses
   // it for the *grid* / *cards* toggle button — semantic naming carried
