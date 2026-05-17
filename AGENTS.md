@@ -13,6 +13,11 @@
   3. Code coverage — check the report for the touched area and cover meaningful gaps.
   4. Mutation testing — check Stryker results; a surviving mutant means a missing assertion, so add it.
 
+## Local Dev Environment
+
+- A vite dev server is usually already running on `https://localhost:5173` (HTTPS via `VITE_DEV_HTTPS_*` env vars; see [docs/development.md](docs/development.md)). Don't start a second one — port 5173 will be busy and vite silently steps up to 5174/5175/…, so your preview will hit the **other** server and your edits will look invisible. Before starting any preview server, check `curl -ksI https://localhost:5173/` or ask the user.
+- The running server watches the main checkout at `C:\Users\fsubr\workspace\sutrapad`. If Claude Code drops you into a `.claude/worktrees/<name>/` worktree (run `git worktree list` to confirm), edits inside that worktree are **invisible to HMR**. Either apply edits in the main checkout path, or have the user restart their dev server against the worktree. Don't spawn a parallel dev server in the worktree as a workaround — it ends up on a different port and the preview gets pinned to the original origin by HSTS/service worker.
+
 ## Project Basics
 
 - SutraPad is a client-only PWA running in the browser.

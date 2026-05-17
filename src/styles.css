@@ -503,13 +503,13 @@ button {
 }
 
 /*
- * Experiment: the Notes index uses the full viewport width (minus 16px
- * gutters) so the cards grid auto-fills more columns on wide monitors —
- * ~6 cards on FullHD, ~12 on 4K with the existing 280px minmax. Only
- * the notes index route opts in; note detail keeps the 1280 cap so the
- * editor + right-rail measure stays comfortable.
+ * Experiment: the list-style pages (Notes index, Links, Tasks, Tags)
+ * use the full viewport width (minus 16px gutters) so their cards/lists
+ * auto-fill more columns on wide monitors — ~6 cards on FullHD, ~12 on
+ * 4K with the existing 280px minmax. Note detail keeps the 1280 cap so
+ * the editor + right-rail measure stays comfortable.
  */
-.page--notes-wide {
+.page--wide {
   width: calc(100% - 32px);
 }
 

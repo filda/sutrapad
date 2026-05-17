@@ -446,6 +446,7 @@ export function renderAppPage({
     };
 
     if (activeMenuItem === "tags") {
+      page.classList.add("page--wide");
       page.append(
         buildTagsPage({
           workspace,
@@ -464,6 +465,7 @@ export function renderAppPage({
         }),
       );
     } else if (activeMenuItem === "links") {
+      page.classList.add("page--wide");
       page.append(
         buildLinksPage({
           workspace,
@@ -477,6 +479,7 @@ export function renderAppPage({
         }),
       );
     } else if (activeMenuItem === "tasks") {
+      page.classList.add("page--wide");
       page.append(
         buildTasksPage({
           workspace,
@@ -553,7 +556,7 @@ export function renderAppPage({
   }
 
   if (detailNoteId === null) {
-    page.classList.add("page--notes-wide");
+    page.classList.add("page--wide");
     page.append(
       buildNotesPanel({
         workspace,
