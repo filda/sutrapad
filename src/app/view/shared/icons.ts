@@ -33,7 +33,8 @@ export type IconName =
   | "close"
   | "menu"
   | "list"
-  | "arrow";
+  | "arrow"
+  | "pin";
 
 type IconShape =
   | { kind: "paths"; paths: readonly string[] }
@@ -127,6 +128,20 @@ const ICON_SHAPES: Readonly<Record<IconName, IconShape>> = {
   // in `tasks-page.ts`; lifted here so all three card builders pull the
   // same silhouette through `buildCardOpenButton`.
   arrow: { kind: "paths", paths: ["M5 12h14", "m13 6 6 6-6 6"] },
+  // Map pin used by the shared `.card-location` line on every card
+  // surface (#10). Path is the teardrop outline, circle is the inset
+  // marker hole. Pre-shared this was inlined as `ICON_PIN` in
+  // `tasks-page.ts` at size 11; the shared rendering bumps to size
+  // 12 (the icons.ts size ramp doesn't carry an 11 entry — the 1px
+  // diff is imperceptible against the muted text colour the icon
+  // inherits).
+  pin: {
+    kind: "mixed",
+    children: [
+      { tag: "path", d: "M12 22s7-7.5 7-13a7 7 0 0 0-14 0c0 5.5 7 13 7 13Z" },
+      { tag: "circle", cx: 12, cy: 9, r: 2.5 },
+    ],
+  },
 };
 
 export type IconSize = 12 | 14 | 16 | 20;

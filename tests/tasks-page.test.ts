@@ -735,8 +735,11 @@ describe("buildTasksPage task-card and filter-miss contracts", () => {
   });
 
   it("strips a leading `City — ` prefix from the source note location and renders only the venue", () => {
-    // Pins the `rawLocation.replace(/^.*?—\s*/, "")` regex on line 554
-    // and the `rawLocation && rawLocation !== "—"` guard on line 544.
+    // #10: location chip moved from `.task-card-sub` to
+    // `.task-card-foot`. Strip logic lives in the shared
+    // `formatNoteLocation` helper now (own test file pins the
+    // regex/placeholder rules); this test just confirms Tasks
+    // routes through it on the foot row.
     const note = makeNote({
       id: "n",
       tags: [],
@@ -744,9 +747,9 @@ describe("buildTasksPage task-card and filter-miss contracts", () => {
       location: "Praha — Karlin office",
     });
     const page = buildPage(makeWorkspace([note]));
-    const sub = page.querySelector(".task-card-sub");
-    expect(sub?.textContent).toContain("Karlin office");
-    expect(sub?.textContent).not.toContain("Praha");
+    const foot = page.querySelector(".task-card-foot");
+    expect(foot?.textContent).toContain("Karlin office");
+    expect(foot?.textContent).not.toContain("Praha");
   });
 
   it("omits the location chip entirely when the note's location is the placeholder `—`", () => {
@@ -757,7 +760,9 @@ describe("buildTasksPage task-card and filter-miss contracts", () => {
       location: "—",
     });
     const page = buildPage(makeWorkspace([note]));
-    expect(page.querySelector(".task-card-sub .task-card-pin")).toBeNull();
+    // #10: pin span class moved from `.task-card-pin` to the shared
+    // `.card-location` wrapper, and location moved from sub to foot.
+    expect(page.querySelector(".task-card .card-location")).toBeNull();
   });
 
   it("renders the chip-driven filter-miss empty state with a Show done CTA when there are unrevealed done tasks", () => {
@@ -944,7 +949,14 @@ describe("buildTasksPage inline-SVG icon contract", () => {
     expect(svg?.innerHTML).toContain('d="m5 12 5 5L20 7"');
   });
 
-  it("ICON_PIN path renders inside the task-card-pin span at size 11", () => {
+  it("the card-location pin renders the `pin` icon from `icons.ts` (the new home of the teardrop + marker hole post-#10)", () => {
+    // #10 moved the pin from inline `renderIcon(ICON_PIN, 11)` in
+    // `tasks-page.ts` to `buildIcon("pin", 12)` via
+    // `buildLocationLine`. Path + circle silhouettes are pinned at
+    // the source of truth in `icons.ts` → ICON_SHAPES.pin; this test
+    // walks the rendered SVG inside the foot's `.card-location` and
+    // pins both children carry the expected attributes. Size moves
+    // from 11 to 12 because `IconSize` doesn't carry an 11 entry.
     const note = makeNote({
       id: "n",
       tags: [],
@@ -952,12 +964,18 @@ describe("buildTasksPage inline-SVG icon contract", () => {
       location: "Karlin office",
     });
     const page = buildPage(makeWorkspace([note]));
-    const svg = page.querySelector(".task-card-pin svg");
-    expect(svg?.getAttribute("width")).toBe("11");
-    // ICON_PIN = '<path d="M12 22s7-7.5 7-13a7 7 0 0 0-14 0c0 5.5 7 13 7 13Z"/><circle cx="12" cy="9" r="2.5"/>'
-    expect(svg?.innerHTML).toContain('d="M12 22s7-7.5 7-13');
-    expect(svg?.innerHTML).toContain('cx="12"');
-    expect(svg?.innerHTML).toContain('r="2.5"');
+    const svg = page.querySelector(".task-card-foot .card-location svg");
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("class")).toBe("i i-12");
+    expect(svg?.getAttribute("viewBox")).toBe("0 0 24 24");
+    const path = svg?.querySelector("path");
+    expect(path?.getAttribute("d")).toBe(
+      "M12 22s7-7.5 7-13a7 7 0 0 0-14 0c0 5.5 7 13 7 13Z",
+    );
+    const circle = svg?.querySelector("circle");
+    expect(circle?.getAttribute("cx")).toBe("12");
+    expect(circle?.getAttribute("cy")).toBe("9");
+    expect(circle?.getAttribute("r")).toBe("2.5");
   });
 });
 
@@ -1050,7 +1068,11 @@ describe("buildTasksPage structural class names + inline styles", () => {
     expect(body?.querySelector(".t")?.textContent).toBe("do it");
   });
 
-  it("stamps `task-card-pin` on the pin span (icon-only — pin span text content is empty)", () => {
+  it("stamps `card-location` on the foot's pin+venue wrapper with the venue text inside `.card-location-text`", () => {
+    // #10: pre-`.task-card-pin` (icon-only span) is gone. The new
+    // wrapper `<span class="card-location">` carries both the pin
+    // SVG and a `<span class="card-location-text">` for the venue,
+    // so callers can style icon vs. text separately.
     const note = makeNote({
       id: "n",
       tags: [],
@@ -1058,9 +1080,11 @@ describe("buildTasksPage structural class names + inline styles", () => {
       location: "Karlin office",
     });
     const page = buildPage(makeWorkspace([note]));
-    const pin = page.querySelector(".task-card-sub .task-card-pin");
-    expect(pin).not.toBeNull();
-    expect(pin?.textContent).toBe("");
+    const loc = page.querySelector(".task-card-foot .card-location");
+    expect(loc).not.toBeNull();
+    expect(
+      loc?.querySelector(".card-location-text")?.textContent,
+    ).toBe("Karlin office");
   });
 
   it("sets non-empty `flex` + `minWidth` inline styles on the filled one-thing text wrapper", () => {
@@ -1462,7 +1486,8 @@ describe("buildTasksPage temporal anchor + location + persona", () => {
   it("trims whitespace-only locations so a `' '` location renders no chip (the `.trim()` is load-bearing)", () => {
     // Without `.trim()`, a `" "` location passes the truthy check and
     // also doesn't equal `"—"`, so the pin would render with an empty
-    // venue. Mutating `.trim()` away survives unless we test this.
+    // venue. Mutating `.trim()` away in `formatNoteLocation` survives
+    // unless we test this end-to-end on the rendered foot.
     const note = makeNote({
       id: "n",
       tags: [],
@@ -1470,29 +1495,15 @@ describe("buildTasksPage temporal anchor + location + persona", () => {
       location: "   ",
     });
     const page = buildPage(makeWorkspace([note]));
-    expect(page.querySelector(".task-card-sub .task-card-pin")).toBeNull();
+    expect(page.querySelector(".task-card .card-location")).toBeNull();
   });
 
-  it("location chip's sep span carries `sep` class and `·` text", () => {
-    // Use a fresh (non-stale) createdAt so the only `.sep` in the sub
-    // line is the location one — otherwise the stale-badge sep masks
-    // a mutated location sep className and the assertion passes
-    // against the wrong element.
-    const today = new Date().toISOString();
-    const note = makeNote({
-      id: "n",
-      tags: [],
-      body: "- [ ] hi",
-      location: "Karlin office",
-      createdAt: today,
-      updatedAt: today,
-    });
-    const page = buildPage(makeWorkspace([note]));
-    const sub = page.querySelector(".task-card-sub");
-    const seps = sub?.querySelectorAll(".sep");
-    expect(seps?.length).toBe(1);
-    expect(seps?.[0].textContent).toBe("·");
-  });
+  // #10 deleted the "location chip's sep span" test — pre-#10 the
+  // sub-line had a `<span class="sep">·</span>` before the location
+  // and a second one before the stale badge. With location moved to
+  // the foot, the sub no longer carries a location sep at all; only
+  // the stale-badge sep remains, and its contract is pinned by the
+  // next test below.
 
   it("stale-badge sep span carries `sep` class and `·` text (matches the location sep)", () => {
     const old = makeNote({
@@ -1525,11 +1536,14 @@ describe("buildTasksPage temporal anchor + location + persona", () => {
   });
 
   it("location replacement produces EXACTLY the trailing venue (no leading 'Stryker was here!' or other prefix)", () => {
-    // The existing `.toContain("Karlin office")` test passes even when
-    // the regex replacement string is mutated to "Stryker was here!"
-    // — the resulting "Stryker was here!Karlin office" still contains
-    // the expected substring. Pin EXACT venue text inside the trailing
-    // `<span>` to kill the mutant.
+    // The previous `.toContain("Karlin office")` test passed even
+    // when the strip regex's replacement string was mutated to
+    // "Stryker was here!" — the resulting "Stryker was here!Karlin
+    // office" still contains the expected substring. Pin EXACT venue
+    // text inside `.card-location-text` to kill the mutant. The
+    // strip lives in `formatNoteLocation` now and has its own focused
+    // tests in `note-location.test.ts`; this case is the end-to-end
+    // pin on the Tasks foot route.
     const note = makeNote({
       id: "n",
       tags: [],
@@ -1537,14 +1551,10 @@ describe("buildTasksPage temporal anchor + location + persona", () => {
       location: "Praha — Karlin office",
     });
     const page = buildPage(makeWorkspace([note]));
-    const sub = page.querySelector(".task-card-sub");
-    const spans = sub?.querySelectorAll("span");
-    // Walk to the trailing un-classed span (after the pin span). Its
-    // textContent is the stripped venue.
-    const trailing = Array.from(spans ?? []).find(
-      (s) => s.textContent === "Karlin office",
+    const text = page.querySelector(
+      ".task-card-foot .card-location .card-location-text",
     );
-    expect(trailing).toBeDefined();
+    expect(text?.textContent).toBe("Karlin office");
   });
 
   it("stamps `has-persona` and inline --nc-* CSS vars on the card when personaOptions is provided", () => {

@@ -12,6 +12,7 @@ import {
   buildCardHead,
   buildCardOpenButton,
   buildCardTitle,
+  buildLocationLine,
   buildTagChipsRow,
 } from "../shared/card-header";
 import type { LinksViewMode } from "../../logic/links-view";
@@ -428,7 +429,7 @@ function buildLinkBody(
   }
 
   body.append(buildLinkUrl(entry.url));
-  body.append(buildLinkMeta(entry));
+  body.append(buildLinkMeta(entry, primaryNote));
 
   // Tag chips reflect the primary source note's tags (the most recently
   // updated note containing this URL — same note that drives the title,
@@ -456,7 +457,10 @@ function buildLinkUrl(url: string): HTMLElement {
   return anchor;
 }
 
-function buildLinkMeta(entry: LinkEntry): HTMLElement {
+function buildLinkMeta(
+  entry: LinkEntry,
+  primaryNote: SutraPadDocument | null,
+): HTMLElement {
   // Step 5: shared `.card-meta` wrapper (Notes + Links). The inner
   // contents (date + source-note chip on Links, date + task chip on
   // Notes) still differ per surface, but the wrapper layout — flex
@@ -471,6 +475,12 @@ function buildLinkMeta(entry: LinkEntry): HTMLElement {
   // plain text in `.link-card-notebooks` so it's read but not
   // confused with an interactive element. Singular case (count === 1)
   // stays implicit: the head already names the source note.
+  //
+  // #10: optional pin + venue chip trails the row when the primary
+  // source note has a location. Sourced from `primaryNote.location`
+  // through the shared `buildLocationLine` helper, so the same
+  // strip-prefix / placeholder rules apply as on the Notes / Tasks
+  // surfaces.
   const meta = document.createElement("div");
   meta.className = "card-meta";
 
@@ -484,6 +494,9 @@ function buildLinkMeta(entry: LinkEntry): HTMLElement {
     indicator.textContent = `Saved in ${entry.count} notebooks`;
     meta.append(indicator);
   }
+
+  const locationEl = buildLocationLine(primaryNote?.location);
+  if (locationEl) meta.append(locationEl);
 
   return meta;
 }

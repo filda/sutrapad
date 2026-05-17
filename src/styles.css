@@ -2922,9 +2922,20 @@ button.tag-pill {
 .task-card-sub .sep {
   color: var(--ink-300);
 }
-.task-card-pin {
+/*
+ * Shared pin + venue chip used by every entity-card surface (#10).
+ * Pre-#10 the pin lived inside `.task-card-pin` in the Tasks sub-line
+ * only; lifted to `.card-location` so Notes / Links can render the
+ * same chip in their `.card-meta` row and Tasks in its
+ * `.task-card-foot`. `inline-flex` keeps the icon and the text on the
+ * same baseline; muted icon colour echoes the meta-row tone.
+ */
+.card-location {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
+}
+.card-location svg {
   color: var(--ink-400);
 }
 .stale-badge {
@@ -3041,15 +3052,17 @@ button.tag-pill {
 }
 
 /*
- * Foot row carries the open/total task count. Pre-#9 it also had the
- * "Open & add" button on the right, which duplicated the head's
- * `.entity-card-open` arrow as an "open source note" affordance; the
- * button was deleted with the foot kept so the count keeps its own
- * line (visually separates it from the task list above).
+ * Foot row carries the open/total task count plus the optional
+ * pin + venue chip (#10 moved location here from `task-card-sub`).
+ * Pre-#9 it also had the "Open & add" button on the right — deleted
+ * with the foot kept so the count keeps its own line. `gap: 8px`
+ * separates count and location without an explicit `<span class="sep">`
+ * (matches the `.card-meta` convention on Notes / Links).
  */
 .task-card-foot {
   display: flex;
   align-items: center;
+  gap: 8px;
   margin-top: 4px;
   padding-top: 10px;
   border-top: 1px dashed var(--line);

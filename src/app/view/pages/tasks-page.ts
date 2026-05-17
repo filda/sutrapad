@@ -21,7 +21,11 @@ import {
 import { pickNoteThumbSeed } from "../../logic/link-thumb-seed";
 import { deriveNotePrimaryUrl } from "../../logic/note-primary-url";
 import { createOgImageResolver } from "../../logic/og-image-resolver";
-import { buildCardOpenButton, buildCardTitle } from "../shared/card-header";
+import {
+  buildCardOpenButton,
+  buildCardTitle,
+  buildLocationLine,
+} from "../shared/card-header";
 import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
 import { buildLinkThumb } from "../shared/link-thumb";
 import {
@@ -40,11 +44,12 @@ const ICON_SPARKLE =
   '<path d="M12 3v6M12 15v6M3 12h6M15 12h6M6 6l3 3M15 15l3 3M6 18l3-3M15 9l3-3"/>';
 const ICON_CLOSE = '<path d="M6 6l12 12M18 6 6 18"/>';
 const ICON_CHECK = '<path d="m5 12 5 5L20 7"/>';
-const ICON_PIN =
-  '<path d="M12 22s7-7.5 7-13a7 7 0 0 0-14 0c0 5.5 7 13 7 13Z"/><circle cx="12" cy="9" r="2.5"/>';
 // `ICON_ARROW` lived here until #9 — moved to `icons.ts` as the
 // reusable `"arrow"` shape so `buildCardOpenButton` can build the
-// same affordance on Notes / Links / Tasks. Inline copy deleted.
+// same affordance on Notes / Links / Tasks.
+// `ICON_PIN` followed in #10 — moved to `icons.ts` as the reusable
+// `"pin"` shape so `buildLocationLine` can stamp the same chip on
+// every card surface.
 
 function renderIcon(pathHtml: string, size = 14): string {
   return `<svg class="i" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${pathHtml}</svg>`;
@@ -569,23 +574,13 @@ function buildTaskCardHead(
   anchorTime.textContent = formatRelativeDays(anchor?.daysOld ?? 0);
   sub.append(anchorTime);
 
-  // Location is an optional string on the note; the handoff strips a
-  // leading "City — " prefix so the sub-label reads as just the venue.
-  // We do the same for parity with the mock.
-  const rawLocation = group.note.location?.trim();
-  if (rawLocation && rawLocation !== "—") {
-    const sep = document.createElement("span");
-    sep.className = "sep";
-    sep.textContent = "·";
-    sub.append(sep);
-    const pin = document.createElement("span");
-    pin.className = "task-card-pin";
-    pin.innerHTML = renderIcon(ICON_PIN, 11);
-    sub.append(pin);
-    const loc = document.createElement("span");
-    loc.textContent = rawLocation.replace(/^.*?—\s*/, "");
-    sub.append(loc);
-  }
+  // #10: location moved out of the sub-line into the foot row
+  // (`buildTaskCardFoot`) so the count + venue read as a single
+  // "card context" cluster and the sub-line stays focused on
+  // recency + stale signalling. The strip-prefix + `"—"` placeholder
+  // logic now lives in `formatNoteLocation` (called via
+  // `buildLocationLine`); the inline regex + `task-card-pin` span
+  // were deleted.
 
   if (group.hasStaleOpen) {
     const sep = document.createElement("span");
@@ -676,12 +671,21 @@ function buildTaskCardFoot(group: EnrichedNoteGroup): HTMLElement {
   count.textContent = `${group.openCount} of ${group.totalCount} open`;
   foot.append(count);
 
+  // #10: optional pin + venue chip pulled from the source note's
+  // location, via the shared `buildLocationLine` helper. Order in
+  // the foot is `[count] · 📍 [venue]` — mirrors the
+  // `[date] · ... · 📍 [venue]` tail position Notes and Links use
+  // in `.card-meta`. Helper returns `null` for blank / `"—"`
+  // placeholder, so location-less tasks render foot = just count.
+  //
   // #9 deleted the foot's "Open & add" button — it duplicated the
   // head's `.entity-card-open` arrow as an "open source note"
   // affordance (creating a new task inline was never wired). The
   // foot keeps the open/total count so the divider keeps reading as
-  // a card boundary; if the dashed border ever feels too heavy with
-  // just a count, the whole foot could collapse into the head sub-line.
+  // a card boundary.
+  const locationEl = buildLocationLine(group.note.location);
+  if (locationEl) foot.append(locationEl);
+
   return foot;
 }
 

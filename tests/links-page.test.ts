@@ -421,6 +421,43 @@ describe("buildLinksPage cards layout", () => {
     expect(onOpenNote).toHaveBeenCalledWith("primary");
   });
 
+  it("renders a `.card-location` chip in the meta row when the primary source note has a location (#10)", () => {
+    // Links meta order = `[date] · Saved in N notebooks · 📍 [venue]`;
+    // location trails as the spatial context, mirroring Notes /
+    // Tasks. Sourced from the primary note (the most recent source
+    // note for the URL), so the chip ties the venue to the same
+    // note that drives the head title.
+    const note = makeNote({
+      id: "n",
+      title: "Why I saved it",
+      tags: [],
+      urls: ["https://example.com/a"],
+      location: "Praha — Karlin office",
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      linksViewMode: "cards",
+    });
+    const loc = page.querySelector(".link-card .card-meta .card-location");
+    expect(loc).not.toBeNull();
+    expect(
+      loc?.querySelector(".card-location-text")?.textContent,
+    ).toBe("Karlin office");
+  });
+
+  it("omits the `.card-location` chip from the link card when the primary source note has no location", () => {
+    const note = makeNote({
+      id: "n",
+      title: "T",
+      tags: [],
+      urls: ["https://example.com/a"],
+      location: undefined,
+    });
+    const page = buildPage(makeWorkspace([note]), [], {
+      linksViewMode: "cards",
+    });
+    expect(page.querySelector(".link-card .card-location")).toBeNull();
+  });
+
   it("clicking the URL anchor does NOT route through the card-level open-source-note shortcut", () => {
     // The `<a class="link-card-url">` is an external nav target; the
     // card-level click handler bails via `target.closest("a, button")`

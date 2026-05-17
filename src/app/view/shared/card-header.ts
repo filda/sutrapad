@@ -1,5 +1,6 @@
 import { DEFAULT_NOTE_TITLE } from "../../../lib/notebook";
 import { formatDate } from "../../logic/formatting";
+import { formatNoteLocation } from "../../logic/note-location";
 import { buildIcon } from "./icons";
 
 /**
@@ -175,4 +176,34 @@ export function buildCardHead(
   head.className = "entity-card-head";
   head.append(titleBlock, openButton);
   return head;
+}
+
+/**
+ * Builds the shared pin + venue chip (`<span class="card-location">`)
+ * used by every card surface (#10). Returns `null` when the raw
+ * location is blank or the lone `"—"` placeholder so callers can
+ * conditionally append without a separate guard. The format is
+ *
+ *   [pin svg] [venue text]
+ *
+ * inside an `inline-flex` container — see styles.css → `.card-location`.
+ * Venue text comes from `formatNoteLocation`; the same helper drops
+ * the leading `"City — "` prefix, so the chip reads as just the venue.
+ */
+export function buildLocationLine(
+  rawLocation: string | undefined,
+): HTMLSpanElement | null {
+  const venue = formatNoteLocation(rawLocation);
+  if (venue === null) return null;
+
+  const wrap = document.createElement("span");
+  wrap.className = "card-location";
+  wrap.append(buildIcon("pin", 12));
+
+  const text = document.createElement("span");
+  text.className = "card-location-text";
+  text.textContent = venue;
+  wrap.append(text);
+
+  return wrap;
 }

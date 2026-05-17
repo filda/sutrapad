@@ -449,6 +449,40 @@ describe("buildNotesList — second structural pass", () => {
     expect(chip?.classList.contains("is-all-done")).toBe(false);
   });
 
+  it("renders a `.card-location` chip in the meta row when the note has a location (#10)", () => {
+    // Notes meta order = `[date] · [task chip] · 📍 [venue]`; the
+    // location lands LAST in the row so the data (date, task count)
+    // reads first and the spatial context trails as ambient info.
+    const note = makeNote({
+      id: "geo",
+      body: "[ ] go shopping",
+      location: "Praha — Karlin office",
+    });
+    const list = buildNotesList("geo", [note], () => undefined);
+    const meta = list.querySelector(".note-list-item .card-meta");
+    expect(meta).not.toBeNull();
+    const loc = meta?.querySelector(".card-location");
+    expect(loc).not.toBeNull();
+    // Strip-prefix logic comes from `formatNoteLocation` — pinned in
+    // detail in `note-location.test.ts`. This case is the end-to-end
+    // pin on the Notes meta route.
+    expect(
+      loc?.querySelector(".card-location-text")?.textContent,
+    ).toBe("Karlin office");
+  });
+
+  it("omits the `.card-location` chip from the meta row when the note has no location", () => {
+    const note = makeNote({ id: "blank", location: undefined });
+    const list = buildNotesList("blank", [note], () => undefined);
+    expect(list.querySelector(".note-list-item .card-location")).toBeNull();
+  });
+
+  it("omits the `.card-location` chip when the note's location is the `—` placeholder", () => {
+    const note = makeNote({ id: "denied", location: "—" });
+    const list = buildNotesList("denied", [note], () => undefined);
+    expect(list.querySelector(".note-list-item .card-location")).toBeNull();
+  });
+
   it("stamps `note-list-tags` className on the cards tags-row wrapper", () => {
     // The existing test only asserts the inner `.tag-chip` elements;
     // mutating the wrapper className to "" leaves the chips queryable

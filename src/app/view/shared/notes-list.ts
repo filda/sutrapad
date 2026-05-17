@@ -19,6 +19,7 @@ import {
   buildCardHead,
   buildCardOpenButton,
   buildCardTitle,
+  buildLocationLine,
   buildTagChipsRow,
 } from "./card-header";
 import { EMPTY_COPY, buildEmptyState } from "./empty-state";
@@ -237,6 +238,14 @@ function buildCardItem(
     chipEl.textContent = taskChip.text;
     meta.append(chipEl);
   }
+
+  // #10: optional pin + venue chip from the shared `buildLocationLine`
+  // helper. Order matches Links / Tasks: location lands LAST in the
+  // row so the data (date, counts) reads first and the spatial
+  // context trails as ambient information. The helper returns `null`
+  // when there's nothing to show (blank / `"—"` placeholder).
+  const locationEl = buildLocationLine(note.location);
+  if (locationEl) meta.append(locationEl);
 
   const excerptEl = document.createElement("p");
   excerptEl.className = "card-excerpt";
