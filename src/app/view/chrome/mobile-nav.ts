@@ -8,8 +8,8 @@ export interface MobileTabbarItem {
 /**
  * Ids that appear as pinned tabs in the mobile bottom bar, in render order.
  * Kept as a small dedicated list (rather than reusing MENU_ITEMS) because the
- * mobile bottom bar intentionally drops Add: Add is fulfilled by the floating
- * action button so it doesn't steal bottom-bar real estate from the five
+ * mobile bottom bar intentionally drops Add: Add is fulfilled by the app FAB
+ * (see `app-fab.ts`) so it doesn't steal bottom-bar real estate from the five
  * primary destinations.
  *
  * Why these five: handoff v2 README originally specced four tabs (Today ·
@@ -47,21 +47,6 @@ export function isMobileTabActive(
   return item.id === activeMenuItem;
 }
 
-/**
- * Pure-logic description of the FAB's visibility. The FAB is suppressed on
- * the Add route — we don't stack a "create note" FAB over the screen that
- * IS the create-note surface. Exposed as its own function (rather than
- * baked into the builder only) so it is covered by DOM-free tests.
- */
-export function describeMobileFab(
-  activeMenuItem: MenuItemId,
-): { hidden: boolean; ariaLabel: string } {
-  return {
-    hidden: activeMenuItem === "add",
-    ariaLabel: "New note",
-  };
-}
-
 export interface MobileTabbarOptions {
   activeMenuItem: MenuItemId;
   onSelectMenuItem: (id: MenuItemId) => void;
@@ -93,45 +78,4 @@ export function buildMobileTabbar({
   }
 
   return nav;
-}
-
-export interface MobileFabOptions {
-  activeMenuItem: MenuItemId;
-  onSelectMenuItem: (id: MenuItemId) => void;
-}
-
-/**
- * Floating action button — terracotta circle pinned to the bottom-right on
- * phone-width viewports. Tapping it fires `onSelectMenuItem("add")`, which
- * is the same path the desktop "+" pill uses, so creating a note reaches the
- * exact same detail route.
- *
- * We suppress the button when we're already on the Add flow (detail editor
- * on a freshly created note counts as "on Add" for this rule — callers pass
- * the effective menu id). Hiding is done via a data-attribute rather than
- * returning null so CSS can still transition in/out if we ever animate it.
- */
-export function buildMobileFab({
-  activeMenuItem,
-  onSelectMenuItem,
-}: MobileFabOptions): HTMLElement {
-  const { hidden, ariaLabel } = describeMobileFab(activeMenuItem);
-
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "mobile-fab";
-  button.setAttribute("aria-label", ariaLabel);
-  button.title = ariaLabel;
-  if (hidden) {
-    button.setAttribute("data-hidden", "true");
-  }
-
-  const plus = document.createElement("span");
-  plus.className = "mobile-fab-plus";
-  plus.setAttribute("aria-hidden", "true");
-  plus.textContent = "+";
-  button.append(plus);
-
-  button.addEventListener("click", () => onSelectMenuItem("add"));
-  return button;
 }

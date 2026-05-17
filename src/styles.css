@@ -4540,21 +4540,10 @@ button.tag-pill {
 }
 
 /*
- * When a button carries an inline keyboard-shortcut hint (e.g. "+ New
- * note" + `N`), `.button-with-kbd` flips the padding/layout so the
- * kbd pill can sit on the right without disturbing the label's
- * rhythm. The pill itself is cosmetic — clicking anywhere on the
- * button still fires the click handler.
+ * Decorative keyboard-shortcut pill embedded inside a button (e.g. the
+ * `N` hint on the topbar Add pill). The pill itself is cosmetic —
+ * clicking anywhere on the parent button still fires its handler.
  */
-.button-with-kbd {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  /* Slightly tighter right padding gives the pill room without
-   * making the button feel longer than the plain version. */
-  padding-right: 0.7rem;
-}
-
 .button-kbd {
   display: inline-flex;
   align-items: center;
@@ -6492,14 +6481,16 @@ button.tag-pill {
 }
 
 /* Floating action button — terracotta "+" pinned to bottom-right.
- * Always rendered; CSS reveals it on phones and `[data-hidden=true]`
- * suppresses it on the Add screen so we don't stack a FAB over the
- * screen whose whole purpose it is to open. */
-.mobile-fab {
-  display: none;
+ * Visible on every viewport so the primary "new note" CTA stays put
+ * regardless of whether the page-header intro is collapsed. The mobile
+ * media query below repositions it above the bottom tabbar so it doesn't
+ * overlap. `[data-hidden=true]` suppresses it on the Add screen so we
+ * don't stack a FAB over the screen whose whole purpose it is to open. */
+.app-fab {
+  display: inline-flex;
   position: fixed;
-  right: 20px;
-  bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+  right: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -6517,12 +6508,12 @@ button.tag-pill {
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
-.mobile-fab:active {
+.app-fab:active {
   transform: scale(0.94);
 }
 
-.mobile-fab:hover,
-.mobile-fab:focus-visible {
+.app-fab:hover,
+.app-fab:focus-visible {
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.15) inset,
     0 12px 28px -6px rgba(196, 106, 58, 0.7),
@@ -6530,11 +6521,11 @@ button.tag-pill {
   outline: none;
 }
 
-.mobile-fab[data-hidden="true"] {
+.app-fab[data-hidden="true"] {
   display: none !important;
 }
 
-.mobile-fab-plus {
+.app-fab-plus {
   font-family: var(--sans);
   font-size: 28px;
   line-height: 1;
@@ -6619,8 +6610,11 @@ button.tag-pill {
     -webkit-backdrop-filter: blur(14px);
   }
 
-  .mobile-fab {
-    display: inline-flex;
+  .app-fab {
+    /* Clear the bottom tabbar (72px) + safe-area inset so the FAB sits
+     * just above the tabs instead of overlapping them. */
+    bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+    right: 20px;
   }
 
   /* ---------- Page headers ---------- */

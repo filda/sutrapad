@@ -145,3 +145,8 @@ vite.config.ts.timestamp-*
 # Per-machine agent notes (workflow conventions for the local checkout
 # that don't belong in the shared AGENTS.md).
 AGENTS.local.md
+
+# Per-machine Claude Code settings (hooks, permissions, env). The shared
+# .claude/settings.json (if any) is committed; the .local.json variant
+# carries personal overrides.
+.claude/settings.local.json

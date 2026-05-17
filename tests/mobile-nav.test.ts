@@ -2,21 +2,19 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   MOBILE_TABBAR_ITEMS,
-  buildMobileFab,
   buildMobileTabbar,
-  describeMobileFab,
   isMobileTabActive,
 } from "../src/app/view/chrome/mobile-nav";
 import type { MenuItemId } from "../src/app/logic/menu";
 
 /**
- * The mobile tabbar and FAB are thin DOM builders over a small pure-logic
- * surface. The pure surface is tested first (the tabbar item list, the
- * active-match predicate, and the FAB visibility/a11y descriptor); the
- * DOM-builder suites at the bottom render the actual buttons under
- * happy-dom and assert on classes / a11y attributes / click wiring so
- * the className strings, event listeners, and is-active branch are all
- * pinned by an observable.
+ * The mobile tabbar is a thin DOM builder over a small pure-logic surface.
+ * The pure surface is tested first (the tabbar item list and the active-
+ * match predicate); the DOM-builder suite at the bottom renders the actual
+ * buttons under happy-dom and asserts on classes / a11y attributes / click
+ * wiring so the className strings, event listeners, and is-active branch
+ * are all pinned by an observable. The app FAB has its own test file
+ * (`app-fab.test.ts`) since it ships on every viewport, not just mobile.
  */
 
 describe("MOBILE_TABBAR_ITEMS", () => {
@@ -92,32 +90,6 @@ describe("isMobileTabActive", () => {
       expect(isMobileTabActive(item, "capture")).toBe(false);
       expect(isMobileTabActive(item, "settings")).toBe(false);
     }
-  });
-});
-
-describe("describeMobileFab", () => {
-  it("hides the FAB while the user is on the Add route", () => {
-    expect(describeMobileFab("add").hidden).toBe(true);
-  });
-
-  it("shows the FAB on every non-Add route", () => {
-    const routes: MenuItemId[] = [
-      "home",
-      "notes",
-      "tasks",
-      "tags",
-      "links",
-      "capture",
-      "settings",
-    ];
-    for (const id of routes) {
-      expect(describeMobileFab(id).hidden).toBe(false);
-    }
-  });
-
-  it("announces itself as 'New note' so its purpose is obvious to screen readers", () => {
-    expect(describeMobileFab("home").ariaLabel).toBe("New note");
-    expect(describeMobileFab("add").ariaLabel).toBe("New note");
   });
 });
 
@@ -202,52 +174,3 @@ describe("buildMobileTabbar", () => {
   });
 });
 
-describe("buildMobileFab", () => {
-  it("renders a `<button>` with the `mobile-fab` className and the `New note` a11y label", () => {
-    const button = buildMobileFab({
-      activeMenuItem: "home",
-      onSelectMenuItem: vi.fn(),
-    });
-    expect(button.tagName).toBe("BUTTON");
-    expect(button.classList.contains("mobile-fab")).toBe(true);
-    expect(button.getAttribute("aria-label")).toBe("New note");
-    expect(button.title).toBe("New note");
-  });
-
-  it("stamps `data-hidden=\"true\"` only on the Add route so CSS can fade the FAB out without a re-render", () => {
-    const onAdd = buildMobileFab({
-      activeMenuItem: "add",
-      onSelectMenuItem: vi.fn(),
-    });
-    expect(onAdd.getAttribute("data-hidden")).toBe("true");
-
-    const onHome = buildMobileFab({
-      activeMenuItem: "home",
-      onSelectMenuItem: vi.fn(),
-    });
-    // Off the Add route, the attribute is omitted entirely (rather than
-    // set to "false") — CSS only checks the presence selector.
-    expect(onHome.hasAttribute("data-hidden")).toBe(false);
-  });
-
-  it("renders a `+` glyph inside `.mobile-fab-plus` marked aria-hidden so screen readers see only the parent label", () => {
-    const button = buildMobileFab({
-      activeMenuItem: "home",
-      onSelectMenuItem: vi.fn(),
-    });
-    const plus = button.querySelector(".mobile-fab-plus");
-    expect(plus?.textContent).toBe("+");
-    expect(plus?.getAttribute("aria-hidden")).toBe("true");
-  });
-
-  it("invokes `onSelectMenuItem('add')` exactly once when clicked", () => {
-    const onSelectMenuItem = vi.fn();
-    const button = buildMobileFab({
-      activeMenuItem: "home",
-      onSelectMenuItem,
-    });
-    button.click();
-    expect(onSelectMenuItem).toHaveBeenCalledTimes(1);
-    expect(onSelectMenuItem).toHaveBeenCalledWith("add");
-  });
-});

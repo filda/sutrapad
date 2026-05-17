@@ -10,7 +10,6 @@ import {
   type NotesListPersonaOptions,
 } from "../shared/notes-list";
 import { buildIcon, type IconName } from "../shared/icons";
-import { buildNewNoteButton } from "../shared/new-note-button";
 import { buildPageHeader } from "../shared/page-header";
 
 export interface NotesPanelOptions {
@@ -116,7 +115,6 @@ export function buildNotesPanel({
       totalNotes: workspace.notes.length,
       filteredNotes: filteredNotes.length,
       filterCount: selectedTagFilters.length,
-      onNewNote,
     }),
   );
 
@@ -159,14 +157,12 @@ interface NotesPageHeaderOptions {
   totalNotes: number;
   filteredNotes: number;
   filterCount: number;
-  onNewNote: () => void;
 }
 
 function buildNotesPageHeader({
   totalNotes,
   filteredNotes,
   filterCount,
-  onNewNote,
 }: NotesPageHeaderOptions): HTMLElement {
   const countPart =
     filterCount === 0
@@ -177,15 +173,14 @@ function buildNotesPageHeader({
       ? ""
       : ` · filtered by ${filterCount} tag${filterCount === 1 ? "" : "s"}`;
 
-  const newNoteButton = buildNewNoteButton(onNewNote);
-
+  // No header action — the "new note" CTA lives in the app FAB so it
+  // survives a collapsed intro and stays consistent with mobile.
   return buildPageHeader({
     pageId: "notes",
     eyebrow: `Notebook · ${countPart}${filterPart}`,
     titleHtml: "Your <em>notebook</em>.",
     subtitle:
       "Every note is a page. Pick one up — it opens full-width so you have room to read, edit and see its context.",
-    actions: newNoteButton,
   });
 }
 

@@ -16,7 +16,6 @@ import type {
   SutraPadWorkspace,
   UserProfile,
 } from "../../../types";
-import { buildNewNoteButton } from "../shared/new-note-button";
 import { buildPageHeader } from "../shared/page-header";
 import {
   applyPersonaStyles,
@@ -241,7 +240,6 @@ function firstName(profile: UserProfile | null): string | null {
 function buildHomeHeader(
   profile: UserProfile | null,
   summary: HomeStatsSummary,
-  onNewNote: () => void,
 ): HTMLElement {
   const now = new Date();
   const greeting = GREETING_LABEL[greetingFor(now.getHours())];
@@ -254,14 +252,13 @@ function buildHomeHeader(
   // the greeting feels specific even before the eye scans the grid.
   const subtitle = summaryPhrase(summary);
 
-  const newNoteButton = buildNewNoteButton(onNewNote);
-
+  // No header action — the "new note" CTA lives in the app FAB so it
+  // survives a collapsed intro and stays consistent with mobile.
   return buildPageHeader({
     pageId: "home",
     eyebrow: formatHomeHeaderDate(now),
     titleHtml,
     subtitle,
-    actions: newNoteButton,
     // Greeting + counts change daily — the lockup carries live information,
     // not onboarding chrome, so it shouldn't quietly fade out after ten
     // visits like the static page intros do. The eyebrow toggle still
@@ -312,7 +309,6 @@ export interface HomePageOptions {
    * fired or how the rotation persists. When `null`, no slot is rendered.
    */
   hintBanner?: HTMLElement | null;
-  onNewNote: () => void;
   onOpenNote: (noteId: string) => void;
 }
 
@@ -321,7 +317,6 @@ export function buildHomePage({
   profile,
   personaOptions,
   hintBanner,
-  onNewNote,
   onOpenNote,
 }: HomePageOptions): HTMLElement {
   const section = document.createElement("section");
@@ -329,7 +324,7 @@ export function buildHomePage({
 
   const summary = summariseWorkspace(workspace);
 
-  section.append(buildHomeHeader(profile, summary, onNewNote));
+  section.append(buildHomeHeader(profile, summary));
 
   section.append(buildTodayStats(summary));
 

@@ -26,7 +26,8 @@ import { createOgImageResolver } from "../logic/og-image-resolver";
 import { pickNoteThumbSeed } from "../logic/link-thumb-seed";
 import { deriveNotePrimaryUrl } from "../logic/note-primary-url";
 import { buildTopbar } from "./chrome/topbar";
-import { buildMobileFab, buildMobileTabbar } from "./chrome/mobile-nav";
+import { buildMobileTabbar } from "./chrome/mobile-nav";
+import { buildAppFab } from "./chrome/app-fab";
 import { buildHomePage } from "./pages/home-page";
 import { buildCapturePage } from "./pages/capture-page";
 import { buildTagsPage } from "./pages/tags-page";
@@ -390,13 +391,13 @@ export function renderAppPage({
   const footer = buildSiteFooter({ buildStamp, onSelectMenuItem });
 
   // Tail applied to every render path: footer → page → root → FAB (last, so
-  // the FAB paints above page content on mobile without a z-index war with
-  // every card and popover).
+  // the FAB paints above page content without a z-index war with every card
+  // and popover).
   const finalize = (): void => {
     page.append(footer);
     root.append(page);
     root.append(
-      buildMobileFab({
+      buildAppFab({
         activeMenuItem,
         onSelectMenuItem,
       }),
@@ -430,7 +431,6 @@ export function renderAppPage({
         profile,
         personaOptions,
         hintBanner,
-        onNewNote,
         onOpenNote: onSelectNote,
       }),
     );

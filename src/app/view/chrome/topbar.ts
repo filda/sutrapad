@@ -156,6 +156,16 @@ function buildAddPill(
   label.textContent = "Add";
   button.append(label);
 
+  // Decorative `N` pill telegraphs the keyboard shortcut. The pill is not
+  // interactive — the click handler on the button fires for any tap,
+  // including on the pill — so the hint surfaces the shortcut without
+  // needing a separate help page.
+  const kbd = document.createElement("span");
+  kbd.className = "button-kbd";
+  kbd.setAttribute("aria-hidden", "true");
+  kbd.textContent = "N";
+  button.append(kbd);
+
   button.addEventListener("click", () => onSelectMenuItem("add"));
   return button;
 }
