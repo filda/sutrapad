@@ -42,6 +42,12 @@ const config = {
     "src/app/view/pages/links-page.ts",
     "src/app/view/pages/privacy-page.ts",
     "src/app/view/pages/tasks-page.ts",
+    // `src/app/view/pages/lexicon-page.ts` — has a narrow regression
+    //   test for the save-status rerender bug, but the rest of the page
+    //   (typeahead UI, import card, retry-load, candidate picker)
+    //   doesn't have dedicated coverage yet. Adding the file to the
+    //   mutate set now would drag overall below break:80. Widen the
+    //   test surface first, then promote.
     "src/app/view/shared/card-header.ts",
     "src/app/view/shared/editor-card.ts",
     "src/app/view/shared/link-thumb.ts",

@@ -66,7 +66,21 @@ interface PageState {
 }
 
 let pageState: PageState = createInitialState();
-let renderHandle: { rerender: () => void } | null = null;
+let renderHandle: RenderHandle | null = null;
+
+/**
+ * Page-level rerender callbacks. Split into a full body rebuild and a
+ * targeted save-status update so that a Drive autosave settling
+ * mid-typing doesn't blow away the candidate card (and the in-flight
+ * value in the target input). See `scheduleSave` for the rationale.
+ */
+interface RenderHandle {
+  /** Replace the entire body — use when builder/loading/loadError changes. */
+  readonly rerender: () => void;
+  /** Mutate only the captured save-status element — use when only
+   *  `pageState.saveStatus` / `pageState.saveError` changed. */
+  readonly rerenderSaveStatus: () => void;
+}
 
 function createInitialState(): PageState {
   return {
@@ -115,12 +129,24 @@ export function buildLexiconPage(options: LexiconPageOptions): HTMLElement {
   body.className = "lexicon-body";
   page.append(body);
 
-  // Capture the rebuilder so action handlers can update only the body
-  // without rebuilding the page header / wiring on every keystroke.
+  // The save-status strip is captured during each full rebuild so that
+  // save-status-only transitions (saving → idle → error) can mutate it
+  // in place via `rerenderSaveStatus`. Without that split, every Drive
+  // autosave settling would replace the entire body and erase whatever
+  // the user had typed into the next candidate's target input.
+  let saveStatusEl: HTMLElement | null = null;
+
   const rerender = (): void => {
-    body.replaceChildren(...renderBody(options));
+    const nodes = renderBody(options);
+    saveStatusEl = nodes.find((node): node is HTMLElement =>
+      node instanceof HTMLElement && node.classList.contains("lexicon-save-status"),
+    ) ?? null;
+    body.replaceChildren(...nodes);
   };
-  renderHandle = { rerender };
+  const rerenderSaveStatus = (): void => {
+    if (saveStatusEl) applySaveStatus(saveStatusEl);
+  };
+  renderHandle = { rerender, rerenderSaveStatus };
   rerender();
 
   // Kick off the initial Drive load on first mount of the page (or
@@ -559,15 +585,27 @@ function buildProgressStrip(builder: BuilderState): HTMLElement {
 
 function buildSaveStatus(): HTMLElement {
   const strip = document.createElement("p");
-  strip.className = `lexicon-save-status lexicon-save-${pageState.saveStatus}`;
-  if (pageState.saveStatus === "saving") {
-    strip.textContent = "Saving to Drive…";
-  } else if (pageState.saveStatus === "error") {
-    strip.textContent = `Save failed: ${pageState.saveError ?? "unknown error"}. Retried automatically on next action.`;
-  } else {
-    strip.textContent = "Autosaves to Drive after every decision.";
-  }
+  applySaveStatus(strip);
   return strip;
+}
+
+/**
+ * Pure in-place mutator for the save-status strip. Reads the current
+ * `pageState.saveStatus` / `pageState.saveError` and sets className +
+ * text on the supplied element. Used both for the initial build and
+ * for granular `rerenderSaveStatus` calls so that the rest of the
+ * candidate card (and especially the target input) survives a save
+ * settling.
+ */
+function applySaveStatus(el: HTMLElement): void {
+  el.className = `lexicon-save-status lexicon-save-${pageState.saveStatus}`;
+  if (pageState.saveStatus === "saving") {
+    el.textContent = "Saving to Drive…";
+  } else if (pageState.saveStatus === "error") {
+    el.textContent = `Save failed: ${pageState.saveError ?? "unknown error"}. Retried automatically on next action.`;
+  } else {
+    el.textContent = "Autosaves to Drive after every decision.";
+  }
 }
 
 function pickNextCandidate(
@@ -624,11 +662,15 @@ async function scheduleSave(
       saveStatus: "error",
       saveError: "Not signed in.",
     };
-    renderHandle?.rerender();
+    // Save-status-only change: mutate the existing pill in place rather
+    // than rebuilding the body. A full rebuild would recreate the
+    // target input and erase any keystroke the user typed between the
+    // last decision and now.
+    renderHandle?.rerenderSaveStatus();
     return;
   }
   pageState = { ...pageState, saveStatus: "saving", saveError: null };
-  renderHandle?.rerender();
+  renderHandle?.rerenderSaveStatus();
 
   const previousQueue = pageState.saveQueue;
   const next = previousQueue.then(async () => {
@@ -646,7 +688,7 @@ async function scheduleSave(
         saveStatus: "idle",
         saveError: null,
       };
-      renderHandle?.rerender();
+      renderHandle?.rerenderSaveStatus();
     }
   } catch (error) {
     pageState = {
@@ -654,7 +696,7 @@ async function scheduleSave(
       saveStatus: "error",
       saveError: error instanceof Error ? error.message : "Drive save failed.",
     };
-    renderHandle?.rerender();
+    renderHandle?.rerenderSaveStatus();
   }
 }
 
