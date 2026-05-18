@@ -620,8 +620,12 @@ interface NoteDetailPageOptions {
   onDenyLocationCapture: () => void;
   onSelectMenuItem: (id: MenuItemId) => void;
   onBackToNotes: () => void;
-  onTitleInput: (value: string) => void;
-  onBodyInput: (value: string, caretPosition: number | undefined) => void;
+  onTitleInput: (value: string, noteId?: string) => void;
+  onBodyInput: (
+    value: string,
+    caretPosition: number | undefined,
+    noteId?: string,
+  ) => void;
   onAddTag: (value: string) => void;
   onRemoveTag: (tag: string) => void;
 }
@@ -748,8 +752,10 @@ function deriveNoteDetailPersona(
 interface NoteDetailHeroOptions {
   /** Fires on every title keystroke. Same callback the editor-card
    *  used to receive — wiring is identical, the input element just
-   *  lives in the hero now. */
-  onTitleInput: (value: string) => void;
+   *  lives in the hero now. `noteId` pins the write to the note this
+   *  hero was mounted for; see `editor-card.ts` for the same race the
+   *  binding defends against. */
+  onTitleInput: (value: string, noteId?: string) => void;
   /** Fired after the title input updates so the detail-topbar kind
    *  chip can refresh without an outer render pass. Mirrors the
    *  editor-card body input's `onInputsChange` hook. */
@@ -792,6 +798,12 @@ function buildNoteDetailHero(
   titleInput.rows = 1;
   titleInput.placeholder = "Note title";
   titleInput.value = note.title;
+  // Capture the id this hero was mounted for. Threaded into the
+  // title-write so a render that detaches this textarea (and may
+  // also shift `activeNoteId`) doesn't route the trailing keystroke
+  // / IME commit onto an unrelated note. Same reasoning as the
+  // body textarea's `boundNoteId` in `editor-card.ts`.
+  const boundNoteId = note.id;
   titleInput.addEventListener("input", () => {
     // Some platforms (paste, IME commits) can sneak a newline into the
     // textarea even without an Enter press — collapse to spaces before
@@ -800,7 +812,7 @@ function buildNoteDetailHero(
       titleInput.value = titleInput.value.replace(/\n+/g, " ");
     }
     const value = titleInput.value;
-    options.onTitleInput(value);
+    options.onTitleInput(value, boundNoteId);
     const bodyEl = document.querySelector(".editor-body");
     const body =
       bodyEl instanceof HTMLTextAreaElement ? bodyEl.value : note.body;

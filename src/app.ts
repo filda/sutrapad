@@ -282,6 +282,27 @@ export function createApp(root: HTMLElement): void {
     });
   };
 
+  /**
+   * Applies `updater` to the note identified by `noteId` and commits the
+   * result. When the id no longer resolves to a real note (refresh
+   * dropped it, sign-in merge collapsed it, etc.), `upsertNote` returns
+   * the workspace unchanged and we drop the edit — that is the failure
+   * mode `replaceCurrentNote`'s comment below describes, lifted here so
+   * any caller with an explicit note binding gets the same guarantee.
+   */
+  const replaceNote = (
+    noteId: string,
+    updater: (note: SutraPadDocument) => SutraPadDocument,
+  ): void => {
+    const previousWorkspace = workspace$.get();
+    const next = upsertNote(previousWorkspace, noteId, updater);
+    if (next === previousWorkspace) return;
+
+    withRenderSuppressed(() => workspace$.set(next));
+    persistLocalWorkspace(next);
+    scheduleAutoSave();
+  };
+
   const replaceCurrentNote = (updater: (note: SutraPadDocument) => SutraPadDocument): void => {
     // Route the edit through `activeNoteId` directly rather than laundering it
     // through `getCurrentWorkspaceNote` (which silently falls back to
@@ -290,16 +311,9 @@ export function createApp(root: HTMLElement): void {
     // sign-in merge while a debounced keystroke was in-flight — `upsertNote`
     // returns the workspace unchanged and we drop the edit rather than
     // clobber an unrelated note.
-    const previousWorkspace = workspace$.get();
-    const activeNoteId = previousWorkspace.activeNoteId;
+    const activeNoteId = workspace$.get().activeNoteId;
     if (activeNoteId === null) return;
-
-    const next = upsertNote(previousWorkspace, activeNoteId, updater);
-    if (next === previousWorkspace) return;
-
-    withRenderSuppressed(() => workspace$.set(next));
-    persistLocalWorkspace(next);
-    scheduleAutoSave();
+    replaceNote(activeNoteId, updater);
   };
 
   const syncSelectedTagFilters = (): void => {
@@ -610,6 +624,7 @@ export function createApp(root: HTMLElement): void {
         saveWorkspace: () => saveWorkspace(),
         restoreWorkspaceAfterSignIn,
         replaceCurrentNote,
+        replaceNote,
         persistWorkspace: persistLocalWorkspace,
         scheduleAutoSave,
         render,
@@ -793,7 +808,7 @@ export function createApp(root: HTMLElement): void {
     await loadPreferences();
     scheduleOgImagePrewarm();
   };
-  const { saveWorkspace, refreshWorkspace } = workspaceIO;
+  const { saveWorkspace, refreshWorkspace, isWorkspaceDirty } = workspaceIO;
 
   // Focus / visibility-driven cross-device refresh. The gate captures
   // every reason we must NOT auto-refresh in the background:
@@ -805,6 +820,17 @@ export function createApp(root: HTMLElement): void {
   //     edit is waiting to land. Refreshing first would round-trip the
   //     pre-edit state into the workspace, the autosave would then
   //     stomp it back out, and we'd have burned two RTTs to do nothing.
+  //   - workspace is dirty against the last-synced snapshot → there are
+  //     local edits Drive hasn't seen yet. This catches the race the
+  //     autosave-timer check alone misses: the timer can fire (clearing
+  //     itself to null) and start a save that succeeds, but a follow-up
+  //     keystroke immediately after re-arms the timer; if the visibility
+  //     event lands in the small window between the save settling and
+  //     the next keystroke landing, the timer check passes but the
+  //     workspace still differs from what's on Drive. The refresh that
+  //     would then run could drop just-typed local-only notes, which
+  //     the render-detach blur cascade documented in
+  //     `editor-card.ts:bodyInput.blur` would then stamp onto a sibling.
   // The coordinator owns the throttle + in-flight guard so this stays
   // a pure predicate.
   const focusRefresh = createFocusRefreshCoordinator({
@@ -813,6 +839,7 @@ export function createApp(root: HTMLElement): void {
       if (!profile$.get()) return false;
       if (syncState$.get() === "saving") return false;
       if (autoSaveTimer$.get() !== null) return false;
+      if (isWorkspaceDirty()) return false;
       return true;
     },
     environment: createBrowserFocusRefreshEnvironment(),

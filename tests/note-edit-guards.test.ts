@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateBodyEdit,
   isTitleEditNoOp,
+  resolveEditTargetNote,
 } from "../src/app/logic/note-edit-guards";
-import type { SutraPadDocument } from "../src/types";
+import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 
 function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
   return {
@@ -134,5 +135,59 @@ describe("evaluateBodyEdit", () => {
     expect(result.isNoOp).toBe(true);
     expect(result.tagsChanged).toBe(false);
     expect(result.mergedTags).toEqual([]);
+  });
+});
+
+function makeWorkspace(
+  notes: SutraPadDocument[],
+  activeNoteId: string | null,
+): SutraPadWorkspace {
+  return { notes, activeNoteId };
+}
+
+describe("resolveEditTargetNote", () => {
+  it("returns the note matching the explicit noteId when provided", () => {
+    // Pinned-target path: the editor input/blur passes the id it was
+    // mounted for, and resolveEditTargetNote looks up exactly that
+    // note. Critically does NOT fall through to active when the
+    // explicit id is given — that's the whole point of the binding,
+    // it shields the write from a mid-flight active shift.
+    const a = makeNote({ id: "a", body: "alpha" });
+    const b = makeNote({ id: "b", body: "beta" });
+    expect(resolveEditTargetNote(makeWorkspace([a, b], "a"), "b")).toBe(b);
+  });
+
+  it("returns null when the explicit noteId is missing from the workspace", () => {
+    // The bug-fix case: a visibility-refresh dropped the note this
+    // input was bound to. The blur fires with the bound id; resolver
+    // returns null; the caller drops the write rather than routing
+    // through active and stamping a sibling.
+    const a = makeNote({ id: "a", body: "alpha" });
+    expect(resolveEditTargetNote(makeWorkspace([a], "a"), "gone")).toBeNull();
+  });
+
+  it("falls back to the active note when no noteId is provided", () => {
+    // Back-compat path: legacy callers that haven't been migrated
+    // (older imports, future call sites) keep the previous
+    // active-note targeting. Mirrors getCurrentWorkspaceNote.
+    const a = makeNote({ id: "a", body: "alpha" });
+    const b = makeNote({ id: "b", body: "beta" });
+    expect(resolveEditTargetNote(makeWorkspace([a, b], "b"), undefined)).toBe(b);
+  });
+
+  it("falls back to notes[0] when the active id no longer resolves", () => {
+    // Mirrors the getCurrentWorkspaceNote behaviour: a stale active
+    // id (e.g. mid-merge) doesn't crash the caller — it lands on
+    // whichever note is first. The caller is responsible for
+    // refreshing active separately.
+    const a = makeNote({ id: "a", body: "alpha" });
+    expect(resolveEditTargetNote(makeWorkspace([a], "stale"), undefined)).toBe(a);
+  });
+
+  it("returns null for an empty workspace without an explicit noteId", () => {
+    // Truly empty workspaces don't get a fallback note (there isn't
+    // one to fall back to). Callers treat null as "drop the write",
+    // which matches what every input/blur handler does today.
+    expect(resolveEditTargetNote(makeWorkspace([], null), undefined)).toBeNull();
   });
 });

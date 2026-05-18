@@ -33,12 +33,25 @@ describe("applyDriveRefresh", () => {
     // Phase 1 so the count snaps to truth before any JSON is fetched —
     // a note deleted on Device A must disappear from Device B's view
     // even though Device B still has its body cached locally.
+    //
+    // The `knownDriveIds` set declares which ids the local session has
+    // confirmed to exist on Drive at some point. A note in that set
+    // missing from the inventory is "deleted on another device" — drop.
+    // (Without that set, the new semantics treat unknown ids as
+    // never-pushed local-only drafts and preserve them; see the
+    // "preserves a non-empty local-only note never confirmed on Drive"
+    // case further down.)
     const local = workspace([
       note("a", "alpha", "2026-05-01T10:00:00.000Z"),
       note("gone", "deleted on another device", "2026-04-30T10:00:00.000Z"),
     ]);
 
-    const next = applyDriveRefresh(local, [], [{ noteId: "a" }]);
+    const next = applyDriveRefresh(
+      local,
+      [],
+      [{ noteId: "a" }],
+      new Set(["a", "gone"]),
+    );
 
     expect(next.notes.map((n) => n.id)).toEqual(["a"]);
   });
@@ -220,7 +233,12 @@ describe("applyDriveRefresh", () => {
       "deleted-elsewhere",
     );
 
-    const next = applyDriveRefresh(local, [], [{ noteId: "survives" }]);
+    const next = applyDriveRefresh(
+      local,
+      [],
+      [{ noteId: "survives" }],
+      new Set(["survives", "deleted-elsewhere"]),
+    );
 
     expect(next.activeNoteId).toBe("survives");
   });
@@ -229,9 +247,11 @@ describe("applyDriveRefresh", () => {
     // Drive has zero notes left; nothing to point at. The note carries
     // a body so it doesn't qualify as a local-only empty draft (those
     // are deliberately preserved; see the "preserves empty draft notes"
-    // cases below).
+    // cases below). `knownDriveIds` confirms the note used to live on
+    // Drive — without it the new local-only-preserve rule would keep
+    // the note around.
     const local = workspace([note("a", "real body", "2026-05-01T10:00:00.000Z")], "a");
-    const next = applyDriveRefresh(local, [], []);
+    const next = applyDriveRefresh(local, [], [], new Set(["a"]));
     expect(next.notes).toHaveLength(0);
     expect(next.activeNoteId).toBeNull();
   });
@@ -268,9 +288,10 @@ describe("applyDriveRefresh", () => {
   it("still drops a non-empty local note that vanished from the inventory (deleted on another device)", () => {
     // The local-only-draft exemption above must not regress the
     // cross-device-delete path. A note with real content whose id is
-    // missing from the inventory was deleted on another device and
-    // must disappear here. `isEmptyDraftNote` is the gate: empty body
-    // AND no tags. Anything past that gate is real content.
+    // missing from the inventory AND known to have been on Drive was
+    // deleted on another device and must disappear here. The
+    // knownDriveIds set is what flips the meaning of "absent from
+    // inventory" from "never pushed" to "deleted elsewhere".
     const local = workspace(
       [
         note("typed", "user wrote something", "2026-05-01T10:00:00.000Z"),
@@ -279,9 +300,70 @@ describe("applyDriveRefresh", () => {
       "typed",
     );
 
-    const next = applyDriveRefresh(local, [], [{ noteId: "a" }]);
+    const next = applyDriveRefresh(
+      local,
+      [],
+      [{ noteId: "a" }],
+      new Set(["typed", "a"]),
+    );
 
     expect(next.notes.map((n) => n.id)).toEqual(["a"]);
+  });
+
+  it("preserves a non-empty local-only note whose id has never been confirmed on Drive", () => {
+    // Regression for the visibility-refresh race: the user clicks
+    // "+ Add", an empty draft is spawned, the user starts typing into
+    // it, and a visibility-driven refresh fires during the
+    // inventory-fetch window. Drive's inventory does *not* include
+    // the just-typed note (autosave hasn't pushed it yet). Without
+    // the `knownDriveIds` carve-out, the refresh would interpret the
+    // missing id as "deleted on another device" and drop the note;
+    // the render that follows then detaches the focused textarea,
+    // and the synchronous blur that fires next stamps the
+    // user's typed value onto whichever sibling became active. The
+    // observed user-visible symptom: an unrelated note's body gets
+    // replaced by the text the user was typing into a brand-new
+    // note. The fix preserves the note when its id isn't in
+    // `knownDriveIds` — it can't have been deleted on a different
+    // device because Drive has never been told this id exists.
+    const local = workspace(
+      [
+        note("local-only", "Vopice", "2026-05-01T10:00:00.000Z"),
+        note("a", "alpha", "2026-04-30T10:00:00.000Z"),
+      ],
+      "local-only",
+    );
+
+    const next = applyDriveRefresh(
+      local,
+      [],
+      [{ noteId: "a" }],
+      new Set(["a"]),
+    );
+
+    expect(next.notes.map((n) => n.id)).toContain("local-only");
+    const preserved = next.notes.find((n) => n.id === "local-only");
+    expect(preserved?.body).toBe("Vopice");
+    expect(next.activeNoteId).toBe("local-only");
+  });
+
+  it("treats the legacy unset knownDriveIds parameter as 'nothing confirmed on Drive yet'", () => {
+    // Belt-and-braces: callers that haven't been migrated to pass
+    // `knownDriveIds` (older tests, pre-fix call sites) get the
+    // safer default — every local note is treated as never-pushed,
+    // so nothing gets dropped. The deletion path is opt-in via an
+    // explicit known-set, not the default. This protects against
+    // any future caller that wires the inventory through but
+    // forgets the new parameter from accidentally regressing the
+    // bug fix.
+    const local = workspace([
+      note("a", "real body", "2026-05-01T10:00:00.000Z"),
+      note("b", "real body", "2026-04-30T10:00:00.000Z"),
+    ]);
+
+    const next = applyDriveRefresh(local, [], [{ noteId: "a" }]);
+
+    expect(next.notes.map((n) => n.id).toSorted()).toEqual(["a", "b"]);
   });
 
   it("returns the same workspace reference when the only delta is a preserved local-only draft", () => {

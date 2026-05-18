@@ -26,7 +26,41 @@
  */
 
 import { mergeHashtagsIntoTags } from "../../lib/notebook";
-import type { SutraPadDocument } from "../../types";
+import type { SutraPadDocument, SutraPadWorkspace } from "../../types";
+
+/**
+ * Resolves the note an editor input/blur handler should target.
+ *
+ * When the caller supplies `noteId`, the resolver looks up that
+ * specific note in the workspace and returns it (or `null` when the
+ * id no longer matches — e.g. a refresh dropped the note before the
+ * trailing event landed). This is the "pinned target" path used by
+ * `editor-card.ts` and the hero title in `render-app.ts`: the input
+ * captures the id of the note it was mounted for at build time, then
+ * passes it through every emission so the write doesn't follow
+ * `activeNoteId` if that has since shifted.
+ *
+ * When `noteId` is `undefined`, the resolver falls back to the active
+ * note (with the same `notes[0]` fallback `getCurrentWorkspaceNote`
+ * uses, so callers that haven't been migrated to the pinned-id flow
+ * keep their previous behaviour). Returns `null` only for a truly
+ * empty workspace — the no-op guard in the callbacks expects that.
+ *
+ * Pure / DOM-free so the no-op detection on either side stays
+ * unit-testable without a DOM setup.
+ */
+export function resolveEditTargetNote(
+  workspace: SutraPadWorkspace,
+  noteId: string | undefined,
+): SutraPadDocument | null {
+  if (noteId !== undefined) {
+    return workspace.notes.find((entry) => entry.id === noteId) ?? null;
+  }
+  const active = workspace.notes.find(
+    (entry) => entry.id === workspace.activeNoteId,
+  );
+  return active ?? workspace.notes[0] ?? null;
+}
 
 /**
  * `true` when the candidate title matches the note's current title

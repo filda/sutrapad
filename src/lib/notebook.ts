@@ -596,20 +596,32 @@ export function mergeWorkspaces(
  * on Drive right now") plus the subset of note JSONs it has fetched so
  * far, and the result is the workspace state implied by that snapshot.
  *
- *   - **Inventory is authoritative for existence, except for
- *     local-only empty drafts.** Any local note whose id isn't in
- *     `inventory` is dropped — it was deleted from another device —
- *     *unless* it is an empty draft (no body, no user tags). Empty
- *     drafts are filtered out by `stripEmptyDraftNotes` before every
- *     remote save, so their id is *never* present in Drive's
- *     inventory. Without the exemption a refresh that lands right
- *     after the user clicks "+ Add" / "+ New note" / `N` (autosave
- *     timer null because the draft is still empty, so `canRefresh`
- *     returns true) would drop the just-spawned draft and bounce the
- *     detail-route editor straight back to the notes list. Ids
- *     present in `inventory` but not yet in `fetchedNotes` keep
+ *   - **Inventory is authoritative for existence, except for local-only
+ *     notes whose id has never been confirmed on Drive.** Any local
+ *     note whose id isn't in `inventory` is dropped — interpreted as
+ *     "deleted from another device" — *unless* either:
+ *
+ *       a) it is an empty draft (`isEmptyDraftNote`), or
+ *       b) its id is missing from `knownDriveIds`.
+ *
+ *     Case (a) covers the just-spawned "+ Add" / `N` draft before the
+ *     user types anything: `stripEmptyDraftNotes` filters those out of
+ *     every remote save, so their absence from inventory is the
+ *     expected steady state. Case (b) covers the race where the user
+ *     has typed into a brand-new note but autosave hasn't pushed it
+ *     yet — visibility-refresh would otherwise see a non-empty local
+ *     note that Drive doesn't know about and drop it as "deleted on
+ *     another device", then the render-detached textarea's blur would
+ *     stamp that note's body onto whichever note became active
+ *     instead. `knownDriveIds` is maintained by the caller from the
+ *     ids of every successful Drive load + save, so a local id absent
+ *     from it has demonstrably never reached Drive — there is no
+ *     remote state to interpret its absence against.
+ *
+ *     Ids present in `inventory` but not yet in `fetchedNotes` keep
  *     their current local copy as a placeholder — Phase 3 of the
  *     refresh will replace it when its JSON arrives.
+ *
  *   - **Per-id conflict rule:** when both `fetched` and `local` carry
  *     the same id, the version with the strictly larger `updatedAt`
  *     wins. The strict-greater check (not `>=`) is what lets a
@@ -631,6 +643,7 @@ export function applyDriveRefresh(
   local: SutraPadWorkspace,
   fetchedNotes: readonly SutraPadDocument[],
   inventory: ReadonlyArray<{ noteId: string }>,
+  knownDriveIds: ReadonlySet<string> = new Set(),
 ): SutraPadWorkspace {
   const inventoryIds = new Set(inventory.map((entry) => entry.noteId));
   const fetchedById = new Map<string, SutraPadDocument>();
@@ -650,18 +663,25 @@ export function applyDriveRefresh(
 
   for (const note of local.notes) {
     if (!inventoryIds.has(note.id)) {
-      // Empty drafts are local-only by design: `stripEmptyDraftNotes`
-      // filters them out of every remote save, so their absence from
-      // the Drive inventory is the expected steady state — not a
-      // signal of cross-device deletion. Keeping them here preserves
-      // the just-spawned "+ Add" / "+ New note" / `N` draft when a
-      // visibility-driven refresh fires before the user has typed
-      // anything (autosave timer null ⇒ `canRefresh` returns true).
-      // Auto-backfilled title / location / captureContext do not
-      // count as "user content" in `isEmptyDraftNote`, so a draft
-      // that has already been patched by the async fresh-note
-      // backfill is still considered empty and is still preserved.
-      if (isEmptyDraftNote(note)) {
+      // Preserve local-only notes that Drive can't possibly have
+      // seen yet. Two complementary cases:
+      //
+      // (a) Empty drafts — `stripEmptyDraftNotes` filters them out
+      // of every remote save, so their absence from inventory is the
+      // expected steady state, not a deletion signal. Auto-backfilled
+      // title / location / captureContext don't count as user content
+      // in `isEmptyDraftNote`, so a draft already patched by the
+      // async fresh-note backfill is still preserved.
+      //
+      // (b) Ids missing from `knownDriveIds` — the user typed into a
+      // brand-new note but the autosave timer hasn't fired. Drive
+      // has never been told this id exists, so "not in inventory"
+      // doesn't mean "deleted on another device", it means "the
+      // pending push hasn't happened yet". Dropping here would cause
+      // a render that detaches the focused textarea, and the blur
+      // that fires next would stamp the stale value onto a different
+      // active note.
+      if (isEmptyDraftNote(note) || !knownDriveIds.has(note.id)) {
         kept.push(note);
         keptIds.add(note.id);
         continue;

@@ -50,6 +50,19 @@ export interface DriveNoteInventoryEntry {
 export interface WorkspaceRefreshEffects {
   loadInventory: () => Promise<DriveNoteInventoryEntry[]>;
   fetchNoteByFileId: (fileId: string) => Promise<SutraPadDocument>;
+  /**
+   * Snapshot of ids the caller has confirmed to exist on Drive (from
+   * prior loads, saves, and fetched-bodies of previous refreshes).
+   * Threaded into `applyDriveRefresh` so brand-new local notes that
+   * Drive has never seen aren't dropped as "deleted on another device".
+   *
+   * Optional for tests and call-paths that don't track this; when
+   * absent the orchestrator falls back to an empty set, which keeps
+   * the legacy "any local-only non-empty note is treated as deleted"
+   * behaviour — equivalent to the pre-fix semantics. Production
+   * wiring in `createWorkspaceIO` always provides a live getter.
+   */
+  getKnownDriveIds?: () => ReadonlySet<string>;
   getWorkspace: () => SutraPadWorkspace;
   setWorkspace: (workspace: SutraPadWorkspace) => void;
   persistLocalWorkspace: (workspace: SutraPadWorkspace) => void;
@@ -191,7 +204,8 @@ function applyAndCommit(
   inventory: readonly DriveNoteInventoryEntry[],
 ): SutraPadWorkspace {
   const local = effects.getWorkspace();
-  const next = applyDriveRefresh(local, fetched, inventory);
+  const knownDriveIds = effects.getKnownDriveIds?.() ?? new Set<string>();
+  const next = applyDriveRefresh(local, fetched, inventory, knownDriveIds);
   if (next === local) return local;
   effects.setWorkspace(next);
   effects.persistLocalWorkspace(next);

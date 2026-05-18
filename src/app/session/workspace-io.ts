@@ -51,6 +51,18 @@ export interface WorkspaceIO {
    * through `loadWorkspace` for the all-or-nothing replace semantics.
    */
   refreshWorkspace: (options?: WorkspaceRefreshOptions) => Promise<void>;
+  /**
+   * Returns `true` when the local workspace carries unsynced changes
+   * relative to the last successful Drive load / save. Empty drafts
+   * are normalised away before the comparison so a brand-new untouched
+   * `+ Add` draft doesn't read as dirty (that note will never reach
+   * Drive on its own).
+   *
+   * Consumed by the focus-refresh canRefresh gate to skip a refresh
+   * that would otherwise apply Drive state on top of in-flight local
+   * edits — see `app.ts` for the wiring.
+   */
+  isWorkspaceDirty: () => boolean;
 }
 
 export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
@@ -94,12 +106,28 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
   // "what's on Drive" in a way the save path can use as a baseline.
   let lastSyncedWorkspace: SutraPadWorkspace | null = null;
 
+  // Ids of every note this session has confirmed to exist on Drive at
+  // some point — populated from successful loads, saves, and the
+  // fetched-bodies legs of progressive refreshes. Consumed by
+  // `applyDriveRefresh`: a local note whose id is absent here cannot
+  // have been deleted on another device (Drive has never seen it), so
+  // refresh preserves it instead of dropping. Bug fix for the
+  // visibility-refresh race where typing into a brand-new note during
+  // the inventory-fetch window let the next phase merge stomp the
+  // not-yet-synced draft + (via blur-on-render) the user's keystrokes
+  // landed on the wrong note.
+  const knownDriveIds = new Set<string>();
+  const rememberDriveIds = (notes: readonly { id: string }[]): void => {
+    for (const note of notes) knownDriveIds.add(note.id);
+  };
+
   const loadRemoteWorkspaceAndMarkClean = async (): Promise<SutraPadWorkspace> => {
     const loaded = await withAuthRetry(
       () => getStore().loadWorkspace(),
       retryContext,
     );
     lastSyncedWorkspace = loaded;
+    rememberDriveIds(loaded.notes);
     return loaded;
   };
 
@@ -124,6 +152,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
       saveRemoteWorkspace: async (ws) => {
         await withAuthRetry(() => getStore().saveWorkspace(ws), retryContext);
         lastSyncedWorkspace = ws;
+        rememberDriveIds(ws.notes);
       },
       getWorkspace,
       setWorkspace,
@@ -175,6 +204,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
           },
         );
         lastSyncedWorkspace = toSave;
+        rememberDriveIds(toSave.notes);
       },
       setSyncState,
       setLastError,
@@ -193,13 +223,27 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
   ): Promise<void> =>
     runWorkspaceRefresh(
       {
-        loadInventory: () =>
-          withAuthRetry(() => getStore().loadNoteInventory(), retryContext),
-        fetchNoteByFileId: (fileId) =>
-          withAuthRetry(
+        loadInventory: async () => {
+          const inventory = await withAuthRetry(
+            () => getStore().loadNoteInventory(),
+            retryContext,
+          );
+          // Every id Drive currently lists is confirmed to exist on
+          // Drive. Folding them into the known-set widens the set
+          // we use to distinguish "deleted on another device" from
+          // "never pushed from this device" inside `applyDriveRefresh`.
+          rememberDriveIds(inventory.map((entry) => ({ id: entry.noteId })));
+          return inventory;
+        },
+        fetchNoteByFileId: async (fileId) => {
+          const note = await withAuthRetry(
             () => getStore().fetchNoteByFileId(fileId),
             retryContext,
-          ),
+          );
+          rememberDriveIds([note]);
+          return note;
+        },
+        getKnownDriveIds: () => knownDriveIds,
         getWorkspace,
         setWorkspace,
         persistLocalWorkspace,
@@ -211,10 +255,19 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
       options,
     );
 
+  const isWorkspaceDirty = (): boolean => {
+    if (lastSyncedWorkspace === null) return false;
+    return !areWorkspacesEqual(
+      lastSyncedWorkspace,
+      stripEmptyDraftNotes(getWorkspace()),
+    );
+  };
+
   return {
     loadWorkspace,
     saveWorkspace,
     restoreWorkspaceAfterSignIn,
     refreshWorkspace,
+    isWorkspaceDirty,
   };
 }

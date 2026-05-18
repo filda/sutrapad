@@ -17,7 +17,16 @@ export interface EditorCardOptions {
    * no longer owns their presentation.
    */
   selectedTagFilters: string[];
-  onTitleInput: (value: string) => void;
+  /**
+   * Fires on title input. `noteId` (when provided by the caller) is
+   * the id of the note the input was mounted for, so a write that
+   * lands after the workspace's active note has shifted (e.g. a
+   * visibility-refresh dropped this note and bumped active to a
+   * sibling) targets the original note rather than corrupting the
+   * one that happens to be active right now. Optional so legacy
+   * callers can ignore it.
+   */
+  onTitleInput: (value: string, noteId?: string) => void;
   /**
    * Fires on body input AND on body blur. `caretPosition` is the
    * textarea's `selectionStart` for keystroke events; `undefined`
@@ -30,8 +39,22 @@ export interface EditorCardOptions {
    * `#auto` between two existing words commits `#a` / `#au` /
    * `#aut` / `#auto` progressively as each prefix passes the regex
    * lookahead against the downstream prose.
+   *
+   * `noteId` carries the id of the note this textarea was mounted
+   * for. Blur fires synchronously when `root.innerHTML = ""` detaches
+   * the focused textarea inside a render pulse; if that render also
+   * shifted `activeNoteId` to a different note (e.g. the visibility-
+   * refresh path dropped this note), letting `onBodyInput` route
+   * through the live `activeNoteId` would stamp the detached
+   * textarea's value onto an unrelated note. Pinning the write to
+   * `noteId` keeps the stale blur a no-op against the moved-away note
+   * (the upsert returns workspace unchanged when the id is gone).
    */
-  onBodyInput: (value: string, caretPosition: number | undefined) => void;
+  onBodyInput: (
+    value: string,
+    caretPosition: number | undefined,
+    noteId?: string,
+  ) => void;
   /**
    * Called after every title/body keystroke with the current (not yet
    * persisted) values. The right-rail sidebar no longer owns live stats
@@ -171,8 +194,16 @@ export function buildEditorCard({
     kindChip?.setKind(detectKind({ title, body }));
     onInputsChange?.(title, body);
   };
+  // Capture the id of the note this card was built for. Passed
+  // alongside every input/blur emission so the write lands on this
+  // note even if `activeNoteId` has shifted between mount and event
+  // (e.g. visibility-refresh dropped the just-spawned draft mid-
+  // typing; the detached textarea's blur would otherwise stamp its
+  // value onto a different active note). Const-captured so a render
+  // can't accidentally re-bind it without remounting the listeners.
+  const boundNoteId = displayedNote.id;
   titleInput?.addEventListener("input", () => {
-    onTitleInput(titleInput.value);
+    onTitleInput(titleInput.value, boundNoteId);
     refreshLiveDerived();
   });
   bodyInput.addEventListener("input", () => {
@@ -182,7 +213,7 @@ export function buildEditorCard({
     // length when the textarea reports `null` (very old engines /
     // detached state) so a missing caret never *looks* like position 0.
     const caret = bodyInput.selectionStart ?? bodyInput.value.length;
-    onBodyInput(bodyInput.value, caret);
+    onBodyInput(bodyInput.value, caret, boundNoteId);
     refreshLiveDerived();
   });
   bodyInput.addEventListener("blur", () => {
@@ -194,7 +225,7 @@ export function buildEditorCard({
     // so any in-flight tag commits naturally. Re-running for `value`
     // alone is safe because `mergeHashtagsIntoTags` is idempotent —
     // already-committed tags dedupe inside the merger.
-    onBodyInput(bodyInput.value, undefined);
+    onBodyInput(bodyInput.value, undefined, boundNoteId);
   });
 
   const noteMetadata = document.createElement("p");

@@ -26,6 +26,7 @@ import {
 import {
   evaluateBodyEdit,
   isTitleEditNoOp,
+  resolveEditTargetNote,
 } from "./logic/note-edit-guards";
 import type {
   SutraPadDocument,
@@ -120,6 +121,20 @@ export interface RenderCallbackOptions {
   saveWorkspace: () => Promise<void>;
   restoreWorkspaceAfterSignIn: () => Promise<void>;
   replaceCurrentNote: (updater: (note: SutraPadDocument) => SutraPadDocument) => void;
+  /**
+   * Applies `updater` to a specific note by id. Used by the editor
+   * input/blur handlers, which carry the id of the note their input
+   * was mounted for so a write that lands after `activeNoteId` has
+   * shifted (e.g. visibility-refresh dropped the just-typed draft and
+   * the render-detached textarea's blur fires next) targets the
+   * original note instead of the new active. `upsertNote` returns the
+   * workspace unchanged when the id is gone, so the stale write
+   * silently no-ops rather than corrupting an unrelated note.
+   */
+  replaceNote: (
+    noteId: string,
+    updater: (note: SutraPadDocument) => SutraPadDocument,
+  ) => void;
   persistWorkspace: (workspace: SutraPadWorkspace) => void;
   scheduleAutoSave: () => void;
   render: () => void;
@@ -166,6 +181,7 @@ export function createRenderCallbacks({
   saveWorkspace,
   restoreWorkspaceAfterSignIn,
   replaceCurrentNote,
+  replaceNote,
   persistWorkspace,
   scheduleAutoSave,
   render,
@@ -432,7 +448,7 @@ export function createRenderCallbacks({
       );
       syncTagFiltersToLocation(nextSelectedTagFilters);
     },
-    onTitleInput: (value: string) => {
+    onTitleInput: (value: string, noteId?: string) => {
       // No-op guard. The title input fires `input` on every keystroke
       // but the editor card is also rebuilt on every render, and the
       // freshly-mounted input is set to the current title value — a
@@ -441,17 +457,37 @@ export function createRenderCallbacks({
       // event as a "change" against itself. Dropping zero-delta
       // inputs here keeps `updatedAt` honest (it should reflect real
       // edits, not phantom DOM noise) and avoids spurious autosaves.
-      const currentNote = getCurrentWorkspaceNote(getWorkspace());
-      if (isTitleEditNoOp(currentNote, value)) return;
-      replaceCurrentNote((currentWorkspaceNote) => ({
+      //
+      // `noteId` is the id the input was mounted for. When the live
+      // workspace still carries that note, evaluate the no-op against
+      // that note (not `getCurrentWorkspaceNote`, which would track
+      // `activeNoteId` and report a "change" against an unrelated
+      // note if active shifted between mount and event). When the
+      // bound note is no longer in the workspace (refresh dropped
+      // it), `replaceNote` returns the workspace unchanged — the
+      // edit silently drops.
+      const ws = getWorkspace();
+      const targetNote = resolveEditTargetNote(ws, noteId);
+      if (targetNote === null) return;
+      if (isTitleEditNoOp(targetNote, value)) return;
+      const writer = (currentWorkspaceNote: SutraPadDocument): SutraPadDocument => ({
         ...currentWorkspaceNote,
         title: value,
         updatedAt: new Date().toISOString(),
-      }));
+      });
+      if (noteId === undefined) {
+        replaceCurrentNote(writer);
+      } else {
+        replaceNote(noteId, writer);
+      }
       setSyncState("idle");
       refreshNotesPanel();
     },
-    onBodyInput: (value: string, caretPosition: number | undefined) => {
+    onBodyInput: (
+      value: string,
+      caretPosition: number | undefined,
+      noteId?: string,
+    ) => {
       // The body textarea fires `blur` whenever it loses focus — and
       // critically also when `render()` detaches the focused node
       // before rebuilding the editor card. The handler can't tell the
@@ -465,21 +501,38 @@ export function createRenderCallbacks({
       // `undefined` caret (sent on blur) lifts that restriction so
       // anything in flight commits naturally when the user leaves the
       // textarea.
-      const currentNote = getCurrentWorkspaceNote(getWorkspace());
+      //
+      // `noteId` pins the write to the note the textarea was mounted
+      // for. The bug this defends against: a visibility-refresh
+      // dropping a brand-new local note while the user was typing
+      // into it, the render that follows detaches the focused
+      // textarea, and the blur that fires would otherwise route the
+      // stale value through `activeNoteId` (now pointing at a
+      // sibling) and stamp it onto that other note. Comparing the
+      // value against the *bound* note's body keeps the no-op guard
+      // honest even when active has shifted underneath us.
+      const ws = getWorkspace();
+      const targetNote = resolveEditTargetNote(ws, noteId);
+      if (targetNote === null) return;
       const { isNoOp, mergedTags, tagsChanged } = evaluateBodyEdit(
-        currentNote,
+        targetNote,
         value,
         caretPosition,
       );
       if (isNoOp) return;
 
-      replaceCurrentNote((currentWorkspaceNote) => ({
+      const writer = (currentWorkspaceNote: SutraPadDocument): SutraPadDocument => ({
         ...currentWorkspaceNote,
         body: value,
         urls: extractUrlsFromText(value),
         tags: [...mergedTags],
         updatedAt: new Date().toISOString(),
-      }));
+      });
+      if (noteId === undefined) {
+        replaceCurrentNote(writer);
+      } else {
+        replaceNote(noteId, writer);
+      }
 
       // Full re-render only when a new hashtag chip needs to appear —
       // otherwise every keystroke would swap the textarea and lose

@@ -55,10 +55,25 @@ function makeHarness(initial: SutraPadWorkspace): RefreshHarness {
   };
 }
 
-function effects(h: RefreshHarness) {
+function effects(
+  h: RefreshHarness,
+  knownDriveIds: ReadonlySet<string> | "every-local-note" = "every-local-note",
+) {
+  // Default mirrors the realistic production state by the time a
+  // refresh fires: every id currently visible locally was already
+  // confirmed on Drive (loaded at startup or saved during this
+  // session). Tests that exercise the local-only-never-pushed path
+  // pass an explicit narrower set so applyDriveRefresh preserves the
+  // unknown ids; tests that exercise cross-device deletion can rely
+  // on the default's "every local id is known to Drive" snapshot.
+  const resolvedKnown =
+    knownDriveIds === "every-local-note"
+      ? () => new Set(h.state.workspace.notes.map((n) => n.id))
+      : () => knownDriveIds;
   return {
     loadInventory: h.loadInventory,
     fetchNoteByFileId: h.fetchNoteByFileId,
+    getKnownDriveIds: resolvedKnown,
     getWorkspace: () => h.state.workspace,
     setWorkspace: h.setWorkspace,
     persistLocalWorkspace: h.persistLocalWorkspace,

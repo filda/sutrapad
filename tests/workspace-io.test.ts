@@ -477,3 +477,149 @@ describe("createWorkspaceIO clean-snapshot guard", () => {
     expect(h.store.saveWorkspace).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("createWorkspaceIO isWorkspaceDirty", () => {
+  it("returns false before any sync has established a baseline", async () => {
+    // Cold start: there is no snapshot to compare against. The dirty
+    // flag is consumed by the focus-refresh gate (see app.ts) and
+    // returning `false` here keeps the gate open until the first
+    // load lands. We never want the very first visibility event to
+    // be blocked just because we haven't talked to Drive yet.
+    const h = makeHarness();
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => makeWorkspace([realNote("local")]),
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    expect(io.isWorkspaceDirty()).toBe(false);
+  });
+
+  it("returns false right after a load + no local edits", async () => {
+    // Post-load steady state: local and snapshot match exactly.
+    // The focus-refresh gate uses this to decide whether a refresh
+    // can run without stomping in-flight edits.
+    const h = makeHarness();
+    const remote = realNote("remote");
+    h.store.loadWorkspace.mockResolvedValueOnce(makeWorkspace([remote]));
+    let localWorkspace: SutraPadWorkspace = makeWorkspace([]);
+    h.setWorkspace.mockImplementation((next: SutraPadWorkspace) => {
+      localWorkspace = next;
+    });
+
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => localWorkspace,
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.loadWorkspace();
+    expect(io.isWorkspaceDirty()).toBe(false);
+  });
+
+  it("returns true when the local workspace diverges from the snapshot (real edit)", async () => {
+    // This is the gate the bug regression hangs on: the user typed
+    // into a brand-new note ⇒ local diverges from the last-synced
+    // snapshot ⇒ dirty ⇒ focus-refresh skips. Without this signal
+    // the refresh could fire mid-typing, drop the local-only note
+    // (Drive doesn't know about it yet), and the render-detached
+    // textarea's blur would stamp the typed value onto a sibling.
+    const h = makeHarness();
+    h.store.loadWorkspace.mockResolvedValueOnce(
+      makeWorkspace([realNote("remote-1")]),
+    );
+    let localWorkspace: SutraPadWorkspace = makeWorkspace([]);
+    h.setWorkspace.mockImplementation((next: SutraPadWorkspace) => {
+      localWorkspace = next;
+    });
+
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => localWorkspace,
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.loadWorkspace();
+    expect(io.isWorkspaceDirty()).toBe(false);
+
+    // Simulate the user adding a new note with real content.
+    localWorkspace = makeWorkspace([
+      realNote("remote-1"),
+      { ...realNote("local-only"), body: "Vopice" },
+    ]);
+    expect(io.isWorkspaceDirty()).toBe(true);
+  });
+
+  it("treats an empty-draft addition as clean (drafts get stripped before comparison)", async () => {
+    // The `+ Add` / `N` press spawns an empty draft locally; that
+    // draft is intentionally NEVER pushed to Drive (the save path's
+    // stripEmptyDraftNotes filter). So a workspace that picked up
+    // only an empty draft since the last sync isn't really "dirty"
+    // from Drive's perspective — there is nothing pending to push.
+    // If the gate treated drafts as dirty, every freshly-spawned
+    // draft would lock out the visibility refresh until the user
+    // typed something or navigated away — overly conservative.
+    const h = makeHarness();
+    h.store.loadWorkspace.mockResolvedValueOnce(
+      makeWorkspace([realNote("remote-1")]),
+    );
+    let localWorkspace: SutraPadWorkspace = makeWorkspace([]);
+    h.setWorkspace.mockImplementation((next: SutraPadWorkspace) => {
+      localWorkspace = next;
+    });
+
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => localWorkspace,
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.loadWorkspace();
+
+    localWorkspace = makeWorkspace([
+      realNote("remote-1"),
+      emptyDraft("fresh-draft"),
+    ]);
+    expect(io.isWorkspaceDirty()).toBe(false);
+  });
+});

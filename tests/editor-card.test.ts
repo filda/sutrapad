@@ -90,7 +90,10 @@ describe("buildEditorCard", () => {
     if (!titleInput) throw new Error("missing title input");
     titleInput.value = "after";
     titleInput.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(onTitleInput).toHaveBeenCalledWith("after");
+    // The third arg pins the write to the note this card was mounted
+    // for — defends against an active-shift between mount and event;
+    // see `editor-card.ts` blur handler doc-comment for the race.
+    expect(onTitleInput).toHaveBeenCalledWith("after", "n1");
   });
 
   it("calls onBodyInput with the current caret position on every body keystroke", () => {
@@ -113,7 +116,9 @@ describe("buildEditorCard", () => {
     bodyInput.value = "after #ai";
     bodyInput.setSelectionRange(9, 9);
     bodyInput.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(onBodyInput).toHaveBeenCalledWith("after #ai", 9);
+    // The third arg pins the write to the bound note id (see the
+    // editor-card body blur doc-comment for the race this defends).
+    expect(onBodyInput).toHaveBeenCalledWith("after #ai", 9, "n1");
   });
 
   it("re-runs onBodyInput with caret=undefined on blur so in-flight hashtags commit", () => {
@@ -137,7 +142,9 @@ describe("buildEditorCard", () => {
     if (!bodyInput) throw new Error("missing body textarea");
     bodyInput.value = "draft #ai";
     bodyInput.dispatchEvent(new Event("blur", { bubbles: true }));
-    expect(onBodyInput).toHaveBeenCalledWith("draft #ai", undefined);
+    // Third arg is the bound note id — blur captured it at mount so a
+    // mid-blur active-shift can't reroute the write onto a sibling.
+    expect(onBodyInput).toHaveBeenCalledWith("draft #ai", undefined, "n1");
   });
 
   it("fires onInputsChange after every keystroke with the live title + body values", () => {
