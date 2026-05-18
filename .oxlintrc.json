@@ -34,6 +34,8 @@
     "typescript/consistent-type-imports": "warn",
     "unicorn/prefer-node-protocol": "error",
     "unicorn/no-array-for-each": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "no-underscore-dangle": "off",
     "import/no-duplicates": "error"
   },
   "ignorePatterns": [
