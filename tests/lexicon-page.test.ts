@@ -16,6 +16,7 @@
 // page keeps `pageState` and `renderHandle` at module scope.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import type { BuilderState } from "../src/app/logic/lexicon/types";
 import type { UserProfile } from "../src/types";
 
@@ -56,8 +57,8 @@ const PROFILE: UserProfile = {
   email: "filip@example.test",
 };
 
-let loadStateMock: ReturnType<typeof vi.fn> = vi.fn();
-let saveMock: ReturnType<typeof vi.fn> = vi.fn();
+let loadStateMock: Mock = vi.fn();
+let saveMock: Mock = vi.fn();
 
 // Hoisted-style mock factory so the page module's
 // `import { GoogleDriveLexiconStore } from "../../../services/drive/lexicon-store"`

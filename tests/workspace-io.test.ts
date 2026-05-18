@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import { createWorkspaceIO } from "../src/app/session/workspace-io";
 import type { GoogleDriveStore } from "../src/services/drive-store";
 import type { SutraPadWorkspace } from "../src/types";
@@ -35,21 +36,21 @@ function emptyDraft(id = "note-draft"): SutraPadWorkspace["notes"][number] {
 
 interface IOHarness {
   store: {
-    loadWorkspace: ReturnType<typeof vi.fn>;
-    saveWorkspace: ReturnType<typeof vi.fn>;
-    loadNoteInventory: ReturnType<typeof vi.fn>;
-    fetchNoteByFileId: ReturnType<typeof vi.fn>;
+    loadWorkspace: Mock;
+    saveWorkspace: Mock;
+    loadNoteInventory: Mock;
+    fetchNoteByFileId: Mock;
   };
   getStore: () => GoogleDriveStore;
-  refreshSession: ReturnType<typeof vi.fn>;
-  onProfileRefreshed: ReturnType<typeof vi.fn>;
-  cancelAutoSave: ReturnType<typeof vi.fn>;
-  render: ReturnType<typeof vi.fn>;
-  refreshStatus: ReturnType<typeof vi.fn>;
-  setSyncState: ReturnType<typeof vi.fn>;
-  setLastError: ReturnType<typeof vi.fn>;
-  setWorkspace: ReturnType<typeof vi.fn>;
-  persistLocalWorkspace: ReturnType<typeof vi.fn>;
+  refreshSession: Mock;
+  onProfileRefreshed: Mock;
+  cancelAutoSave: Mock;
+  render: Mock;
+  refreshStatus: Mock;
+  setSyncState: Mock;
+  setLastError: Mock;
+  setWorkspace: Mock;
+  persistLocalWorkspace: Mock;
 }
 
 function makeHarness(): IOHarness {

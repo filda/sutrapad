@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import { runWorkspaceRefresh } from "../src/app/session/workspace-refresh";
 import type { DriveNoteInventoryEntry } from "../src/app/session/workspace-refresh";
 import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
@@ -28,14 +29,14 @@ function workspace(
 
 interface RefreshHarness {
   state: { workspace: SutraPadWorkspace };
-  loadInventory: ReturnType<typeof vi.fn>;
-  fetchNoteByFileId: ReturnType<typeof vi.fn>;
-  setWorkspace: ReturnType<typeof vi.fn>;
-  persistLocalWorkspace: ReturnType<typeof vi.fn>;
-  setSyncState: ReturnType<typeof vi.fn>;
-  setLastError: ReturnType<typeof vi.fn>;
-  render: ReturnType<typeof vi.fn>;
-  cancelAutoSave: ReturnType<typeof vi.fn>;
+  loadInventory: Mock;
+  fetchNoteByFileId: Mock;
+  setWorkspace: Mock;
+  persistLocalWorkspace: Mock;
+  setSyncState: Mock;
+  setLastError: Mock;
+  render: Mock;
+  cancelAutoSave: Mock;
 }
 
 function makeHarness(initial: SutraPadWorkspace): RefreshHarness {
