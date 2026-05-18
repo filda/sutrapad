@@ -8,6 +8,7 @@ updates:
       time: "06:00"
       timezone: "Europe/Prague"
     open-pull-requests-limit: 10
+    rebase-strategy: "auto"
     labels:
       - "dependencies"
       - "npm"
@@ -20,6 +21,7 @@ updates:
       time: "06:00"
       timezone: "Europe/Prague"
     open-pull-requests-limit: 5
+    rebase-strategy: "auto"
     labels:
       - "dependencies"
       - "github-actions"
