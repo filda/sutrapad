@@ -39,5 +39,8 @@
     "@fontsource/caveat": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/newsreader": "^5.2.10"
+  },
+  "overrides": {
+    "serialize-javascript": "^7.0.5"
   }
 }
