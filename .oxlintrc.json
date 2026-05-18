@@ -34,8 +34,10 @@
     "typescript/consistent-type-imports": "warn",
     "unicorn/prefer-node-protocol": "error",
     "unicorn/no-array-for-each": "off",
-    "unicorn/consistent-function-scoping": "off",
-    "no-underscore-dangle": "off",
+    "no-underscore-dangle": [
+      "warn",
+      { "allow": ["__APP_VERSION__", "__APP_BUILD_TIME__", "__APP_COMMIT_HASH__"] }
+    ],
     "import/no-duplicates": "error"
   },
   "ignorePatterns": [

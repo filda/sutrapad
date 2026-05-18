@@ -20,6 +20,11 @@ import {
 
 const STORAGE_KEY = "sutrapad-capture-location-consent";
 
+// Helper for the runtime-coercion test below: lets us feed
+// non-union-member strings into APIs that only accept the union.
+const asPreference = (value: string): CaptureLocationPreference =>
+  value as CaptureLocationPreference;
+
 function createStorageMock(initial?: string): Pick<Storage, "getItem" | "setItem"> {
   let value: string | null = initial ?? null;
   return {
@@ -166,11 +171,9 @@ describe("isLocationCaptureEnabled", () => {
     // stored garbage value that bypassed the load helper). Pin the
     // strict-equality semantics so any flip to truthy-coercion would
     // be caught here.
-    const cast = (value: string): CaptureLocationPreference =>
-      value as CaptureLocationPreference;
-    expect(isLocationCaptureEnabled(cast(""))).toBe(false);
-    expect(isLocationCaptureEnabled(cast("On"))).toBe(false);
-    expect(isLocationCaptureEnabled(cast("yes"))).toBe(false);
+    expect(isLocationCaptureEnabled(asPreference(""))).toBe(false);
+    expect(isLocationCaptureEnabled(asPreference("On"))).toBe(false);
+    expect(isLocationCaptureEnabled(asPreference("yes"))).toBe(false);
   });
 });
 

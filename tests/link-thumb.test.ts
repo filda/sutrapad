@@ -33,15 +33,15 @@ function stubImageLoader(
   }
   Object.defineProperty(StubImage.prototype, "src", {
     configurable: true,
-    set(this: EventTarget & { _src?: string }, value: string) {
-      this._src = value;
+    set(this: EventTarget & { srcValue?: string }, value: string) {
+      this.srcValue = value;
       // Microtask so the consumer's `addEventListener` registration
       // (which runs synchronously before this assignment) is in place
       // when the dispatch fires — mirrors real-browser load timing.
       queueMicrotask(() => this.dispatchEvent(new Event(mode)));
     },
-    get(this: { _src?: string }) {
-      return this._src ?? "";
+    get(this: { srcValue?: string }) {
+      return this.srcValue ?? "";
     },
   });
   (globalThis as unknown as { Image: typeof StubImage }).Image = StubImage;

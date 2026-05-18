@@ -260,19 +260,19 @@ describe("extractOgImageFromHtml", () => {
   });
 });
 
+function setupCache(initial: Record<string, CachedOgImageEntry> = {}) {
+  const store = { ...initial };
+  return {
+    getCachedEntry: (key: string) => store[key] ?? null,
+    putCachedEntry: (key: string, entry: CachedOgImageEntry) => {
+      store[key] = entry;
+    },
+    store,
+  };
+}
+
 describe("resolveOgImageForUrl", () => {
   const url = "https://nytimes.com/article";
-
-  function setupCache(initial: Record<string, CachedOgImageEntry> = {}) {
-    const store = { ...initial };
-    return {
-      getCachedEntry: (key: string) => store[key] ?? null,
-      putCachedEntry: (key: string, entry: CachedOgImageEntry) => {
-        store[key] = entry;
-      },
-      store,
-    };
-  }
 
   it("returns the capture-time og:image without touching cache or network", async () => {
     const captureHit = "https://capture/og.jpg";

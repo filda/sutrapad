@@ -44,7 +44,7 @@ function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
 
 describe("buildNotesList — XSS guards", () => {
   it("renders a malicious title as text, never as HTML", () => {
-    const malicious = '<img src=x onerror="window.__pwned = true">';
+    const malicious = '<img src=x onerror="window.pwned = true">';
     const note = makeNote({ title: malicious });
 
     const list = buildNotesList("note-1", [note], () => undefined);
@@ -60,13 +60,13 @@ describe("buildNotesList — XSS guards", () => {
     expect(titleEl?.textContent).toBe(malicious);
 
     // Belt-and-braces — the global side-effect of the onerror payload must not have fired.
-    expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+    expect((window as unknown as { pwned?: boolean }).pwned).toBeUndefined();
 
     list.remove();
   });
 
   it("renders a malicious body excerpt as text, never as HTML", () => {
-    const malicious = '<svg/onload="window.__pwned_body = true"></svg>more text';
+    const malicious = '<svg/onload="window.pwnedBody = true"></svg>more text';
     const note = makeNote({ body: malicious });
 
     const list = buildNotesList("note-1", [note], () => undefined);
@@ -81,7 +81,7 @@ describe("buildNotesList — XSS guards", () => {
     expect(excerpt?.querySelectorAll("svg")).toHaveLength(0);
     expect(excerpt?.textContent).toBe(malicious.slice(0, 72));
 
-    expect((window as unknown as { __pwned_body?: boolean }).__pwned_body).toBeUndefined();
+    expect((window as unknown as { pwnedBody?: boolean }).pwnedBody).toBeUndefined();
 
     list.remove();
   });

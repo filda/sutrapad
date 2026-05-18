@@ -279,14 +279,14 @@ describe("HINT_ID constants stay stable for dismiss memory", () => {
 // Belt-and-braces: assert the build outputs are well-formed (non-empty
 // strings) for the gates above. Empty title / body / CTA-label would
 // pass typecheck but render an awkward banner; trip these here.
-describe("hint content shape", () => {
-  function ensureNonEmpty(content: ReturnType<HintCandidate["build"]>): void {
-    expect(content.eyebrow).not.toBe("");
-    expect(content.title).not.toBe("");
-    expect(content.body).not.toBe("");
-    expect(content.ctaLabel).not.toBe("");
-  }
+function ensureNonEmpty(content: ReturnType<HintCandidate["build"]>): void {
+  expect(content.eyebrow).not.toBe("");
+  expect(content.title).not.toBe("");
+  expect(content.body).not.toBe("");
+  expect(content.ctaLabel).not.toBe("");
+}
 
+describe("hint content shape", () => {
   it("install-capture produces non-empty content", () => {
     ensureNonEmpty(findCandidate(HINT_INSTALL_CAPTURE).build(ctx({ profile })));
   });

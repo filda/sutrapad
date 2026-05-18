@@ -132,21 +132,22 @@ describe("planOgImagePrewarm", () => {
   });
 });
 
+function createMemoryCache(initial: OgImageCache = {}): {
+  readonly snapshot: () => OgImageCache;
+  readonly loadCache: () => OgImageCache;
+  readonly persistCache: (cache: OgImageCache) => void;
+} {
+  let current: OgImageCache = { ...initial };
+  return {
+    snapshot: () => current,
+    loadCache: () => current,
+    persistCache: (cache) => {
+      current = { ...cache };
+    },
+  };
+}
+
 describe("runOgImagePrewarm", () => {
-  function createMemoryCache(initial: OgImageCache = {}): {
-    readonly snapshot: () => OgImageCache;
-    readonly loadCache: () => OgImageCache;
-    readonly persistCache: (cache: OgImageCache) => void;
-  } {
-    let current: OgImageCache = { ...initial };
-    return {
-      snapshot: () => current,
-      loadCache: () => current,
-      persistCache: (cache) => {
-        current = { ...cache };
-      },
-    };
-  }
 
   it("is a no-op when there are no targets", async () => {
     let fetchCalls = 0;
