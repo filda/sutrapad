@@ -7,14 +7,17 @@
     "pedantic": "off",
     "style": "off",
     "restriction": "off",
-    "nursery": "off"
+    "nursery": "warn"
   },
   "env": {
     "browser": true,
     "es2022": true
   },
   "globals": {
-    "google": "readonly"
+    "google": "readonly",
+    "__APP_VERSION__": "readonly",
+    "__APP_BUILD_TIME__": "readonly",
+    "__APP_COMMIT_HASH__": "readonly"
   },
   "rules": {
     "no-console": ["warn", { "allow": ["warn", "error"] }],
