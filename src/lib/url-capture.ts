@@ -100,9 +100,9 @@ export function extractHtmlTitle(html: string): string | null {
 
   const normalized = match[1]
     .replace(/\s+/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
     .trim();
 
   return normalized || null;
