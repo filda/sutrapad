@@ -194,14 +194,14 @@ describe("buildDetailTopbar", () => {
       onBackToNotes: () => {},
     });
     const before = handle.element
-      .querySelector(".detail-kind-chip")
-      ?.getAttribute("data-kind");
+      .querySelector<HTMLElement>(".detail-kind-chip")
+      ?.dataset.kind;
     // A markdown-shape body should flip the kind. `detectKind` is the
     // source of truth; we just need the labels to differ.
     handle.setKind("Notes", "- [ ] do the thing\n- [ ] another");
     const after = handle.element
-      .querySelector(".detail-kind-chip")
-      ?.getAttribute("data-kind");
+      .querySelector<HTMLElement>(".detail-kind-chip")
+      ?.dataset.kind;
     expect(after).not.toBe(before);
   });
 });

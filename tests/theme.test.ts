@@ -130,23 +130,22 @@ describe("resolveThemeId", () => {
 
 describe("applyThemeChoice", () => {
   it("sets data-theme on the provided root and returns the resolved id", () => {
-    const setAttribute = vi.fn();
-    const root = { setAttribute };
+    const root = { dataset: {} as DOMStringMap };
     const result = applyThemeChoice("midnight", root, { matches: false });
     expect(result).toBe("midnight");
-    expect(setAttribute).toHaveBeenCalledWith("data-theme", "midnight");
+    expect(root.dataset.theme).toBe("midnight");
   });
 
   it("resolves auto before setting the attribute (writes a concrete palette id, never 'auto')", () => {
-    const setAttribute = vi.fn();
-    applyThemeChoice("auto", { setAttribute }, { matches: true });
-    expect(setAttribute).toHaveBeenCalledWith("data-theme", "dark");
+    const root = { dataset: {} as DOMStringMap };
+    applyThemeChoice("auto", root, { matches: true });
+    expect(root.dataset.theme).toBe("dark");
   });
 
   it("resolves auto to sand when the OS preference is light", () => {
-    const setAttribute = vi.fn();
-    applyThemeChoice("auto", { setAttribute }, { matches: false });
-    expect(setAttribute).toHaveBeenCalledWith("data-theme", "sand");
+    const root = { dataset: {} as DOMStringMap };
+    applyThemeChoice("auto", root, { matches: false });
+    expect(root.dataset.theme).toBe("sand");
   });
 });
 

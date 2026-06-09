@@ -143,7 +143,7 @@ function makeSplashButton(label: string, primary: boolean): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.textContent = label;
-  btn.setAttribute("data-splash-action", primary ? "primary" : "secondary");
+  btn.dataset.splashAction = primary ? "primary" : "secondary";
   btn.style.cssText = primary
     ? [
         "appearance:none",

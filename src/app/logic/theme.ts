@@ -190,11 +190,11 @@ export function resolveThemeId(
  */
 export function applyThemeChoice(
   choice: ThemeChoice,
-  root: Pick<HTMLElement, "setAttribute"> = document.documentElement,
+  root: Pick<HTMLElement, "dataset"> = document.documentElement,
   darkMedia?: DarkSchemeMedia | null,
 ): ThemeId {
   const resolved = resolveThemeId(choice, darkMedia);
-  root.setAttribute("data-theme", resolved);
+  root.dataset.theme = resolved;
   return resolved;
 }
 

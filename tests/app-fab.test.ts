@@ -54,7 +54,7 @@ describe("buildAppFab", () => {
       activeMenuItem: "add",
       onSelectMenuItem: vi.fn(),
     });
-    expect(onAdd.getAttribute("data-hidden")).toBe("true");
+    expect(onAdd.dataset.hidden).toBe("true");
 
     const onHome = buildAppFab({
       activeMenuItem: "home",
@@ -62,7 +62,7 @@ describe("buildAppFab", () => {
     });
     // Off the Add route, the attribute is omitted entirely (rather than
     // set to "false") — CSS only checks the presence selector.
-    expect(onHome.hasAttribute("data-hidden")).toBe(false);
+    expect(Object.hasOwn(onHome.dataset, "hidden")).toBe(false);
   });
 
   it("renders a `+` glyph inside `.app-fab-plus` marked aria-hidden so screen readers see only the parent label", () => {

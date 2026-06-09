@@ -48,7 +48,7 @@ export function buildLocationConsentCard({
     "aria-label",
     "Capture location on new notes",
   );
-  card.setAttribute("data-consent-status", status);
+  card.dataset.consentStatus = status;
 
   const heading = document.createElement("h2");
   heading.className = "location-consent-heading";

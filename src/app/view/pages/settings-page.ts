@@ -259,7 +259,7 @@ function buildLocationCaptureToggle({
     button.className = `persona-toggle-option${isSelected ? " is-active" : ""}`;
     button.setAttribute("role", "radio");
     button.setAttribute("aria-checked", isSelected ? "true" : "false");
-    button.setAttribute("data-capture-location-preference", option.value);
+    button.dataset.captureLocationPreference = option.value;
 
     const optionLabel = document.createElement("span");
     optionLabel.className = "persona-toggle-label";
@@ -318,7 +318,7 @@ function buildAppearanceCard({
     themeCard.className = `theme-card${isSelected ? " is-active" : ""}`;
     themeCard.setAttribute("role", "radio");
     themeCard.setAttribute("aria-checked", isSelected ? "true" : "false");
-    themeCard.setAttribute("data-theme-id", theme.id);
+    themeCard.dataset.themeId = theme.id;
 
     const swatches = document.createElement("span");
     swatches.className = "theme-swatches";
@@ -412,7 +412,7 @@ function buildPersonaCard({
     button.className = `persona-toggle-option${isSelected ? " is-active" : ""}`;
     button.setAttribute("role", "radio");
     button.setAttribute("aria-checked", isSelected ? "true" : "false");
-    button.setAttribute("data-persona-preference", option.value);
+    button.dataset.personaPreference = option.value;
 
     const label = document.createElement("span");
     label.className = "persona-toggle-label";
@@ -523,7 +523,7 @@ function buildHygieneSuggestion({
 }: HygieneSuggestionOptions): HTMLElement {
   const row = document.createElement("article");
   row.className = "hygiene-card";
-  row.setAttribute("data-canonical", suggestion.canonical);
+  row.dataset.canonical = suggestion.canonical;
 
   const hed = document.createElement("div");
   hed.className = "hygiene-hed";

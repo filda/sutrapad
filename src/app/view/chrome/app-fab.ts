@@ -48,7 +48,7 @@ export function buildAppFab({
   button.setAttribute("aria-label", ariaLabel);
   button.title = ariaLabel;
   if (hidden) {
-    button.setAttribute("data-hidden", "true");
+    button.dataset.hidden = "true";
   }
 
   const plus = document.createElement("span");

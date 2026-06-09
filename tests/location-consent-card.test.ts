@@ -104,7 +104,7 @@ describe("buildLocationConsentCard", () => {
       onSelectMenuItem: () => {},
     });
 
-    expect(card.getAttribute("data-consent-status")).toBe("blocked");
+    expect(card.dataset.consentStatus).toBe("blocked");
     expect(card.querySelector(".location-consent-heading")?.textContent).toBe(
       "Your browser is blocking location",
     );
@@ -156,8 +156,8 @@ describe("buildLocationConsentCard", () => {
       onDeny: () => {},
       onSelectMenuItem: () => {},
     });
-    expect(idle.getAttribute("data-consent-status")).toBe("idle");
-    expect(blocked.getAttribute("data-consent-status")).toBe("blocked");
+    expect(idle.dataset.consentStatus).toBe("idle");
+    expect(blocked.dataset.consentStatus).toBe("blocked");
   });
 });
 
