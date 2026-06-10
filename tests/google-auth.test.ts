@@ -317,7 +317,7 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
       token_type: "Bearer",
     });
 
-    await expect(signInPromise).rejects.toThrow();
+    await expect(signInPromise).rejects.toThrow(/./u);
     expect(service.getAccessToken()).toBeNull();
     expect(localStorage.getItem("sutrapad-user-email-hint")).toBeNull();
     expect(localStorage.getItem("sutrapad-is-logged-in")).toBeNull();
@@ -599,7 +599,7 @@ describe("GoogleAuthService.initialize", () => {
     setupGoogleIdentityHarness();
     vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "");
     const service = new GoogleAuthService();
-    await expect(service.initialize()).rejects.toThrow();
+    await expect(service.initialize()).rejects.toThrow(/Missing VITE_GOOGLE_CLIENT_ID/u);
 
     vi.stubEnv("VITE_GOOGLE_CLIENT_ID", "stub-client-id");
     await expect(service.initialize()).resolves.toBeUndefined();

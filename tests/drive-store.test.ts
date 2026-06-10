@@ -326,10 +326,12 @@ describe("GoogleDriveStore error handling", () => {
 
     expect(error).toBeInstanceOf(GoogleDriveApiError);
     expect(isAuthExpiredError(error)).toBe(true);
-    if (error instanceof GoogleDriveApiError) {
-      expect(error.status).toBe(401);
-      expect(error.googleMessage).toBe("Request had invalid authentication credentials.");
-    }
+    // toBeInstanceOf above already fails the test on the negative path;
+    // the throw narrows for TS and keeps the assertions unconditional
+    // (no-conditional-expect would otherwise flag the if-wrapped expects).
+    if (!(error instanceof GoogleDriveApiError)) throw new Error("expected GoogleDriveApiError");
+    expect(error.status).toBe(401);
+    expect(error.googleMessage).toBe("Request had invalid authentication credentials.");
   });
 
   it("throws a GoogleDriveApiError with the HTTP status for non-auth failures", async () => {
@@ -341,9 +343,8 @@ describe("GoogleDriveStore error handling", () => {
 
     expect(error).toBeInstanceOf(GoogleDriveApiError);
     expect(isAuthExpiredError(error)).toBe(false);
-    if (error instanceof GoogleDriveApiError) {
-      expect(error.status).toBe(500);
-    }
+    if (!(error instanceof GoogleDriveApiError)) throw new Error("expected GoogleDriveApiError");
+    expect(error.status).toBe(500);
   });
 });
 

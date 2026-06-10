@@ -45,6 +45,7 @@ if (isSilentCapture(window.location.href)) {
       window.history.replaceState({}, "", stripped.toString());
       bootstrapMainApp();
     }
+    return;
   });
 } else {
   bootstrapMainApp();
@@ -192,12 +193,14 @@ function bootstrapMainApp(): void {
       for (const registration of registrations) {
         void registration.unregister();
       }
+      return;
     });
     if ("caches" in window) {
       void caches.keys().then((keys) => {
         for (const key of keys) {
           void caches.delete(key);
         }
+        return;
       });
     }
   }

@@ -128,7 +128,7 @@ describe("applyDetailStagePersona", () => {
     expect(banner.style.backgroundImage).toContain(`hsl(${expectedHue} 35% 75%)`);
   });
 
-  it("uses the note's primary URL for the og:image resolver call and forwards the note as a capture-time donor", () => {
+  it("uses the note's primary URL for the og:image resolver call and forwards the note as a capture-time donor", async () => {
     // The resolver receives the note's primary URL — the canonical
     // URL when bookmarklet-captured, else the first entry on
     // `note.urls`. Pinning this protects against a refactor that
@@ -161,13 +161,12 @@ describe("applyDetailStagePersona", () => {
     });
     // The resolver fires asynchronously inside `buildLinkThumb` — let
     // the microtask queue flush so the assertion sees the call.
-    return Promise.resolve().then(() => {
-      expect(receivedUrl).toBe("https://www.nytimes.com/article");
-      expect(receivedNotes).toEqual([note]);
-    });
+    await Promise.resolve();
+    expect(receivedUrl).toBe("https://www.nytimes.com/article");
+    expect(receivedNotes).toEqual([note]);
   });
 
-  it("skips the resolver call entirely for hand-typed notes with no URL", () => {
+  it("skips the resolver call entirely for hand-typed notes with no URL", async () => {
     // No primary URL → no og:image lookup. Pinning this avoids a
     // refactor that fires the resolver unconditionally (which would
     // hit allorigins with a null URL and spend a round-trip on
@@ -186,8 +185,7 @@ describe("applyDetailStagePersona", () => {
       dark: false,
       resolver,
     });
-    return Promise.resolve().then(() => {
-      expect(resolverCalls).toBe(0);
-    });
+    await Promise.resolve();
+    expect(resolverCalls).toBe(0);
   });
 });

@@ -268,6 +268,7 @@ function buildImportCard(getAccessToken: () => string | null): HTMLElement {
     if (!file) return;
     void file.text().then((content) => {
       textarea.value = content;
+      return;
     });
   });
 
@@ -677,6 +678,7 @@ async function scheduleSave(
     const store = new GoogleDriveLexiconStore(token);
     const runtime = generateRuntimeLexicon(state);
     await store.saveStateAndRuntime(state, runtime);
+    return;
   });
   pageState = { ...pageState, saveQueue: next };
 

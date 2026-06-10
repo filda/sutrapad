@@ -181,7 +181,7 @@ describe("listExistingTargets", () => {
 
 describe("isEmptyState", () => {
   it("reports false once any state branch is non-empty", () => {
-    expect(isEmptyState(rejectForm(createEmptyBuilderState(), "x")));
+    expect(isEmptyState(rejectForm(createEmptyBuilderState(), "x"))).toBe(false);
     let state = createEmptyBuilderState();
     state = mergeImport(state, "praha");
     expect(isEmptyState(state)).toBe(false);

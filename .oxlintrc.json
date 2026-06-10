@@ -1,5 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["import", "typescript", "unicorn", "oxc", "vitest", "promise"],
   "categories": {
     "correctness": "error",
     "suspicious": "warn",
@@ -51,6 +52,18 @@
     "unicorn/prefer-dom-node-remove": "warn",
     "no-redeclare": ["warn", { "builtinGlobals": false }],
     "unicorn/prefer-code-point": "warn",
+    "vitest/expect-expect": ["warn", { "assertFunctionNames": ["expect", "ensureNonEmpty"] }],
+    "vitest/valid-expect": "warn",
+    "vitest/no-conditional-expect": "warn",
+    "vitest/require-to-throw-message": "warn",
+    "vitest/no-focused-tests": "error",
+    "vitest/no-disabled-tests": "warn",
+    "vitest/no-identical-title": "warn",
+    "vitest/no-commented-out-tests": "warn",
+    "vitest/no-test-return-statement": "warn",
+    "vitest/require-mock-type-parameters": "off",
+    "promise/always-return": "warn",
+    "import/no-unassigned-import": "off",
     "no-underscore-dangle": [
       "warn",
       { "allow": ["__APP_VERSION__", "__APP_BUILD_TIME__", "__APP_COMMIT_HASH__"] }

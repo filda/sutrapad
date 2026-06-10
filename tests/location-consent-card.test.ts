@@ -198,24 +198,23 @@ describe("editor-stage layout for the consent card", () => {
     expect(ruleBody).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
   });
 
-  it("ships a styled .location-consent-card surface so the section isn't unstyled HTML", () => {
+  it("ships a styled .location-consent-card surface so the section isn't unstyled HTML", async () => {
     // Before this fix shipped the class only existed on the DOM element
     // — no matching rule in the stylesheet meant the section rendered
     // with default browser margins and no border / padding. Pin the
     // baseline presence of the rule + its core surface declarations so
     // a future cleanup that nukes the rule (thinking it's dead) gets
     // caught.
-    return readFile(stylesheetPath, "utf-8").then((css) => {
-      const ruleBody = extractRuleBody(css, ".location-consent-card");
-      expect(ruleBody).not.toBeNull();
-      // Three baseline declarations that turn the bare <section> into
-      // an actual card surface. We don't pin the exact values (those
-      // can drift with design tweaks), only that the property names
-      // are present.
-      expect(ruleBody).toMatch(/padding\s*:/u);
-      expect(ruleBody).toMatch(/border\s*:/u);
-      expect(ruleBody).toMatch(/background\s*:/u);
-    });
+    const css = await readFile(stylesheetPath, "utf-8");
+    const ruleBody = extractRuleBody(css, ".location-consent-card");
+    expect(ruleBody).not.toBeNull();
+    // Three baseline declarations that turn the bare <section> into
+    // an actual card surface. We don't pin the exact values (those
+    // can drift with design tweaks), only that the property names
+    // are present.
+    expect(ruleBody).toMatch(/padding\s*:/u);
+    expect(ruleBody).toMatch(/border\s*:/u);
+    expect(ruleBody).toMatch(/background\s*:/u);
   });
 });
 
