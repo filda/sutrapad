@@ -89,8 +89,8 @@ describe("bookmarklet", () => {
     // good enough for our generated bookmarklet, which doesn't use
     // template literals or regex literals.
     const withoutStrings = body
-      .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-      .replace(/'(?:[^'\\]|\\.)*'/g, "''");
+      .replaceAll(/"(?:[^"\\]|\\.)*"/g, '""')
+      .replaceAll(/'(?:[^'\\]|\\.)*'/g, "''");
     expect(withoutStrings).not.toMatch(/\/\//);
   });
 });

@@ -250,7 +250,7 @@ export function extractUrlsFromText(text: string): string[] {
   const seen = new Set<string>();
 
   for (const match of matches) {
-    const trimmedCandidate = match.replace(/[),.!?:;]+$/g, "");
+    const trimmedCandidate = match.replaceAll(/[),.!?:;]+$/g, "");
 
     // Validate before canonicalizing so URL-like fragments (e.g. `https://:::`)
     // don't slip into the index — `canonicalizeUrl` echoes unparseable input

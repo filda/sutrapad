@@ -161,7 +161,7 @@ function buildExcerpt(body: string): string {
   // Same trimming rule as the handoff timeline: collapse whitespace into
   // single spaces and cap at roughly two lines of reading before adding an
   // ellipsis. Keeps the card's vertical rhythm consistent across notes.
-  const collapsed = body.replace(/\s+/g, " ").trim();
+  const collapsed = body.replaceAll(/\s+/g, " ").trim();
   if (!collapsed) return "";
   const limit = 180;
   if (collapsed.length <= limit) return collapsed;
@@ -284,11 +284,11 @@ function escapeHtml(value: string): string {
   // the <em>…</em> / text nodes used in the title lockup. Keeps the innerHTML
   // call safe for whatever the profile provider returns as the user's name.
   return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 export interface HomePageOptions {

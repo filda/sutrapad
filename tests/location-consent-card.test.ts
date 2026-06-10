@@ -230,7 +230,7 @@ function extractRuleBody(css: string, selector: string): string | null {
   // Escape regex metacharacters in the selector so `.`, `>`, `(`, etc.
   // are treated literally. The selector we care about contains `.` and
   // `>`, both of which are regex-meta.
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = selector.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = new RegExp(
     String.raw`(?:^|\}|\*\/|\n)\s*` + escaped + String.raw`\s*\{([^}]*)\}`,
     "m",

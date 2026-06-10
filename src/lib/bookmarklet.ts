@@ -71,5 +71,5 @@ export function buildBookmarklet(appUrl: string): string {
     })();
   `;
 
-  return `javascript:${bookmarkletCode.replace(/\s+/g, " ").trim()}`;
+  return `javascript:${bookmarkletCode.replaceAll(/\s+/g, " ").trim()}`;
 }

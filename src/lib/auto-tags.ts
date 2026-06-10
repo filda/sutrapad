@@ -324,6 +324,6 @@ function slugifyTagValue(value: string): string {
   return value
     .toLowerCase()
     .normalize("NFC")
-    .replace(/[^\p{L}\p{N}]+/gu, "-")
-    .replace(/^-+|-+$/g, "");
+    .replaceAll(/[^\p{L}\p{N}]+/gu, "-")
+    .replaceAll(/^-+|-+$/g, "");
 }

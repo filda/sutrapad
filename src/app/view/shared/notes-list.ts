@@ -332,7 +332,7 @@ function buildRowItem(
   title.textContent = note.title || DEFAULT_NOTE_TITLE;
   body.append(title);
 
-  const excerpt = note.body.trim().replace(/\n+/g, " ");
+  const excerpt = note.body.trim().replaceAll(/\n+/g, " ");
   if (excerpt.length > 0) {
     const sub = document.createElement("span");
     sub.className = "nr-sub";

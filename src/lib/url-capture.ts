@@ -85,7 +85,7 @@ export function deriveTitleFromUrl(urlString: string): string {
   }
 
   const decodedSegment = decodeURIComponent(lastSegment)
-    .replace(/[-_]+/g, " ")
+    .replaceAll(/[-_]+/g, " ")
     .replace(/\.[a-z0-9]+$/i, "")
     .trim();
 
@@ -99,10 +99,10 @@ export function extractHtmlTitle(html: string): string | null {
   }
 
   const normalized = match[1]
-    .replace(/\s+/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
+    .replaceAll(/\s+/g, " ")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&")
     .trim();
 
   return normalized || null;

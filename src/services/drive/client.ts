@@ -45,7 +45,7 @@ export const GOOGLE_DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder
  * the first pass introduced.
  */
 export function escapeDriveQueryValue(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  return value.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
 }
 
 /**
