@@ -7,6 +7,7 @@ import {
   planOgImagePrewarm,
   runOgImagePrewarm,
 } from "../src/app/logic/og-image-prewarm";
+import { tick } from "./tick";
 
 function makeNote(
   overrides: Partial<SutraPadDocument> & { id: string },
@@ -314,7 +315,7 @@ describe("runOgImagePrewarm", () => {
 
     // Wait a microtask cycle so the workers have started and reached
     // their first await point.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(peak).toBe(2);
 
     // Drain the gates one by one; the third worker only enters the
@@ -325,7 +326,7 @@ describe("runOgImagePrewarm", () => {
       const open = gates.shift();
       open?.();
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await tick();
     }
     await runPromise;
     expect(peak).toBe(2);
@@ -346,7 +347,7 @@ describe("runOgImagePrewarm", () => {
         fetchImpl: async () => {
           inFlight += 1;
           peak = Math.max(peak, inFlight);
-          await new Promise((resolve) => setTimeout(resolve, 0));
+          await tick();
           inFlight -= 1;
           return new Response("", { status: 200 });
         },

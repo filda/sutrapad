@@ -40,6 +40,7 @@
     "unicorn/prefer-dom-node-dataset": "warn",
     "unicorn/prefer-string-replace-all": "warn",
     "accessor-pairs": "warn",
+    "no-promise-executor-return": "warn",
     "no-underscore-dangle": [
       "warn",
       { "allow": ["__APP_VERSION__", "__APP_BUILD_TIME__", "__APP_COMMIT_HASH__"] }

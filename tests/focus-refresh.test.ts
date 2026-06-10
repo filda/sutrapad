@@ -4,6 +4,7 @@ import {
   type FocusRefreshEnvironment,
   type VisibilityStateLike,
 } from "../src/app/lifecycle/focus-refresh";
+import { tick } from "./tick";
 
 interface FakeEnvHandle {
   env: FocusRefreshEnvironment;
@@ -89,7 +90,7 @@ describe("createFocusRefreshCoordinator", () => {
     handle.setVisibility("visible");
     handle.fireVisibility();
     // The listener kicks off a microtask; flush the queue.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     expect(refresh).toHaveBeenCalledTimes(1);
   });
@@ -106,7 +107,7 @@ describe("createFocusRefreshCoordinator", () => {
     });
 
     handle.fireVisibility(); // still "hidden"
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     expect(refresh).not.toHaveBeenCalled();
   });
@@ -121,7 +122,7 @@ describe("createFocusRefreshCoordinator", () => {
     });
 
     handle.firePageShow();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     expect(refresh).toHaveBeenCalledTimes(1);
   });
@@ -143,13 +144,13 @@ describe("createFocusRefreshCoordinator", () => {
     // throttling doesn't suppress the second event.
     handle.setNow(60_000);
     handle.fireVisibility();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(refresh).not.toHaveBeenCalled();
 
     canRefresh = true;
     handle.setNow(120_000);
     handle.fireVisibility();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -167,19 +168,19 @@ describe("createFocusRefreshCoordinator", () => {
 
     handle.setNow(1_000);
     handle.fireVisibility();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     handle.setNow(5_000); // within the 15 s window
     handle.firePageShow();
     handle.fireVisibility();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     expect(refresh).toHaveBeenCalledTimes(1);
 
     // Outside the window — next event runs.
     handle.setNow(30_000);
     handle.fireVisibility();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(refresh).toHaveBeenCalledTimes(2);
   });
 
@@ -204,7 +205,7 @@ describe("createFocusRefreshCoordinator", () => {
     // First trigger — starts the in-flight refresh.
     handle.setNow(1_000);
     handle.fireVisibility();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(refresh).toHaveBeenCalledTimes(1);
 
     // Second trigger arrives while the first is still in flight.
@@ -212,15 +213,15 @@ describe("createFocusRefreshCoordinator", () => {
     // in-flight guard wins.
     handle.setNow(60_000);
     void coordinator.trigger();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(refresh).toHaveBeenCalledTimes(1);
 
     // Resolve the first; the in-flight slot opens up.
     inFlight.resolve?.();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     handle.setNow(120_000);
     handle.fireVisibility();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(refresh).toHaveBeenCalledTimes(2);
   });
 
@@ -241,7 +242,7 @@ describe("createFocusRefreshCoordinator", () => {
     });
 
     handle.fireVisibility();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     expect(onError).toHaveBeenCalledWith(boom);
   });
@@ -259,7 +260,7 @@ describe("createFocusRefreshCoordinator", () => {
     handle.fireVisibility();
     handle.firePageShow();
     await coordinator.trigger();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     expect(refresh).not.toHaveBeenCalled();
   });

@@ -29,6 +29,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCAL_WORKSPACE_KEY } from "../src/app/storage/local-workspace";
 import { hashStringToHue } from "../src/app/logic/link-card";
+import { tick } from "./tick";
 
 // Stub `GoogleAuthService` — the real one tries to load
 // `https://accounts.google.com/gsi/client` and call `/userinfo`, both
@@ -118,7 +119,7 @@ describe("createApp smoke", () => {
     // on the `it` above), the parent fork-pool kills the worker, and
     // the test report points at this exact line. Failure mode is
     // "Test timed out" — louder than "silently blank page".
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await tick(10);
 
     // Structural landmarks always present after the first render.
     // The sync pill in the topbar is unconditional; we anchor on that
@@ -154,14 +155,14 @@ describe("createApp smoke", () => {
     const firstRoot = document.querySelector<HTMLElement>("#app");
     if (firstRoot === null) throw new Error("expected #app");
     createApp(firstRoot);
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await tick(10);
 
     document.body.innerHTML = '<div id="app"></div>';
     const secondRoot = document.querySelector<HTMLElement>("#app");
     if (secondRoot === null) throw new Error("expected #app after reset");
 
     expect(() => createApp(secondRoot)).not.toThrow();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await tick(10);
 
     expect(secondRoot.children.length).toBeGreaterThan(0);
   });
@@ -205,7 +206,7 @@ describe("editor input contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
     expect(root.querySelector(".sync-pill")?.className).toContain("is-error");
 
     const textarea = root.querySelector<HTMLTextAreaElement>(".body-input");
@@ -254,7 +255,7 @@ describe("editor input contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     // New landmarks in place…
     const detailKindChip = root.querySelector<HTMLElement>(".detail-topbar .detail-kind-chip");
@@ -319,7 +320,7 @@ describe("editor input contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     expect(root.classList.contains("app--note-detail")).toBe(true);
 
@@ -386,7 +387,7 @@ describe("editor input contracts", () => {
       if (root === null) throw new Error("expected #app");
 
       createApp(root);
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      await tick(30);
       scrollTo.mockClear();
       expect(root.classList.contains("app--note-detail")).toBe(false);
 
@@ -394,7 +395,7 @@ describe("editor input contracts", () => {
       if (firstCard === null) throw new Error("expected a note card");
       firstCard.click();
       await Promise.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await tick();
 
       expect(scrollTo).toHaveBeenCalledTimes(1);
       expect(scrollTo).toHaveBeenCalledWith({
@@ -441,14 +442,14 @@ describe("editor input contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     // Spawn the fresh draft via the documented `N` keyboard shortcut —
     // same path `+ Add` runs internally.
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "n" }));
     await Promise.resolve();
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     const textarea = root.querySelector<HTMLTextAreaElement>(".body-input");
     if (textarea === null) throw new Error("expected body textarea on fresh note");
@@ -460,7 +461,7 @@ describe("editor input contracts", () => {
     // Drain enough timers so the post-`+ Add` async backfill resolves
     // (geolocation rejects in happy-dom, the no-coords path runs, the
     // prettified title lands) and the focus-preserving render fires.
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    await tick(60);
 
     const refreshed = root.querySelector<HTMLTextAreaElement>(".body-input");
     if (refreshed === null) throw new Error("expected body textarea after backfill");
@@ -514,7 +515,7 @@ describe("editor input contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     const textarea = root.querySelector<HTMLTextAreaElement>(".body-input");
     if (textarea === null) throw new Error("expected body textarea");
@@ -539,7 +540,7 @@ describe("editor input contracts", () => {
       // eslint-disable-next-line no-await-in-loop
       await Promise.resolve();
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await tick();
       const stored = JSON.parse(localStorage.getItem(LOCAL_WORKSPACE_KEY) ?? "{}");
       const note = stored.notes?.find(
         (n: { id: string }) => n.id === stored.activeNoteId,
@@ -578,7 +579,7 @@ describe("editor input contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     const textarea = root.querySelector<HTMLTextAreaElement>(".body-input");
     if (textarea === null) throw new Error("expected body textarea");
@@ -590,7 +591,7 @@ describe("editor input contracts", () => {
     textarea.setSelectionRange(11, 11);
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     let stored = JSON.parse(localStorage.getItem(LOCAL_WORKSPACE_KEY) ?? "{}");
     let note = stored.notes?.find((n: { id: string }) => n.id === stored.activeNoteId);
@@ -600,7 +601,7 @@ describe("editor input contracts", () => {
     // navigates away. Should commit `#auto`.
     textarea.dispatchEvent(new Event("blur", { bubbles: true }));
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     stored = JSON.parse(localStorage.getItem(LOCAL_WORKSPACE_KEY) ?? "{}");
     note = stored.notes?.find((n: { id: string }) => n.id === stored.activeNoteId);
@@ -650,7 +651,7 @@ describe("editor hashtag contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     const textarea = root.querySelector<HTMLTextAreaElement>(".body-input");
     if (textarea === null) throw new Error("expected body textarea");
@@ -661,7 +662,7 @@ describe("editor hashtag contracts", () => {
     textarea.setSelectionRange(11, 11);
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     // Now simulate four backspaces. After each, we re-fire `input`
     // with the shrunken value and a caret that tracks the tag's new
@@ -680,7 +681,7 @@ describe("editor hashtag contracts", () => {
       // eslint-disable-next-line no-await-in-loop
       await Promise.resolve();
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await tick();
       const stored = JSON.parse(localStorage.getItem(LOCAL_WORKSPACE_KEY) ?? "{}");
       const note = stored.notes?.find(
         (n: { id: string }) => n.id === stored.activeNoteId,
@@ -716,7 +717,7 @@ describe("editor hashtag contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     const titleInput = root.querySelector<HTMLInputElement>(
       ".note-detail-hero-title",
@@ -727,7 +728,7 @@ describe("editor hashtag contracts", () => {
     titleInput.setSelectionRange(8, 8);
     titleInput.dispatchEvent(new Event("input", { bubbles: true }));
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
 
     // Trigger a render by navigating menus and back — `setActiveMenuItem`
     // changes a rendering atom and forces a full rebuild. Re-mounting
@@ -737,11 +738,11 @@ describe("editor hashtag contracts", () => {
       ?? root.querySelector<HTMLElement>('.nav-tabs a, .nav-tabs button');
     homeLink?.click();
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     const notesLink = root.querySelector<HTMLElement>('[data-menu="notes"]');
     notesLink?.click();
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     // Some test environments redirect back to the list rather than the
     // detail route on menu re-entry; only enforce the focus contract
@@ -789,7 +790,7 @@ describe("editor hashtag contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     const tagInput = root.querySelector<HTMLInputElement>(".tag-text-input");
     if (tagInput === null) throw new Error("expected tag-text-input");
@@ -807,11 +808,11 @@ describe("editor hashtag contracts", () => {
       ?? root.querySelector<HTMLElement>('.nav-tabs a, .nav-tabs button');
     homeLink?.click();
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     const notesLink = root.querySelector<HTMLElement>('[data-menu="notes"]');
     notesLink?.click();
     await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     const refreshedTagInput = root.querySelector<HTMLInputElement>(".tag-text-input");
     if (refreshedTagInput === null) {
@@ -859,7 +860,7 @@ describe("editor hashtag contracts", () => {
     if (root === null) throw new Error("expected #app");
 
     createApp(root);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     const textarea = root.querySelector<HTMLTextAreaElement>(".body-input");
     if (textarea === null) throw new Error("expected body textarea");
@@ -896,7 +897,7 @@ describe("editor hashtag contracts", () => {
       notesLink?.click();
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await tick(30);
 
     const afterRender = root.querySelector<HTMLTextAreaElement>(".body-input");
     if (afterRender === null) {
