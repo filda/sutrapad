@@ -47,13 +47,13 @@ function createHarness(
     persistLocalWorkspace: vi.fn(),
     captureIncomingWorkspaceFromUrl: vi.fn(
       overrides.captureIncomingWorkspaceFromUrl ??
-        (async (w: SutraPadWorkspace) => w),
+        ((w: SutraPadWorkspace) => Promise.resolve(w)),
     ),
     restoreWorkspaceAfterSignIn: vi.fn(async () => {}),
     render: vi.fn(),
     initialize: vi.fn(overrides.initialize ?? (async () => {})),
     bootstrap: vi.fn(
-      overrides.bootstrap ?? (async () => null),
+      overrides.bootstrap ?? (() => Promise.resolve(null)),
     ),
   };
 
@@ -105,7 +105,7 @@ describe("runAppBootstrap", () => {
       activeNoteId: null,
     };
     const { effects, spies } = createHarness({
-      captureIncomingWorkspaceFromUrl: async () => captured,
+      captureIncomingWorkspaceFromUrl: () => Promise.resolve(captured),
     });
 
     await runAppBootstrap(effects);
@@ -136,7 +136,7 @@ describe("runAppBootstrap", () => {
       picture: "https://example.test/avatar.png",
     };
     const { effects, spies } = createHarness({
-      bootstrap: async () => profile,
+      bootstrap: () => Promise.resolve(profile),
     });
 
     await runAppBootstrap(effects);
@@ -165,7 +165,7 @@ describe("runAppBootstrap", () => {
     // captureIncomingWorkspaceFromUrl throws. setLastError must
     // receive the original Error message, not a default fallback.
     const { effects, spies } = createHarness({
-      captureIncomingWorkspaceFromUrl: async () => {
+      captureIncomingWorkspaceFromUrl: () => {
         throw new Error("Drive permissions denied");
       },
     });
@@ -186,7 +186,7 @@ describe("runAppBootstrap", () => {
     // must surface as the literal "App initialization failed." copy.
     // Pin the exact wording so a copy edit reads as a deliberate change.
     const { effects, spies } = createHarness({
-      captureIncomingWorkspaceFromUrl: async () => {
+      captureIncomingWorkspaceFromUrl: () => {
         throw "not-an-error-object";
       },
     });
@@ -202,7 +202,7 @@ describe("runAppBootstrap", () => {
     // Auth init throws after the workspace capture succeeds — the
     // try/catch must still produce a clean error pulse + render.
     const { effects, spies } = createHarness({
-      initialize: async () => {
+      initialize: () => {
         throw new Error("auth init blew up");
       },
     });

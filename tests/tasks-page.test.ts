@@ -27,7 +27,7 @@ import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => new Response(null, { status: 204 })),
+    vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))),
   );
 });
 

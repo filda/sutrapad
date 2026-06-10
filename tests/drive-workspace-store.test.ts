@@ -608,7 +608,7 @@ describe("GoogleDriveStore.cleanupOldIndexSnapshots retention", () => {
       if (init?.method === "DELETE") {
         const id = url.split("/").pop()?.split("?")[0] ?? "";
         deletes.push(id);
-        return new Response(null, { status: 204 });
+        return Promise.resolve(new Response(null, { status: 204 }));
       }
       if (url.includes("?fields=")) {
         return jsonResponse({ ...folder, parents: ["folder-1"] });
@@ -760,7 +760,7 @@ describe("GoogleDriveStore.findArtifactFile two-stage fallback", () => {
       if (url.includes("?fields=")) {
         // Active index metadata fetch fails — falls through to
         // findIndexFile which is empty.
-        return new Response("not found", { status: 404 });
+        return Promise.resolve(new Response("not found", { status: 404 }));
       }
       if (url.includes("'note'") && url.includes("q=")) return fileList([]);
       return fileList([]);
@@ -787,7 +787,7 @@ describe("GoogleDriveStore findHeadFile / findTagIndexFile / findLinkIndexFile /
       appProperties: { sutrapad: "true", kind: "note", noteId: "a" },
     });
     const seenKinds = new Set<string>();
-    captureFetch(async (url, init) => {
+    captureFetch((url, init) => {
       if (url.includes("google-apps.folder")) {
         seenKinds.add("folder");
         return fileList([folder]);
@@ -811,7 +811,7 @@ describe("GoogleDriveStore findHeadFile / findTagIndexFile / findLinkIndexFile /
         return jsonResponse({ ...folder, parents: ["folder-1"] });
       }
       if (init?.method === "DELETE") {
-        return new Response(null, { status: 204 });
+        return Promise.resolve(new Response(null, { status: 204 }));
       }
       if (url.includes("q=")) return fileList([]);
       return fileList([]);

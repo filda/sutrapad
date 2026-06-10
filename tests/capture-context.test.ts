@@ -258,7 +258,7 @@ describe("capture context helpers", () => {
   it("resolves battery and ambient light snapshots when supported", async () => {
     await expect(
       resolveBatterySnapshot({
-        getBattery: async () => ({ level: 0.424, charging: true }),
+        getBattery: () => Promise.resolve({ level: 0.424, charging: true }),
       }),
     ).resolves.toEqual({
       levelPercent: 42,
@@ -302,7 +302,7 @@ describe("capture context helpers", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
+        json: () => ({
           current: {
             temperature_2m: 17.5,
             weather_code: 2,
@@ -343,7 +343,7 @@ describe("capture context helpers", () => {
           downlink: 12.4,
           saveData: false,
         },
-        getBattery: async () => ({ level: 0.58, charging: false }),
+        getBattery: () => Promise.resolve({ level: 0.58, charging: false }),
         userAgentData: {
           brands: [
             { brand: "Not.A/Brand", version: "99" },

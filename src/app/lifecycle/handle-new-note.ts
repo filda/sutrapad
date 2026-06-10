@@ -103,7 +103,7 @@ export function handleNewNoteCreation({
           // no `location` field → captureContext built without coordinates.
           // The note still gets a prettified time-of-day title, just no
           // place label.
-          await generateFreshNoteDetails(undefined, async () => null);
+          await generateFreshNoteDetails(undefined, () => Promise.resolve(null));
     } catch (error) {
       // Geolocation / reverse-geocoding / capture-context probes can
       // all reject (denied permission, network, AbortController

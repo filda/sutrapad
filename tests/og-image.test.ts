@@ -289,9 +289,9 @@ describe("resolveOgImageForUrl", () => {
       notes,
       getCachedEntry: cache.getCachedEntry,
       putCachedEntry: cache.putCachedEntry,
-      fetchImpl: async () => {
+      fetchImpl: () => {
         fetchCalled = true;
-        return new Response("nope");
+        return Promise.resolve(new Response("nope"));
       },
     });
     expect(result).toBe(captureHit);
@@ -311,9 +311,9 @@ describe("resolveOgImageForUrl", () => {
       notes: [],
       getCachedEntry: cache.getCachedEntry,
       putCachedEntry: cache.putCachedEntry,
-      fetchImpl: async () => {
+      fetchImpl: () => {
         fetchCalled = true;
-        return new Response("nope");
+        return Promise.resolve(new Response("nope"));
       },
     });
     expect(result).toBe("https://cached/og.jpg");
@@ -333,9 +333,9 @@ describe("resolveOgImageForUrl", () => {
       notes: [],
       getCachedEntry: cache.getCachedEntry,
       putCachedEntry: cache.putCachedEntry,
-      fetchImpl: async () => {
+      fetchImpl: () => {
         fetchCalled = true;
-        return new Response("nope");
+        return Promise.resolve(new Response("nope"));
       },
     });
     expect(result).toBeNull();
@@ -351,9 +351,9 @@ describe("resolveOgImageForUrl", () => {
       notes: [],
       getCachedEntry: cache.getCachedEntry,
       putCachedEntry: cache.putCachedEntry,
-      fetchImpl: async (input) => {
+      fetchImpl: (input) => {
         fetchedUrl = typeof input === "string" ? input : input.toString();
-        return new Response(html, { status: 200 });
+        return Promise.resolve(new Response(html, { status: 200 }));
       },
     });
     expect(result).toBe("https://cdn/fetched.jpg");
@@ -368,7 +368,7 @@ describe("resolveOgImageForUrl", () => {
       notes: [],
       getCachedEntry: cache.getCachedEntry,
       putCachedEntry: cache.putCachedEntry,
-      fetchImpl: async () => new Response("<html>no og here</html>", { status: 200 }),
+      fetchImpl: () => Promise.resolve(new Response("<html>no og here</html>", { status: 200 })),
     });
     expect(result).toBeNull();
     expect(cache.store[url]?.imageUrl).toBeNull();
@@ -381,7 +381,7 @@ describe("resolveOgImageForUrl", () => {
       notes: [],
       getCachedEntry: cache.getCachedEntry,
       putCachedEntry: cache.putCachedEntry,
-      fetchImpl: async () => new Response("", { status: 500 }),
+      fetchImpl: () => Promise.resolve(new Response("", { status: 500 })),
     });
     expect(result).toBeNull();
     expect(cache.store[url]?.imageUrl).toBeNull();
@@ -396,7 +396,7 @@ describe("resolveOgImageForUrl", () => {
       notes: [],
       getCachedEntry: cache.getCachedEntry,
       putCachedEntry: cache.putCachedEntry,
-      fetchImpl: async () => {
+      fetchImpl: () => {
         throw new Error("ECONNREFUSED");
       },
     });

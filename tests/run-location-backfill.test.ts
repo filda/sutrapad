@@ -63,7 +63,7 @@ const NO_COORDS_DETAILS: FreshNoteDetails = {
 
 function buildHarness(
   initial: SutraPadWorkspace = buildWorkspaceWithDraft(),
-  generateDetails: () => Promise<FreshNoteDetails> = async () => PRAGUE_DETAILS,
+  generateDetails: () => Promise<FreshNoteDetails> = () => Promise.resolve(PRAGUE_DETAILS),
 ): {
   options: Parameters<typeof runLocationBackfill>[0];
   getWorkspace: () => SutraPadWorkspace;
@@ -140,7 +140,7 @@ describe("runLocationBackfill", () => {
   });
 
   it("returns 'no-coords' and skips the mutator chain when geolocation resolves null", async () => {
-    const harness = buildHarness(undefined, async () => NO_COORDS_DETAILS);
+    const harness = buildHarness(undefined, () => Promise.resolve(NO_COORDS_DETAILS));
     await expect(runLocationBackfill(harness.options)).resolves.toBe(
       "no-coords",
     );
@@ -159,7 +159,7 @@ describe("runLocationBackfill", () => {
     // dev gets in the field, so pin it — a Stryker mutation that
     // empties the literal must surface here.
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const harness = buildHarness(undefined, async () => {
+    const harness = buildHarness(undefined, () => {
       throw new Error("kaboom");
     });
     await expect(runLocationBackfill(harness.options)).resolves.toBe(

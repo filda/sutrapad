@@ -70,7 +70,7 @@ describe("safeFetch", () => {
 
   it("forwards a successful response unchanged", async () => {
     const expected = new Response("ok");
-    globalThis.fetch = (async () => expected) as typeof globalThis.fetch;
+    globalThis.fetch = (() => Promise.resolve(expected)) as typeof globalThis.fetch;
     const result = await safeFetch("https://example.test/");
     expect(result).toBe(expected);
   });

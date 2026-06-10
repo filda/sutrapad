@@ -65,10 +65,10 @@ let saveMock: Mock = vi.fn();
 // resolves to a class that delegates to the per-test mocks above.
 vi.mock("../src/services/drive/lexicon-store", () => ({
   GoogleDriveLexiconStore: class {
-    async loadState() {
+    loadState() {
       return loadStateMock();
     }
-    async saveStateAndRuntime(...args: unknown[]) {
+    saveStateAndRuntime(...args: unknown[]) {
       return saveMock(...args);
     }
   },
@@ -83,7 +83,7 @@ beforeEach(() => {
   saveMock = vi.fn();
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => new Response(null, { status: 204 })),
+    vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))),
   );
 });
 

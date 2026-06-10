@@ -34,9 +34,9 @@ describe("runWorkspaceLoad", () => {
     const calls: string[] = [];
 
     await runWorkspaceLoad({
-      loadRemoteWorkspace: async () => {
+      loadRemoteWorkspace: () => {
         calls.push("loadRemote");
-        return remote;
+        return Promise.resolve(remote);
       },
       setWorkspace: () => calls.push("setWorkspace"),
       persistLocalWorkspace: () => calls.push("persist"),
@@ -66,7 +66,7 @@ describe("runWorkspaceLoad", () => {
     const remote = makeWorkspace();
     await expect(
       runWorkspaceLoad({
-        loadRemoteWorkspace: async () => remote,
+        loadRemoteWorkspace: () => Promise.resolve(remote),
         setWorkspace: () => undefined,
         persistLocalWorkspace: () => undefined,
         setSyncState: () => undefined,
@@ -82,9 +82,7 @@ describe("runWorkspaceLoad", () => {
     // but the failure path shouldn't introduce a *second* cancel.
     const cancelAutoSave = vi.fn();
     await runWorkspaceLoad({
-      loadRemoteWorkspace: async () => {
-        throw new Error("network");
-      },
+      loadRemoteWorkspace: () => Promise.reject(new Error("network")),
       setWorkspace: () => undefined,
       persistLocalWorkspace: () => undefined,
       setSyncState: () => undefined,
@@ -107,8 +105,8 @@ describe("runWorkspaceRestoreAfterSignIn", () => {
     const local = makeWorkspace("local-id");
 
     await runWorkspaceRestoreAfterSignIn({
-      loadRemoteWorkspace: async () => remote,
-      saveRemoteWorkspace: async () => undefined,
+      loadRemoteWorkspace: () => Promise.resolve(remote),
+      saveRemoteWorkspace: () => Promise.resolve(),
       getWorkspace: () => local,
       setWorkspace: () => undefined,
       persistLocalWorkspace: () => undefined,
@@ -126,8 +124,8 @@ describe("runWorkspaceRestoreAfterSignIn", () => {
     const local = makeWorkspace();
     await expect(
       runWorkspaceRestoreAfterSignIn({
-        loadRemoteWorkspace: async () => remote,
-        saveRemoteWorkspace: async () => undefined,
+        loadRemoteWorkspace: () => Promise.resolve(remote),
+        saveRemoteWorkspace: () => Promise.resolve(),
         getWorkspace: () => local,
         setWorkspace: () => undefined,
         persistLocalWorkspace: () => undefined,
@@ -148,7 +146,7 @@ describe("runWorkspaceSave", () => {
     const cancelAutoSave = vi.fn();
     await runWorkspaceSave("interactive", {
       persistLocalWorkspace: () => undefined,
-      saveRemoteWorkspace: async () => undefined,
+      saveRemoteWorkspace: () => Promise.resolve(),
       setSyncState: () => undefined,
       setLastError: () => undefined,
       render: () => undefined,
@@ -167,7 +165,7 @@ describe("runWorkspaceSave", () => {
     const cancelAutoSave = vi.fn();
     await runWorkspaceSave("background", {
       persistLocalWorkspace: () => undefined,
-      saveRemoteWorkspace: async () => undefined,
+      saveRemoteWorkspace: () => Promise.resolve(),
       setSyncState: () => undefined,
       setLastError: () => undefined,
       render: () => undefined,
@@ -181,7 +179,7 @@ describe("runWorkspaceSave", () => {
     await expect(
       runWorkspaceSave("interactive", {
         persistLocalWorkspace: () => undefined,
-        saveRemoteWorkspace: async () => undefined,
+        saveRemoteWorkspace: () => Promise.resolve(),
         setSyncState: () => undefined,
         setLastError: () => undefined,
         render: () => undefined,

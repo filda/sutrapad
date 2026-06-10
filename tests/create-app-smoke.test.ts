@@ -42,14 +42,14 @@ import { tick } from "./tick";
 vi.mock("../src/services/google-auth", () => {
   return {
     GoogleAuthService: class MockGoogleAuthService {
-      async initialize(): Promise<void> {
+      initialize(): Promise<void> {
         throw new Error("smoke-test: auth disabled");
       }
-      async bootstrap(): Promise<null> {
-        return null;
+      bootstrap(): Promise<null> {
+        return Promise.resolve(null);
       }
-      async refreshSession(): Promise<null> {
-        return null;
+      refreshSession(): Promise<null> {
+        return Promise.resolve(null);
       }
       getAccessToken(): string | null {
         return null;

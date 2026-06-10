@@ -915,7 +915,7 @@ export function createApp(root: HTMLElement): void {
           captureLocationPreference$.get(),
         )
           ? resolveCurrentCoordinates
-          : async () => null,
+          : () => Promise.resolve(null),
       }),
     getWorkspace: () => workspace$.get(),
     setWorkspace: setWorkspaceState,

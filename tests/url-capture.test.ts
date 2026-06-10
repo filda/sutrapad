@@ -250,11 +250,11 @@ describe("url capture helpers", () => {
         .fn()
         .mockResolvedValueOnce({
           ok: true,
-          text: async () => '<html lang="en"><head><title> Loaded title </title></head></html>',
+          text: () => '<html lang="en"><head><title> Loaded title </title></head></html>',
         })
         .mockResolvedValueOnce({
           ok: false,
-          text: async () => '<html lang="en"><head></head></html>',
+          text: () => '<html lang="en"><head></head></html>',
         }),
     );
 
@@ -490,7 +490,7 @@ function stubReverseGeocodeGlobals(options: BrowserStubOptions = {}): {
 } {
   const storage = options.storage ?? createNominatimStorageMock();
   const fetchSpy = vi.fn(
-    options.fetchImpl ?? (async () => new Response("{}", { status: 200 })),
+    options.fetchImpl ?? (() => new Response("{}", { status: 200 })),
   );
   vi.stubGlobal("window", { localStorage: storage });
   vi.stubGlobal("localStorage", storage);
@@ -515,10 +515,10 @@ describe("reverseGeocodeCoordinates", () => {
 
   it("calls Nominatim's reverse endpoint with the requested lat/lon and standard query params", async () => {
     const { fetchSpy } = stubReverseGeocodeGlobals({
-      fetchImpl: async () =>
-        new Response(JSON.stringify({ address: { city: "Prague" } }), {
+      fetchImpl: () =>
+        Promise.resolve(new Response(JSON.stringify({ address: { city: "Prague" } }), {
           status: 200,
-        }),
+        })),
     });
 
     await reverseGeocodeCoordinates({ latitude: 50.0755, longitude: 14.4378 });
@@ -575,7 +575,7 @@ describe("reverseGeocodeCoordinates", () => {
 
   it("returns null when the Nominatim response is not ok", async () => {
     stubReverseGeocodeGlobals({
-      fetchImpl: async () => new Response("{}", { status: 500 }),
+      fetchImpl: () => Promise.resolve(new Response("{}", { status: 500 })),
     });
     expect(
       await reverseGeocodeCoordinates({ latitude: 0, longitude: 0 }),
@@ -584,8 +584,8 @@ describe("reverseGeocodeCoordinates", () => {
 
   it("returns null when the response carries no usable place label", async () => {
     stubReverseGeocodeGlobals({
-      fetchImpl: async () =>
-        new Response(JSON.stringify({ address: {} }), { status: 200 }),
+      fetchImpl: () =>
+        Promise.resolve(new Response(JSON.stringify({ address: {} }), { status: 200 })),
     });
     expect(
       await reverseGeocodeCoordinates({ latitude: 0, longitude: 0 }),
@@ -594,7 +594,7 @@ describe("reverseGeocodeCoordinates", () => {
 
   it("swallows fetch errors and returns null", async () => {
     stubReverseGeocodeGlobals({
-      fetchImpl: async () => {
+      fetchImpl: () => {
         throw new Error("network down");
       },
     });
@@ -605,10 +605,10 @@ describe("reverseGeocodeCoordinates", () => {
 
   it("persists the resolved label and short-circuits a second call for the same coordinates", async () => {
     const { fetchSpy, storage } = stubReverseGeocodeGlobals({
-      fetchImpl: async () =>
-        new Response(JSON.stringify({ address: { city: "Prague" } }), {
+      fetchImpl: () =>
+        Promise.resolve(new Response(JSON.stringify({ address: { city: "Prague" } }), {
           status: 200,
-        }),
+        })),
     });
 
     expect(
@@ -632,10 +632,10 @@ describe("reverseGeocodeCoordinates", () => {
 
   it("treats coordinates that round to the same ~100 m bucket as a cache hit", async () => {
     const { fetchSpy } = stubReverseGeocodeGlobals({
-      fetchImpl: async () =>
-        new Response(JSON.stringify({ address: { city: "Prague" } }), {
+      fetchImpl: () =>
+        Promise.resolve(new Response(JSON.stringify({ address: { city: "Prague" } }), {
           status: 200,
-        }),
+        })),
     });
 
     await reverseGeocodeCoordinates({ latitude: 50.0755, longitude: 14.4378 });
@@ -651,10 +651,10 @@ describe("reverseGeocodeCoordinates", () => {
     });
     const { fetchSpy } = stubReverseGeocodeGlobals({
       storage,
-      fetchImpl: async () =>
-        new Response(JSON.stringify({ address: { city: "Prague" } }), {
+      fetchImpl: () =>
+        Promise.resolve(new Response(JSON.stringify({ address: { city: "Prague" } }), {
           status: 200,
-        }),
+        })),
     });
 
     expect(

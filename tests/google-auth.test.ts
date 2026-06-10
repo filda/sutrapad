@@ -102,7 +102,7 @@ function setupGoogleIdentityHarness(): {
   // resolves with a valid profile shape.
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () =>
+    vi.fn(() =>
       new Response(
         JSON.stringify({ name: "Test", email: "t@t", picture: "p" }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -302,7 +302,7 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
     // Override the fetch stub so userinfo throws.
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response("internal", { status: 500 })),
+      vi.fn(() => Promise.resolve(new Response("internal", { status: 500 }))),
     );
 
     const service = new GoogleAuthService();
@@ -799,7 +799,7 @@ describe("fetchUserProfile contract", () => {
     // Pin the URL string, the Bearer prefix, and the Authorization
     // header shape — three StringLiteral mutants survive otherwise.
     const { pendingRequests } = setupGoogleIdentityHarness();
-    const fetchSpy = vi.fn(async () =>
+    const fetchSpy = vi.fn(() =>
       new Response(JSON.stringify({ name: "Test", email: "t@t" }), {
         status: 200,
       }),
@@ -831,7 +831,7 @@ describe("fetchUserProfile contract", () => {
     const { pendingRequests } = setupGoogleIdentityHarness();
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response("forbidden", { status: 403 })),
+      vi.fn(() => Promise.resolve(new Response("forbidden", { status: 403 }))),
     );
     const service = new GoogleAuthService();
     await service.initialize();

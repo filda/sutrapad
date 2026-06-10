@@ -544,7 +544,7 @@ describe("GoogleDriveStore saveWorkspace", () => {
       const pruneSnapshotsHandler: FetchHandler = (url, options) => {
         if (options?.method === "DELETE") {
           deletedUrls.push(url);
-          return new Response(null, { status: 204 });
+          return Promise.resolve(new Response(null, { status: 204 }));
         }
 
         if (isUpload(url, options)) {

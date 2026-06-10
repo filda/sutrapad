@@ -144,9 +144,9 @@ function requireGoogleOAuth(): GoogleNamespace["accounts"]["oauth2"] {
   return window.google.accounts.oauth2;
 }
 
-async function loadGoogleIdentityScript(): Promise<void> {
+function loadGoogleIdentityScript(): Promise<void> {
   if (window.google?.accounts?.oauth2) {
-    return;
+    return Promise.resolve();
   }
 
   if (!googleScriptPromise) {
@@ -194,7 +194,7 @@ export class GoogleAuthService {
    */
   #refreshPromise: Promise<UserProfile | null> | null = null;
 
-  async initialize(): Promise<void> {
+  initialize(): Promise<void> {
     if (this.#initPromise) return this.#initPromise;
 
     this.#initPromise = (async () => {
@@ -253,12 +253,12 @@ export class GoogleAuthService {
    * Passing an unknown / stale hint is safe: Google falls back to the
    * default flow, the user sees the picker, life goes on.
    */
-  private async requestToken(
+  private requestToken(
     prompt: "consent" | "none",
     errorMessage: string,
   ): Promise<TokenResponse> {
     if (!this.#clientId) {
-      throw new Error("Google auth has not been initialized.");
+      return Promise.reject(new Error("Google auth has not been initialized."));
     }
     const clientId = this.#clientId;
     const hint = readEmailHint() ?? undefined;
@@ -296,7 +296,7 @@ export class GoogleAuthService {
    * `#refreshPromise` so a startup probe and a parallel 401 don't
    * double-launch the iframe.
    */
-  async bootstrap(): Promise<UserProfile | null> {
+  bootstrap(): Promise<UserProfile | null> {
     return this.refreshSession();
   }
 
@@ -330,7 +330,7 @@ export class GoogleAuthService {
     }
   }
 
-  async refreshSession(): Promise<UserProfile | null> {
+  refreshSession(): Promise<UserProfile | null> {
     // Coalesce concurrent refresh attempts. See `#refreshPromise`
     // doc for the rationale.
     if (this.#refreshPromise) return this.#refreshPromise;

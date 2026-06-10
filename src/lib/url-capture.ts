@@ -244,9 +244,9 @@ export function derivePlaceLabel(address?: Record<string, string | undefined>): 
   return null;
 }
 
-export async function resolveCurrentCoordinates(): Promise<Coordinates | null> {
+export function resolveCurrentCoordinates(): Promise<Coordinates | null> {
   if (!("geolocation" in navigator)) {
-    return null;
+    return Promise.resolve(null);
   }
 
   return new Promise<Coordinates | null>((resolve) => {

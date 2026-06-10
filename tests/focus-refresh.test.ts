@@ -58,10 +58,10 @@ function fakeEnv(initial: VisibilityStateLike = "visible"): FakeEnvHandle {
 }
 
 describe("createFocusRefreshCoordinator", () => {
-  it("subscribes to visibilitychange and pageshow on construction", async () => {
+  it("subscribes to visibilitychange and pageshow on construction", () => {
     const handle = fakeEnv();
     const coordinator = createFocusRefreshCoordinator({
-      refresh: async () => undefined,
+      refresh: () => Promise.resolve(),
       canRefresh: () => true,
       environment: handle.env,
     });

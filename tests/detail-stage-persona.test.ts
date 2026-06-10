@@ -147,10 +147,10 @@ describe("applyDetailStagePersona", () => {
     let receivedUrl: string | null | undefined;
     let receivedNotes: readonly SutraPadDocument[] | undefined;
     const resolver: OgImageResolver = {
-      resolve: async (url, notes) => {
+      resolve: (url, notes) => {
         receivedUrl = url;
         receivedNotes = notes;
-        return null;
+        return Promise.resolve(null);
       },
     };
     const stage = buildStage();
@@ -175,9 +175,9 @@ describe("applyDetailStagePersona", () => {
     const note = makeNote({ id: "n1" });
     let resolverCalls = 0;
     const resolver: OgImageResolver = {
-      resolve: async () => {
+      resolve: () => {
         resolverCalls += 1;
-        return null;
+        return Promise.resolve(null);
       },
     };
     const stage = buildStage();

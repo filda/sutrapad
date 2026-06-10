@@ -131,7 +131,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     return loaded;
   };
 
-  const loadWorkspace = async (): Promise<void> =>
+  const loadWorkspace = (): Promise<void> =>
     runWorkspaceLoad({
       loadRemoteWorkspace: loadRemoteWorkspaceAndMarkClean,
       setWorkspace,
@@ -142,7 +142,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
       cancelAutoSave,
     });
 
-  const restoreWorkspaceAfterSignIn = async (): Promise<void> =>
+  const restoreWorkspaceAfterSignIn = (): Promise<void> =>
     runWorkspaceRestoreAfterSignIn({
       loadRemoteWorkspace: loadRemoteWorkspaceAndMarkClean,
       // Note: `runWorkspaceRestoreAfterSignIn` only invokes
@@ -176,7 +176,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
   // at the *remote* edge — the local copy is still there so the
   // user can keep typing, and the next nav-away purge sweeps it
   // normally.
-  const saveWorkspace = async (mode: SaveMode = "interactive"): Promise<void> => {
+  const saveWorkspace = (mode: SaveMode = "interactive"): Promise<void> => {
     const toSave = stripEmptyDraftNotes(getWorkspace());
 
     // Clean-snapshot guard. If the workspace matches what we last
@@ -190,7 +190,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
       lastSyncedWorkspace !== null &&
       areWorkspacesEqual(lastSyncedWorkspace, toSave)
     ) {
-      return;
+      return Promise.resolve();
     }
 
     return runWorkspaceSave(mode, {
@@ -218,7 +218,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
   // (interactive mode — focus is a user-driven trigger, so a 401 should
   // attempt the silent-refresh path) and the existing render / sync-state
   // hooks. The orchestrator owns batching + merge order.
-  const refreshWorkspace = async (
+  const refreshWorkspace = (
     options: WorkspaceRefreshOptions = {},
   ): Promise<void> =>
     runWorkspaceRefresh(

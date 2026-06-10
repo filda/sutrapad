@@ -154,9 +154,9 @@ describe("runOgImagePrewarm", () => {
     let fetchCalls = 0;
     const cache = createMemoryCache();
     await runOgImagePrewarm([], {
-      fetchImpl: async () => {
+      fetchImpl: () => {
         fetchCalls += 1;
-        return new Response("nope");
+        return Promise.resolve(new Response("nope"));
       },
       loadCache: cache.loadCache,
       persistCache: cache.persistCache,
@@ -174,7 +174,7 @@ describe("runOgImagePrewarm", () => {
     // it.
     let loadCacheCalls = 0;
     await runOgImagePrewarm([], {
-      fetchImpl: async () => new Response("", { status: 200 }),
+      fetchImpl: () => Promise.resolve(new Response("", { status: 200 })),
       loadCache: () => {
         loadCacheCalls += 1;
         return {};
@@ -196,9 +196,9 @@ describe("runOgImagePrewarm", () => {
     await runOgImagePrewarm(
       [{ url: "https://nytimes.com/article", notes: [note] }],
       {
-        fetchImpl: async () => {
+        fetchImpl: () => {
           fetchCalls += 1;
-          return new Response("nope");
+          return Promise.resolve(new Response("nope"));
         },
         loadCache: cache.loadCache,
         persistCache: cache.persistCache,
@@ -217,7 +217,7 @@ describe("runOgImagePrewarm", () => {
     const html = `<meta property="og:image" content="https://cdn/fetched.jpg">`;
     const cache = createMemoryCache();
     await runOgImagePrewarm([{ url, notes: [] }], {
-      fetchImpl: async () => new Response(html, { status: 200 }),
+      fetchImpl: () => Promise.resolve(new Response(html, { status: 200 })),
       loadCache: cache.loadCache,
       persistCache: cache.persistCache,
     });
@@ -230,7 +230,7 @@ describe("runOgImagePrewarm", () => {
     const url = "https://example.com/no-og";
     const cache = createMemoryCache();
     await runOgImagePrewarm([{ url, notes: [] }], {
-      fetchImpl: async () => new Response("<html><body>nothing here</body></html>", { status: 200 }),
+      fetchImpl: () => Promise.resolve(new Response("<html><body>nothing here</body></html>", { status: 200 })),
       loadCache: cache.loadCache,
       persistCache: cache.persistCache,
     });
@@ -254,9 +254,9 @@ describe("runOgImagePrewarm", () => {
       urls.map((url) => ({ url, notes: [] })),
       {
         concurrency: 1,
-        fetchImpl: async () => {
+        fetchImpl: () => {
           fetchCallCount += 1;
-          return new Response("", { status: 200 });
+          return Promise.resolve(new Response("", { status: 200 }));
         },
         loadCache: cache.loadCache,
         persistCache: (next) => {
@@ -349,7 +349,7 @@ describe("runOgImagePrewarm", () => {
           peak = Math.max(peak, inFlight);
           await tick();
           inFlight -= 1;
-          return new Response("", { status: 200 });
+          return Promise.resolve(new Response("", { status: 200 }));
         },
         loadCache: cache.loadCache,
         persistCache: cache.persistCache,
@@ -371,9 +371,9 @@ describe("runOgImagePrewarm", () => {
       ],
       {
         concurrency: 0,
-        fetchImpl: async () => {
+        fetchImpl: () => {
           calls += 1;
-          return new Response("", { status: 200 });
+          return Promise.resolve(new Response("", { status: 200 }));
         },
         loadCache: cache.loadCache,
         persistCache: cache.persistCache,

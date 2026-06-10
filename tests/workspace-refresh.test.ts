@@ -103,7 +103,7 @@ describe("runWorkspaceRefresh", () => {
     h.loadInventory.mockResolvedValue([
       entry("a", "fa", "2026-05-01T10:00:00.000Z"),
     ]);
-    h.fetchNoteByFileId.mockImplementation(async (fileId: string) => {
+    h.fetchNoteByFileId.mockImplementation((fileId: string) => {
       if (fileId === "fa") return note("a", "alpha", "2026-05-01T10:00:00.000Z");
       throw new Error("unexpected fileId");
     });
@@ -162,7 +162,7 @@ describe("runWorkspaceRefresh", () => {
       entry("newest", "f2", "2026-05-01T00:00:00.000Z"),
       entry("middle", "f3", "2026-04-15T00:00:00.000Z"),
     ]);
-    h.fetchNoteByFileId.mockImplementation(async (fileId: string) => {
+    h.fetchNoteByFileId.mockImplementation((fileId: string) => {
       if (fileId === "f1") return note("oldest", "", "2026-04-01T00:00:00.000Z");
       if (fileId === "f2") return note("newest", "", "2026-05-01T00:00:00.000Z");
       if (fileId === "f3") return note("middle", "", "2026-04-15T00:00:00.000Z");
@@ -267,7 +267,7 @@ describe("runWorkspaceRefresh", () => {
       f4: "n4",
       f5: "n5",
     };
-    h.fetchNoteByFileId.mockImplementation(async (fileId: string) =>
+    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
       note(noteIdByFileId[fileId], "", "2026-05-01T00:00:00.000Z"),
     );
 

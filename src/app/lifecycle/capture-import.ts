@@ -57,7 +57,7 @@ export async function captureIncomingWorkspaceFromUrl(
       new Date(),
       resolveCoordinates,
       reverseGeocodeCoordinates,
-      async (contextOptions) =>
+      (contextOptions) =>
         collectCaptureContext({ ...contextOptions, source: "text-capture" }),
     );
 

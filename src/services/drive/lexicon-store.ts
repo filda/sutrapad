@@ -120,7 +120,7 @@ export class GoogleDriveLexiconStore {
     await this.#client.ensureFileInFolder(file.id, options.folderId);
   }
 
-  private async getWorkspaceFolder(): Promise<DriveFileRecord> {
+  private getWorkspaceFolder(): Promise<DriveFileRecord> {
     if (!this.#workspaceFolderPromise) {
       this.#workspaceFolderPromise = (async () => {
         const existing = await this.findWorkspaceFolder();
@@ -136,7 +136,7 @@ export class GoogleDriveLexiconStore {
     return this.#workspaceFolderPromise;
   }
 
-  private async findWorkspaceFolder(): Promise<DriveFileRecord | null> {
+  private findWorkspaceFolder(): Promise<DriveFileRecord | null> {
     return this.#client.findSingleFile(
       `trashed = false and mimeType = '${escapeDriveQueryValue(GOOGLE_DRIVE_FOLDER_MIME_TYPE)}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='folder' } and name = '${escapeDriveQueryValue(WORKSPACE_FOLDER_NAME)}'`,
     );

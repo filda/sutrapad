@@ -240,7 +240,7 @@ export class GoogleDriveStore {
    * update — they show up here because they exist on Drive,
    * regardless of whether the index knows about them.
    */
-  private async findNoteFilesInFolder(folderId: string): Promise<DriveFileRecord[]> {
+  private findNoteFilesInFolder(folderId: string): Promise<DriveFileRecord[]> {
     return this.#client.findFiles(
       `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' }`,
       MAX_WORKSPACE_NOTE_FILES,
@@ -538,7 +538,7 @@ export class GoogleDriveStore {
     return normalizeNoteDocument(document);
   }
 
-  private async getWorkspaceFolder(): Promise<DriveFileRecord> {
+  private getWorkspaceFolder(): Promise<DriveFileRecord> {
     if (!this.#workspaceFolderPromise) {
       this.#workspaceFolderPromise = (async () => {
         const existingFolder = await this.findWorkspaceFolder();
@@ -555,7 +555,7 @@ export class GoogleDriveStore {
     return this.#workspaceFolderPromise;
   }
 
-  private async findWorkspaceFolder(): Promise<DriveFileRecord | null> {
+  private findWorkspaceFolder(): Promise<DriveFileRecord | null> {
     return this.#client.findSingleFile(
       `trashed = false and mimeType = '${escapeDriveQueryValue(GOOGLE_DRIVE_FOLDER_MIME_TYPE)}' and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='folder' } and name = '${escapeDriveQueryValue(WORKSPACE_FOLDER_NAME)}'`,
     );
@@ -587,11 +587,11 @@ export class GoogleDriveStore {
     );
   }
 
-  private async findHeadFile(folderId?: string): Promise<DriveFileRecord | null> {
+  private findHeadFile(folderId?: string): Promise<DriveFileRecord | null> {
     return this.findArtifactFile({ kind: "head", fileName: HEAD_FILE_NAME, folderId });
   }
 
-  private async findIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
+  private findIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
     return this.findArtifactFile({
       kind: "index",
       fileName: LEGACY_INDEX_FILE_NAME,
@@ -599,19 +599,19 @@ export class GoogleDriveStore {
     });
   }
 
-  private async findTagIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
+  private findTagIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
     return this.findArtifactFile({ kind: "tags", fileName: TAG_INDEX_FILE_NAME, folderId });
   }
 
-  private async findLinkIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
+  private findLinkIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
     return this.findArtifactFile({ kind: "links", fileName: LINK_INDEX_FILE_NAME, folderId });
   }
 
-  private async findTaskIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
+  private findTaskIndexFile(folderId?: string): Promise<DriveFileRecord | null> {
     return this.findArtifactFile({ kind: "tasks", fileName: TASK_INDEX_FILE_NAME, folderId });
   }
 
-  private async findIndexSnapshotFiles(folderId: string): Promise<DriveFileRecord[]> {
+  private findIndexSnapshotFiles(folderId: string): Promise<DriveFileRecord[]> {
     return this.#client.findFiles(
       `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }`,
       MAX_INDEX_SNAPSHOTS + 20,
@@ -683,6 +683,6 @@ export class GoogleDriveStore {
       .toSorted((left, right) => right.name.localeCompare(left.name))
       .slice(MAX_INDEX_SNAPSHOTS - 1);
 
-    await Promise.all(staleSnapshots.map(async (file) => this.#client.deleteFile(file.id)));
+    await Promise.all(staleSnapshots.map((file) => this.#client.deleteFile(file.id)));
   }
 }

@@ -168,7 +168,7 @@ export async function runWorkspaceRefresh(
       // progressive-render premise of this orchestrator.
       // oxlint-disable-next-line eslint/no-await-in-loop
       const fetched = await Promise.all(
-        slice.map(async (entry) => effects.fetchNoteByFileId(entry.fileId)),
+        slice.map((entry) => effects.fetchNoteByFileId(entry.fileId)),
       );
 
       applyAndCommit(effects, fetched, inventory);

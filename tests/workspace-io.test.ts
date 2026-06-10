@@ -480,7 +480,7 @@ describe("createWorkspaceIO clean-snapshot guard", () => {
 });
 
 describe("createWorkspaceIO isWorkspaceDirty", () => {
-  it("returns false before any sync has established a baseline", async () => {
+  it("returns false before any sync has established a baseline", () => {
     // Cold start: there is no snapshot to compare against. The dirty
     // flag is consumed by the focus-refresh gate (see app.ts) and
     // returning `false` here keeps the gate open until the first

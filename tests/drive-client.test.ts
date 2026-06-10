@@ -28,7 +28,7 @@ function captureFetch(
   responder: (url: string, init?: RequestInit) => Response | Promise<Response>,
 ): { calls: FetchCall[]; spy: ReturnType<typeof vi.fn> } {
   const calls: FetchCall[] = [];
-  const spy = vi.fn(async (url: string, init?: RequestInit) => {
+  const spy = vi.fn((url: string, init?: RequestInit) => {
     calls.push({ url, init });
     return responder(url, init);
   });
@@ -444,7 +444,7 @@ describe("GoogleDriveClient.ensureFileInFolder", () => {
           parents: [],
         });
       }
-      return new Response("nope", { status: 500 });
+      return Promise.resolve(new Response("nope", { status: 500 }));
     });
     const client = new GoogleDriveClient("tok");
     await expect(client.ensureFileInFolder("f", "folder-X")).rejects.toThrow(
