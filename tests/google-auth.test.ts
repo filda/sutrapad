@@ -619,8 +619,17 @@ describe("loadGoogleIdentityScript (via service.initialize)", () => {
     vi.stubGlobal("document", {
       createElement: () => ({
         addEventListener: () => undefined,
+        get src() {
+          return "";
+        },
         set src(_: string) {},
+        get async() {
+          return false;
+        },
         set async(_: boolean) {},
+        get defer() {
+          return false;
+        },
         set defer(_: boolean) {},
       }),
       head: {
@@ -989,9 +998,9 @@ describe("loadGoogleIdentityScript injects the GIS <script> when google is missi
         if (event === "error") handlers.error = handler;
       },
     };
-    Object.defineProperty(scriptStub, "src", { set: () => undefined });
-    Object.defineProperty(scriptStub, "async", { set: () => undefined });
-    Object.defineProperty(scriptStub, "defer", { set: () => undefined });
+    Object.defineProperty(scriptStub, "src", { get: () => "", set: () => undefined });
+    Object.defineProperty(scriptStub, "async", { get: () => false, set: () => undefined });
+    Object.defineProperty(scriptStub, "defer", { get: () => false, set: () => undefined });
     vi.stubGlobal("document", {
       createElement: () => scriptStub,
       head: { append: () => undefined },
@@ -1032,9 +1041,9 @@ describe("loadGoogleIdentityScript injects the GIS <script> when google is missi
         if (event === "load") handlers.load = handler;
       },
     };
-    Object.defineProperty(scriptStub, "src", { set: () => undefined });
-    Object.defineProperty(scriptStub, "async", { set: () => undefined });
-    Object.defineProperty(scriptStub, "defer", { set: () => undefined });
+    Object.defineProperty(scriptStub, "src", { get: () => "", set: () => undefined });
+    Object.defineProperty(scriptStub, "async", { get: () => false, set: () => undefined });
+    Object.defineProperty(scriptStub, "defer", { get: () => false, set: () => undefined });
     vi.stubGlobal("document", {
       createElement: () => scriptStub,
       head: {
@@ -1077,9 +1086,9 @@ describe("loadGoogleIdentityScript injects the GIS <script> when google is missi
         if (event === "load") handlers.load = handler;
       },
     };
-    Object.defineProperty(scriptStub, "src", { set: () => undefined });
-    Object.defineProperty(scriptStub, "async", { set: () => undefined });
-    Object.defineProperty(scriptStub, "defer", { set: () => undefined });
+    Object.defineProperty(scriptStub, "src", { get: () => "", set: () => undefined });
+    Object.defineProperty(scriptStub, "async", { get: () => false, set: () => undefined });
+    Object.defineProperty(scriptStub, "defer", { get: () => false, set: () => undefined });
     vi.stubGlobal("document", {
       createElement: () => scriptStub,
       head: { append: () => undefined },
@@ -1130,16 +1139,19 @@ describe("loadGoogleIdentityScript injects the GIS <script> when google is missi
     let recordedAsync: boolean | undefined;
     let recordedDefer: boolean | undefined;
     Object.defineProperty(scriptStub, "src", {
+      get: () => recordedSrc,
       set: (v: string) => {
         recordedSrc = v;
       },
     });
     Object.defineProperty(scriptStub, "async", {
+      get: () => recordedAsync,
       set: (v: boolean) => {
         recordedAsync = v;
       },
     });
     Object.defineProperty(scriptStub, "defer", {
+      get: () => recordedDefer,
       set: (v: boolean) => {
         recordedDefer = v;
       },
