@@ -210,7 +210,7 @@ describe("deriveNotebookPersona: paper + names", () => {
     expect(light.paper.bg).not.toBe(dark.paper.bg);
     // Dark bg should be significantly darker — a cheap luminance check is
     // enough to keep this assertion resilient to palette tuning.
-    expect(dark.paper.bg).toMatch(/^#[0-3]/);
+    expect(dark.paper.bg).toMatch(/^#[0-3]/u);
   });
 
   it("titles the notebook after the first user tag when present", () => {

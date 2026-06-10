@@ -71,7 +71,7 @@ describe("bookmarklet", () => {
     // / typecheck / vitest pipeline never touches the inlined string
     // form, so we have to parse it explicitly here.
     const bookmarklet = buildBookmarklet("https://app/");
-    const body = bookmarklet.replace(/^javascript:/, "");
+    const body = bookmarklet.replace(/^javascript:/u, "");
     expect(() => new Function(body)).not.toThrow();
   });
 
@@ -83,14 +83,14 @@ describe("bookmarklet", () => {
     // the inlined body must be inside a string literal (e.g.
     // protocol prefixes in URLs).
     const bookmarklet = buildBookmarklet("https://app/");
-    const body = bookmarklet.replace(/^javascript:/, "");
+    const body = bookmarklet.replace(/^javascript:/u, "");
     // Strip every quoted string so we don't false-positive on
     // `https://`. Templating + meta-regex inside JS is fragile but
     // good enough for our generated bookmarklet, which doesn't use
     // template literals or regex literals.
     const withoutStrings = body
-      .replaceAll(/"(?:[^"\\]|\\.)*"/g, '""')
-      .replaceAll(/'(?:[^'\\]|\\.)*'/g, "''");
-    expect(withoutStrings).not.toMatch(/\/\//);
+      .replaceAll(/"(?:[^"\\]|\\.)*"/gu, '""')
+      .replaceAll(/'(?:[^'\\]|\\.)*'/gu, "''");
+    expect(withoutStrings).not.toMatch(/\/\//u);
   });
 });

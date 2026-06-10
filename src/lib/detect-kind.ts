@@ -48,7 +48,7 @@ export interface DetectKindInput {
  * the signal we're looking for is "the user is planning actions", which
  * a bullet list of nouns doesn't imply.
  */
-const TASK_LINE = /^\s*(?:[-*+]|\d+\.)\s+\[[ xX]\]\s+/;
+const TASK_LINE = /^\s*(?:[-*+]|\d+\.)\s+\[[ xX]\]\s+/u;
 
 /**
  * Liberal URL regex. Matches `http(s)://…`, `www.…`, and bare-domain
@@ -62,7 +62,7 @@ const TASK_LINE = /^\s*(?:[-*+]|\d+\.)\s+\[[ xX]\]\s+/;
  * prevents the chip from saying "link" while the preview sits dormant.
  */
 export const URL_PATTERN =
-  /\b(?:https?:\/\/|www\.)[^\s<>]+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\/[^\s<>]*/gi;
+  /\b(?:https?:\/\/|www\.)[^\s<>]+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)+\/[^\s<>]*/giu;
 
 /**
  * Opening-quote characters that bias the body toward "quote" kind.
@@ -81,15 +81,15 @@ export const URL_PATTERN =
  *   \u201C  "   English opening double
  *   \u2018  '   English opening single
  */
-const OPENING_QUOTE_CHARS = /^[\u00AB\u201E\u201C\u2018]/;
+const OPENING_QUOTE_CHARS = /^[\u00AB\u201E\u201C\u2018]/u;
 
 /** Matches a blockquote-style opener anywhere in the body. */
-const BLOCKQUOTE_LINE = /^>\s+/m;
+const BLOCKQUOTE_LINE = /^>\s+/mu;
 
 function countWords(text: string): number {
   const trimmed = text.trim();
   if (trimmed === "") return 0;
-  return trimmed.split(/\s+/).length;
+  return trimmed.split(/\s+/u).length;
 }
 
 function splitNonEmptyLines(text: string): readonly string[] {
@@ -101,7 +101,7 @@ function isPureUrl(body: string): boolean {
   if (trimmed === "") return false;
   // `trim` + `\S+` check catches trailing whitespace / newline that users
   // commonly leave after pasting a URL from the address bar.
-  if (/\s/.test(trimmed)) return false;
+  if (/\s/u.test(trimmed)) return false;
   // Reset `lastIndex` because the module-level regex has /g — without a
   // fresh match call it would return stale state across invocations.
   const matches = trimmed.match(URL_PATTERN);

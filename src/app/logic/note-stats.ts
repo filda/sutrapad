@@ -22,7 +22,7 @@ const READ_WORDS_PER_MINUTE = 220;
  * first whitespace or closing parenthesis so links embedded in prose ("see
  * https://example.com/path)") don't sweep up the trailing punctuation.
  */
-const LINK_REGEX = /https?:\/\/[^\s)]+/g;
+const LINK_REGEX = /https?:\/\/[^\s)]+/gu;
 
 /**
  * Computes the counts shown in the detail-topbar breadcrumb row (word count,
@@ -36,7 +36,7 @@ const LINK_REGEX = /https?:\/\/[^\s)]+/g;
 export function computeNoteStats(note: SutraPadDocument): NoteStats {
   const body = note.body ?? "";
   const trimmed = body.trim();
-  const wordCount = trimmed === "" ? 0 : trimmed.split(/\s+/).length;
+  const wordCount = trimmed === "" ? 0 : trimmed.split(/\s+/u).length;
   const readMinutes = Math.max(1, Math.round(wordCount / READ_WORDS_PER_MINUTE));
 
   const { open, done } = countTasksInNote(note);

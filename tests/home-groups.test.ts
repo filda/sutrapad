@@ -105,10 +105,10 @@ describe("greetingFor", () => {
 describe("formatHomeHeaderDate", () => {
   it("renders weekday · day month with a middle dot separator", () => {
     const value = formatHomeHeaderDate(new Date(2026, 3, 21, 10));
-    expect(value).toMatch(/ · /);
+    expect(value).toMatch(/ · /u);
     // Use case-insensitive matching — locale differences may lowercase the
     // weekday — but the numeric day must always appear.
-    expect(value).toMatch(/21/);
+    expect(value).toMatch(/21/u);
   });
 });
 
@@ -117,6 +117,6 @@ describe("formatNoteTime", () => {
     const value = formatNoteTime("2026-04-21T07:05:00.000Z");
     // The exact hour depends on the TZ of the test runner; checking the
     // width and colon is enough to prove the hour12: false formatting path.
-    expect(value).toMatch(/^\d{2}:\d{2}$/);
+    expect(value).toMatch(/^\d{2}:\d{2}$/u);
   });
 });

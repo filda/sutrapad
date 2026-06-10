@@ -100,6 +100,6 @@ describe("formatLastChange", () => {
     // the default would throw a TypeError before reaching the formatter.
     const updatedAt = new Date().toISOString();
     expect(() => formatLastChange(updatedAt, { signedIn: true })).not.toThrow();
-    expect(formatLastChange(updatedAt, { signedIn: true })).toMatch(/^synced /);
+    expect(formatLastChange(updatedAt, { signedIn: true })).toMatch(/^synced /u);
   });
 });

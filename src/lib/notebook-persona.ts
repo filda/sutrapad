@@ -151,13 +151,13 @@ const DENSITY: Record<string, NotebookPersonaDensity> = {
  * for common indicators so a "cafe" or "park" vibe can adjust the density.
  */
 const DENSITY_HINTS: ReadonlyArray<{ match: RegExp; key: keyof typeof DENSITY }> = [
-  { match: /(cafe|caf\u00e9|kav\u00e1rna|coffee|espresso)/, key: "cafe" },
-  { match: /(park|sady|n\u00e1plavka|letn\u00e1|prom[eě]nade|garden)/, key: "park" },
-  { match: /(office|kancel|workplace|studio)/, key: "office" },
-  { match: /(home|vinohrady|\u017ei\u017ekov|flat|byt)/, key: "home" },
+  { match: /(cafe|caf\u00e9|kav\u00e1rna|coffee|espresso)/u, key: "cafe" },
+  { match: /(park|sady|n\u00e1plavka|letn\u00e1|prom[eě]nade|garden)/u, key: "park" },
+  { match: /(office|kancel|workplace|studio)/u, key: "office" },
+  { match: /(home|vinohrady|\u017ei\u017ekov|flat|byt)/u, key: "home" },
 ];
 
-const OPEN_TASK_PATTERN = /^\s*-\s*\[\s\]/m;
+const OPEN_TASK_PATTERN = /^\s*-\s*\[\s\]/mu;
 
 /**
  * Convenience facet extractor for the bridge from SutraPad tags (flat strings,
@@ -238,7 +238,7 @@ export function pickWhenBucket(createdAt: string): WhenBucket {
 function pickFontTier(facets: TagFacets): NotebookPersonaFontTier {
   if (facets.source === "url-capture") return "mono";
   if (facets.source === "text-capture") return "handwritten";
-  if (facets.place && /(park|sady|n\u00e1plavka|letn\u00e1)/.test(facets.place)) {
+  if (facets.place && /(park|sady|n\u00e1plavka|letn\u00e1)/u.test(facets.place)) {
     return "handwritten";
   }
   return "default";

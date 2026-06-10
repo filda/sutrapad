@@ -273,7 +273,7 @@ describe("editor input contracts", () => {
     // `local · ` is enough to assert the helper executed: the smoke
     // test's mocked auth never resolves a profile, so `signedIn` is
     // false and the helper picks the signed-out branch.
-    expect(syncCrumb?.textContent ?? "").toMatch(/^local · /);
+    expect(syncCrumb?.textContent ?? "").toMatch(/^local · /u);
 
     // The legacy `.status` paragraph is gone — anything that selects
     // it should now return null, which is what the in-place
@@ -327,7 +327,7 @@ describe("editor input contracts", () => {
     const page = root.querySelector<HTMLElement>(".page--note-detail");
     expect(page).toBeInstanceOf(HTMLElement);
     expect(page?.classList.contains("page--notebook-persona")).toBe(true);
-    expect(page?.style.getPropertyValue("--nc-bg")).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(page?.style.getPropertyValue("--nc-bg")).toMatch(/^#[0-9a-f]{6}$/iu);
 
     const appTopbar = root.querySelector<HTMLElement>(".topbar");
     expect(appTopbar).toBeInstanceOf(HTMLElement);
@@ -876,7 +876,7 @@ describe("editor hashtag contracts", () => {
     // `<body>` here.
     const themeButton = root.querySelector<HTMLButtonElement>("button[data-theme-toggle]")
       ?? Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find(
-        (b) => /theme|paper|sand|charcoal/i.test(b.getAttribute("aria-label") ?? "")
+        (b) => /theme|paper|sand|charcoal/iu.test(b.getAttribute("aria-label") ?? "")
       );
 
     // Fall through to firing a synthetic atom mutation by dispatching

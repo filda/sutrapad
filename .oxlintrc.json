@@ -42,6 +42,7 @@
     "accessor-pairs": "warn",
     "no-promise-executor-return": "warn",
     "require-await": "warn",
+    "require-unicode-regexp": "warn",
     "no-underscore-dangle": [
       "warn",
       { "allow": ["__APP_VERSION__", "__APP_BUILD_TIME__", "__APP_COMMIT_HASH__"] }

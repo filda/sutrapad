@@ -172,11 +172,11 @@ describe("buildDetailTopbar", () => {
         syncCrumb: null,
         onBackToNotes: () => {},
       }).element.querySelector(".detail-breadcrumbs");
-      expect(breadcrumbs?.textContent).toMatch(/\bwords?\b/);
-      expect(breadcrumbs?.textContent).toMatch(/\bmin read\b/);
-      expect(breadcrumbs?.textContent).toMatch(/\btasks?\b/);
-      expect(breadcrumbs?.textContent).toMatch(/\blinks?\b/);
-      expect(breadcrumbs?.textContent).toMatch(/\btags?\b/);
+      expect(breadcrumbs?.textContent).toMatch(/\bwords?\b/u);
+      expect(breadcrumbs?.textContent).toMatch(/\bmin read\b/u);
+      expect(breadcrumbs?.textContent).toMatch(/\btasks?\b/u);
+      expect(breadcrumbs?.textContent).toMatch(/\blinks?\b/u);
+      expect(breadcrumbs?.textContent).toMatch(/\btags?\b/u);
     });
   });
 

@@ -76,7 +76,7 @@ export function clearCaptureParamsFromLocation(urlString: string): string {
 
 export function deriveTitleFromUrl(urlString: string): string {
   const url = new URL(urlString);
-  const host = url.hostname.replace(/^www\./, "");
+  const host = url.hostname.replace(/^www\./u, "");
   const pathSegments = url.pathname.split("/").filter(Boolean);
   const lastSegment = pathSegments.at(-1);
 
@@ -85,21 +85,21 @@ export function deriveTitleFromUrl(urlString: string): string {
   }
 
   const decodedSegment = decodeURIComponent(lastSegment)
-    .replaceAll(/[-_]+/g, " ")
-    .replace(/\.[a-z0-9]+$/i, "")
+    .replaceAll(/[-_]+/gu, " ")
+    .replace(/\.[a-z0-9]+$/iu, "")
     .trim();
 
   return decodedSegment ? `${decodedSegment} · ${host}` : host;
 }
 
 export function extractHtmlTitle(html: string): string | null {
-  const match = html.match(/<title[^>]*>(.*?)<\/title>/i);
+  const match = html.match(/<title[^>]*>(.*?)<\/title>/iu);
   if (!match) {
     return null;
   }
 
   const normalized = match[1]
-    .replaceAll(/\s+/g, " ")
+    .replaceAll(/\s+/gu, " ")
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">")
     .replaceAll("&amp;", "&")
@@ -109,7 +109,7 @@ export function extractHtmlTitle(html: string): string | null {
 }
 
 export function extractHtmlLang(html: string): string | null {
-  const match = html.match(/<html[^>]*\blang=["']?([^"'\s>]+)["']?[^>]*>/i);
+  const match = html.match(/<html[^>]*\blang=["']?([^"'\s>]+)["']?[^>]*>/iu);
   const lang = match?.[1]?.trim();
   return lang || null;
 }

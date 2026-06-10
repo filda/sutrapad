@@ -64,7 +64,7 @@ describe("tokenizeImport", () => {
     const result = tokenizeImport("Praha\n\n\tdnes");
     const praha = result.find((t) => t.form === "praha");
     // The cleanup collapses the newline + tab cluster into a single space.
-    expect(praha?.context).not.toMatch(/\s{2,}/);
+    expect(praha?.context).not.toMatch(/\s{2,}/u);
   });
 
   it("collapses whitespace runs to a single space, not to nothing", () => {
@@ -82,8 +82,8 @@ describe("tokenizeImport", () => {
     const padding = "x ".repeat(80);
     const result = tokenizeImport(`${padding}target ${padding}`);
     const ctx = result.find((t) => t.form === "target")?.context ?? "";
-    expect(ctx).not.toMatch(/…\s/);
-    expect(ctx).not.toMatch(/\s…/);
+    expect(ctx).not.toMatch(/…\s/u);
+    expect(ctx).not.toMatch(/\s…/u);
   });
 
   it("limits the context window to roughly CONTEXT_RADIUS characters on each side", () => {

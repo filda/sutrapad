@@ -245,12 +245,12 @@ export function canonicalizeUrl(urlString: string): string {
 }
 
 export function extractUrlsFromText(text: string): string[] {
-  const matches = text.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
+  const matches = text.match(/https?:\/\/[^\s<>"']+/giu) ?? [];
   const normalizedUrls: string[] = [];
   const seen = new Set<string>();
 
   for (const match of matches) {
-    const trimmedCandidate = match.replaceAll(/[),.!?:;]+$/g, "");
+    const trimmedCandidate = match.replaceAll(/[),.!?:;]+$/gu, "");
 
     // Validate before canonicalizing so URL-like fragments (e.g. `https://:::`)
     // don't slip into the index — `canonicalizeUrl` echoes unparseable input

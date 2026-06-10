@@ -124,7 +124,7 @@ describe("suggestTagAliases", () => {
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].canonical).toBe("Cafe");
     expect(suggestions[0].aliases).toEqual(["café"]);
-    expect(suggestions[0].reason).toMatch(/case and diacritics/i);
+    expect(suggestions[0].reason).toMatch(/case and diacritics/iu);
   });
 
   it("surfaces edit-distance pairs", () => {
@@ -138,7 +138,7 @@ describe("suggestTagAliases", () => {
     // Higher count wins as canonical.
     expect(suggestions[0].canonical).toBe("writing");
     expect(suggestions[0].aliases).toEqual(["writting"]);
-    expect(suggestions[0].reason).toMatch(/near-identical spelling/i);
+    expect(suggestions[0].reason).toMatch(/near-identical spelling/iu);
   });
 
   it("refuses far pairs even under the absolute distance cap", () => {
@@ -219,7 +219,7 @@ describe("suggestTagAliases", () => {
         entry("writting", ["n1", "n3"]),
       ]),
     );
-    expect(suggestions[0].reason).toMatch(/used together/i);
+    expect(suggestions[0].reason).toMatch(/used together/iu);
   });
 
   it("omits co-occurrence note when the pair never co-occurs", () => {
@@ -229,7 +229,7 @@ describe("suggestTagAliases", () => {
         entry("writting", ["n3", "n4"]),
       ]),
     );
-    expect(suggestions[0].reason).not.toMatch(/used together/i);
+    expect(suggestions[0].reason).not.toMatch(/used together/iu);
   });
 
   it("skips pairs the user dismissed", () => {
@@ -572,8 +572,8 @@ describe("buildReason output discrimination", () => {
         entry("café", ["n3", "n4"]),
       ]),
     );
-    expect(suggestions[0].reason).toMatch(/case and diacritics/);
-    expect(suggestions[0].reason).not.toMatch(/near-identical spelling/);
+    expect(suggestions[0].reason).toMatch(/case and diacritics/u);
+    expect(suggestions[0].reason).not.toMatch(/near-identical spelling/u);
   });
 
   it("an edit-distance-only cluster's reason does NOT mention 'case and diacritics' (kills the rootHasNormalized fallback + push)", () => {
@@ -587,8 +587,8 @@ describe("buildReason output discrimination", () => {
         entry("writting", ["n4", "n5"]),
       ]),
     );
-    expect(suggestions[0].reason).toMatch(/near-identical spelling/i);
-    expect(suggestions[0].reason).not.toMatch(/case and diacritics/i);
+    expect(suggestions[0].reason).toMatch(/near-identical spelling/iu);
+    expect(suggestions[0].reason).not.toMatch(/case and diacritics/iu);
   });
 
   it("a multi-signal cluster's reason equals the canonical joined+capitalised string", () => {

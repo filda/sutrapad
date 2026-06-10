@@ -287,8 +287,8 @@ describe("buildEditorCard", () => {
       // Hex shape — `#` + 6 hex chars. If the persona ever swaps to
       // `oklch()` or HSL we want that to be a deliberate change, not a
       // silent drift, so pin the shape.
-      expect(card.style.getPropertyValue("--nc-bg")).toMatch(/^#[0-9a-f]{6}$/i);
-      expect(card.style.getPropertyValue("--nc-ink")).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(card.style.getPropertyValue("--nc-bg")).toMatch(/^#[0-9a-f]{6}$/iu);
+      expect(card.style.getPropertyValue("--nc-ink")).toMatch(/^#[0-9a-f]{6}$/iu);
     });
 
     it("flips to a different paper variant when dark: true", () => {

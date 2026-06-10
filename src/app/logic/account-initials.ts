@@ -56,7 +56,7 @@ export function formatInitials(name: string): string {
   // bearing defence here: it lets us skip a separate `trim()` pass
   // (which would be redundant with the regex anyway) while still
   // collapsing surrounding whitespace into a clean word list.
-  const words = name.split(/\s+/).filter((word) => word !== "");
+  const words = name.split(/\s+/u).filter((word) => word !== "");
   if (words.length === 0) return "";
   if (words.length === 1) return firstGlyphUpper(words[0]);
   return firstGlyphUpper(words[0]) + firstGlyphUpper(words[words.length - 1]);

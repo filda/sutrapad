@@ -161,7 +161,7 @@ function buildExcerpt(body: string): string {
   // Same trimming rule as the handoff timeline: collapse whitespace into
   // single spaces and cap at roughly two lines of reading before adding an
   // ellipsis. Keeps the card's vertical rhythm consistent across notes.
-  const collapsed = body.replaceAll(/\s+/g, " ").trim();
+  const collapsed = body.replaceAll(/\s+/gu, " ").trim();
   if (!collapsed) return "";
   const limit = 180;
   if (collapsed.length <= limit) return collapsed;
@@ -234,7 +234,7 @@ function firstName(profile: UserProfile | null): string | null {
   if (!profile?.name) return null;
   const trimmed = profile.name.trim();
   if (!trimmed) return null;
-  return trimmed.split(/\s+/)[0];
+  return trimmed.split(/\s+/u)[0];
 }
 
 function buildHomeHeader(

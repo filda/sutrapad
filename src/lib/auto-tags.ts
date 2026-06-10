@@ -160,7 +160,7 @@ function extractLanguageCode(tag: string): string {
   // `cs-CZ`, `en-US`, `pt-BR` → `cs`, `en`, `pt`. We only emit the primary
   // subtag so notes in the same language don't fragment across regional
   // variants (`lang:en-US` vs `lang:en-GB`).
-  return tag.toLowerCase().split(/[-_]/)[0];
+  return tag.toLowerCase().split(/[-_]/u)[0];
 }
 
 /**
@@ -325,5 +325,5 @@ function slugifyTagValue(value: string): string {
     .toLowerCase()
     .normalize("NFC")
     .replaceAll(/[^\p{L}\p{N}]+/gu, "-")
-    .replaceAll(/^-+|-+$/g, "");
+    .replaceAll(/^-+|-+$/gu, "");
 }

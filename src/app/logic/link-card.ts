@@ -27,7 +27,7 @@ export function deriveLinkHostname(url: string): string | null {
   } catch {
     return null;
   }
-  return parsed.hostname.replace(/^www\./, "");
+  return parsed.hostname.replace(/^www\./u, "");
 }
 
 /**

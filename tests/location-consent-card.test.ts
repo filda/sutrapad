@@ -195,7 +195,7 @@ describe("editor-stage layout for the consent card", () => {
     // exact form so a future drift to `1 / span 2` (which silently
     // breaks the 1-column mobile layout under `@media (max-width: 900px)`
     // where the grid drops to a single column) gets caught.
-    expect(ruleBody).toMatch(/grid-column:\s*1\s*\/\s*-1/);
+    expect(ruleBody).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
   });
 
   it("ships a styled .location-consent-card surface so the section isn't unstyled HTML", () => {
@@ -212,9 +212,9 @@ describe("editor-stage layout for the consent card", () => {
       // an actual card surface. We don't pin the exact values (those
       // can drift with design tweaks), only that the property names
       // are present.
-      expect(ruleBody).toMatch(/padding\s*:/);
-      expect(ruleBody).toMatch(/border\s*:/);
-      expect(ruleBody).toMatch(/background\s*:/);
+      expect(ruleBody).toMatch(/padding\s*:/u);
+      expect(ruleBody).toMatch(/border\s*:/u);
+      expect(ruleBody).toMatch(/background\s*:/u);
     });
   });
 });
@@ -230,10 +230,10 @@ function extractRuleBody(css: string, selector: string): string | null {
   // Escape regex metacharacters in the selector so `.`, `>`, `(`, etc.
   // are treated literally. The selector we care about contains `.` and
   // `>`, both of which are regex-meta.
-  const escaped = selector.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = selector.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   const pattern = new RegExp(
     String.raw`(?:^|\}|\*\/|\n)\s*` + escaped + String.raw`\s*\{([^}]*)\}`,
-    "m",
+    "mu",
   );
   const match = pattern.exec(css);
   return match === null ? null : match[1];

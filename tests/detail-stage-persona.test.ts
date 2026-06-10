@@ -46,8 +46,8 @@ describe("applyDetailStagePersona", () => {
       resolver: NOOP_RESOLVER,
     });
     expect(stage.classList.contains("has-persona")).toBe(true);
-    expect(stage.style.getPropertyValue("--nc-bg")).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(stage.style.getPropertyValue("--nc-ink")).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(stage.style.getPropertyValue("--nc-bg")).toMatch(/^#[0-9a-f]{6}$/iu);
+    expect(stage.style.getPropertyValue("--nc-ink")).toMatch(/^#[0-9a-f]{6}$/iu);
   });
 
   it("forces rotation to zero on the writing surface", () => {

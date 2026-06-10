@@ -231,7 +231,7 @@ describe("buildLinkThumb", () => {
       // center`, `0 0` → `0px 0px`. Real browsers preserve the source form,
       // so both renderings of the same logical value are acceptable here.
       expect(thumb.style.backgroundPosition).toMatch(
-        /^center( center)?, 0(?:px)? 0(?:px)?, 0(?:px)? 0(?:px)?$/,
+        /^center( center)?, 0(?:px)? 0(?:px)?, 0(?:px)? 0(?:px)?$/u,
       );
     } finally {
       stub.restore();

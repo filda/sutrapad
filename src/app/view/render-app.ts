@@ -809,7 +809,7 @@ function buildNoteDetailHero(
     // textarea even without an Enter press — collapse to spaces before
     // propagating so the workspace title field stays one-line.
     if (titleInput.value.includes("\n")) {
-      titleInput.value = titleInput.value.replaceAll(/\n+/g, " ");
+      titleInput.value = titleInput.value.replaceAll(/\n+/gu, " ");
     }
     const value = titleInput.value;
     options.onTitleInput(value, boundNoteId);

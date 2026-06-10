@@ -65,7 +65,7 @@ export function buildCardExcerpt(
   // single line visually (CSS line-clamp handles vertical overflow on
   // surfaces that allow it), so preserving paragraph breaks buys
   // nothing.
-  const flattened = withoutUrl.replaceAll(/\s+/g, " ");
+  const flattened = withoutUrl.replaceAll(/\s+/gu, " ");
   if (flattened.length <= maxChars) return flattened;
 
   // Hard truncate at `maxChars - 1` and append a single ellipsis

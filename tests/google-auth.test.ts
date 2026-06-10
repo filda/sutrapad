@@ -519,26 +519,26 @@ describe("parseUserInfoResponse", () => {
 
   it("rejects responses missing name", () => {
     expect(() => parseUserInfoResponse({ email: "x@x" })).toThrow(
-      /missing required fields/,
+      /missing required fields/u,
     );
   });
 
   it("rejects responses missing email", () => {
     expect(() => parseUserInfoResponse({ name: "Filda" })).toThrow(
-      /missing required fields/,
+      /missing required fields/u,
     );
   });
 
   it("rejects responses with a blank name", () => {
     expect(() =>
       parseUserInfoResponse({ name: "   ", email: "x@x" }),
-    ).toThrow(/missing required fields/);
+    ).toThrow(/missing required fields/u);
   });
 
   it("rejects responses with a blank email", () => {
     expect(() =>
       parseUserInfoResponse({ name: "Filda", email: "   " }),
-    ).toThrow(/missing required fields/);
+    ).toThrow(/missing required fields/u);
   });
 
   it("rejects a callable input even when it carries valid name/email own properties", () => {

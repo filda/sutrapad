@@ -925,7 +925,7 @@ describe("note metadata", () => {
         ...baseNote,
         location: "Prague",
       }),
-    ).toMatch(/^Prague · Updated .*2026/);
+    ).toMatch(/^Prague · Updated .*2026/u);
   });
 
   it("trims whitespace around the location before formatting", () => {

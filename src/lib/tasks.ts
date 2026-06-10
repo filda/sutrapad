@@ -20,7 +20,7 @@ import type {
  *   2 — bracket content (empty string, space, or `x`/`X`)
  *   3 — remaining text on the line (the task description)
  */
-const TASK_LINE_REGEX = /^(\s*(?:-\s+)?\[([ xX]?)\])\s?(.*)$/;
+const TASK_LINE_REGEX = /^(\s*(?:-\s+)?\[([ xX]?)\])\s?(.*)$/u;
 
 export function parseTasksFromNote(note: SutraPadDocument): SutraPadTaskEntry[] {
   const tasks: SutraPadTaskEntry[] = [];
@@ -126,10 +126,10 @@ export function toggleTaskInBody(body: string, lineIndex: number): string {
   let nextPrefix: string;
   if (isDone) {
     // Preserve the original open style when we can infer it; default to `[ ]`.
-    nextPrefix = prefix.replace(/\[[xX]\]$/, "[ ]");
+    nextPrefix = prefix.replace(/\[[xX]\]$/u, "[ ]");
   } else {
     // Collapse both `[]` and `[ ]` to `[x]` on completion.
-    nextPrefix = prefix.replace(/\[[ ]?\]$/, "[x]");
+    nextPrefix = prefix.replace(/\[[ ]?\]$/u, "[x]");
   }
 
   lines[lineIndex] = `${nextPrefix}${rest}`;

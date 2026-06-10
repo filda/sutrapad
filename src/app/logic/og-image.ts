@@ -108,7 +108,7 @@ const OG_IMAGE_META_SOURCES: ReadonlyArray<{
  * the property/content pairs inside — much cheaper than five separate
  * regex scans over the whole HTML body.
  */
-const META_TAG_PATTERN = /<meta\b([^>]*)>/gi;
+const META_TAG_PATTERN = /<meta\b([^>]*)>/giu;
 
 /**
  * Precompiled regexes for the only three attribute names we actually
@@ -123,9 +123,9 @@ const META_TAG_PATTERN = /<meta\b([^>]*)>/gi;
  */
 type MetaAttributeName = "content" | "property" | "name";
 const META_ATTRIBUTE_PATTERNS: Record<MetaAttributeName, RegExp> = {
-  content: /\bcontent\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i,
-  property: /\bproperty\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i,
-  name: /\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i,
+  content: /\bcontent\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu,
+  property: /\bproperty\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu,
+  name: /\bname\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu,
 };
 
 /**

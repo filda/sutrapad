@@ -91,7 +91,7 @@ export function tokenizeImport(
       normalised.length,
       match.index + original.length + CONTEXT_RADIUS,
     );
-    const window = normalised.slice(start, end).replaceAll(/\s+/g, " ").trim();
+    const window = normalised.slice(start, end).replaceAll(/\s+/gu, " ").trim();
     const prefix = start > 0 ? "…" : "";
     const suffix = end < normalised.length ? "…" : "";
     tokens.push({ form, context: `${prefix}${window}${suffix}` });

@@ -446,7 +446,7 @@ describe("GoogleDriveStore.saveWorkspace upload payload contracts", () => {
       kind: "index",
     });
     expect(indexUpload?.filename).toMatch(
-      /^index-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/,
+      /^index-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/u,
     );
     // The replacement is `[:.]` → `-`. A bogus regex like `[^:.]` (one
     // of the Stryker mutants) would replace every other character and
@@ -454,7 +454,7 @@ describe("GoogleDriveStore.saveWorkspace upload payload contracts", () => {
     // dots inside the timestamp.
     expect(indexUpload?.filename).not.toContain(":");
     const timestampPart = indexUpload?.filename.replace(
-      /^index-(.+)\.json$/,
+      /^index-(.+)\.json$/u,
       "$1",
     );
     expect(timestampPart).not.toContain(".");

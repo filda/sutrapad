@@ -52,21 +52,21 @@ export function isSafari(userAgent: string = navigator.userAgent): boolean {
   // on macOS — they additionally carry their own brand token, which
   // is the cleanest exclusion. Android Chrome also carries "Safari"
   // for compat, hence the explicit `android` exclusion.
-  if (/chrome|chromium|edg|opr|fxios|crios|edgios|android/i.test(userAgent)) {
+  if (/chrome|chromium|edg|opr|fxios|crios|edgios|android/iu.test(userAgent)) {
     return false;
   }
-  return /safari/i.test(userAgent);
+  return /safari/iu.test(userAgent);
 }
 
 export function isIOS(
   userAgent: string = navigator.userAgent,
   maxTouchPoints: number = navigator.maxTouchPoints,
 ): boolean {
-  if (/iPad|iPhone|iPod/.test(userAgent)) return true;
+  if (/iPad|iPhone|iPod/u.test(userAgent)) return true;
   // iPadOS 13+ identifies as Mac. The `Macintosh` UA combined with
   // touch support is the documented heuristic — desktop Macs report
   // `maxTouchPoints === 0`, iPads in desktop-mode report `> 1`.
-  return /Macintosh/.test(userAgent) && maxTouchPoints > 1;
+  return /Macintosh/u.test(userAgent) && maxTouchPoints > 1;
 }
 
 export function isStandalone(

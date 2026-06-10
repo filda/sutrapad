@@ -250,7 +250,7 @@ describe("GoogleDriveClient.fetchJsonFile", () => {
     captureFetch(() => new Response("nope", { status: 404 }));
     const client = new GoogleDriveClient("tok");
     await expect(client.fetchJsonFile("missing")).rejects.toThrow(
-      /Failed to load data from Google Drive\./,
+      /Failed to load data from Google Drive\./u,
     );
   });
 });
@@ -278,7 +278,7 @@ describe("GoogleDriveClient.fetchFileMetadata", () => {
     captureFetch(() => new Response("nope", { status: 500 }));
     const client = new GoogleDriveClient("tok");
     await expect(client.fetchFileMetadata("x")).rejects.toThrow(
-      /Failed to inspect Google Drive file metadata\./,
+      /Failed to inspect Google Drive file metadata\./u,
     );
   });
 });
@@ -448,7 +448,7 @@ describe("GoogleDriveClient.ensureFileInFolder", () => {
     });
     const client = new GoogleDriveClient("tok");
     await expect(client.ensureFileInFolder("f", "folder-X")).rejects.toThrow(
-      /Failed to move SutraPad files into the Google Drive folder\./,
+      /Failed to move SutraPad files into the Google Drive folder\./u,
     );
   });
 });
@@ -468,7 +468,7 @@ describe("GoogleDriveClient.deleteFile", () => {
     captureFetch(() => new Response("nope", { status: 500 }));
     const client = new GoogleDriveClient("tok");
     await expect(client.deleteFile("x")).rejects.toThrow(
-      /Failed to delete an old SutraPad index snapshot from Google Drive\./,
+      /Failed to delete an old SutraPad index snapshot from Google Drive\./u,
     );
   });
 });
@@ -513,7 +513,7 @@ describe("GoogleDriveClient.createFolder", () => {
     const client = new GoogleDriveClient("tok");
     await expect(
       client.createFolder({ name: "x", appProperties: {} }),
-    ).rejects.toThrow(/Failed to create the SutraPad folder in Google Drive\./);
+    ).rejects.toThrow(/Failed to create the SutraPad folder in Google Drive\./u);
   });
 });
 
@@ -606,6 +606,6 @@ describe("GoogleDriveClient.uploadJsonFile", () => {
         folderId: "folder-A",
         appProperties: {},
       }),
-    ).rejects.toThrow(/Failed to save data to Google Drive\./);
+    ).rejects.toThrow(/Failed to save data to Google Drive\./u);
   });
 });

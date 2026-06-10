@@ -24,5 +24,5 @@
 export function formatNoteLocation(raw: string | undefined): string | null {
   const trimmed = raw?.trim();
   if (!trimmed || trimmed === "—") return null;
-  return trimmed.replace(/^.*?—\s*/, "");
+  return trimmed.replace(/^.*?—\s*/u, "");
 }

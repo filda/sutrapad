@@ -524,7 +524,7 @@ export class GoogleDriveStore {
   }
 
   private buildIndexSnapshotFileName(savedAt: string): string {
-    const compactTimestamp = savedAt.replaceAll(/[:.]/g, "-");
+    const compactTimestamp = savedAt.replaceAll(/[:.]/gu, "-");
     return `index-${compactTimestamp}.json`;
   }
 

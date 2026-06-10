@@ -83,7 +83,7 @@ export function normalizeTag(tag: string): string {
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replaceAll(/[\u0300-\u036f]/g, "");
+    .replaceAll(/[\u0300-\u036f]/gu, "");
 }
 
 /**

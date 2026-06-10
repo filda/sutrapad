@@ -41,7 +41,7 @@ export interface EnrichedTask {
  * Deliberately imperfect: once tag-classes land (#79) this becomes a fallback
  * behind structural `class: "people"` detection.
  */
-export const WAITING_PERSON_REGEX = /\b(?:call|ask|email|text|write to)\s+\w|@\w/i;
+export const WAITING_PERSON_REGEX = /\b(?:call|ask|email|text|write to)\s+\w|@\w/iu;
 
 export function detectWaitingFor(taskText: string): boolean {
   return WAITING_PERSON_REGEX.test(taskText);

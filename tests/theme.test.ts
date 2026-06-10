@@ -40,9 +40,9 @@ describe("theme catalogue", () => {
     for (const theme of THEMES) {
       expect(theme.label.length).toBeGreaterThan(0);
       expect(theme.description.length).toBeGreaterThan(0);
-      expect(theme.swatches.primary).toMatch(/^#[0-9a-fA-F]{6}$/);
-      expect(theme.swatches.accent).toMatch(/^#[0-9a-fA-F]{6}$/);
-      expect(theme.swatches.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(theme.swatches.primary).toMatch(/^#[0-9a-fA-F]{6}$/u);
+      expect(theme.swatches.accent).toMatch(/^#[0-9a-fA-F]{6}$/u);
+      expect(theme.swatches.background).toMatch(/^#[0-9a-fA-F]{6}$/u);
     }
   });
 
