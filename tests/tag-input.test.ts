@@ -501,7 +501,7 @@ describe("buildTagInput keyboard navigation", () => {
     const options = Array.from(
       wrapper.querySelectorAll<HTMLLIElement>(".tag-suggestion"),
     );
-    expect(options[options.length - 1].classList.contains("is-active")).toBe(true);
+    expect(options.at(-1)?.classList.contains("is-active")).toBe(true);
   });
 
   it("Escape closes the listbox and prevents default while it's open", () => {

@@ -59,7 +59,7 @@ export function formatInitials(name: string): string {
   const words = name.split(/\s+/u).filter((word) => word !== "");
   if (words.length === 0) return "";
   if (words.length === 1) return firstGlyphUpper(words[0]);
-  return firstGlyphUpper(words[0]) + firstGlyphUpper(words[words.length - 1]);
+  return firstGlyphUpper(words[0]) + firstGlyphUpper(words.at(-1) ?? "");
 }
 
 /**

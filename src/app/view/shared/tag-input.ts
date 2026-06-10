@@ -61,7 +61,7 @@ export function buildTagInput(
     );
 
     while (suggestionsList.firstChild) {
-      suggestionsList.removeChild(suggestionsList.firstChild);
+      suggestionsList.firstChild.remove();
     }
 
     if (currentSuggestions.length === 0) {
@@ -95,6 +95,7 @@ export function buildTagInput(
         event.preventDefault();
         addTag(entry.tag);
       });
+      // oxlint-disable-next-line no-loop-func -- closure captures per-iteration `let index` (safe in modern JS) and outer-scope identifiers; rule fires conservatively
       option.addEventListener("mouseenter", () => {
         highlightedIndex = index;
         updateHighlight();
@@ -219,7 +220,7 @@ export function buildTagInput(
   });
 
   const renderChips = (): void => {
-    while (row.firstChild) row.removeChild(row.firstChild);
+    while (row.firstChild) row.firstChild.remove();
 
     for (const tag of note.tags) {
       // Note tags are always user-authored (topic class). The pill's inner

@@ -151,10 +151,10 @@ const DENSITY: Record<string, NotebookPersonaDensity> = {
  * for common indicators so a "cafe" or "park" vibe can adjust the density.
  */
 const DENSITY_HINTS: ReadonlyArray<{ match: RegExp; key: keyof typeof DENSITY }> = [
-  { match: /(cafe|caf\u00e9|kav\u00e1rna|coffee|espresso)/u, key: "cafe" },
-  { match: /(park|sady|n\u00e1plavka|letn\u00e1|prom[eě]nade|garden)/u, key: "park" },
+  { match: /(cafe|caf\u00E9|kav\u00E1rna|coffee|espresso)/u, key: "cafe" },
+  { match: /(park|sady|n\u00E1plavka|letn\u00E1|prom[eě]nade|garden)/u, key: "park" },
   { match: /(office|kancel|workplace|studio)/u, key: "office" },
-  { match: /(home|vinohrady|\u017ei\u017ekov|flat|byt)/u, key: "home" },
+  { match: /(home|vinohrady|\u017Ei\u017Ekov|flat|byt)/u, key: "home" },
 ];
 
 const OPEN_TASK_PATTERN = /^\s*-\s*\[\s\]/mu;
@@ -238,7 +238,7 @@ export function pickWhenBucket(createdAt: string): WhenBucket {
 function pickFontTier(facets: TagFacets): NotebookPersonaFontTier {
   if (facets.source === "url-capture") return "mono";
   if (facets.source === "text-capture") return "handwritten";
-  if (facets.place && /(park|sady|n\u00e1plavka|letn\u00e1)/u.test(facets.place)) {
+  if (facets.place && /(park|sady|n\u00E1plavka|letn\u00E1)/u.test(facets.place)) {
     return "handwritten";
   }
   return "default";
@@ -260,7 +260,7 @@ function pickDensity(place: string | null): NotebookPersonaDensity {
 function fnv1a(value: string): number {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
+    hash ^= value.codePointAt(index) ?? 0;
     hash = Math.imul(hash, 16777619) >>> 0;
   }
   return hash;
@@ -276,14 +276,14 @@ function pseudoRandom01(noteId: string, salt: string): number {
 // "close enough".
 const PRAGUE_PLACES: readonly string[] = [
   "vinohrady",
-  "\u017ei\u017ekov",
+  "\u017Ei\u017Ekov",
   "zizkov",
-  "n\u00e1plavka",
+  "n\u00E1plavka",
   "naplavka",
-  "kav\u00e1rna-m\u00edsto",
-  "t\u0159i-oc\u00e1sci",
+  "kav\u00E1rna-m\u00EDsto",
+  "t\u0159i-oc\u00E1sci",
   "riegrovy-sady",
-  "letn\u00e1",
+  "letn\u00E1",
   "letna",
   "home",
   "praha",

@@ -184,7 +184,7 @@ function showSavingSplash(): SavingSplashHandle {
     const styleEl = document.createElement("style");
     styleEl.id = "sutrapad-silent-splash-styles";
     styleEl.textContent = SPINNER_KEYFRAMES_RULE;
-    document.head.appendChild(styleEl);
+    document.head.append(styleEl);
   }
 
   const overlay = document.createElement("div");
@@ -216,17 +216,17 @@ function showSavingSplash(): SavingSplashHandle {
     "border-radius:50%",
     "animation:sutrapad-spin 0.85s linear infinite",
   ].join(";");
-  overlay.appendChild(spinner);
+  overlay.append(spinner);
 
   const headline = document.createElement("p");
   headline.style.cssText = "margin:0;font-size:16px;font-weight:500";
   headline.textContent = "Saving to SutraPad…";
-  overlay.appendChild(headline);
+  overlay.append(headline);
 
   const status = document.createElement("p");
   status.style.cssText = "margin:0;font-size:13px;color:#6b7280";
   // Empty by default — runner narrates as it goes.
-  overlay.appendChild(status);
+  overlay.append(status);
 
   /**
    * Replaces the spinner element with a static badge — checkmark
@@ -259,7 +259,7 @@ function showSavingSplash(): SavingSplashHandle {
     actions.forEach((node) => node.remove());
   }
 
-  document.body.appendChild(overlay);
+  document.body.append(overlay);
 
   return {
     setStatus: (text) => {
@@ -281,7 +281,7 @@ function showSavingSplash(): SavingSplashHandle {
         // — at least the success state is visible.
         window.close();
       });
-      overlay.appendChild(close);
+      overlay.append(close);
     },
     showAuthRequired: () => {
       clearActionButtons();
@@ -300,8 +300,8 @@ function showSavingSplash(): SavingSplashHandle {
         authorize.addEventListener("click", () => resolve("authorize"));
         const fallback = makeSplashButton("Open SutraPad instead", false);
         fallback.addEventListener("click", () => resolve("fallback"));
-        overlay.appendChild(authorize);
-        overlay.appendChild(fallback);
+        overlay.append(authorize);
+        overlay.append(fallback);
       });
     },
     showError: (message) => {
@@ -314,7 +314,7 @@ function showSavingSplash(): SavingSplashHandle {
       return new Promise<void>((resolve) => {
         const retry = makeSplashButton("Try again", true);
         retry.addEventListener("click", () => resolve());
-        overlay.appendChild(retry);
+        overlay.append(retry);
       });
     },
     remove: () => overlay.remove(),

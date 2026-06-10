@@ -43,6 +43,14 @@
     "no-promise-executor-return": "warn",
     "require-await": "warn",
     "require-unicode-regexp": "warn",
+    "unicorn/escape-case": "warn",
+    "unicorn/prefer-dom-node-append": "warn",
+    "unicorn/no-array-callback-reference": "warn",
+    "no-loop-func": "warn",
+    "unicorn/prefer-at": "warn",
+    "unicorn/prefer-dom-node-remove": "warn",
+    "no-redeclare": ["warn", { "builtinGlobals": false }],
+    "unicorn/prefer-code-point": "warn",
     "no-underscore-dangle": [
       "warn",
       { "allow": ["__APP_VERSION__", "__APP_BUILD_TIME__", "__APP_COMMIT_HASH__"] }

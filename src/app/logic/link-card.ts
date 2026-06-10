@@ -46,7 +46,7 @@ export function hashStringToHue(input: string): number {
     // `(hash * 33) ^ c`, but with `<< 5 + hash` to keep the result as
     // a 32-bit-ish integer (no Math.imul so we stay legible — modern
     // engines optimise the shift/add form fine).
-    hash = ((hash << 5) + hash) ^ input.charCodeAt(i);
+    hash = ((hash << 5) + hash) ^ (input.codePointAt(i) ?? 0);
     // Mask to 31-bit so negative numbers don't sneak in after ^.
     hash &= 0x7fffffff;
   }

@@ -83,7 +83,7 @@ export function normalizeTag(tag: string): string {
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replaceAll(/[\u0300-\u036f]/gu, "");
+    .replaceAll(/[\u0300-\u036F]/gu, "");
 }
 
 /**
@@ -174,7 +174,7 @@ class UnionFind {
     if (!this.parent.has(tag)) this.parent.set(tag, tag);
   }
 
-  find(tag: string): string {
+  findRoot(tag: string): string {
     let current = tag;
     let next = this.parent.get(current);
     while (next !== undefined && next !== current) {
@@ -187,8 +187,8 @@ class UnionFind {
   union(a: string, b: string): void {
     this.add(a);
     this.add(b);
-    const rootA = this.find(a);
-    const rootB = this.find(b);
+    const rootA = this.findRoot(a);
+    const rootB = this.findRoot(b);
     if (rootA === rootB) return;
     this.parent.set(rootA, rootB);
   }
@@ -243,7 +243,7 @@ export function suggestTagAliases(
   const rootHasNormalized = new Map<string, boolean>();
   const rootHasLevenshtein = new Map<string, boolean>();
   for (const { a, normalizedEqual } of pairs) {
-    const root = union.find(a);
+    const root = union.findRoot(a);
     if (normalizedEqual) rootHasNormalized.set(root, true);
     else rootHasLevenshtein.set(root, true);
   }
@@ -252,7 +252,7 @@ export function suggestTagAliases(
   // are dropped.
   const clusters = new Map<string, string[]>();
   for (const entry of candidates) {
-    const root = union.find(entry.tag);
+    const root = union.findRoot(entry.tag);
     const bucket = clusters.get(root);
     if (bucket) bucket.push(entry.tag);
     else clusters.set(root, [entry.tag]);

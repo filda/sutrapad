@@ -537,7 +537,7 @@ describe("regularSticker placeHits threshold", () => {
     // Mutant guard: `placeHits >= 5` flipped to `>= 4` would attach the
     // sticker too eagerly; flipped to `> 5` would require a 6th sibling.
     const subject = makeBrnoNote("subject");
-    const siblings = ["a", "b", "c"].map(makeBrnoNote);
+    const siblings = ["a", "b", "c"].map((id) => makeBrnoNote(id));
     const persona = deriveNotebookPersona(subject, {
       now: NOW,
       // subject + 3 siblings = 4 location hits total
@@ -548,7 +548,7 @@ describe("regularSticker placeHits threshold", () => {
 
   it("applies at exactly 5 sibling notes (lower edge)", () => {
     const subject = makeBrnoNote("subject");
-    const siblings = ["a", "b", "c", "d"].map(makeBrnoNote);
+    const siblings = ["a", "b", "c", "d"].map((id) => makeBrnoNote(id));
     const persona = deriveNotebookPersona(subject, {
       now: NOW,
       // subject + 4 siblings = 5 location hits — exactly the threshold

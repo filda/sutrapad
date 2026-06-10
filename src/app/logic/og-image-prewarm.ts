@@ -130,7 +130,13 @@ export async function runOgImagePrewarm(
   const loadCache = options.loadCache ?? loadOgImageCache;
   const persistCache = options.persistCache ?? persistOgImageCache;
 
-  let cache: OgImageCache = loadCache();
+  // Mutable cache captured by per-iteration closures via a `const` ref
+  // box. Stashing in `{ current }` keeps the closures pointing at the
+  // same evolving snapshot without making them capture a re-assigned
+  // `let` (which the no-loop-func lint flags conservatively even when
+  // safe — the pattern here is precisely "all closures see the latest
+  // value", which is the intent).
+  const cacheRef = { current: loadCache() };
   let cursor = 0;
 
   const worker = async (): Promise<void> => {
@@ -147,10 +153,10 @@ export async function runOgImagePrewarm(
         await resolveOgImageForUrl({
           url: target.url,
           notes: target.notes,
-          getCachedEntry: (key) => cache[key] ?? null,
+          getCachedEntry: (key) => cacheRef.current[key] ?? null,
           putCachedEntry: (key, entry) => {
-            cache = setOgImageCacheEntry(cache, key, entry);
-            persistCache(cache);
+            cacheRef.current = setOgImageCacheEntry(cacheRef.current, key, entry);
+            persistCache(cacheRef.current);
           },
           fetchImpl: options.fetchImpl,
         });

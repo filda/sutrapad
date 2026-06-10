@@ -164,7 +164,7 @@ export function buildTagFilterBar({
     // `suggestions[activeIdx]` which must stay in range.
     if (activeIdx >= suggestions.length) activeIdx = 0;
 
-    while (dropdown.firstChild) dropdown.removeChild(dropdown.firstChild);
+    while (dropdown.firstChild) dropdown.firstChild.remove();
 
     if (rows.length === 0) {
       // Can happen when the query is empty, the workspace has no tags, and
@@ -222,6 +222,7 @@ export function buildTagFilterBar({
         event.preventDefault();
         onApplyFilter(row.entry.tag);
       });
+      // oxlint-disable-next-line no-loop-func -- closure captures per-iteration `const hoveredIndex` (safe) and outer-scope identifiers; rule fires conservatively
       option.addEventListener("mouseenter", () => {
         if (activeIdx !== hoveredIndex) {
           activeIdx = hoveredIndex;
@@ -310,7 +311,8 @@ export function buildTagFilterBar({
       selectedTagFilters.length > 0
     ) {
       event.preventDefault();
-      onRemoveFilter(selectedTagFilters[selectedTagFilters.length - 1]);
+      const last = selectedTagFilters.at(-1);
+      if (last !== undefined) onRemoveFilter(last);
       return;
     }
 

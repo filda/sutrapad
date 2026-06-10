@@ -762,10 +762,9 @@ describe("requestToken error propagation", () => {
         };
       };
     }).google.accounts.oauth2;
-    const lastConfig =
-      oauth.initTokenClient.mock.calls[
-        oauth.initTokenClient.mock.calls.length - 1
-      ][0];
+    const lastCall = oauth.initTokenClient.mock.calls.at(-1);
+    if (lastCall === undefined) throw new Error("expected at least one initTokenClient call");
+    const lastConfig = lastCall[0];
     lastConfig.error_callback?.();
     await expect(promise).rejects.toThrow(
       "Unable to refresh the Google session.",

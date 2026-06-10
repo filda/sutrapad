@@ -69,7 +69,7 @@ describe("hashStringToHue", () => {
     // distribution has likely been killed.
     const hues = new Set(
       ["nytimes.com", "github.com", "wikipedia.org", "stackoverflow.com"].map(
-        hashStringToHue,
+        (host) => hashStringToHue(host),
       ),
     );
     expect(hues.size).toBeGreaterThan(1);
