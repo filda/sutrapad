@@ -11,6 +11,7 @@
  * doesn't hit the CORS proxy on every page load.
  */
 import type { CachedOgImageEntry } from "./og-image";
+import { httpUrlOrNull } from "../../lib/safe-url";
 
 /**
  * localStorage slot. Versioned via a "v1" suffix so a future shape
@@ -55,13 +56,14 @@ export function loadOgImageCache(
 function isValidCachedEntry(value: unknown): value is CachedOgImageEntry {
   if (value === null || typeof value !== "object") return false;
   const candidate = value as { imageUrl?: unknown; resolvedAt?: unknown };
-  // `imageUrl` is either a non-empty string (hit) or an explicit
-  // null (negative cache). Anything else means the stored shape
-  // drifted and we should drop the entry rather than feed junk into
-  // the resolver.
+  // `imageUrl` is either an explicit null (negative cache) or a valid
+  // http(s) URL (hit). The cache lives in localStorage, which another
+  // signed-in device or a hand edit can poison, so a hit must clear the
+  // same scheme gate as a freshly-resolved URL — a stored
+  // `data:` / `javascript:` value is dropped (treated as no entry) rather
+  // than fed to the thumb sink.
   const imageOk =
-    candidate.imageUrl === null ||
-    (typeof candidate.imageUrl === "string" && candidate.imageUrl.length > 0);
+    candidate.imageUrl === null || httpUrlOrNull(candidate.imageUrl) !== null;
   const tsOk = typeof candidate.resolvedAt === "string";
   return imageOk && tsOk;
 }

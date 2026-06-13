@@ -8,6 +8,24 @@ import type { AliasSuggestion } from "../../logic/tag-aliases";
 import { THEMES, type ThemeChoice } from "../../logic/theme";
 import { buildTagPill } from "../shared/tag-pill";
 
+/**
+ * Builds a settings card's `<header>` — an eyebrow `<p>` + an `<h2>` title.
+ * Both labels are set via `textContent` (DOM construction, no `innerHTML`),
+ * so the card headers no longer parse trusted-but-static HTML strings and
+ * a future dynamic label can't regress into a markup sink.
+ */
+function buildSettingsCardHeader(eyebrow: string, title: string): HTMLElement {
+  const header = document.createElement("header");
+  header.className = "settings-card-header";
+  const eyebrowEl = document.createElement("p");
+  eyebrowEl.className = "panel-eyebrow";
+  eyebrowEl.textContent = eyebrow;
+  const titleEl = document.createElement("h2");
+  titleEl.textContent = title;
+  header.append(eyebrowEl, titleEl);
+  return header;
+}
+
 export interface SettingsPageOptions {
   currentTheme: ThemeChoice;
   personaPreference: PersonaPreference;
@@ -117,13 +135,7 @@ function buildWorkbenchCard({
   const card = document.createElement("section");
   card.className = "settings-card settings-card-workbench";
 
-  const header = document.createElement("header");
-  header.className = "settings-card-header";
-  header.innerHTML = `
-    <p class="panel-eyebrow">Workbench</p>
-    <h2>Internal tooling</h2>
-  `;
-  card.append(header);
+  card.append(buildSettingsCardHeader("Workbench", "Internal tooling"));
 
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
@@ -292,13 +304,7 @@ function buildAppearanceCard({
   const card = document.createElement("section");
   card.className = "settings-card";
 
-  const header = document.createElement("header");
-  header.className = "settings-card-header";
-  header.innerHTML = `
-    <p class="panel-eyebrow">Appearance</p>
-    <h2>Theme</h2>
-  `;
-  card.append(header);
+  card.append(buildSettingsCardHeader("Appearance", "Theme"));
 
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
@@ -369,13 +375,7 @@ function buildPersonaCard({
   const card = document.createElement("section");
   card.className = "settings-card";
 
-  const header = document.createElement("header");
-  header.className = "settings-card-header";
-  header.innerHTML = `
-    <p class="panel-eyebrow">Notebook</p>
-    <h2>Persona</h2>
-  `;
-  card.append(header);
+  card.append(buildSettingsCardHeader("Notebook", "Persona"));
 
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
@@ -471,13 +471,7 @@ function buildTagHygieneCard({
   const card = document.createElement("section");
   card.className = "settings-card tag-hygiene-card";
 
-  const header = document.createElement("header");
-  header.className = "settings-card-header";
-  header.innerHTML = `
-    <p class="panel-eyebrow">Notebook</p>
-    <h2>Tag hygiene</h2>
-  `;
-  card.append(header);
+  card.append(buildSettingsCardHeader("Notebook", "Tag hygiene"));
 
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
@@ -645,13 +639,7 @@ function buildBackupCard({
   const card = document.createElement("section");
   card.className = "settings-card";
 
-  const header = document.createElement("header");
-  header.className = "settings-card-header";
-  header.innerHTML = `
-    <p class="panel-eyebrow">Backup</p>
-    <h2>Google Drive</h2>
-  `;
-  card.append(header);
+  card.append(buildSettingsCardHeader("Backup", "Google Drive"));
 
   const intro = document.createElement("p");
   intro.className = "settings-card-hint";

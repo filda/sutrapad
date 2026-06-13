@@ -118,6 +118,27 @@ describe("loadOgImageCache", () => {
     expect(loadOgImageCache(storage)).toEqual({ "https://valid": sampleEntry });
   });
 
+  it("drops cached hits whose imageUrl isn't an http(s) URL (poisoned cache)", () => {
+    // localStorage can be poisoned by another signed-in device or a hand
+    // edit. A stored data:/javascript: hit must be dropped so it can't reach
+    // the thumb's CSS url() / Image.src sink via the cache path. A real
+    // negative entry (imageUrl: null) is unaffected — see the next test.
+    const storage = createStorage({
+      [OG_IMAGE_CACHE_STORAGE_KEY]: JSON.stringify({
+        "https://valid": sampleEntry,
+        "https://js": {
+          imageUrl: "javascript:alert(1)",
+          resolvedAt: "2026-04-24T10:00:00.000Z",
+        },
+        "https://data": {
+          imageUrl: "data:text/html,<script>x</script>",
+          resolvedAt: "2026-04-24T10:00:00.000Z",
+        },
+      }),
+    });
+    expect(loadOgImageCache(storage)).toEqual({ "https://valid": sampleEntry });
+  });
+
   it("preserves explicit-null imageUrl entries (cached negative)", () => {
     // A cached null IS a valid entry — it means "we tried, no og:image
     // exists for this URL". Dropping it would cause the resolver to

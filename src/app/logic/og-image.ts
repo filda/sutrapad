@@ -23,6 +23,7 @@
  */
 import type { SutraPadCaptureContext, SutraPadDocument } from "../../types";
 import { safeFetch } from "../../lib/safe-fetch";
+import { httpUrlOrNull } from "../../lib/safe-url";
 
 /**
  * allorigins returns the raw body of a URL with permissive CORS
@@ -179,10 +180,16 @@ export function extractOgImageFromHtml(
   }
 
   // Second pass — walk our priority list and return the first hit.
+  // Runtime-scraped HTML is attacker-influenced (it's whatever the proxied
+  // page served), so the absolutised value is scheme-gated here: only
+  // http(s) survives, `javascript:` / `data:` / `blob:` collapse to null.
   for (const source of OG_IMAGE_META_SOURCES) {
     const hit = seen.get(`${source.attr}:${source.value}`);
     if (hit) {
-      return absolutizeUrl(hit, baseUrl);
+      // `httpUrlOrNull` rejects a non-string (null from a failed
+      // absolutise) as well as a non-http(s) scheme, so the absolutised
+      // value can flow straight in without a separate null branch.
+      return httpUrlOrNull(absolutizeUrl(hit, baseUrl));
     }
   }
   return null;

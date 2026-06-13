@@ -347,22 +347,38 @@ function buildPreviewColumn(): HTMLElement {
 
   const body = document.createElement("div");
   body.className = "pb-body";
-  body.innerHTML = `
-    <p class="pb-eyebrow">The Example Review · 12 min read</p>
-    <h3 class="pb-title">On walking as an operating system</h3>
-    <div class="pb-hero" aria-hidden="true"></div>
-    <p class="pb-excerpt">The pace of thought is set by the pace of the feet. Walking is not an interruption from writing — it is a subroutine the writing depends on to return to itself.</p>
-  `;
+  const bodyEyebrow = document.createElement("p");
+  bodyEyebrow.className = "pb-eyebrow";
+  bodyEyebrow.textContent = "The Example Review · 12 min read";
+  const bodyTitle = document.createElement("h3");
+  bodyTitle.className = "pb-title";
+  bodyTitle.textContent = "On walking as an operating system";
+  const hero = document.createElement("div");
+  hero.className = "pb-hero";
+  hero.setAttribute("aria-hidden", "true");
+  const excerpt = document.createElement("p");
+  excerpt.className = "pb-excerpt";
+  excerpt.textContent =
+    "The pace of thought is set by the pace of the feet. Walking is not an interruption from writing — it is a subroutine the writing depends on to return to itself.";
+  body.append(bodyEyebrow, bodyTitle, hero, excerpt);
   browser.append(body);
 
   column.append(browser);
 
   const caption = document.createElement("div");
   caption.className = "capture-caption";
-  caption.innerHTML = `
-    <p class="panel-eyebrow">When you click the bookmarklet</p>
-    <p>SutraPad opens with a new note titled <strong>“On walking as an operating system”</strong>, the URL saved, and the page context — title, description, OG image, author, scroll position — attached to the note.</p>
-  `;
+  const captionEyebrow = document.createElement("p");
+  captionEyebrow.className = "panel-eyebrow";
+  captionEyebrow.textContent = "When you click the bookmarklet";
+  const captionBody = document.createElement("p");
+  captionBody.append(
+    text("SutraPad opens with a new note titled "),
+    strong("“On walking as an operating system”"),
+    text(
+      ", the URL saved, and the page context — title, description, OG image, author, scroll position — attached to the note.",
+    ),
+  );
+  caption.append(captionEyebrow, captionBody);
   column.append(caption);
 
   return column;

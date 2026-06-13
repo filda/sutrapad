@@ -258,6 +258,29 @@ describe("extractOgImageFromHtml", () => {
     const html = `<meta property="og:image" content="">`;
     expect(extractOgImageFromHtml(html, base)).toBeNull();
   });
+
+  it("drops a javascript:/data:/blob: og:image scraped from runtime HTML", () => {
+    // Runtime HTML comes from the CORS proxy — fully attacker-controlled.
+    // The scheme gate keeps a hostile og:image out of the thumb sink.
+    expect(
+      extractOgImageFromHtml(
+        `<meta property="og:image" content="javascript:alert(1)">`,
+        base,
+      ),
+    ).toBeNull();
+    expect(
+      extractOgImageFromHtml(
+        `<meta property="og:image" content="data:image/png;base64,iVBORw0KGgo=">`,
+        base,
+      ),
+    ).toBeNull();
+    expect(
+      extractOgImageFromHtml(
+        `<meta property="og:image" content="blob:https://nytimes.com/uuid">`,
+        base,
+      ),
+    ).toBeNull();
+  });
 });
 
 function setupCache(initial: Record<string, CachedOgImageEntry> = {}) {

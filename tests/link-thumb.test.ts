@@ -338,4 +338,55 @@ describe("buildLinkThumb", () => {
       stub.restore();
     }
   });
+
+  it("rejects a non-http(s) resolved og:image (javascript:/data:) — gradient stays, no probe", async () => {
+    // The resolver's output flows from Drive capture context, the
+    // localStorage cache, or a runtime scrape — all attacker-influenceable.
+    // A `javascript:`/`data:` URL must never reach the Image probe or the
+    // backgroundImage `url("…")` sink; the gate bails before `new Image()`.
+    const stub = stubImageLoader("load");
+    try {
+      const resolver = makeResolver(() => Promise.resolve("javascript:alert(1)"));
+      const thumb = buildLinkThumb({
+        url: "https://example.com",
+        notes: [],
+        resolver,
+      });
+      document.body.append(thumb);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(thumb.classList.contains("has-og-image")).toBe(false);
+      expect(thumb.style.backgroundImage).not.toContain("url(");
+      expect(stub.constructed()).toBe(0);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  it("never lets a raw quote in the resolved URL break out of the CSS url(\"…\") token", async () => {
+    // A raw double-quote would close the `url("…")` string early and inject
+    // arbitrary CSS. The gate runs the value through `URL`, which either
+    // percent-encodes the quote (browsers) or rejects it outright (stricter
+    // parsers) — either way the breakout sequence never reaches the CSS
+    // string. The unit-level encoding guarantee is pinned in safe-url.test.
+    const stub = stubImageLoader("load");
+    try {
+      const resolver = makeResolver(() =>
+        Promise.resolve('https://img.example.com/a"){}/x.png'),
+      );
+      const thumb = buildLinkThumb({
+        url: "https://example.com",
+        notes: [],
+        resolver,
+      });
+      document.body.append(thumb);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(thumb.style.backgroundImage).not.toContain('"){}');
+    } finally {
+      stub.restore();
+    }
+  });
 });

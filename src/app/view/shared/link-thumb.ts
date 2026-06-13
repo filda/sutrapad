@@ -20,6 +20,7 @@
 import type { SutraPadDocument } from "../../../types";
 import { deriveLinkHostname, hashStringToHue } from "../../logic/link-card";
 import type { OgImageResolver } from "../../logic/og-image-resolver";
+import { httpUrlOrNull } from "../../../lib/safe-url";
 
 export interface LinkThumbOptions {
   /**
@@ -130,13 +131,21 @@ export function buildLinkThumb({
  * keeps the gradient instead of flashing a broken-image icon.
  */
 function applyOgImageToThumb(thumb: HTMLElement, imageUrl: string): void {
+  // Final sink gate. The resolved URL may originate from Drive-loaded
+  // capture context, the localStorage cache, or a runtime scrape — all
+  // attacker-influenceable. Normalise to an http(s) URL (which percent-
+  // encodes any quote / space / control char that could otherwise break
+  // out of the quoted `url("…")` token below) and bail to the gradient
+  // when it isn't one, rather than trusting the upstream layers alone.
+  const safeUrl = httpUrlOrNull(imageUrl);
+  if (safeUrl === null) return;
   const probe = new Image();
   probe.addEventListener("load", () => {
     if (!thumb.isConnected) return;
-    thumb.style.backgroundImage = `url("${imageUrl}"), ${thumb.style.backgroundImage}`;
+    thumb.style.backgroundImage = `url("${safeUrl}"), ${thumb.style.backgroundImage}`;
     thumb.style.backgroundSize = "cover, auto, auto";
     thumb.style.backgroundPosition = "center, 0 0, 0 0";
     thumb.classList.add("has-og-image");
   });
-  probe.src = imageUrl;
+  probe.src = safeUrl;
 }
