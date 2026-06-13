@@ -393,4 +393,77 @@ describe("detectKind — pure-URL guard", () => {
     // falls through to the urlCount branch and lands on 'links'.
     expect(detect("https://a.com https://b.com")).toBe("links");
   });
+
+  it("treats a single non-URL token as fleeting, never 'link'", () => {
+    // A whitespace-free word reaches the `matches === null` branch of
+    // isPureUrl. If that branch returned true instead of false, a plain
+    // word like "hello" would be mis-detected as a link.
+    expect(detect("hello")).toBe("fleeting");
+  });
+
+  it("does not treat a URL glued to a prefix (single match ≠ whole body) as 'link'", () => {
+    // "see:www.foo.com/x" has no whitespace and yields exactly one URL
+    // match, but the match doesn't span the whole body — so isPureUrl's
+    // `matches[0] === trimmed` half must hold. A swap of `&&` to `||`
+    // there would wrongly flip this to 'link'.
+    expect(detect("see:www.foo.com/x")).not.toBe("link");
+  });
+
+  it("recognises a plain http:// URL (scheme is optional-s, not required-https)", () => {
+    // URL_PATTERN uses `https?://`. Dropping the `?` (https-only) would
+    // leave a bare "http://example.com" unmatched and mis-detect it as
+    // fleeting text instead of a link.
+    expect(detect("http://example.com")).toBe("link");
+  });
+});
+
+describe("detectKind — whitespace handling edge cases", () => {
+  it("counts words across runs of whitespace as one separator", () => {
+    // 14 real words, but one gap is a double space. The word splitter is
+    // `/\s+/`; narrowing it to `/\s/` would count an empty token and tip
+    // the body from 14 (fleeting) to 15 (note).
+    const body = "w0  w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13";
+    expect(detect(body)).toBe("fleeting");
+  });
+
+  it("ignores blank/whitespace-only lines when counting longform lines", () => {
+    // 3 content lines separated by whitespace-only lines. The line counter
+    // filters empties (`line.trim() !== ""`); dropping the filter — or the
+    // `.trim()` in it — would count 5 lines, pushing this past the ≤3 cap
+    // and out of 'longform'.
+    const line = Array.from({ length: 20 }, (_, i) => `w${i}`).join(" ");
+    expect(detect(`${line}\n   \n${line}\n   \n${line}`)).toBe("longform");
+  });
+
+  it("ignores a whitespace-only line when measuring the tasks ratio", () => {
+    // 1 task + 1 whitespace-only line + 1 plain. The empty line (kept
+    // mid-body so the outer trim can't strip it) must be skipped so
+    // nonEmpty is 2 (→ 50% → tasks). Counting it would make nonEmpty 3
+    // (1*2 < 3) and drop the body out of 'tasks'.
+    expect(detect("- [ ] a\n   \nplain line")).toBe("tasks");
+  });
+
+  it("recognises indented task lines (leading whitespace before the bullet)", () => {
+    // TASK_LINE opens with `^\s*` to allow nested/indented checklists. A
+    // leading heading keeps the indented bullets mid-body (out of reach of
+    // the outer trim). Narrowing `^\s*` to `^\S*` would reject the indented
+    // tasks, dropping nonEmpty's task share below half.
+    expect(detect("list:\n  - [ ] a\n  - [ ] b\n  - [ ] c")).toBe("tasks");
+  });
+});
+
+describe("detectKind — quote anchoring", () => {
+  it("does not flag an opening-quote character that appears mid-body", () => {
+    // The opening-quote test is anchored with `^`. A typographer quote in
+    // the middle of the text must not trigger 'quote' — dropping the
+    // anchor would match it anywhere.
+    expect(detect("abc “mid quote” end")).not.toBe("quote");
+  });
+
+  it("does not flag a '>' that appears mid-line (not a blockquote opener)", () => {
+    // BLOCKQUOTE_LINE is anchored per line with `^>`. A greater-than sign
+    // used as prose ("2 > 1") must not be read as a blockquote — dropping
+    // the anchor would match the inline "> ".
+    expect(detect("2 > 1 holds true")).not.toBe("quote");
+  });
 });
