@@ -53,6 +53,7 @@ const config = {
     "src/app/view/shared/link-thumb.ts",
     "src/app/view/shared/location-consent-card.ts",
     "src/app/view/shared/notes-list.ts",
+    "src/app/view/shared/page-title.ts",
     "src/app/view/shared/tag-input.ts",
 
     // Exclusions.

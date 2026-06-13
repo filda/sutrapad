@@ -3,7 +3,7 @@
  *
  * Follows the handoff's three-line pattern: an uppercase accent eyebrow
  * (kept-terse, counts + context), a serif title with one italicised
- * emphasis word (passed in as a pre-sanitised HTML string), and a muted
+ * emphasis word (passed in as a structured {@link PageTitle}), and a muted
  * subtitle clamped at ~60ch. An optional actions slot sits opposite the
  * text block on wide screens and wraps beneath it on small viewports.
  *
@@ -25,6 +25,7 @@ import {
   recordVisit,
   toggleIntroCollapse,
 } from "../../logic/page-intro";
+import { appendPageTitle, type PageTitle } from "./page-title";
 
 export interface PageHeaderOptions {
   /**
@@ -41,11 +42,12 @@ export interface PageHeaderOptions {
    */
   eyebrow: string;
   /**
-   * Title markup. Rendered via innerHTML so callers can wrap the emphasis
-   * word in `<em>`. Callers are responsible for escaping user-controlled
-   * content; none of the live call sites embed user strings here.
+   * Structured title — `before` text, one italicised `emphasis` word, and
+   * trailing `after` text. Rendered as DOM nodes (never `innerHTML`), so
+   * dynamic parts such as the Home greeting's profile name are safe by
+   * construction rather than by caller escaping.
    */
-  titleHtml: string;
+  title: PageTitle;
   /**
    * Muted subtitle sentence. Optional — omit on screens where the title +
    * eyebrow already carry the full meaning.
@@ -70,7 +72,7 @@ export interface PageHeaderOptions {
 export function buildPageHeader({
   pageId,
   eyebrow,
-  titleHtml,
+  title: titleContent,
   subtitle,
   actions,
   noAutoFade,
@@ -121,7 +123,7 @@ export function buildPageHeader({
 
   const title = document.createElement("h1");
   title.className = "page-title";
-  title.innerHTML = titleHtml;
+  appendPageTitle(title, titleContent);
   block.append(title);
 
   let subtitleEl: HTMLParagraphElement | null = null;

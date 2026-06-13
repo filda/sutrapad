@@ -89,7 +89,7 @@ export function buildShortcutsPage({
 
   return buildStaticPageShell({
     eyebrow: "Keyboard shortcuts",
-    titleHtml: "The <em>quick keys.</em>",
+    title: { before: "The ", emphasis: "quick keys." },
     subtitle:
       "SutraPad is keyboard-first. Here's the full sheet — every combination below is wired in the current build.",
     lastUpdated: "April 2026",

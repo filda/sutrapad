@@ -171,7 +171,7 @@ export function buildTasksPage(options: TasksPageOptions): HTMLElement {
     buildPageHeader({
       pageId: "tasks",
       eyebrow: `Tasks · ${eyebrowCount}${eyebrowFilter}`,
-      titleHtml: "Loose <em>threads</em>.",
+      title: { before: "Loose ", emphasis: "threads", after: "." },
       subtitle:
         "Every “- [ ]” in a note shows up here, in the context it came from. No artificial buckets — a task is as urgent as the note you wrote it in.",
     }),

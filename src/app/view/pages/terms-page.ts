@@ -10,9 +10,9 @@
  * presentation of the same draft, kept in sync with whatever copy gets
  * blessed.
  *
- * **All textual content is set via `textContent`** (with the lone
- * exception of the page title's `<em>` emphasis, which goes through the
- * shell's `titleHtml` slot — caller-escapes-everything contract).
+ * **All textual content is set via `textContent`** — the page title's
+ * `<em>` emphasis goes through the shell's structured `title` slot, which
+ * builds the emphasis as a DOM `<em>` node rather than parsing HTML.
  */
 
 import { buildStaticPageShell } from "../chrome/static-page-shell";
@@ -71,7 +71,7 @@ export function buildTermsPage({
 
   return buildStaticPageShell({
     eyebrow: "Terms of use",
-    titleHtml: "The <em>handshake.</em>",
+    title: { before: "The ", emphasis: "handshake." },
     subtitle:
       "By using Sutrapad you agree to a small number of reasonable things. Here they are.",
     lastUpdated: "April 2026",

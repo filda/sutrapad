@@ -178,7 +178,7 @@ function buildNotesPageHeader({
   return buildPageHeader({
     pageId: "notes",
     eyebrow: `Notebook · ${countPart}${filterPart}`,
-    titleHtml: "Your <em>notebook</em>.",
+    title: { before: "Your ", emphasis: "notebook", after: "." },
     subtitle:
       "Every note is a page. Pick one up — it opens full-width so you have room to read, edit and see its context.",
   });

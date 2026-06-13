@@ -51,7 +51,7 @@ export function buildCapturePage(options: CapturePageOptions): HTMLElement {
     buildPageHeader({
       pageId: "capture",
       eyebrow: "Capture · Install",
-      titleHtml: "Send anything into <em>SutraPad</em>.",
+      title: { before: "Send anything into ", emphasis: "SutraPad", after: "." },
       subtitle:
         "One button in your browser. One Shortcut on iOS. It just opens a pre-filled note.",
     }),

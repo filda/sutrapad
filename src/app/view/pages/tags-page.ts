@@ -498,7 +498,7 @@ export function buildTagsPage({
     buildPageHeader({
       pageId: "tags",
       eyebrow: `Tags · ${fullIndex.tags.length} unique · ${noteCount} note${noteCount === 1 ? "" : "s"}`,
-      titleHtml: "A <em>constellation</em> of what you think about.",
+      title: { before: "A ", emphasis: "constellation", after: " of what you think about." },
       subtitle:
         "Each class of tag has its own colour. Click to filter; toggle classes left to focus. All narrows to intersection, Any expands to union.",
       actions,

@@ -20,23 +20,17 @@
  */
 
 import type { MenuItemId } from "../../logic/menu";
+import { appendPageTitle, type TitleContent } from "../shared/page-title";
 
 export interface StaticPageShellOptions {
   /**
-   * Page title rendered as `<h1>`. Plain text — set via `textContent`
-   * so user-controlled strings can't smuggle markup. For pages that
-   * want an italic emphasis word (the v3 handoff style), use
-   * {@link titleHtml} instead; the two are mutually exclusive at the
-   * call site.
+   * Page title rendered as `<h1>`. Pass a plain `string` for a text-only
+   * title, or a structured {@link PageTitle} (`{ before, emphasis, after }`)
+   * to italicise one emphasis word in the v3 handoff style. Either way the
+   * title is built from DOM nodes — never `innerHTML` — so user-controlled
+   * strings can't smuggle markup.
    */
-  title?: string;
-  /**
-   * Title markup. Rendered via `innerHTML` so callers can wrap the
-   * emphasis word in `<em>`. Caller is responsible for escaping any
-   * user-controlled content; the live call sites all hand in
-   * static strings, mirroring the contract on `page-header.ts`.
-   */
-  titleHtml?: string;
+  title?: TitleContent;
   /**
    * Optional small-caps accent label above the title (`"About ·
    * Sutrapad"`, `"Keyboard shortcuts"`, `"Terms of use"`). Mirrors the
@@ -85,7 +79,6 @@ export interface StaticPageShellOptions {
 
 export function buildStaticPageShell({
   title,
-  titleHtml,
   eyebrow,
   subtitle,
   lastUpdated,
@@ -120,10 +113,8 @@ export function buildStaticPageShell({
 
   const heading = document.createElement("h1");
   heading.className = "static-page-title";
-  if (titleHtml !== undefined) {
-    heading.innerHTML = titleHtml;
-  } else if (title !== undefined) {
-    heading.textContent = title;
+  if (title !== undefined) {
+    appendPageTitle(heading, title);
   }
   header.append(heading);
 

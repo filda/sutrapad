@@ -131,7 +131,7 @@ export function buildLinksPage({
     buildPageHeader({
       pageId: "links",
       eyebrow: `Links · ${eyebrowCount}${eyebrowFilter}`,
-      titleHtml: "A <em>library</em> of what caught your eye.",
+      title: { before: "A ", emphasis: "library", after: " of what caught your eye." },
       subtitle:
         "Every URL you've captured into a note, gathered here with the notebooks they first appeared in.",
     }),

@@ -17,6 +17,7 @@ import type {
   UserProfile,
 } from "../../../types";
 import { buildPageHeader } from "../shared/page-header";
+import type { PageTitle } from "../shared/page-title";
 import {
   applyPersonaStyles,
   appendPersonaStickers,
@@ -244,9 +245,14 @@ function buildHomeHeader(
   const now = new Date();
   const greeting = GREETING_LABEL[greetingFor(now.getHours())];
   const name = firstName(profile);
-  const titleHtml = name
-    ? `Good <em>${greeting}</em>, ${escapeHtml(name)}.`
-    : `Good <em>${greeting}</em>.`;
+  // `after` carries the profile name as a plain text node — no escaping
+  // needed because `buildPageHeader` renders title parts via `textContent`,
+  // never `innerHTML`.
+  const title: PageTitle = {
+    before: "Good ",
+    emphasis: greeting,
+    after: name ? `, ${name}.` : ".",
+  };
 
   // Subtitle quietly carries the same numbers as the stats strip below, so
   // the greeting feels specific even before the eye scans the grid.
@@ -257,7 +263,7 @@ function buildHomeHeader(
   return buildPageHeader({
     pageId: "home",
     eyebrow: formatHomeHeaderDate(now),
-    titleHtml,
+    title,
     subtitle,
     // Greeting + counts change daily — the lockup carries live information,
     // not onboarding chrome, so it shouldn't quietly fade out after ten
@@ -277,18 +283,6 @@ function summaryPhrase(summary: HomeStatsSummary): string {
       ? `${summary.openTasks} open thread${summary.openTasks === 1 ? "" : "s"}`
       : "no open threads";
   return `${notesPart}, ${tasksPart}. Pick up where you left off.`;
-}
-
-function escapeHtml(value: string): string {
-  // Narrow escape — only the handful of characters that would break out of
-  // the <em>…</em> / text nodes used in the title lockup. Keeps the innerHTML
-  // call safe for whatever the profile provider returns as the user's name.
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 export interface HomePageOptions {

@@ -10,10 +10,10 @@
  *
  * **All textual content is set via `textContent`** so a future contributor
  * dropping a user-controlled string into one of the helpers can't
- * accidentally regress the no-innerHTML invariant. The lone exception is
- * the page title, where we want `<em>` emphasis on "remembers like you
- * do." — the rich title goes through the shell's `titleHtml` slot whose
- * caller-escapes-everything contract is documented there.
+ * accidentally regress the no-innerHTML invariant. The page title wants
+ * `<em>` emphasis on "remembers like you do.", so it goes through the
+ * shell's structured `title` slot, which builds the emphasis as a DOM
+ * `<em>` node rather than parsing HTML.
  *
  * **Updating copy:** edit the strings in this module directly. Copy
  * lives next to the DOM that renders it — same convention as
@@ -43,7 +43,7 @@ export function buildAboutPage({
 
   return buildStaticPageShell({
     eyebrow: "About · Sutrapad",
-    titleHtml: "A notebook that <em>remembers like you do.</em>",
+    title: { before: "A notebook that ", emphasis: "remembers like you do." },
     subtitle:
       "Sutrapad is a personal notebook for people who already think in places, moods, and threads — and who would like a tool that gets out of the way.",
     lastUpdated: "April 2026",
