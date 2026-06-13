@@ -33,27 +33,16 @@ import {
   appendPersonaStickers,
 } from "../shared/persona-decor";
 import type { NotesListPersonaOptions } from "../shared/notes-list";
+import { buildIcon } from "../shared/icons";
 import { buildPageHeader } from "../shared/page-header";
 
-// Inline SVG paths, taken verbatim from
-// `docs/design_handoff_sutrapad2/src/icons.jsx`. Rendered through
-// `renderIcon` below to keep the same stroke/linecap contract as the rest
-// of our ink-on-paper iconography (see `settings-gear` in topbar.ts for
-// the convention).
-const ICON_SPARKLE =
-  '<path d="M12 3v6M12 15v6M3 12h6M15 12h6M6 6l3 3M15 15l3 3M6 18l3-3M15 9l3-3"/>';
-const ICON_CLOSE = '<path d="M6 6l12 12M18 6 6 18"/>';
-const ICON_CHECK = '<path d="m5 12 5 5L20 7"/>';
-// `ICON_ARROW` lived here until #9 — moved to `icons.ts` as the
-// reusable `"arrow"` shape so `buildCardOpenButton` can build the
-// same affordance on Notes / Links / Tasks.
-// `ICON_PIN` followed in #10 — moved to `icons.ts` as the reusable
-// `"pin"` shape so `buildLocationLine` can stamp the same chip on
-// every card surface.
-
-function renderIcon(pathHtml: string, size = 14): string {
-  return `<svg class="i" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${pathHtml}</svg>`;
-}
+// All Tasks icons (sparkle / check / close) route through the shared
+// `buildIcon` (from `icons.ts`), which builds each glyph with
+// `createElementNS` and leans on the `.i` CSS for stroke / fill — no
+// inline SVG strings, no `innerHTML`. The `arrow` and `pin` icons moved to
+// `icons.ts` earlier (#9 / #10) via `buildCardOpenButton` /
+// `buildLocationLine`; sparkle / check / close followed so the page no
+// longer carries any icon `innerHTML`.
 
 /**
  * Chip labels + hover hints. Matches `screen_rest.jsx`:
@@ -284,7 +273,10 @@ function buildOneThing({
 
     const label = document.createElement("div");
     label.className = "one-thing-label";
-    label.innerHTML = `${renderIcon(ICON_SPARKLE, 12)}<span>One thing for today</span>`;
+    label.append(buildIcon("sparkle", 12));
+    const labelText = document.createElement("span");
+    labelText.textContent = "One thing for today";
+    label.append(labelText);
     card.append(label);
 
     const body = document.createElement("div");
@@ -294,7 +286,7 @@ function buildOneThing({
     check.type = "button";
     check.className = `task-check lg${oneThing.task.done ? " checked" : ""}`;
     check.setAttribute("aria-label", oneThing.task.done ? "Mark open" : "Mark done");
-    if (oneThing.task.done) check.innerHTML = renderIcon(ICON_CHECK, 16);
+    if (oneThing.task.done) check.append(buildIcon("check", 16));
     check.addEventListener("click", () => {
       onToggleTask(oneThing.task.noteId, oneThing.task.lineIndex);
     });
@@ -335,7 +327,7 @@ function buildOneThing({
     clear.className = "one-thing-clear";
     clear.setAttribute("aria-label", "Clear one thing");
     clear.title = "Clear";
-    clear.innerHTML = renderIcon(ICON_CLOSE, 12);
+    clear.append(buildIcon("close", 12));
     clear.addEventListener("click", () => onSetOneThing(null));
     body.append(clear);
 
@@ -353,7 +345,7 @@ function buildOneThing({
 
   const icon = document.createElement("span");
   icon.className = "one-thing-icon";
-  icon.innerHTML = renderIcon(ICON_SPARKLE, 14);
+  icon.append(buildIcon("sparkle", 14));
   pick.append(icon);
 
   const label = document.createElement("span");
@@ -623,7 +615,7 @@ function buildTaskItem(
     "aria-label",
     entry.task.done ? "Mark open" : "Mark done",
   );
-  if (entry.task.done) check.innerHTML = renderIcon(ICON_CHECK, 12);
+  if (entry.task.done) check.append(buildIcon("check", 12));
   check.addEventListener("click", () => {
     options.onToggleTask(entry.task.noteId, entry.task.lineIndex);
   });
@@ -654,7 +646,9 @@ function buildTaskItem(
     promote.className = "task-promote";
     promote.setAttribute("aria-label", "Pick for today");
     promote.title = "Pick for today";
-    promote.innerHTML = renderIcon(ICON_SPARKLE, 11);
+    // Size 11 isn't on the shared `IconSize` ramp; 12 is the nearest — the
+    // 1px bump matches the arrow / pin migrations (#9 / #10).
+    promote.append(buildIcon("sparkle", 12));
     promote.addEventListener("click", () => options.onSetOneThing(key));
     item.append(promote);
   }

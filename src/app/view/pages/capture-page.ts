@@ -1,4 +1,5 @@
 import { buildBookmarklet } from "../../../lib/bookmarklet";
+import { kbd, strong, text } from "../shared/inline";
 import { buildPageHeader } from "../shared/page-header";
 
 /**
@@ -151,10 +152,10 @@ function buildStepCard(
   return card;
 }
 
-function buildStepParagraph(card: HTMLElement, html: string): void {
+function buildStepParagraph(card: HTMLElement, parts: readonly Node[]): void {
   const p = document.createElement("p");
   p.className = "step-text";
-  p.innerHTML = html;
+  p.append(...parts);
   card.append(p);
 }
 
@@ -163,19 +164,21 @@ function buildChromeSteps(appRootUrl: string): HTMLElement {
 
   block.append(
     buildStepCard(1, "Show your bookmarks bar", (card) => {
-      buildStepParagraph(
-        card,
-        'Press <kbd class="kbd">⌘⇧B</kbd> (or <kbd class="kbd">Ctrl+Shift+B</kbd> on Windows) to make it visible.',
-      );
+      buildStepParagraph(card, [
+        text("Press "),
+        kbd("⌘⇧B"),
+        text(" (or "),
+        kbd("Ctrl+Shift+B"),
+        text(" on Windows) to make it visible."),
+      ]);
     }),
   );
 
   block.append(
     buildStepCard(2, "Drag this button up there", (card) => {
-      buildStepParagraph(
-        card,
-        "Grab and drop the button into your bookmarks bar.",
-      );
+      buildStepParagraph(card, [
+        text("Grab and drop the button into your bookmarks bar."),
+      ]);
       const drag = document.createElement("a");
       drag.className = "bookmarklet-drag";
       drag.href = buildBookmarklet(appRootUrl);
@@ -191,10 +194,11 @@ function buildChromeSteps(appRootUrl: string): HTMLElement {
 
   block.append(
     buildStepCard(3, "Click it on any page", (card) => {
-      buildStepParagraph(
-        card,
-        "SutraPad opens with a new note prefilled with the URL, title and page context.",
-      );
+      buildStepParagraph(card, [
+        text(
+          "SutraPad opens with a new note prefilled with the URL, title and page context.",
+        ),
+      ]);
     }),
   );
 
@@ -206,10 +210,9 @@ function buildSafariSteps(options: CapturePageOptions): HTMLElement {
 
   block.append(
     buildStepCard(1, "Make a throwaway bookmark", (card) => {
-      buildStepParagraph(
-        card,
-        "Bookmark any page to your Favorites so there's something to edit.",
-      );
+      buildStepParagraph(card, [
+        text("Bookmark any page to your Favorites so there's something to edit."),
+      ]);
     }),
   );
 
@@ -236,10 +239,11 @@ function buildSafariSteps(options: CapturePageOptions): HTMLElement {
 
   block.append(
     buildStepCard(3, "Edit the bookmark's URL → paste", (card) => {
-      buildStepParagraph(
-        card,
-        "Bookmarks → Edit → replace the URL. Rename it to <strong>Save to SutraPad</strong>.",
-      );
+      buildStepParagraph(card, [
+        text("Bookmarks → Edit → replace the URL. Rename it to "),
+        strong("Save to SutraPad"),
+        text("."),
+      ]);
     }),
   );
 
@@ -262,19 +266,21 @@ function buildIosSteps(iosShortcutUrl: string): HTMLElement {
 
   block.append(
     buildStepCard(2, "Add it to the Share Sheet", (card) => {
-      buildStepParagraph(
-        card,
-        "Open the file, tap <strong>Add Shortcut</strong>, then enable <strong>Show in Share Sheet</strong>.",
-      );
+      buildStepParagraph(card, [
+        text("Open the file, tap "),
+        strong("Add Shortcut"),
+        text(", then enable "),
+        strong("Show in Share Sheet"),
+        text("."),
+      ]);
     }),
   );
 
   block.append(
     buildStepCard(3, "Share from any app", (card) => {
-      buildStepParagraph(
-        card,
-        "Safari, Mail, Messages — tap Share → Send to SutraPad. Done.",
-      );
+      buildStepParagraph(card, [
+        text("Safari, Mail, Messages — tap Share → Send to SutraPad. Done."),
+      ]);
     }),
   );
 
@@ -286,19 +292,21 @@ function buildAndroidSteps(): HTMLElement {
 
   block.append(
     buildStepCard(1, "Install SutraPad as a PWA", (card) => {
-      buildStepParagraph(
-        card,
-        "In Chrome → menu → <strong>Install app</strong>. SutraPad then appears in your system share sheet.",
-      );
+      buildStepParagraph(card, [
+        text("In Chrome → menu → "),
+        strong("Install app"),
+        text(". SutraPad then appears in your system share sheet."),
+      ]);
     }),
   );
 
   block.append(
     buildStepCard(2, "Share from anywhere", (card) => {
-      buildStepParagraph(
-        card,
-        "Any URL → Share → pick <strong>SutraPad</strong>. A new note opens, pre-filled.",
-      );
+      buildStepParagraph(card, [
+        text("Any URL → Share → pick "),
+        strong("SutraPad"),
+        text(". A new note opens, pre-filled."),
+      ]);
     }),
   );
 

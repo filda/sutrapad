@@ -50,6 +50,7 @@ const config = {
     //   test surface first, then promote.
     "src/app/view/shared/card-header.ts",
     "src/app/view/shared/editor-card.ts",
+    "src/app/view/shared/inline.ts",
     "src/app/view/shared/link-thumb.ts",
     "src/app/view/shared/location-consent-card.ts",
     "src/app/view/shared/notes-list.ts",

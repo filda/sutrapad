@@ -839,35 +839,32 @@ describe("buildTasksPage task-card and filter-miss contracts", () => {
   });
 });
 
-// Pin the inline-SVG icon contract — every renderIcon call lands one of
-// the five ICON_* path constants inside an <svg class="i" …> with the
-// shared stroke/linecap recipe. Without these asserts the path
-// StringLiterals at the top of the module (ICON_SPARKLE / CLOSE / CHECK /
-// PIN / ARROW) and the renderIcon template all survive because the
-// existing structural tests only look at button classes / aria, not the
-// SVG markup the buttons carry.
-describe("buildTasksPage inline-SVG icon contract", () => {
-  it("renderIcon stamps the canonical SVG attribute set on every icon", () => {
+// Pin the icon contract — every Tasks glyph now routes through the shared
+// `buildIcon` (from `icons.ts`), which builds the `<svg>` with
+// `createElementNS`, sets only `class` / `viewBox` / `aria-hidden` /
+// `focusable`, and leans on the `.i` CSS for stroke / fill. These asserts
+// pin the migrated contract (no inline width/height/stroke attributes) and
+// the `<path>` `d` data sourced from `icons.ts` → ICON_SHAPES, so a
+// regression that reintroduces an `innerHTML` icon string or drops a path
+// would surface here.
+describe("buildTasksPage icon contract", () => {
+  it("the per-task promote sparkle renders via buildIcon's attribute set (no inline recipe)", () => {
     const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
-    // `.task-promote` is the most reliably-present renderIcon-built
-    // icon (every open task on every card carries the sparkle). The
-    // `.entity-card-open` arrow used to anchor this test pre-#9, but
-    // it now routes through `buildIcon` (from `icons.ts`) which only
-    // sets `class`, `viewBox`, `aria-hidden`, `focusable` and leans
-    // on the `.i` CSS for stroke / fill — so it no longer carries
-    // the inline attribute recipe pinned below.
+    // `.task-promote` is the most reliably-present buildIcon-built glyph
+    // (every open task on every card carries the sparkle).
     const page = buildPage(makeWorkspace([note]));
     const svg = page.querySelector(".task-promote svg");
     expect(svg).not.toBeNull();
-    expect(svg?.getAttribute("class")).toBe("i");
+    // buildIcon size 12 → "i i-12"; stroke / fill live in the `.i` CSS.
+    expect(svg?.getAttribute("class")).toBe("i i-12");
     expect(svg?.getAttribute("viewBox")).toBe("0 0 24 24");
-    expect(svg?.getAttribute("fill")).toBe("none");
-    expect(svg?.getAttribute("stroke")).toBe("currentColor");
-    expect(svg?.getAttribute("stroke-width")).toBe("1.8");
-    expect(svg?.getAttribute("stroke-linecap")).toBe("round");
-    expect(svg?.getAttribute("stroke-linejoin")).toBe("round");
     expect(svg?.getAttribute("aria-hidden")).toBe("true");
     expect(svg?.getAttribute("focusable")).toBe("false");
+    // No inline sizing / stroke recipe — those moved to CSS in the migration.
+    expect(svg?.getAttribute("width")).toBeNull();
+    expect(svg?.getAttribute("height")).toBeNull();
+    expect(svg?.getAttribute("stroke")).toBeNull();
+    expect(svg?.getAttribute("stroke-width")).toBeNull();
   });
 
   it("the entity-card-open arrow renders the `arrow` icon from `icons.ts` (the new home of the chevron paths post-#9)", () => {
@@ -889,64 +886,66 @@ describe("buildTasksPage inline-SVG icon contract", () => {
     ]);
   });
 
-  it("ICON_SPARKLE path renders inside the empty pick CTA icon (size 14)", () => {
+  it("the empty pick CTA renders the sparkle icon via buildIcon (size 14)", () => {
     const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
     const page = buildPage(makeWorkspace([note]));
     const svg = page.querySelector(".one-thing-icon svg");
-    expect(svg?.getAttribute("width")).toBe("14");
-    expect(svg?.getAttribute("height")).toBe("14");
-    // ICON_SPARKLE = '<path d="M12 3v6M12 15v6M3 12h6M15 12h6M6 6l3 3M15 15l3 3M6 18l3-3M15 9l3-3"/>'
-    expect(svg?.innerHTML).toContain('d="M12 3v6M12 15v6M3 12h6M15 12h6');
-    expect(svg?.innerHTML).toContain("M15 9l3-3");
+    expect(svg?.getAttribute("class")).toBe("i i-14");
+    // sparkle silhouette sourced from icons.ts → ICON_SHAPES.sparkle.
+    expect(svg?.querySelector("path")?.getAttribute("d")).toBe(
+      "M12 3v6M12 15v6M3 12h6M15 12h6M6 6l3 3M15 15l3 3M6 18l3-3M15 9l3-3",
+    );
   });
 
-  it("ICON_SPARKLE in the filled one-thing-label uses size 12", () => {
+  it("the filled one-thing-label renders the sparkle icon at size 12", () => {
     const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
     const page = buildPage(makeWorkspace([note]), [], {
       tasksOneThingKey: "n::0",
     });
     const svg = page.querySelector(".one-thing-label svg");
-    expect(svg?.getAttribute("width")).toBe("12");
-    expect(svg?.innerHTML).toContain('d="M12 3v6');
+    expect(svg?.getAttribute("class")).toBe("i i-12");
+    expect(svg?.querySelector("path")?.getAttribute("d")).toContain("M12 3v6");
   });
 
-  it("ICON_SPARKLE in the per-task promote button uses size 11", () => {
+  it("the per-task promote sparkle renders at size 12 (11 isn't on the ramp)", () => {
     const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
     const page = buildPage(makeWorkspace([note]));
     const svg = page.querySelector(".task-promote svg");
-    expect(svg?.getAttribute("width")).toBe("11");
-    expect(svg?.innerHTML).toContain('d="M12 3v6');
+    expect(svg?.getAttribute("class")).toBe("i i-12");
+    expect(svg?.querySelector("path")?.getAttribute("d")).toContain("M12 3v6");
   });
 
-  it("ICON_CLOSE path renders inside the one-thing-clear button at size 12", () => {
+  it("the one-thing-clear button renders the close icon via buildIcon (size 12)", () => {
     const note = makeNote({ id: "n", tags: [], body: "- [ ] hi" });
     const page = buildPage(makeWorkspace([note]), [], {
       tasksOneThingKey: "n::0",
     });
     const svg = page.querySelector(".one-thing-clear svg");
-    expect(svg?.getAttribute("width")).toBe("12");
-    // ICON_CLOSE = '<path d="M6 6l12 12M18 6 6 18"/>'
-    expect(svg?.innerHTML).toContain('d="M6 6l12 12M18 6 6 18"');
+    expect(svg?.getAttribute("class")).toBe("i i-12");
+    // close silhouette sourced from icons.ts → ICON_SHAPES.close.
+    expect(svg?.querySelector("path")?.getAttribute("d")).toBe(
+      "M6 6l12 12M18 6 6 18",
+    );
   });
 
-  it("ICON_CHECK path renders inside the done one-thing checkbox at size 16", () => {
+  it("the done one-thing checkbox renders the check icon via buildIcon (size 16)", () => {
     const note = makeNote({ id: "n", tags: [], body: "- [x] done" });
     const page = buildPage(makeWorkspace([note]), [], {
       tasksShowDone: true,
       tasksOneThingKey: "n::0",
     });
     const svg = page.querySelector(".one-thing .task-check.lg svg");
-    expect(svg?.getAttribute("width")).toBe("16");
-    // ICON_CHECK = '<path d="m5 12 5 5L20 7"/>'
-    expect(svg?.innerHTML).toContain('d="m5 12 5 5L20 7"');
+    // size 16 maps to the bare "i" class on the shared ramp.
+    expect(svg?.getAttribute("class")).toBe("i");
+    expect(svg?.querySelector("path")?.getAttribute("d")).toBe("m5 12 5 5L20 7");
   });
 
-  it("ICON_CHECK path renders inside the per-list done task-check at size 12", () => {
+  it("the per-list done task-check renders the check icon via buildIcon (size 12)", () => {
     const note = makeNote({ id: "n", tags: [], body: "- [x] done" });
     const page = buildPage(makeWorkspace([note]), [], { tasksShowDone: true });
     const svg = page.querySelector(".task-list .task-check.checked svg");
-    expect(svg?.getAttribute("width")).toBe("12");
-    expect(svg?.innerHTML).toContain('d="m5 12 5 5L20 7"');
+    expect(svg?.getAttribute("class")).toBe("i i-12");
+    expect(svg?.querySelector("path")?.getAttribute("d")).toBe("m5 12 5 5L20 7");
   });
 
   it("the card-location pin renders the `pin` icon from `icons.ts` (the new home of the teardrop + marker hole post-#10)", () => {

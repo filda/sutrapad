@@ -35,7 +35,8 @@ export type IconName =
   | "menu"
   | "list"
   | "arrow"
-  | "pin";
+  | "pin"
+  | "sparkle";
 
 type IconShape =
   | { kind: "paths"; paths: readonly string[] }
@@ -153,6 +154,15 @@ const ICON_SHAPES: Readonly<Record<IconName, IconShape>> = {
       { tag: "path", d: "M12 22s7-7.5 7-13a7 7 0 0 0-14 0c0 5.5 7 13 7 13Z" },
       { tag: "circle", cx: 12, cy: 9, r: 2.5 },
     ],
+  },
+  // Eight-spoke sparkle used by the Tasks "one thing for today" affordances
+  // (label glyph, empty-pick CTA, per-task promote button). Moved here from
+  // inline `renderIcon(ICON_SPARKLE, …)` strings in `tasks-page.ts` so the
+  // glyph shares the same `createElementNS` pipeline + `.i` CSS as every
+  // other icon. Single `<path>` whose `d` chains all eight spokes.
+  sparkle: {
+    kind: "paths",
+    paths: ["M12 3v6M12 15v6M3 12h6M15 12h6M6 6l3 3M15 15l3 3M6 18l3-3M15 9l3-3"],
   },
 };
 
