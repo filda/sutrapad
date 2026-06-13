@@ -95,7 +95,7 @@ export function readNoteDetailIdFromLocation(
 ): string | null {
   const segments = readPathSegments(url, base);
   if (segments.length < 2) return null;
-  if (segments[0].trim().toLowerCase() !== "notes") return null;
+  if (segments[0].toLowerCase() !== "notes") return null;
 
   try {
     const decoded = decodeURIComponent(segments[1]).trim();

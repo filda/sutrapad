@@ -114,9 +114,11 @@ describe("readNoteDetailIdFromLocation", () => {
     ).toBe("a/b c");
   });
 
-  it("normalises the casing/whitespace of the notes segment", () => {
-    // Pins `segments[0].trim().toLowerCase() === "notes"`: an upper-case
-    // "NOTES" segment must still be recognised as a note-detail route.
+  it("normalises the casing of the notes segment", () => {
+    // Pins `segments[0].toLowerCase() === "notes"`: an upper-case "NOTES"
+    // segment must still be recognised as a note-detail route. (The segment
+    // comes straight from a split pathname and is never decoded, so it can't
+    // carry whitespace — hence no trim here.)
     expect(readNoteDetailIdFromLocation(url("/sutrapad/NOTES/abc"), BASE)).toBe(
       "abc",
     );
