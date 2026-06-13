@@ -134,6 +134,25 @@ describe("buildLinksPage tag filter", () => {
     expect(urls).toEqual(["https://example.com/both"]);
   });
 
+  it("renders a non-http(s) URL as inert text — no clickable href (defence in depth)", () => {
+    // A Drive-loaded note's `urls` array is attacker-controllable; even if a
+    // `javascript:` entry slipped past the load-time filter it must not
+    // become a navigable link on the SutraPad origin.
+    const note = makeNote({ id: "x", urls: ["javascript:alert(1)"] });
+    const anchor = buildPage(makeWorkspace([note])).querySelector(".link-url");
+    expect(anchor?.textContent).toBe("javascript:alert(1)");
+    expect(anchor?.getAttribute("href")).toBeNull();
+    expect(anchor?.getAttribute("target")).toBeNull();
+  });
+
+  it("makes an http(s) URL a real navigable link", () => {
+    const note = makeNote({ id: "y", urls: ["https://example.com/a"] });
+    const anchor = buildPage(makeWorkspace([note])).querySelector(".link-url");
+    expect(anchor?.getAttribute("href")).toBe("https://example.com/a");
+    expect(anchor?.getAttribute("target")).toBe("_blank");
+    expect(anchor?.getAttribute("rel")).toBe("noreferrer noopener");
+  });
+
   it("surfaces the filtered-N-of-M count and tag count in the eyebrow", () => {
     const a = makeNote({
       id: "a",

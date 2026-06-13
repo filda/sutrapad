@@ -23,6 +23,7 @@ import {
   buildTaskIndex,
   extractUrlsFromText,
 } from "../../lib/notebook";
+import { httpUrlOrNull } from "../../lib/safe-url";
 import {
   escapeDriveQueryValue,
   GOOGLE_DRIVE_FOLDER_MIME_TYPE,
@@ -59,7 +60,14 @@ const MAX_WORKSPACE_NOTE_FILES = 1000;
  */
 function normalizeNoteDocument(document: SutraPadDocument): SutraPadDocument {
   document.createdAt ??= document.updatedAt;
-  document.urls ??= extractUrlsFromText(document.body);
+  // Treat a stored `urls` array as attacker-controlled — a note synced from
+  // another device or a hand-edited Drive file could carry `javascript:` /
+  // `data:` entries that would otherwise flow straight to the Links `href`
+  // sink. Keep only http(s) URLs; when the field is missing or not an array,
+  // re-derive it from the body (the http(s)-only extractor).
+  document.urls = Array.isArray(document.urls)
+    ? document.urls.filter((url) => httpUrlOrNull(url) !== null)
+    : extractUrlsFromText(document.body);
   document.tags ??= [];
   return document;
 }

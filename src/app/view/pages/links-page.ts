@@ -28,6 +28,7 @@ import {
   appendPersonaStickers,
 } from "../shared/persona-decor";
 import type { NotesListPersonaOptions } from "../shared/notes-list";
+import { httpUrlOrNull } from "../../../lib/safe-url";
 import type { SutraPadDocument, SutraPadWorkspace } from "../../../types";
 import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
 import { buildPageHeader } from "../shared/page-header";
@@ -447,12 +448,23 @@ function buildLinkBody(
   return body;
 }
 
-function buildLinkUrl(url: string): HTMLElement {
-  const anchor = document.createElement("a");
-  anchor.className = "link-card-url";
+/**
+ * Makes `anchor` a real navigable link only when `url` is http(s). The
+ * load-time `urls` filter already strips dangerous schemes, but gating here
+ * too means a non-http URL (from any future path) shows as inert text rather
+ * than becoming a clickable `javascript:` link on the SutraPad origin.
+ */
+function applyLinkHref(anchor: HTMLAnchorElement, url: string): void {
+  if (httpUrlOrNull(url) === null) return;
   anchor.href = url;
   anchor.target = "_blank";
   anchor.rel = "noreferrer noopener";
+}
+
+function buildLinkUrl(url: string): HTMLElement {
+  const anchor = document.createElement("a");
+  anchor.className = "link-card-url";
+  applyLinkHref(anchor, url);
   anchor.textContent = url;
   return anchor;
 }
@@ -550,9 +562,7 @@ function buildLinkListItem(
 
   const anchor = document.createElement("a");
   anchor.className = "link-url";
-  anchor.href = entry.url;
-  anchor.target = "_blank";
-  anchor.rel = "noreferrer noopener";
+  applyLinkHref(anchor, entry.url);
   anchor.textContent = entry.url;
   item.append(anchor);
 

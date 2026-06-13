@@ -283,6 +283,81 @@ describe("GoogleDriveStore.loadWorkspace fallback paths", () => {
     expect(workspace.notes[0].createdAt).toBe("2025-10-01T00:00:00.000Z");
   });
 
+  it("strips non-http(s) URLs from a note's stored `urls` array on load", async () => {
+    // Drive data is attacker-controlled — a note synced from another device
+    // or a hand-edited file could carry `javascript:` / `data:` entries in
+    // `urls` that would flow to the Links `href` sink. normalizeNoteDocument
+    // filters the stored array to http(s) only rather than trusting it.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const noteFile = driveFile("nf-poison", "note-poison.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "poison" },
+    });
+    const poisonNote = {
+      id: "poison",
+      title: "Poisoned links",
+      body: "x",
+      tags: [],
+      urls: [
+        "https://good.example/a",
+        "javascript:alert(1)",
+        "data:text/html,<script>x</script>",
+        "http://ok.example/b",
+      ],
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([noteFile]);
+      if (url.includes("/nf-poison?alt=media")) return jsonResponse(poisonNote);
+      if (url.includes("'head'")) return fileList([]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+    expect(workspace.notes[0].urls).toEqual([
+      "https://good.example/a",
+      "http://ok.example/b",
+    ]);
+  });
+
+  it("re-extracts `urls` from the body when the stored field isn't an array", async () => {
+    // A malicious file could set `urls` to a non-array (e.g. a string) to
+    // dodge the filter; the guard falls back to the http(s)-only body
+    // extractor instead of trusting it or throwing.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const noteFile = driveFile("nf-bad", "note-bad.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "bad" },
+    });
+    const badNote = {
+      id: "bad",
+      title: "Bad urls shape",
+      body: "see https://body.example/x",
+      tags: [],
+      urls: "javascript:alert(1)",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([noteFile]);
+      if (url.includes("/nf-bad?alt=media")) return jsonResponse(badNote);
+      if (url.includes("'head'")) return fileList([]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+    expect(workspace.notes[0].urls).toEqual(["https://body.example/x"]);
+  });
+
   it("falls back to the most recently updated note when the index points at a note that no longer exists", async () => {
     // Defends the `sortedNotes.some(...)` guard on line 209. Mutating
     // it to `true` would happily return the stale `indexActiveNoteId`
