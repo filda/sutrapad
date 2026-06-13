@@ -23,6 +23,7 @@ import {
 } from "../../lib/notebook-persona";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
 import { createOgImageResolver } from "../logic/og-image-resolver";
+import type { LexiconStore } from "../../services/drive/lexicon-store";
 import { pickNoteThumbSeed } from "../logic/link-thumb-seed";
 import { deriveNotePrimaryUrl } from "../logic/note-primary-url";
 import { buildTopbar } from "./chrome/topbar";
@@ -243,14 +244,15 @@ interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
    */
   onOpenCapture: () => void;
   /**
-   * Returns the current Google Drive access token, or `null` when the
-   * user is signed out. Threaded through purely for the Lexicon
-   * Builder workbench page, which talks to its own Drive artifacts
-   * outside the regular workspace sync. Keeping the read at call time
-   * (rather than capturing a token at render time) means a sign-out
-   * mid-session is reflected on the very next workbench action.
+   * Returns a ready-to-use lexicon store, or `null` when the user is
+   * signed out. Threaded through purely for the Lexicon Builder workbench
+   * page, which talks to its own Drive artifacts outside the regular
+   * workspace sync. The wiring layer owns the access token and builds the
+   * store from it, so the workbench view never sees the raw token
+   * (hardening plan, item 10). Read at call time (not captured at render)
+   * so a sign-out mid-session is reflected on the next workbench action.
    */
-  getAccessToken: () => string | null;
+  getLexiconStore: () => LexiconStore | null;
 }
 
 export function renderAppPage({
@@ -318,7 +320,7 @@ export function renderAppPage({
   dismissedTagAliases,
   onMergeTagAlias,
   onDismissTagAlias,
-  getAccessToken,
+  getLexiconStore,
 }: RenderAppOptions): void {
   root.innerHTML = "";
   const isNoteDetailRoute = activeMenuItem === "notes" && detailNoteId !== null;
@@ -544,7 +546,7 @@ export function renderAppPage({
       page.append(
         buildLexiconPage({
           profile,
-          getAccessToken,
+          getLexiconStore,
           onSignIn,
           onSelectMenuItem,
         }),

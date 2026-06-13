@@ -18,6 +18,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import type { BuilderState } from "../src/app/logic/lexicon/types";
+import type { LexiconStore } from "../src/services/drive/lexicon-store";
 import type { UserProfile } from "../src/types";
 
 interface DeferredSave {
@@ -60,19 +61,15 @@ const PROFILE: UserProfile = {
 let loadStateMock: Mock = vi.fn();
 let saveMock: Mock = vi.fn();
 
-// Hoisted-style mock factory so the page module's
-// `import { GoogleDriveLexiconStore } from "../../../services/drive/lexicon-store"`
-// resolves to a class that delegates to the per-test mocks above.
-vi.mock("../src/services/drive/lexicon-store", () => ({
-  GoogleDriveLexiconStore: class {
-    loadState() {
-      return loadStateMock();
-    }
-    saveStateAndRuntime(...args: unknown[]) {
-      return saveMock(...args);
-    }
-  },
-}));
+// The page receives a ready-built `LexiconStore` (see hardening item 10), so
+// the test just hands it one that delegates to the per-test mocks above —
+// no module mock of the concrete Drive store needed.
+function makeStoreMock(): LexiconStore {
+  return {
+    loadState: () => loadStateMock(),
+    saveStateAndRuntime: (...args: unknown[]) => saveMock(...args),
+  } as LexiconStore;
+}
 
 // happy-dom auto-fetches `<img src=…>` URLs. The page itself doesn't
 // embed images, but stubbing keeps stderr quiet if anything sneaks in
@@ -99,7 +96,7 @@ async function mountPage(builder: BuilderState): Promise<{ page: HTMLElement }> 
   const { buildLexiconPage } = await import("../src/app/view/pages/lexicon-page");
   const page = buildLexiconPage({
     profile: PROFILE,
-    getAccessToken: () => "test-token",
+    getLexiconStore: () => makeStoreMock(),
     onSignIn: vi.fn(),
     onSelectMenuItem: vi.fn(),
   });

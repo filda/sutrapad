@@ -3,6 +3,7 @@ import {
   GoogleDrivePreferencesStore,
   GoogleDriveStore,
 } from "./services/drive-store";
+import { GoogleDriveLexiconStore } from "./services/drive/lexicon-store";
 import {
   buildCombinedTagIndex,
   stripEmptyDraftNotes,
@@ -669,7 +670,14 @@ export function createApp(root: HTMLElement): void {
         captureLocationPreference: captureLocationPreference$.get(),
         locationConsentBlocked: locationConsentBlocked$.get(),
         onOpenPalette: () => paletteAccess$.get()?.open(),
-        getAccessToken: () => auth.getAccessToken(),
+        // Build the lexicon store from the live token here in the wiring
+        // layer; the workbench view receives the store, never the raw token
+        // (hardening plan, item 10). Read at call time so a sign-out
+        // mid-session yields `null` on the next workbench action.
+        getLexiconStore: () => {
+          const token = auth.getAccessToken();
+          return token ? new GoogleDriveLexiconStore(token) : null;
+        },
         ...callbacks,
       });
     } finally {

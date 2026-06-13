@@ -32,20 +32,20 @@ import {
 import { generateRuntimeLexicon } from "../../logic/lexicon/runtime";
 import { filterTargetSuggestions } from "../../logic/lexicon/typeahead";
 import type { BuilderState } from "../../logic/lexicon/types";
-import { GoogleDriveLexiconStore } from "../../../services/drive/lexicon-store";
+import type { LexiconStore } from "../../../services/drive/lexicon-store";
 import type { MenuItemId } from "../../logic/menu";
 import type { UserProfile } from "../../../types";
 
 export interface LexiconPageOptions {
   profile: UserProfile | null;
   /**
-   * Returns the current Drive access token, or `null` when the user is
-   * signed out. Threaded through from the auth service in `app.ts` so
-   * the page can build a `GoogleDriveLexiconStore` lazily on first
-   * action — and so a sign-out mid-session is observable without
-   * having to re-render at the app level.
+   * Returns a ready-to-use lexicon store, or `null` when the user is
+   * signed out. The wiring layer in `app.ts` owns the access token and
+   * builds the store from it; the page only ever sees the store, never the
+   * raw token (hardening plan, item 10). Read at call time (not captured at
+   * render) so a sign-out mid-session is reflected on the next action.
    */
-  getAccessToken: () => string | null;
+  getLexiconStore: () => LexiconStore | null;
   onSignIn: () => void;
   onSelectMenuItem: (id: MenuItemId) => void;
 }
@@ -152,7 +152,7 @@ export function buildLexiconPage(options: LexiconPageOptions): HTMLElement {
   // Kick off the initial Drive load on first mount of the page (or
   // after a sign-in invalidated the previously-loaded state).
   if (pageState.builder === null && !pageState.loading) {
-    void loadFromDrive(options.getAccessToken, rerender);
+    void loadFromDrive(options.getLexiconStore, rerender);
   }
 
   return page;
@@ -165,17 +165,17 @@ function renderBody(options: LexiconPageOptions): Node[] {
   if (pageState.loadError !== null) {
     return [
       buildErrorCard(`Couldn't load builder state: ${pageState.loadError}`, () =>
-        retryLoad(options.getAccessToken),
+        retryLoad(options.getLexiconStore),
       ),
     ];
   }
   const builder = pageState.builder ?? createEmptyBuilderState();
 
   return [
-    buildCandidateCard(builder, options.getAccessToken),
+    buildCandidateCard(builder, options.getLexiconStore),
     buildProgressStrip(builder),
     buildSaveStatus(),
-    buildImportCard(options.getAccessToken),
+    buildImportCard(options.getLexiconStore),
   ];
 }
 
@@ -227,7 +227,7 @@ function buildErrorCard(message: string, onRetry: () => void): HTMLElement {
   return card;
 }
 
-function buildImportCard(getAccessToken: () => string | null): HTMLElement {
+function buildImportCard(getLexiconStore: () => LexiconStore | null): HTMLElement {
   const card = document.createElement("section");
   card.className = "lexicon-card lexicon-import-card";
 
@@ -276,7 +276,7 @@ function buildImportCard(getAccessToken: () => string | null): HTMLElement {
     const text = textarea.value;
     if (!text.trim()) return;
     runMutation(
-      getAccessToken,
+      getLexiconStore,
       (state) => mergeImport(state, text),
       () => {
         textarea.value = "";
@@ -290,7 +290,7 @@ function buildImportCard(getAccessToken: () => string | null): HTMLElement {
 
 function buildCandidateCard(
   builder: BuilderState,
-  getAccessToken: () => string | null,
+  getLexiconStore: () => LexiconStore | null,
 ): HTMLElement {
   const card = document.createElement("section");
   card.className = "lexicon-card lexicon-candidate-card";
@@ -389,7 +389,7 @@ function buildCandidateCard(
   mapButton.addEventListener("click", () => {
     const target = targetInput.value.trim().toLocaleLowerCase("cs-CZ").normalize("NFC");
     runMutation(
-      getAccessToken,
+      getLexiconStore,
       (state) =>
         target ? mapForm(state, candidate.form, target) : acceptExact(state, candidate.form),
     );
@@ -401,7 +401,7 @@ function buildCandidateCard(
   rejectButton.className = "button lexicon-action-reject";
   rejectButton.textContent = "Reject";
   rejectButton.addEventListener("click", () => {
-    runMutation(getAccessToken, (state) => rejectForm(state, candidate.form));
+    runMutation(getLexiconStore, (state) => rejectForm(state, candidate.form));
   });
   actions.append(rejectButton);
 
@@ -636,7 +636,7 @@ function countWaitingCandidates(builder: BuilderState): number {
  * Drive autosave on the serialised save chain.
  */
 function runMutation(
-  getAccessToken: () => string | null,
+  getLexiconStore: () => LexiconStore | null,
   mutate: (state: BuilderState) => BuilderState,
   onSuccess?: () => void,
 ): void {
@@ -649,15 +649,15 @@ function runMutation(
   pageState = { ...pageState, builder: next };
   renderHandle?.rerender();
   onSuccess?.();
-  void scheduleSave(getAccessToken, next);
+  void scheduleSave(getLexiconStore, next);
 }
 
 async function scheduleSave(
-  getAccessToken: () => string | null,
+  getLexiconStore: () => LexiconStore | null,
   state: BuilderState,
 ): Promise<void> {
-  const token = getAccessToken();
-  if (!token) {
+  const store = getLexiconStore();
+  if (!store) {
     pageState = {
       ...pageState,
       saveStatus: "error",
@@ -675,7 +675,6 @@ async function scheduleSave(
 
   const previousQueue = pageState.saveQueue;
   const next = previousQueue.then(async () => {
-    const store = new GoogleDriveLexiconStore(token);
     const runtime = generateRuntimeLexicon(state);
     await store.saveStateAndRuntime(state, runtime);
     return;
@@ -703,11 +702,11 @@ async function scheduleSave(
 }
 
 async function loadFromDrive(
-  getAccessToken: () => string | null,
+  getLexiconStore: () => LexiconStore | null,
   rerender: () => void,
 ): Promise<void> {
-  const token = getAccessToken();
-  if (!token) {
+  const store = getLexiconStore();
+  if (!store) {
     pageState = {
       ...pageState,
       loadError: "Not signed in.",
@@ -720,7 +719,6 @@ async function loadFromDrive(
   rerender();
 
   try {
-    const store = new GoogleDriveLexiconStore(token);
     const remote = await store.loadState();
     pageState = {
       ...pageState,
@@ -739,7 +737,7 @@ async function loadFromDrive(
   }
 }
 
-function retryLoad(getAccessToken: () => string | null): void {
+function retryLoad(getLexiconStore: () => LexiconStore | null): void {
   pageState = { ...pageState, loadError: null };
-  void loadFromDrive(getAccessToken, () => renderHandle?.rerender());
+  void loadFromDrive(getLexiconStore, () => renderHandle?.rerender());
 }

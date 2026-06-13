@@ -34,7 +34,18 @@ const RUNTIME_FILE_NAME = "sutrapad-topic-lexicon.json";
 const STATE_KIND = "lexicon-state";
 const RUNTIME_KIND = "lexicon-runtime";
 
-export class GoogleDriveLexiconStore {
+/**
+ * The lexicon-workbench operations the view needs. Exposed as an interface
+ * so the workbench page can receive a ready-to-use store (built from the
+ * access token in the wiring layer) instead of the raw token itself —
+ * keeping token access out of view code. See the hardening plan, item 10.
+ */
+export interface LexiconStore {
+  loadState(): Promise<BuilderState | null>;
+  saveStateAndRuntime(state: BuilderState, runtime: RuntimeLexicon): Promise<void>;
+}
+
+export class GoogleDriveLexiconStore implements LexiconStore {
   readonly #client: GoogleDriveClient;
   #workspaceFolderPromise: Promise<DriveFileRecord> | null = null;
 
