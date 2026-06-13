@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { runWorkspaceRefresh } from "../src/app/session/workspace-refresh";
-import type { DriveNoteInventoryEntry } from "../src/app/session/workspace-refresh";
+import type {
+  DriveNoteInventoryEntry,
+  WorkspaceRefreshEffects,
+} from "../src/app/session/workspace-refresh";
 import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 
 function note(
@@ -306,6 +309,50 @@ describe("runWorkspaceRefresh", () => {
     expect(h.fetchNoteByFileId).not.toHaveBeenCalled();
     // Local note was not in the empty inventory → dropped.
     expect(h.state.workspace.notes).toHaveLength(0);
+    expect(h.setSyncState).toHaveBeenLastCalledWith("idle");
+  });
+
+  it("degrades gracefully when no `getKnownDriveIds` effect is wired (optional dependency)", async () => {
+    // `getKnownDriveIds` is an optional effect — `applyAndCommit` reads
+    // it through `effects.getKnownDriveIds?.() ?? new Set()`. A caller
+    // that hasn't adopted the known-set plumbing may omit it entirely,
+    // and the refresh must still run rather than throwing on an
+    // undefined call. With the empty-set fallback, `applyDriveRefresh`
+    // treats every not-in-inventory local note as "never pushed from
+    // this device" and preserves it instead of dropping it.
+    const h = makeHarness(
+      workspace([
+        note("a", "alpha", "2026-05-01T10:00:00.000Z"),
+        note("b", "local only", "2026-04-30T10:00:00.000Z"),
+      ]),
+    );
+    h.loadInventory.mockResolvedValue([
+      entry("a", "fa", "2026-05-01T10:00:00.000Z"),
+    ]);
+    h.fetchNoteByFileId.mockResolvedValue(
+      note("a", "alpha", "2026-05-01T10:00:00.000Z"),
+    );
+
+    // Build the effects object WITHOUT `getKnownDriveIds` so the
+    // `?.() ?? new Set()` fallback is the only thing keeping the
+    // refresh from dereferencing an undefined effect.
+    const effectsWithoutKnown: WorkspaceRefreshEffects = {
+      loadInventory: h.loadInventory,
+      fetchNoteByFileId: h.fetchNoteByFileId,
+      getWorkspace: () => h.state.workspace,
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      cancelAutoSave: h.cancelAutoSave,
+    };
+
+    await runWorkspaceRefresh(effectsWithoutKnown);
+
+    // "b" is absent from the inventory but, with the empty known-set
+    // fallback, is treated as never-synced and therefore preserved.
+    expect(h.state.workspace.notes.map((n) => n.id)).toContain("b");
     expect(h.setSyncState).toHaveBeenLastCalledWith("idle");
   });
 });
