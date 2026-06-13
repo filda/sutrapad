@@ -1,6 +1,7 @@
 import type { SutraPadCaptureContext } from "../types";
 import { sanitizeCaptureContext } from "./capture-context-sanitize";
 import { safeFetch } from "./safe-fetch";
+import { httpUrlOrNull } from "./safe-url";
 
 export interface UrlCapturePayload {
   title?: string;
@@ -12,26 +13,51 @@ export interface NoteCapturePayload {
   note: string;
 }
 
+/**
+ * Length caps for the raw capture query params — the bookmarklet's
+ * non-JSON attack surface (the `?capture=` JSON is clamped separately in
+ * `capture-context-sanitize.ts`). The bookmarklet runs on a third-party
+ * page, so a crafted `?title=` / `?note=` / `?selection=` could be
+ * megabytes; clamping keeps a single capture from blowing the localStorage
+ * / Drive-upload budget. URLs cap at the same 2048 the captureContext
+ * sanitiser uses; free text caps at a generous ceiling that still holds any
+ * realistic quote. `CAPTURE_TEXT_MAX` is shared with the selection reader
+ * in `silent-capture.ts`.
+ */
+const CAPTURE_URL_MAX = 2048;
+const CAPTURE_TITLE_MAX = 512;
+export const CAPTURE_TEXT_MAX = 100_000;
+
+function clampLength(value: string, max: number): string {
+  // `slice` already returns the whole string when it's within budget, so no
+  // length guard is needed — the conditional form just adds an equivalent
+  // mutant with no behavioural difference.
+  return value.slice(0, max);
+}
+
 export function readUrlCapture(urlString: string): UrlCapturePayload | null {
   const currentUrl = new URL(urlString);
   const capturedUrl = currentUrl.searchParams.get("url");
 
-  if (!capturedUrl) {
+  // Scheme-gate + normalise the captured URL. `?url=` is attacker-
+  // controllable (the bookmarklet runs on a third-party page), so
+  // `javascript:` / `data:` / `blob:` / malformed values must never become
+  // a note's URL — drop the whole capture instead. The length cap stops a
+  // multi-KB URL from bloating the stored note. `httpUrlOrNull` also handles
+  // the absent param (`null`) and empty string, returning null for both.
+  const normalizedUrl = httpUrlOrNull(capturedUrl);
+  if (normalizedUrl === null || normalizedUrl.length > CAPTURE_URL_MAX) {
     return null;
   }
 
-  try {
-    const normalizedUrl = new URL(capturedUrl).toString();
-    const title = currentUrl.searchParams.get("title")?.trim() || undefined;
-    const serializedCaptureContext = currentUrl.searchParams.get("capture");
-    return {
-      title,
-      url: normalizedUrl,
-      captureContext: parseCaptureContext(serializedCaptureContext),
-    };
-  } catch {
-    return null;
-  }
+  const rawTitle = currentUrl.searchParams.get("title")?.trim();
+  const title = rawTitle ? clampLength(rawTitle, CAPTURE_TITLE_MAX) : undefined;
+  const serializedCaptureContext = currentUrl.searchParams.get("capture");
+  return {
+    title,
+    url: normalizedUrl,
+    captureContext: parseCaptureContext(serializedCaptureContext),
+  };
 }
 
 function parseCaptureContext(
@@ -63,7 +89,7 @@ export function readNoteCapture(urlString: string): NoteCapturePayload | null {
     return null;
   }
 
-  return { note };
+  return { note: clampLength(note, CAPTURE_TEXT_MAX) };
 }
 
 export function clearCaptureParamsFromLocation(urlString: string): string {

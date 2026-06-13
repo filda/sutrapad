@@ -17,6 +17,8 @@
  * the matching writer there is the source of truth for param names.
  */
 
+import { CAPTURE_TEXT_MAX } from "../../lib/url-capture";
+
 /**
  * Sentinel param the bookmarklet sets when it expects the page to run
  * silent + postMessage instead of rendering the editor. Reads as `?silent=1`
@@ -67,7 +69,11 @@ export function extractSelectionFromUrl(url: string): string | null {
   const raw = parsed.searchParams.get(SELECTION_PARAM);
   if (raw === null) return null;
   if (raw.trim() === "") return null;
-  return raw;
+  // Bound the selection like the other capture params — a third-party page
+  // could pre-select megabytes of text to bloat the saved note. `slice` is a
+  // no-op when it already fits. Shares the free-text budget with `?note=` /
+  // `?title=` (`url-capture.ts`).
+  return raw.slice(0, CAPTURE_TEXT_MAX);
 }
 
 /**

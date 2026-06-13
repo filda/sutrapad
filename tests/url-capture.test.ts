@@ -104,6 +104,52 @@ describe("url capture helpers", () => {
     ).toBeNull();
   });
 
+  it("rejects a captured URL whose scheme isn't http(s)", () => {
+    // `?url=` is attacker-controllable (the bookmarklet runs on a
+    // third-party page). A `javascript:` / `data:` / `blob:` URL must
+    // never become a note's URL — drop the whole capture.
+    for (const scheme of [
+      "javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "blob:https://example.com/uuid",
+      "file:///etc/passwd",
+    ]) {
+      expect(
+        readUrlCapture(
+          `https://filda.github.io/sutrapad/?url=${encodeURIComponent(scheme)}`,
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it("clamps an oversized captured title", () => {
+    const longTitle = "T".repeat(900);
+    const payload = readUrlCapture(
+      `https://filda.github.io/sutrapad/?url=https%3A%2F%2Fexample.com%2Fpost&title=${longTitle}`,
+    );
+    expect(payload?.title?.length).toBe(512);
+  });
+
+  it("accepts a captured URL exactly at the 2048 budget but rejects one over it", () => {
+    const base = "https://example.com/";
+    const exact = base + "a".repeat(2048 - base.length); // length 2048
+    expect(
+      readUrlCapture(
+        `https://filda.github.io/sutrapad/?url=${encodeURIComponent(exact)}`,
+      )?.url.length,
+    ).toBe(2048);
+    const over = base + "a".repeat(2049 - base.length); // length 2049
+    expect(
+      readUrlCapture(
+        `https://filda.github.io/sutrapad/?url=${encodeURIComponent(over)}`,
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when the url param is absent", () => {
+    expect(readUrlCapture("https://filda.github.io/sutrapad/?title=Hello")).toBeNull();
+  });
+
   it("clears capture parameters from the location", () => {
     expect(
       clearCaptureParamsFromLocation(
@@ -136,6 +182,14 @@ describe("url capture helpers", () => {
     });
 
     expect(readNoteCapture("https://filda.github.io/sutrapad/?note=%20%20%20")).toBeNull();
+  });
+
+  it("clamps an oversized note payload to the free-text budget", () => {
+    const huge = "n".repeat(100_000 + 5000);
+    const payload = readNoteCapture(
+      `https://filda.github.io/sutrapad/?note=${huge}`,
+    );
+    expect(payload?.note.length).toBe(100_000);
   });
 
   it("derives a reasonable fallback title from the captured URL", () => {

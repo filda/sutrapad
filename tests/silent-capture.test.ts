@@ -4,6 +4,7 @@ import {
   extractSelectionFromUrl,
   isSilentCapture,
 } from "../src/app/logic/silent-capture";
+import { CAPTURE_TEXT_MAX } from "../src/lib/url-capture";
 
 describe("isSilentCapture", () => {
   it("returns false when the silent param is absent", () => {
@@ -73,6 +74,14 @@ describe("extractSelectionFromUrl", () => {
 
   it("returns null on a malformed URL (never throws)", () => {
     expect(extractSelectionFromUrl("not a url")).toBeNull();
+  });
+
+  it("clamps an oversized selection to the shared capture-text budget", () => {
+    // A third-party page could pre-select megabytes; the reader caps the
+    // selection so a single capture can't bloat the saved note.
+    const huge = "x".repeat(CAPTURE_TEXT_MAX + 5000);
+    const url = `https://app.example/?selection=${encodeURIComponent(huge)}`;
+    expect(extractSelectionFromUrl(url)?.length).toBe(CAPTURE_TEXT_MAX);
   });
 });
 
