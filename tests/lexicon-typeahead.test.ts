@@ -30,6 +30,19 @@ describe("filterTargetSuggestions", () => {
     ]);
   });
 
+  it("promotes a startsWith match above an earlier contains-only match", () => {
+    // The contains-only target ("kompra") is listed *before* the
+    // startsWith target ("praha") in the input. The partition must still
+    // surface "praha" first. The earlier startsWith test can't catch a
+    // collapsed partition because its startsWith item already precedes its
+    // contains item in input order — here the order is deliberately
+    // inverted so dropping the startsWith branch flips the result.
+    expect(filterTargetSuggestions("pra", ["kompra", "praha"], 5)).toEqual([
+      "praha",
+      "kompra",
+    ]);
+  });
+
   it("uses cs-CZ lower-case rules so ČŠŘ collate against their bare forms", () => {
     const targets = ["Čára", "cara", "abc"];
     // Lowercased, "č" stays "č" and "C" becomes "c". A query of "ca"

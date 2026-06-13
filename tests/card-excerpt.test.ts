@@ -53,6 +53,25 @@ describe("buildCardExcerpt", () => {
     ).toBe("Read this tomorrow: — looks juicy.");
   });
 
+  it("trims the whitespace left when the stripped URL led the body", () => {
+    // URL at the very start leaves a leading space after removal; the
+    // `.trim()` on the strip branch must clean it so the excerpt doesn't
+    // render with a phantom indent. Pins that trailing `.trim()` — a body
+    // that ends up only padded on one side wouldn't be caught by the
+    // mid-sentence strip test above.
+    const body = "https://x.example trailing words";
+    expect(buildCardExcerpt(body, { stripUrl: "https://x.example" })).toBe(
+      "trailing words",
+    );
+  });
+
+  it("trims a trailing space before the ellipsis when truncation lands on a gap", () => {
+    // slice(0, maxChars - 1) can end on a space; without the `.trimEnd()`
+    // the result would read "aaaa …" instead of "aaaa…". maxChars 6 →
+    // slice(0,5) = "aaaa " here, so this pins the trim before the ellipsis.
+    expect(buildCardExcerpt("aaaa aaaa aaaa", { maxChars: 6 })).toBe("aaaa…");
+  });
+
   it("collapses newlines/runs of whitespace to a single space", () => {
     // The card body is visually one line, so preserving paragraph
     // breaks buys nothing and just truncates more aggressively.

@@ -125,6 +125,25 @@ describe("computeNoteStats", () => {
     expect(stats.wordCount).toBe(4);
   });
 
+  it("collapses runs of consecutive whitespace into a single separator", () => {
+    // The split uses `/\s+/`. With a single-char `/\s/` the double space
+    // between "one" and "two" would yield an empty token and over-count
+    // the words (3 instead of 2). Single-separator inputs can't catch
+    // that — this double-space body pins the `+` quantifier.
+    expect(computeNoteStats(makeNote({ body: "one  two" })).wordCount).toBe(2);
+    expect(
+      computeNoteStats(makeNote({ body: "one \n\n\t two   three" })).wordCount,
+    ).toBe(3);
+  });
+
+  it("reports zero links when the body has none and no urls were captured", () => {
+    // `body.match(LINK_REGEX) ?? []` — the empty-array fallback must stay
+    // empty. A non-empty fallback would make every link-free note report a
+    // phantom link, since linkCount = max(bodyLinks, captured).
+    const stats = computeNoteStats(makeNote({ body: "no links here", urls: [] }));
+    expect(stats.linkCount).toBe(0);
+  });
+
   it("falls back to body-link count when urls is undefined (no captured-link list)", () => {
     // `note.urls?.length ?? 0` — if optional chaining were dropped to
     // `note.urls.length` the test would crash; if `?? 0` were dropped

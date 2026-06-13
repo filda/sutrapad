@@ -77,6 +77,19 @@ describe("computeLastUsedByTag", () => {
     expect(map.get("device:desktop")).toBe(daysAgoIso(100));
   });
 
+  it("updates to a newer note even when an older note is seen first", () => {
+    // Order matters: the older carrier is processed before the newer one,
+    // so the `localeCompare > 0` update branch must actually fire. If that
+    // branch were dropped (first-seen wins), the stale 30-days-ago value
+    // would stick and the tag could wrongly sink into the graveyard.
+    const ws = workspaceOf([
+      note({ id: "old", updatedAt: daysAgoIso(30), tags: ["writing"] }),
+      note({ id: "new", updatedAt: daysAgoIso(5), tags: ["writing"] }),
+    ]);
+
+    expect(computeLastUsedByTag(ws, NOW).get("writing")).toBe(daysAgoIso(5));
+  });
+
   it("returns an empty map for an empty workspace", () => {
     expect(computeLastUsedByTag(workspaceOf([]), NOW).size).toBe(0);
   });
@@ -139,6 +152,17 @@ describe("isGraveyardTag", () => {
     // Default 90 would spare it; a 7-day threshold buries it.
     expect(isGraveyardTag(entry("recent", ["n1"]), map, NOW, 7)).toBe(true);
     expect(isGraveyardTag(entry("recent", ["n1"]), map, NOW, 30)).toBe(false);
+  });
+
+  it("uses real calendar days to measure age (DAY_MS conversion is correct)", () => {
+    // Hard-coded dates that do NOT go through `daysAgoIso` (which itself
+    // divides by DAY_MS), so the age maths is pinned independently. NOW is
+    // 2026-04-23; this lastUsed is 10 real days earlier — comfortably inside
+    // the 90-day window, so the tag is spared. If DAY_MS were mis-derived
+    // (e.g. missing a factor), the computed age would balloon past 90 and
+    // the tag would wrongly sink into the graveyard.
+    const map = new Map([["literal", "2026-04-13T12:00:00.000Z"]]);
+    expect(isGraveyardTag(entry("literal", ["n1"]), map, NOW)).toBe(false);
   });
 });
 
