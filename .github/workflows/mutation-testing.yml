@@ -25,7 +25,7 @@ jobs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # `git log --since` needs history; default fetch-depth: 1 sees only
           # the tip commit. fetch-depth: 0 is overkill but trivial on this
@@ -56,7 +56,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
