@@ -47,11 +47,12 @@ function assertNoExecutableSinks(root: ParentNode): void {
     }
   }
 
-  // No navigable `javascript:` / `data:` targets.
+  // No navigable `javascript:` / `data:` / `vbscript:` targets.
   for (const anchor of Array.from(root.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
     const href = anchor.getAttribute("href")?.toLowerCase() ?? "";
     expect(href.startsWith("javascript:")).toBe(false);
     expect(href.startsWith("data:")).toBe(false);
+    expect(href.startsWith("vbscript:")).toBe(false);
   }
 }
 
