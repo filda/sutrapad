@@ -366,6 +366,71 @@ describe("sanitizeCaptureContext sub-sanitisers", () => {
     });
   });
 
+  describe("sensors snapshot", () => {
+    it("drops the snapshot for non-object `sensors`", () => {
+      for (const sensors of ["str", 0, null, [], false]) {
+        expect(sanitizeCaptureContext({ sensors })?.sensors).toBeUndefined();
+      }
+    });
+
+    it("keeps both motion and noise when valid", () => {
+      const result = sanitizeCaptureContext({
+        sensors: { motionStatus: "moving", noiseLevelDb: -42 },
+      });
+      expect(result?.sensors).toEqual({ motionStatus: "moving", noiseLevelDb: -42 });
+    });
+
+    it("accepts each motionStatus literal and rejects others", () => {
+      // Pins the `=== "still" || === "moving"` enum check — a flipped
+      // literal would let an unknown value through or drop a valid one.
+      expect(
+        sanitizeCaptureContext({ sensors: { motionStatus: "still" } })?.sensors?.motionStatus,
+      ).toBe("still");
+      expect(
+        sanitizeCaptureContext({ sensors: { motionStatus: "moving" } })?.sensors?.motionStatus,
+      ).toBe("moving");
+      for (const motionStatus of ["walking", "", 1, null]) {
+        expect(
+          sanitizeCaptureContext({ sensors: { motionStatus, noiseLevelDb: -30 } })?.sensors
+            ?.motionStatus,
+        ).toBeUndefined();
+      }
+    });
+
+    it("clamps noiseLevelDb to the [-200, 0] window inclusively", () => {
+      expect(
+        sanitizeCaptureContext({ sensors: { noiseLevelDb: 0 } })?.sensors?.noiseLevelDb,
+      ).toBe(0);
+      expect(
+        sanitizeCaptureContext({ sensors: { noiseLevelDb: -200 } })?.sensors?.noiseLevelDb,
+      ).toBe(-200);
+      // Positive "loudness" and absurd negatives are nonsense -> dropped.
+      expect(
+        sanitizeCaptureContext({ sensors: { noiseLevelDb: 0.5 } })?.sensors,
+      ).toBeUndefined();
+      expect(
+        sanitizeCaptureContext({ sensors: { noiseLevelDb: -200.5 } })?.sensors,
+      ).toBeUndefined();
+      expect(
+        sanitizeCaptureContext({ sensors: { noiseLevelDb: Infinity } })?.sensors,
+      ).toBeUndefined();
+    });
+
+    it("drops the snapshot when both fields are invalid", () => {
+      const result = sanitizeCaptureContext({
+        sensors: { motionStatus: "teleporting", noiseLevelDb: 99 },
+      });
+      expect(result?.sensors).toBeUndefined();
+    });
+
+    it("keeps a partial snapshot when only noiseLevelDb is valid", () => {
+      const result = sanitizeCaptureContext({
+        sensors: { motionStatus: "nope", noiseLevelDb: -55 },
+      });
+      expect(result?.sensors).toEqual({ motionStatus: undefined, noiseLevelDb: -55 });
+    });
+  });
+
   describe("page metadata", () => {
     it("drops the metadata for non-object `page`", () => {
       for (const page of ["nope", 0, null, [], false]) {

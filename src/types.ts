@@ -57,6 +57,38 @@ export interface SutraPadCaptureExperimentalSnapshot {
   ambientLightLux?: number;
 }
 
+/**
+ * Best-effort environment sensor readings taken at capture time inside the
+ * SutraPad app (never the bookmarklet — these describe where the *user* is,
+ * not the source page).
+ *
+ * Both fields are sensor- and permission-gated, so they are frequently
+ * absent: `motionStatus` only populates where the device exposes the
+ * accelerometer (`DeviceMotion` / Generic Sensor) and, on iOS, only after the
+ * motion permission has been granted; `noiseLevelDb` only populates when the
+ * microphone permission is *already* granted (capture never raises a prompt
+ * on its own — see `resolveNoiseSnapshot`). A note with neither sensor
+ * available carries no `sensors` snapshot at all, exactly like
+ * `experimental`.
+ */
+export interface SutraPadCaptureSensorsSnapshot {
+  /**
+   * Coarse movement classification derived from the variance of the
+   * accelerometer magnitude over a short sampling window: `"still"` when the
+   * device was at rest, `"moving"` when it was being carried/walked. Only two
+   * buckets — finer gradations aren't reliable from a sub-second sample.
+   */
+  motionStatus?: "still" | "moving";
+  /**
+   * Ambient loudness as an *uncalibrated* dBFS value (decibels relative to
+   * full scale), computed from the RMS of a short microphone waveform sample.
+   * Always ≤ 0; quieter rooms sit further negative (roughly −60…−40),
+   * louder environments approach 0. This is a relative indicator, not a
+   * calibrated SPL (dB-A) measurement — browsers expose no absolute level.
+   */
+  noiseLevelDb?: number;
+}
+
 export interface SutraPadCaptureContext {
   source: SutraPadCaptureSource;
   timezone?: string;
@@ -75,6 +107,7 @@ export interface SutraPadCaptureContext {
   battery?: SutraPadCaptureBatterySnapshot;
   weather?: SutraPadCaptureWeatherSnapshot;
   experimental?: SutraPadCaptureExperimentalSnapshot;
+  sensors?: SutraPadCaptureSensorsSnapshot;
 }
 
 export interface SutraPadDocument {

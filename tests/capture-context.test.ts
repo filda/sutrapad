@@ -11,7 +11,11 @@ import {
   extractPageMetadataFromDocument,
   resolveAmbientLightSnapshot,
   resolveBatterySnapshot,
+  resolveMotionStatus,
+  resolveNoiseLevelDb,
+  resolveSensorsSnapshot,
 } from "../src/lib/capture-context";
+import type { WindowLike, NavigatorLike } from "../src/lib/capture-context";
 
 function createDocumentStub({
   title = "",
@@ -422,5 +426,299 @@ describe("capture context helpers", () => {
       },
     });
     expect(context.experimental).toBeUndefined();
+    expect(context.sensors).toBeUndefined();
+  });
+});
+
+interface MotionAxes {
+  x?: number | null;
+  y?: number | null;
+  z?: number | null;
+}
+
+/**
+ * A `WindowLike` whose fake `addEventListener` synchronously replays the given
+ * `devicemotion` events, and whose `setTimeout` defers the resolver's `finish`
+ * to a microtask — so the listener is registered and every event delivered
+ * before classification runs.
+ */
+function createMotionWindow(
+  events: ReadonlyArray<{ accelerationIncludingGravity?: MotionAxes | null; acceleration?: MotionAxes | null }>,
+  deviceMotionEvent?: { requestPermission?: () => Promise<string> },
+): WindowLike {
+  return {
+    innerWidth: 1,
+    innerHeight: 1,
+    setTimeout: ((callback: () => void) => {
+      queueMicrotask(callback);
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout,
+    clearTimeout: (() => {}) as typeof clearTimeout,
+    addEventListener: (type, listener) => {
+      if (type !== "devicemotion") return;
+      for (const event of events) listener(event);
+    },
+    removeEventListener: () => {},
+    DeviceMotionEvent: deviceMotionEvent,
+  } as WindowLike;
+}
+
+function gravity(magnitudes: readonly number[]): Array<{ accelerationIncludingGravity: MotionAxes }> {
+  return magnitudes.map((x) => ({ accelerationIncludingGravity: { x, y: 0, z: 0 } }));
+}
+
+/** A touch-capable navigator — motion sampling only runs on devices like this. */
+const MOBILE_NAV: NavigatorLike = { maxTouchPoints: 5 };
+
+function createNoiseEnv({
+  state = "granted",
+  fill = 0.1,
+  rejectGetUserMedia = false,
+}: {
+  state?: string;
+  fill?: number;
+  rejectGetUserMedia?: boolean;
+}): {
+  currentWindow: WindowLike;
+  navigatorLike: NavigatorLike;
+  stop: () => void;
+  close: () => void;
+  calls: {
+    queryArg?: { name: string };
+    constraints?: { audio: boolean };
+    fftSize?: number;
+    createdAnalyser?: unknown;
+    sourceStream?: unknown;
+    connectArg?: unknown;
+  };
+} {
+  const stop = vi.fn();
+  const close = vi.fn();
+  const stream = { getTracks: () => [{ stop }] };
+  const calls: {
+    queryArg?: { name: string };
+    constraints?: { audio: boolean };
+    fftSize?: number;
+    createdAnalyser?: unknown;
+    sourceStream?: unknown;
+    connectArg?: unknown;
+  } = {};
+  const analyser = {
+    fftSize: 0,
+    getFloatTimeDomainData: (array: Float32Array) => {
+      calls.fftSize = analyser.fftSize;
+      array.fill(fill);
+    },
+  };
+  calls.createdAnalyser = analyser;
+  const audioContext = {
+    createAnalyser: () => analyser,
+    createMediaStreamSource: (source: unknown) => {
+      calls.sourceStream = source;
+      return {
+        connect: (destination: unknown) => {
+          calls.connectArg = destination;
+        },
+      };
+    },
+    close,
+  };
+  return {
+    stop,
+    close,
+    calls,
+    currentWindow: {
+      innerWidth: 1,
+      innerHeight: 1,
+      AudioContext: function AudioContextStub() {
+        return audioContext;
+      } as unknown as WindowLike["AudioContext"],
+      setTimeout,
+      clearTimeout,
+    } as WindowLike,
+    navigatorLike: {
+      maxTouchPoints: 5,
+      permissions: {
+        query: (descriptor: { name: PermissionName }) => {
+          calls.queryArg = descriptor;
+          return Promise.resolve({ state });
+        },
+      },
+      mediaDevices: {
+        getUserMedia: (constraints: { audio: boolean }) => {
+          calls.constraints = constraints;
+          return rejectGetUserMedia
+            ? Promise.reject(new Error("denied"))
+            : Promise.resolve(stream);
+        },
+      },
+    },
+  };
+}
+
+describe("capture context sensors", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("classifies device motion from accelerometer samples", async () => {
+    // Magnitudes 8,12,7,13,9 -> high variance -> moving.
+    await expect(
+      resolveMotionStatus(createMotionWindow(gravity([8, 12, 7, 13, 9])), MOBILE_NAV),
+    ).resolves.toBe("moving");
+    // Near-constant ~9.81 -> still.
+    await expect(
+      resolveMotionStatus(createMotionWindow(gravity([9.81, 9.82, 9.8, 9.81, 9.79])), MOBILE_NAV),
+    ).resolves.toBe("still");
+  });
+
+  it("falls back to `acceleration` when gravity-inclusive data is absent", async () => {
+    const window = createMotionWindow(
+      [8, 12, 7, 13].map((x) => ({ acceleration: { x, y: 0, z: 0 } })),
+    );
+    await expect(resolveMotionStatus(window, MOBILE_NAV)).resolves.toBe("moving");
+  });
+
+  it("skips motion sampling on a device with no touch capability", async () => {
+    // A desktop / headless DOM exposes the listener API but no accelerometer;
+    // sampling there would block capture for the whole window. The touch gate
+    // short-circuits before any listener is registered.
+    await expect(
+      resolveMotionStatus(createMotionWindow(gravity([8, 12, 7, 13])), { maxTouchPoints: 0 }),
+    ).resolves.toBeUndefined();
+    await expect(
+      resolveMotionStatus(createMotionWindow(gravity([8, 12, 7, 13])), {}),
+    ).resolves.toBeUndefined();
+  });
+
+  it("samples motion when the userAgentData mobile hint is set", async () => {
+    await expect(
+      resolveMotionStatus(createMotionWindow(gravity([8, 12, 7, 13])), {
+        userAgentData: { mobile: true },
+      }),
+    ).resolves.toBe("moving");
+  });
+
+  it("returns undefined when no motion listener is available", async () => {
+    await expect(
+      resolveMotionStatus(
+        { innerWidth: 1, innerHeight: 1, setTimeout, clearTimeout } as WindowLike,
+        MOBILE_NAV,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("honours the iOS motion permission gate", async () => {
+    const events = gravity([8, 12, 7, 13]);
+
+    await expect(
+      resolveMotionStatus(
+        createMotionWindow(events, { requestPermission: () => Promise.resolve("granted") }),
+        MOBILE_NAV,
+      ),
+    ).resolves.toBe("moving");
+
+    await expect(
+      resolveMotionStatus(
+        createMotionWindow(events, { requestPermission: () => Promise.resolve("denied") }),
+        MOBILE_NAV,
+      ),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      resolveMotionStatus(
+        createMotionWindow(events, { requestPermission: () => Promise.reject(new Error("no gesture")) }),
+        MOBILE_NAV,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("measures noise as dBFS when the microphone permission is already granted", async () => {
+    const env = createNoiseEnv({ state: "granted", fill: 0.1 });
+    // rms 0.1 -> 20*log10(0.1) = -20.
+    await expect(resolveNoiseLevelDb(env.currentWindow, env.navigatorLike)).resolves.toBe(-20);
+    // Checks the exact mic permission descriptor and capture constraints.
+    expect(env.calls.queryArg).toEqual({ name: "microphone" });
+    expect(env.calls.constraints).toEqual({ audio: true });
+    // The analyser is configured to the documented window and the mic stream
+    // is routed into it.
+    expect(env.calls.fftSize).toBe(2048);
+    expect(env.calls.sourceStream).toBeDefined();
+    expect(env.calls.connectArg).toBe(env.calls.createdAnalyser);
+    // Stream is released and the context closed even on the success path.
+    expect(env.stop).toHaveBeenCalledTimes(1);
+    expect(env.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("never opens the mic unless permission is already granted", async () => {
+    const env = createNoiseEnv({ state: "prompt" });
+    await expect(resolveNoiseLevelDb(env.currentWindow, env.navigatorLike)).resolves.toBeUndefined();
+    expect(env.stop).not.toHaveBeenCalled();
+  });
+
+  it("returns undefined and releases nothing when getUserMedia rejects", async () => {
+    const env = createNoiseEnv({ state: "granted", rejectGetUserMedia: true });
+    await expect(resolveNoiseLevelDb(env.currentWindow, env.navigatorLike)).resolves.toBeUndefined();
+    expect(env.stop).not.toHaveBeenCalled();
+  });
+
+  it("does not open the microphone when AudioContext is unavailable", async () => {
+    // The AudioContext guard is a real privacy guarantee, not just an
+    // optimisation: if we can't analyse audio we must not even prompt/open
+    // the mic. So getUserMedia must never be called when AudioContext is gone.
+    const env = createNoiseEnv({ state: "granted" });
+    const windowWithoutAudio = { ...env.currentWindow, AudioContext: undefined } as WindowLike;
+    await expect(resolveNoiseLevelDb(windowWithoutAudio, env.navigatorLike)).resolves.toBeUndefined();
+    expect(env.calls.constraints).toBeUndefined();
+    expect(env.stop).not.toHaveBeenCalled();
+  });
+
+  it("returns undefined when the audio APIs are missing", async () => {
+    await expect(
+      resolveNoiseLevelDb({ innerWidth: 1, innerHeight: 1, setTimeout, clearTimeout } as WindowLike, {}),
+    ).resolves.toBeUndefined();
+  });
+
+  it("merges both sensors into one snapshot", async () => {
+    const noiseEnv = createNoiseEnv({ state: "granted", fill: 0.1 });
+    // Compose: motion plumbing from one window, audio plumbing from the other.
+    const currentWindow = {
+      ...createMotionWindow(gravity([8, 12, 7, 13])),
+      AudioContext: noiseEnv.currentWindow.AudioContext,
+    } as WindowLike;
+
+    await expect(resolveSensorsSnapshot(currentWindow, noiseEnv.navigatorLike)).resolves.toEqual({
+      motionStatus: "moving",
+      noiseLevelDb: -20,
+    });
+  });
+
+  it("returns undefined when neither sensor produced a reading", async () => {
+    await expect(
+      resolveSensorsSnapshot(
+        { innerWidth: 1, innerHeight: 1, setTimeout, clearTimeout } as WindowLike,
+        {},
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("keeps a partial snapshot when only one sensor reads", async () => {
+    // Touch-capable navigator with no audio APIs: motion reads, noise doesn't.
+    await expect(
+      resolveSensorsSnapshot(createMotionWindow(gravity([9.81, 9.82, 9.8, 9.81])), {
+        maxTouchPoints: 5,
+      }),
+    ).resolves.toEqual({ motionStatus: "still", noiseLevelDb: undefined });
+  });
+
+  it("keeps a partial snapshot when only noise reads", async () => {
+    // createNoiseEnv's window has no motion listener, so motion stays
+    // undefined while noise resolves -> exercises the other half of the
+    // combiner's AND guard.
+    const env = createNoiseEnv({ state: "granted", fill: 0.1 });
+    await expect(resolveSensorsSnapshot(env.currentWindow, env.navigatorLike)).resolves.toEqual({
+      motionStatus: undefined,
+      noiseLevelDb: -20,
+    });
   });
 });

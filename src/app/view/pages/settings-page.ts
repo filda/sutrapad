@@ -7,6 +7,7 @@ import { type PersonaPreference } from "../../logic/persona";
 import type { AliasSuggestion } from "../../logic/tag-aliases";
 import { THEMES, type ThemeChoice } from "../../logic/theme";
 import { buildTagPill } from "../shared/tag-pill";
+import { buildMicrophoneConsentCard } from "../shared/microphone-consent-card";
 
 /**
  * Builds a settings card's `<header>` — an eyebrow `<p>` + an `<h2>` title.
@@ -197,6 +198,8 @@ function buildPrivacyCard({
       onChangeCaptureLocationPreference,
     }),
   );
+
+  card.append(buildMicrophoneConsentCard());
 
   const link = document.createElement("button");
   link.type = "button";

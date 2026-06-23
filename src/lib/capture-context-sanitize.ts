@@ -33,6 +33,7 @@ import type {
   SutraPadCapturePageMetadata,
   SutraPadCaptureScreenSnapshot,
   SutraPadCaptureScrollSnapshot,
+  SutraPadCaptureSensorsSnapshot,
   SutraPadCaptureSource,
   SutraPadCaptureWeatherSnapshot,
 } from "../types";
@@ -283,6 +284,26 @@ function sanitizeExperimentalSnapshot(
   return Object.values(result).some((v) => v !== undefined) ? result : undefined;
 }
 
+function sanitizeSensorsSnapshot(
+  raw: unknown,
+): SutraPadCaptureSensorsSnapshot | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  // Only the two enumerated literals survive; anything else (wrong type,
+  // unknown string) drops to undefined.
+  const motionStatus =
+    r.motionStatus === "still" || r.motionStatus === "moving"
+      ? r.motionStatus
+      : undefined;
+  const result: SutraPadCaptureSensorsSnapshot = {
+    motionStatus,
+    // dBFS is always ≤ 0; -200 is a generous floor below NOISE_FLOOR_DB that
+    // still rejects nonsense like 1e308 or positive "loudness".
+    noiseLevelDb: clampNumber(r.noiseLevelDb, -200, 0),
+  };
+  return Object.values(result).some((v) => v !== undefined) ? result : undefined;
+}
+
 /**
  * Top-level entry point — sanitise the raw JSON-parsed object from
  * `?capture=` into a `Partial<SutraPadCaptureContext>` containing only
@@ -359,6 +380,9 @@ export function sanitizeCaptureContext(
 
   const experimental = sanitizeExperimentalSnapshot(r.experimental);
   if (experimental !== undefined) result.experimental = experimental;
+
+  const sensors = sanitizeSensorsSnapshot(r.sensors);
+  if (sensors !== undefined) result.sensors = sensors;
 
   return Object.keys(result).length > 0 ? result : undefined;
 }

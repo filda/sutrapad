@@ -5,10 +5,16 @@ import type {
   SutraPadCapturePageMetadata,
   SutraPadCaptureScreenSnapshot,
   SutraPadCaptureScrollSnapshot,
+  SutraPadCaptureSensorsSnapshot,
   SutraPadCaptureWeatherSnapshot,
   SutraPadCoordinates,
 } from "../types";
 import { safeFetch } from "./safe-fetch";
+import {
+  accelerationMagnitude,
+  classifyMotion,
+  computeNoiseLevelDb,
+} from "./sensors";
 
 interface NavigatorConnectionLike {
   effectiveType?: string;
@@ -22,7 +28,43 @@ interface BatteryManagerLike {
   charging?: boolean;
 }
 
-interface NavigatorLike {
+interface PermissionStatusLike {
+  state?: string;
+}
+
+interface MediaStreamTrackLike {
+  stop: () => void;
+}
+
+interface MediaStreamLike {
+  getTracks: () => MediaStreamTrackLike[];
+}
+
+interface AnalyserNodeLike {
+  fftSize: number;
+  getFloatTimeDomainData: (array: Float32Array<ArrayBuffer>) => void;
+}
+
+interface AudioContextLike {
+  createAnalyser: () => AnalyserNodeLike;
+  createMediaStreamSource: (stream: MediaStreamLike) => {
+    connect: (destination: AnalyserNodeLike) => void;
+  };
+  close: () => Promise<void> | void;
+}
+
+interface DeviceMotionReadingLike {
+  x?: number | null;
+  y?: number | null;
+  z?: number | null;
+}
+
+interface DeviceMotionEventLike {
+  accelerationIncludingGravity?: DeviceMotionReadingLike | null;
+  acceleration?: DeviceMotionReadingLike | null;
+}
+
+export interface NavigatorLike {
   language?: string;
   languages?: readonly string[];
   userAgent?: string;
@@ -36,9 +78,15 @@ interface NavigatorLike {
     mobile?: boolean;
     platform?: string;
   };
+  permissions?: {
+    query?: (descriptor: { name: PermissionName }) => Promise<PermissionStatusLike>;
+  };
+  mediaDevices?: {
+    getUserMedia?: (constraints: { audio: boolean }) => Promise<MediaStreamLike>;
+  };
 }
 
-interface WindowLike {
+export interface WindowLike {
   innerWidth: number;
   innerHeight: number;
   devicePixelRatio?: number;
@@ -61,6 +109,23 @@ interface WindowLike {
     start: () => void;
     stop?: () => void;
   };
+  addEventListener?: (
+    type: string,
+    listener: (event: DeviceMotionEventLike) => void,
+  ) => void;
+  removeEventListener?: (
+    type: string,
+    listener: (event: DeviceMotionEventLike) => void,
+  ) => void;
+  // `prototype` gives this type a property in common with the real
+  // `DeviceMotionEvent` constructor so `window` stays assignable to
+  // `WindowLike` (TS rejects assigning a constructor to an all-optional "weak"
+  // type otherwise). `requestPermission` is the non-standard iOS gate.
+  DeviceMotionEvent?: {
+    prototype?: unknown;
+    requestPermission?: () => Promise<string>;
+  };
+  AudioContext?: new () => AudioContextLike;
   setTimeout: typeof setTimeout;
   clearTimeout: typeof clearTimeout;
 }
@@ -269,6 +334,147 @@ export async function resolveAmbientLightSnapshot(
   }
 }
 
+/** How long to listen for `devicemotion` events before classifying. */
+const MOTION_SAMPLE_WINDOW_MS = 400;
+/** Stop early once this many usable accelerometer samples have arrived. */
+const MOTION_MAX_SAMPLES = 32;
+/**
+ * AnalyserNode window size for the noise sample. 2048 frames at a 44.1 kHz
+ * context is ~46 ms of audio — enough for a stable RMS without an audible
+ * recording.
+ */
+const NOISE_FFT_SIZE = 2048;
+
+/**
+ * True only for devices that plausibly carry an accelerometer — i.e. ones the
+ * user holds. The accelerometer is gated on this so a desktop (or a headless
+ * test DOM) never spends the sampling window waiting for `devicemotion` events
+ * that will never fire: those environments expose the listener API but no
+ * hardware, so we'd otherwise block capture for `MOTION_SAMPLE_WINDOW_MS` for
+ * nothing. A touch-capable laptop slips through and simply classifies "still".
+ */
+function isMotionCapableDevice(navigatorLike: NavigatorLike): boolean {
+  return (navigatorLike.maxTouchPoints ?? 0) > 0 || navigatorLike.userAgentData?.mobile === true;
+}
+
+/**
+ * Best-effort movement reading. Returns `undefined` (no verdict) when the
+ * device isn't touch-capable, the environment exposes no motion listener, the
+ * iOS motion-permission gate isn't already granted, or too few samples arrive
+ * inside the window. Never raises a permission prompt on its own beyond what
+ * iOS already gates.
+ */
+export async function resolveMotionStatus(
+  currentWindow: WindowLike,
+  navigatorLike: NavigatorLike,
+): Promise<"still" | "moving" | undefined> {
+  if (
+    !isMotionCapableDevice(navigatorLike) ||
+    typeof currentWindow.addEventListener !== "function" ||
+    typeof currentWindow.removeEventListener !== "function"
+  ) {
+    return undefined;
+  }
+
+  const requestPermission = currentWindow.DeviceMotionEvent?.requestPermission;
+  if (typeof requestPermission === "function") {
+    try {
+      if ((await requestPermission()) !== "granted") return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  const magnitudes: number[] = [];
+  return new Promise<"still" | "moving" | undefined>((resolve) => {
+    const timeout = currentWindow.setTimeout(finish, MOTION_SAMPLE_WINDOW_MS);
+
+    function onMotion(event: DeviceMotionEventLike): void {
+      const reading = event.accelerationIncludingGravity ?? event.acceleration;
+      const magnitude = accelerationMagnitude(reading?.x, reading?.y, reading?.z);
+      if (magnitude !== undefined) magnitudes.push(magnitude);
+      if (magnitudes.length >= MOTION_MAX_SAMPLES) finish();
+    }
+
+    function finish(): void {
+      currentWindow.clearTimeout(timeout);
+      currentWindow.removeEventListener?.("devicemotion", onMotion);
+      resolve(classifyMotion(magnitudes));
+    }
+
+    currentWindow.addEventListener?.("devicemotion", onMotion);
+  });
+}
+
+/**
+ * Best-effort ambient-loudness reading. Deliberately silent: it only proceeds
+ * when the microphone permission is *already* `granted` (checked via the
+ * Permissions API), so capture never raises a mic prompt of its own. Returns
+ * `undefined` when the APIs are missing, permission isn't granted, or the
+ * audio graph fails. Always releases the stream and closes the context.
+ */
+export async function resolveNoiseLevelDb(
+  currentWindow: WindowLike,
+  navigatorLike: NavigatorLike,
+): Promise<number | undefined> {
+  const audioContextConstructor = currentWindow.AudioContext;
+  const getUserMedia = navigatorLike.mediaDevices?.getUserMedia?.bind(
+    navigatorLike.mediaDevices,
+  );
+  const query = navigatorLike.permissions?.query?.bind(navigatorLike.permissions);
+  if (
+    typeof audioContextConstructor !== "function" ||
+    typeof getUserMedia !== "function" ||
+    typeof query !== "function"
+  ) {
+    return undefined;
+  }
+
+  try {
+    if ((await query({ name: "microphone" })).state !== "granted") {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+
+  let stream: MediaStreamLike | undefined;
+  let context: AudioContextLike | undefined;
+  try {
+    stream = await getUserMedia({ audio: true });
+    context = new audioContextConstructor();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = NOISE_FFT_SIZE;
+    context.createMediaStreamSource(stream).connect(analyser);
+    const samples = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(samples);
+    return computeNoiseLevelDb(samples);
+  } catch {
+    return undefined;
+  } finally {
+    stream?.getTracks().forEach((track) => track.stop());
+    void context?.close();
+  }
+}
+
+/**
+ * Combines the two environment sensors into the `sensors` snapshot, running
+ * them in parallel. Returns `undefined` when neither produced a reading, so
+ * the field is omitted entirely rather than carrying an empty object.
+ */
+export async function resolveSensorsSnapshot(
+  currentWindow: WindowLike,
+  navigatorLike: NavigatorLike,
+): Promise<SutraPadCaptureSensorsSnapshot | undefined> {
+  const [motionStatus, noiseLevelDb] = await Promise.all([
+    resolveMotionStatus(currentWindow, navigatorLike),
+    resolveNoiseLevelDb(currentWindow, navigatorLike),
+  ]);
+
+  if (motionStatus === undefined && noiseLevelDb === undefined) return undefined;
+  return { motionStatus, noiseLevelDb };
+}
+
 export async function resolveCurrentWeather(
   coordinates?: SutraPadCoordinates,
 ): Promise<SutraPadCaptureWeatherSnapshot | undefined> {
@@ -376,16 +582,18 @@ async function resolveAsyncContextData(
   currentWindow: WindowLike,
   coordinates?: SutraPadCoordinates,
 ) {
-  const [battery, weather, experimental] = await Promise.all([
+  const [battery, weather, experimental, sensors] = await Promise.all([
     resolveBatterySnapshot(navigatorLike),
     resolveCurrentWeather(coordinates),
     resolveAmbientLightSnapshot(currentWindow),
+    resolveSensorsSnapshot(currentWindow, navigatorLike),
   ]);
 
   return {
     battery,
     weather,
     experimental,
+    sensors,
   };
 }
 
@@ -395,7 +603,7 @@ export async function collectCaptureContext({
   sourceSnapshot,
   currentDate = new Date(),
   navigatorLike = navigator,
-  currentWindow = window,
+  currentWindow = window as unknown as WindowLike,
   currentDocument = document,
 }: CollectCaptureContextOptions): Promise<SutraPadCaptureContext> {
   const resolvedOptions = new Intl.DateTimeFormat().resolvedOptions();
@@ -429,5 +637,6 @@ export async function collectCaptureContext({
     battery: asyncContextData.battery,
     weather: asyncContextData.weather,
     experimental: asyncContextData.experimental,
+    sensors: asyncContextData.sensors,
   };
 }
