@@ -1004,12 +1004,11 @@ describe("GoogleDriveStore.loadNoteInventory (progressive refresh phase 1)", () 
     expect(inventory).toEqual([]);
   });
 
-  it("skips files missing the noteId appProperty or modifiedTime (defensive against malformed Drive state)", async () => {
-    // We never write these fields incompletely, but a corrupted
-    // file or a future schema migration could leave one out.
-    // Skipping is safer than synthesising an id — applying a merge
-    // with a phantom note would either resurrect a deleted note or
-    // collide with a real one.
+  it("skips a note file when no id is derivable (no noteId appProperty and a non-canonical name) or modifiedTime is missing", async () => {
+    // A corrupted file or a future schema migration could leave a field
+    // out. When neither the noteId appProperty nor a canonical
+    // `note-<id>.json` filename yields an id, skipping is safer than
+    // synthesising one; a missing modifiedTime is skipped too.
     const folder = driveFile("folder-1", "SutraPad", {
       mimeType: "application/vnd.google-apps.folder",
     });
@@ -1017,7 +1016,9 @@ describe("GoogleDriveStore.loadNoteInventory (progressive refresh phase 1)", () 
       appProperties: { sutrapad: "true", kind: "note", noteId: "ok" },
       modifiedTime: "2026-05-01T10:00:00.000Z",
     });
-    const missingNoteId = driveFile("file-bad-1", "note-bad-1.json", {
+    // kind=note appProperties (so the folder filter keeps it) but no
+    // noteId and a name the filename fallback cannot parse.
+    const noDerivableId = driveFile("file-bad-1", "orphan.json", {
       appProperties: { sutrapad: "true", kind: "note" },
       modifiedTime: "2026-05-01T10:00:00.000Z",
     });
@@ -1028,7 +1029,7 @@ describe("GoogleDriveStore.loadNoteInventory (progressive refresh phase 1)", () 
     captureFetch((url) => {
       if (url.includes("google-apps.folder")) return fileList([folder]);
       if (url.includes("'note'") && url.includes("q=")) {
-        return fileList([ok, missingNoteId, missingModifiedTime]);
+        return fileList([ok, noDerivableId, missingModifiedTime]);
       }
       return fileList([]);
     });
@@ -1064,5 +1065,238 @@ describe("GoogleDriveStore.fetchNoteByFileId (progressive refresh phases 2 + 3)"
     expect(note.createdAt).toBe("2025-09-01T00:00:00.000Z");
     expect(note.urls).toEqual([]);
     expect(note.tags).toEqual([]);
+  });
+});
+
+describe("GoogleDriveStore.loadWorkspace path B (folder-as-renderer)", () => {
+  it("loads a plain note-<id>.json that carries no appProperties markers", async () => {
+    // The whole point of path B: a note file dropped into the folder by
+    // any means (import, external sync) renders even though the app never
+    // stamped it with sutrapad/kind appProperties. The widened query
+    // matches it by name; `isNoteFileRecord` lets it through.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const plain = driveFile("nf-plain", "note-plain-1.json", {
+      appProperties: {},
+    });
+    const plainDoc = {
+      id: "plain-1",
+      title: "Dropped in",
+      body: "no appProperties on the file",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([plain]);
+      if (url.includes("/nf-plain?alt=media")) return jsonResponse(plainDoc);
+      if (url.includes("'head'")) return fileList([]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+    expect(workspace.notes).toHaveLength(1);
+    expect(workspace.notes[0].id).toBe("plain-1");
+    // normalizeNoteDocument still fills the missing slots defensively.
+    expect(workspace.notes[0].tags).toEqual([]);
+    expect(workspace.notes[0].urls).toEqual([]);
+  });
+
+  it("excludes a substring false positive (footnote-*.json) the widened query drags in", async () => {
+    // Drive has no prefix match, so `name contains 'note-'` also returns
+    // `footnote-1.json`. `isNoteFileRecord` must reject it client-side —
+    // and it must never even be fetched.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const good = driveFile("nf-good", "note-good.json", { appProperties: {} });
+    const footnote = driveFile("nf-foot", "footnote-1.json", {
+      appProperties: {},
+    });
+    const goodDoc = {
+      id: "good",
+      title: "Real note",
+      body: "x",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    };
+
+    const { calls } = captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([good, footnote]);
+      }
+      if (url.includes("/nf-good?alt=media")) return jsonResponse(goodDoc);
+      if (url.includes("/nf-foot?alt=media")) {
+        return jsonResponse({
+          id: "foot",
+          title: "Should never load",
+          body: "x",
+          updatedAt: "2026-05-02T00:00:00.000Z",
+        });
+      }
+      if (url.includes("'head'")) return fileList([]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+    expect(workspace.notes).toHaveLength(1);
+    expect(workspace.notes[0].id).toBe("good");
+    // The false positive was filtered out before any body fetch.
+    expect(calls.some((c) => c.url.includes("/nf-foot?alt=media"))).toBe(false);
+  });
+
+  it("skips a note file whose body is missing required fields instead of aborting the load", async () => {
+    // A malformed dropped-in file (no `id`) must not take down the whole
+    // load — `isValidNoteDocument` rejects it and hydration skips it.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const good = driveFile("nf-ok", "note-ok.json", { appProperties: {} });
+    const broken = driveFile("nf-broken", "note-broken.json", {
+      appProperties: {},
+    });
+    const goodDoc = {
+      id: "ok",
+      title: "Fine",
+      body: "x",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([good, broken]);
+      }
+      if (url.includes("/nf-ok?alt=media")) return jsonResponse(goodDoc);
+      // Missing `id` -> invalid shape.
+      if (url.includes("/nf-broken?alt=media")) {
+        return jsonResponse({ title: "no id here", body: "x" });
+      }
+      if (url.includes("'head'")) return fileList([]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+    expect(workspace.notes).toHaveLength(1);
+    expect(workspace.notes[0].id).toBe("ok");
+  });
+
+  it("tolerates a note file whose body fails to fetch (skips it) rather than rejecting the load", async () => {
+    // fetchJsonFile throws on a 404 / non-JSON body; the per-file try/catch
+    // in hydrateNoteFiles must swallow it so the surviving notes still load.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const good = driveFile("nf-ok2", "note-ok2.json", { appProperties: {} });
+    const dead = driveFile("nf-dead", "note-dead.json", { appProperties: {} });
+    const goodDoc = {
+      id: "ok2",
+      title: "Fine",
+      body: "x",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([good, dead]);
+      }
+      if (url.includes("/nf-ok2?alt=media")) return jsonResponse(goodDoc);
+      if (url.includes("/nf-dead?alt=media")) {
+        return new Response("not found", { status: 404 });
+      }
+      if (url.includes("'head'")) return fileList([]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+    expect(workspace.notes).toHaveLength(1);
+    expect(workspace.notes[0].id).toBe("ok2");
+  });
+
+  it("collapses two files resolving to the same note id, keeping the most recently updated", async () => {
+    // A note id can exist twice — e.g. an app-written file plus a plain
+    // re-import. Dedup keeps the newest so an edit isn't shadowed by a
+    // stale copy.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const older = driveFile("nf-old", "note-a.json", { appProperties: {} });
+    const newer = driveFile("nf-new", "note-a-copy.json", {
+      appProperties: {},
+    });
+    const olderDoc = {
+      id: "a",
+      title: "Older",
+      body: "x",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    };
+    const newerDoc = {
+      id: "a",
+      title: "Newer",
+      body: "x",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-02T00:00:00.000Z",
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([older, newer]);
+      }
+      if (url.includes("/nf-old?alt=media")) return jsonResponse(olderDoc);
+      if (url.includes("/nf-new?alt=media")) return jsonResponse(newerDoc);
+      if (url.includes("'head'")) return fileList([]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+    expect(workspace.notes).toHaveLength(1);
+    expect(workspace.notes[0].title).toBe("Newer");
+  });
+});
+
+describe("GoogleDriveStore.loadNoteInventory path B filename fallback", () => {
+  it("derives noteId from the note-<id>.json filename when appProperties.noteId is absent", async () => {
+    // A plain dropped-in file has no appProperties.noteId, but the refresh
+    // still needs a note id to reconcile against local state. It comes from
+    // the filename, no body fetch required.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    // No appProperties at all — dropped in by something other than the
+    // app. The noteId must come from the filename, and the optional-chain
+    // guard (`appProperties?.noteId`) must not throw on the missing object.
+    const plain = driveFile("file-plain", "note-xyz.json", {
+      appProperties: undefined,
+      modifiedTime: "2026-05-03T10:00:00.000Z",
+    });
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([plain]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const inventory = await store.loadNoteInventory();
+    expect(inventory).toEqual([
+      {
+        noteId: "xyz",
+        fileId: "file-plain",
+        modifiedTime: "2026-05-03T10:00:00.000Z",
+      },
+    ]);
   });
 });

@@ -50,6 +50,7 @@ import { captureActiveEditorFocus } from "./app/render-helpers";
 import { handleNewNoteCreation } from "./app/lifecycle/handle-new-note";
 import { wirePaletteAccess } from "./app/lifecycle/palette";
 import { wireKeyboardShortcuts } from "./app/lifecycle/keyboard-shortcuts";
+import { installDragDropImport } from "./app/lifecycle/drag-drop-import";
 import { captureIncomingWorkspaceFromUrl } from "./app/lifecycle/capture-import";
 import { isLocationCaptureEnabled } from "./app/logic/capture-location";
 import { resolveCurrentCoordinates } from "./lib/url-capture";
@@ -816,7 +817,14 @@ export function createApp(root: HTMLElement): void {
     await loadPreferences();
     scheduleOgImagePrewarm();
   };
-  const { saveWorkspace, refreshWorkspace, isWorkspaceDirty } = workspaceIO;
+  const { saveWorkspace, refreshWorkspace, importNotes, isWorkspaceDirty } =
+    workspaceIO;
+
+  // Drag-and-drop import. Files dropped onto the app are turned into notes
+  // and uploaded through the app's own token (so they're app-owned and
+  // visible under the `drive.file` scope). All parsing/orchestration lives
+  // in the node-tested logic modules; this just binds the drop target.
+  installDragDropImport({ host: document.body, importNotes });
 
   // Focus / visibility-driven cross-device refresh. The gate captures
   // every reason we must NOT auto-refresh in the background:

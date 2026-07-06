@@ -10,6 +10,7 @@ import {
   collectAllTagsForNote,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
+  createNotesWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
   DEFAULT_NOTE_TITLE,
@@ -1440,5 +1441,47 @@ describe("stripEmptyDraftNotes", () => {
     const result = stripEmptyDraftNotes(workspace);
     expect(result.notes).toEqual([]);
     expect(result.activeNoteId).toBeNull();
+  });
+});
+
+const createNotesBaseNote = (
+  id: string,
+  updatedAt: string,
+): SutraPadDocument => ({
+  id,
+  title: id,
+  body: "b",
+  urls: [],
+  createdAt: updatedAt,
+  updatedAt,
+  tags: [],
+});
+
+describe("createNotesWorkspace", () => {
+  it("returns the workspace unchanged for an empty batch", () => {
+    const workspace = { notes: [createNotesBaseNote("a", "2020-01-01T00:00:00Z")], activeNoteId: "a" };
+    expect(createNotesWorkspace(workspace, [])).toBe(workspace);
+  });
+
+  it("prepends imported notes, sorts newest-first, and moves activeNoteId to the first imported note", () => {
+    const workspace = { notes: [createNotesBaseNote("old", "2019-01-01T00:00:00Z")], activeNoteId: "old" };
+    const imported = [
+      createNotesBaseNote("i1", "2021-05-01T00:00:00Z"),
+      createNotesBaseNote("i2", "2020-05-01T00:00:00Z"),
+    ];
+    const result = createNotesWorkspace(workspace, imported);
+    expect(result.notes.map((n) => n.id)).toEqual(["i1", "i2", "old"]);
+    expect(result.activeNoteId).toBe("i1");
+  });
+
+  it("dedupes by id with the imported note winning over an existing one", () => {
+    const workspace = {
+      notes: [{ ...createNotesBaseNote("dup", "2019-01-01T00:00:00Z"), title: "stale" }],
+      activeNoteId: "dup",
+    };
+    const imported = [{ ...createNotesBaseNote("dup", "2021-01-01T00:00:00Z"), title: "fresh" }];
+    const result = createNotesWorkspace(workspace, imported);
+    expect(result.notes).toHaveLength(1);
+    expect(result.notes[0].title).toBe("fresh");
   });
 });

@@ -111,14 +111,62 @@ describe("buildNotesList — XSS guards", () => {
     list.remove();
   });
 
-  it("falls back to 'Untitled note' when the title is empty", () => {
-    const note = makeNote({ title: "" });
+  it("uses the body's first line as the headline when the title is empty", () => {
+    // Imported notes carry their text in the body with no title; the card
+    // shows the first body line instead of "Untitled note" (and the excerpt
+    // drops that line so it isn't repeated).
+    const note = makeNote({ title: "", body: "Plain body" });
+
+    const list = buildNotesList("note-1", [note], () => undefined);
+    document.body.append(list);
+
+    const titleEl = list.querySelector(".note-list-item .note-list-title");
+    expect(titleEl?.textContent).toBe("Plain body");
+
+    list.remove();
+  });
+
+  it("falls back to 'Untitled note' when both title and body are empty", () => {
+    const note = makeNote({ title: "", body: "" });
 
     const list = buildNotesList("note-1", [note], () => undefined);
     document.body.append(list);
 
     const titleEl = list.querySelector(".note-list-item .note-list-title");
     expect(titleEl?.textContent).toBe("Untitled note");
+
+    list.remove();
+  });
+
+  it("shows a title-less one-liner as the headline with no redundant excerpt", () => {
+    const note = makeNote({ title: "", body: "single short line" });
+
+    const list = buildNotesList("note-1", [note], () => undefined);
+    document.body.append(list);
+
+    const item = list.querySelector(".note-list-item");
+    expect(item?.querySelector(".note-list-title")?.textContent).toBe(
+      "single short line",
+    );
+    // No excerpt element at all — the headline already carries the whole note.
+    expect(item?.querySelector(".card-excerpt")).toBeNull();
+
+    list.remove();
+  });
+
+  it("builds the excerpt from the body minus its headline line for a title-less note", () => {
+    const note = makeNote({ title: "", body: "headline line\nthe rest of it" });
+
+    const list = buildNotesList("note-1", [note], () => undefined);
+    document.body.append(list);
+
+    const item = list.querySelector(".note-list-item");
+    expect(item?.querySelector(".note-list-title")?.textContent).toBe(
+      "headline line",
+    );
+    // The excerpt must not repeat the headline line.
+    const excerpt = item?.querySelector(".card-excerpt")?.textContent ?? "";
+    expect(excerpt).toBe("the rest of it");
 
     list.remove();
   });

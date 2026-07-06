@@ -25,6 +25,11 @@ import {
 } from "../../lib/notebook";
 import { httpUrlOrNull } from "../../lib/safe-url";
 import {
+  isNoteFileName,
+  noteFileName,
+  noteIdFromFileName,
+} from "../../lib/note-file";
+import {
   escapeDriveQueryValue,
   GOOGLE_DRIVE_FOLDER_MIME_TYPE,
   GoogleDriveClient,
@@ -70,6 +75,56 @@ function normalizeNoteDocument(document: SutraPadDocument): SutraPadDocument {
     : extractUrlsFromText(document.body);
   document.tags ??= [];
   return document;
+}
+
+/**
+ * A Drive file counts as a note when it either carries the app's
+ * appProperties markers or matches the canonical `note-<id>.json` filename.
+ * The widened folder query (`… or name contains 'note-'`) can return
+ * substring false positives (`footnote-1.json`) and unrelated artifacts, so
+ * every candidate is re-checked here before its body is fetched.
+ */
+function isNoteFileRecord(file: DriveFileRecord): boolean {
+  if (isNoteFileName(file.name)) return true;
+  return (
+    file.appProperties?.sutrapad === "true" &&
+    file.appProperties?.kind === "note"
+  );
+}
+
+/**
+ * Minimum shape a deserialised note must have before normalisation: a
+ * non-empty string `id` (drives routing + dedup) and a non-empty string
+ * `updatedAt` (normalisation backfills `createdAt` from it, and load sorts on
+ * it). A file that fails either check is skipped rather than rendered as a
+ * broken note.
+ */
+function isValidNoteDocument(document: unknown): document is SutraPadDocument {
+  if (typeof document !== "object" || document === null) return false;
+  const candidate = document as Partial<SutraPadDocument>;
+  return (
+    typeof candidate.id === "string" &&
+    candidate.id.length > 0 &&
+    typeof candidate.updatedAt === "string" &&
+    candidate.updatedAt.length > 0
+  );
+}
+
+/**
+ * Collapses duplicate note ids, keeping the first occurrence. Callers sort
+ * newest-first before calling, so the survivor is the most recently updated
+ * copy — the sensible winner when the same note id exists as both an
+ * app-written file and a plain dropped-in file.
+ */
+function dedupeNotesById(notes: SutraPadDocument[]): SutraPadDocument[] {
+  const seen = new Set<string>();
+  const unique: SutraPadDocument[] = [];
+  for (const note of notes) {
+    if (seen.has(note.id)) continue;
+    seen.add(note.id);
+    unique.push(note);
+  }
+  return unique;
 }
 
 function createInitialDocument(): SutraPadDocument {
@@ -196,13 +251,7 @@ export class GoogleDriveStore {
     // 404 on stale head pointer) and fall back to "first note is
     // active".
     const [hydratedNotes, indexActiveNoteId] = await Promise.all([
-      Promise.all(
-        noteFiles.map(async (file) =>
-          normalizeNoteDocument(
-            await this.#client.fetchJsonFile<SutraPadDocument>(file.id),
-          ),
-        ),
-      ),
+      this.hydrateNoteFiles(noteFiles),
       this.fetchIndexActiveNoteId(indexFile),
     ]);
 
@@ -210,8 +259,13 @@ export class GoogleDriveStore {
       return createEmptyWorkspace();
     }
 
-    const sortedNotes = hydratedNotes.toSorted(
-      (left, right) => right.updatedAt.localeCompare(left.updatedAt),
+    // Sort newest-first, then collapse duplicate ids keeping the first
+    // (most recently updated) survivor — a note id can legitimately exist
+    // as both an app-written file and a plain dropped-in `note-<id>.json`.
+    const sortedNotes = dedupeNotesById(
+      hydratedNotes.toSorted((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      ),
     );
     const activeNoteId =
       indexActiveNoteId !== null && sortedNotes.some((note) => note.id === indexActiveNoteId)
@@ -242,17 +296,56 @@ export class GoogleDriveStore {
   }
 
   /**
-   * Returns every `kind=note` file inside the workspace folder.
-   * This is what makes `loadWorkspace` tolerant of "orphan" notes
-   * appended by the silent-capture bookmarklet without an index
-   * update — they show up here because they exist on Drive,
-   * regardless of whether the index knows about them.
+   * Returns every note file inside the workspace folder. This is what
+   * makes `loadWorkspace` tolerant of "orphan" notes appended by the
+   * silent-capture bookmarklet without an index update — they show up
+   * here because they exist on Drive, regardless of whether the index
+   * knows about them.
+   *
+   * A file qualifies as a note two ways: it carries the app's
+   * appProperties markers (`sutrapad=true`, `kind=note`), or its name
+   * matches the canonical `note-<id>.json` shape. The second arm lets a
+   * plain note file dropped into the folder — an import, a sync from
+   * another tool — render without the app ever having written it. Drive
+   * has no prefix/regex match operator, so the query casts a slightly
+   * wider `name contains 'note-'` net and `isNoteFileRecord` tightens it
+   * back to the strict shape client-side.
    */
-  private findNoteFilesInFolder(folderId: string): Promise<DriveFileRecord[]> {
-    return this.#client.findFiles(
-      `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' }`,
+  private async findNoteFilesInFolder(
+    folderId: string,
+  ): Promise<DriveFileRecord[]> {
+    const files = await this.#client.findFiles(
+      `${this.buildFolderQuery(folderId)} and ((appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' }) or name contains 'note-')`,
       MAX_WORKSPACE_NOTE_FILES,
     );
+    return files.filter((file) => isNoteFileRecord(file));
+  }
+
+  /**
+   * Fetches and normalises every candidate note file, tolerating
+   * individual failures. A plain `note-<id>.json` dropped into the folder
+   * could be malformed JSON or missing required fields; one bad file must
+   * not abort the whole load, so failures and invalid shapes are skipped
+   * rather than propagated. Files the app itself wrote never trip these
+   * guards.
+   */
+  private async hydrateNoteFiles(
+    noteFiles: DriveFileRecord[],
+  ): Promise<SutraPadDocument[]> {
+    const results = await Promise.all(
+      noteFiles.map(async (file) => {
+        try {
+          const document =
+            await this.#client.fetchJsonFile<SutraPadDocument>(file.id);
+          return isValidNoteDocument(document)
+            ? normalizeNoteDocument(document)
+            : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return results.filter((note): note is SutraPadDocument => note !== null);
   }
 
   /**
@@ -319,7 +412,12 @@ export class GoogleDriveStore {
       modifiedTime: string;
     }> = [];
     for (const file of noteFiles) {
-      const noteId = file.appProperties?.noteId;
+      // Prefer the appProperties noteId the app stamps; fall back to the
+      // id embedded in a plain `note-<id>.json` filename so dropped-in
+      // files still take part in the cross-device refresh without a body
+      // fetch. `modifiedTime` comes from the folder listing either way.
+      const noteId =
+        file.appProperties?.noteId ?? noteIdFromFileName(file.name);
       const modifiedTime = file.modifiedTime;
       if (!noteId || !modifiedTime) continue;
       entries.push({ noteId, fileId: file.id, modifiedTime });
@@ -338,10 +436,17 @@ export class GoogleDriveStore {
     return normalizeNoteDocument(document);
   }
 
-  async appendNoteToWorkspace(note: SutraPadDocument): Promise<void> {
+  async appendNoteToWorkspace(
+    note: SutraPadDocument,
+    existingFileId?: string,
+  ): Promise<void> {
     const workspaceFolder = await this.getWorkspaceFolder();
+    // With `existingFileId` the upload is a PATCH that overwrites that file in
+    // place (upsert) — the import passes it so re-importing the same note
+    // updates its file instead of creating a duplicate `note-<id>.json`.
     const file = await this.#client.uploadJsonFile({
-      fileName: `note-${note.id}.json`,
+      fileId: existingFileId,
+      fileName: noteFileName(note.id),
       data: note,
       folderId: workspaceFolder.id,
       appProperties: {
@@ -413,14 +518,14 @@ export class GoogleDriveStore {
                 () =>
                   ({
                     id: existingFileId,
-                    name: `note-${note.id}.json`,
+                    name: noteFileName(note.id),
                   }) as DriveFileRecord,
               )
             : await this.findNoteFileById(note.id, workspaceFolder.id);
 
           const file = await this.#client.uploadJsonFile({
             fileId: existingNoteFile?.id,
-            fileName: `note-${note.id}.json`,
+            fileName: noteFileName(note.id),
             data: note,
             folderId: workspaceFolder.id,
             appProperties: {

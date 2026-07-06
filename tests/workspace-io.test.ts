@@ -40,6 +40,7 @@ interface IOHarness {
     saveWorkspace: Mock;
     loadNoteInventory: Mock;
     fetchNoteByFileId: Mock;
+    appendNoteToWorkspace: Mock;
   };
   getStore: () => GoogleDriveStore;
   refreshSession: Mock;
@@ -59,6 +60,7 @@ function makeHarness(): IOHarness {
     saveWorkspace: vi.fn().mockResolvedValue(undefined),
     loadNoteInventory: vi.fn().mockResolvedValue([]),
     fetchNoteByFileId: vi.fn(),
+    appendNoteToWorkspace: vi.fn().mockResolvedValue(undefined),
   };
   return {
     store,
@@ -622,5 +624,82 @@ describe("createWorkspaceIO isWorkspaceDirty", () => {
       emptyDraft("fresh-draft"),
     ]);
     expect(io.isWorkspaceDirty()).toBe(false);
+  });
+});
+
+
+describe("createWorkspaceIO importNotes", () => {
+  const importDeps = (h: IOHarness) => ({
+    getStore: h.getStore,
+    retryContext: {
+      refreshSession: h.refreshSession,
+      onProfileRefreshed: h.onProfileRefreshed,
+    },
+    getWorkspace: () => makeWorkspace([]),
+    setWorkspace: h.setWorkspace,
+    persistLocalWorkspace: h.persistLocalWorkspace,
+    setSyncState: h.setSyncState,
+    setLastError: h.setLastError,
+    render: h.render,
+    refreshStatus: h.refreshStatus,
+    cancelAutoSave: h.cancelAutoSave,
+  });
+
+  it("uploads each note through the store's own token, then reloads the workspace", async () => {
+    // Import must go through appendNoteToWorkspace (app-owned files, visible
+    // under drive.file) and reconcile with a reload so the notes appear.
+    const h = makeHarness();
+    const io = createWorkspaceIO(importDeps(h));
+    const progress: number[] = [];
+    const result = await io.importNotes([realNote("i1"), realNote("i2")], {
+      onProgress: (p) => progress.push(p.done),
+    });
+    expect(h.store.appendNoteToWorkspace).toHaveBeenCalledTimes(2);
+    expect(h.store.loadWorkspace).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ done: 2, failed: 0, total: 2 });
+    expect(progress.at(-1)).toBe(2);
+  });
+
+  it("does not reload when nothing uploaded (every append failed)", async () => {
+    // The `result.done > 0` guard: a fully-failed import must not churn a
+    // reload that would show nothing new.
+    const h = makeHarness();
+    h.store.appendNoteToWorkspace.mockRejectedValue(new Error("boom"));
+    const io = createWorkspaceIO(importDeps(h));
+    const result = await io.importNotes([realNote("i1")]);
+    expect(result).toEqual({ done: 0, failed: 1, total: 1 });
+    expect(h.store.loadWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op for an empty import (no upload, no reload)", async () => {
+    const h = makeHarness();
+    const io = createWorkspaceIO(importDeps(h));
+    const result = await io.importNotes([]);
+    expect(h.store.appendNoteToWorkspace).not.toHaveBeenCalled();
+    expect(h.store.loadWorkspace).not.toHaveBeenCalled();
+    expect(result).toEqual({ done: 0, failed: 0, total: 0 });
+  });
+
+  it("upserts: passes the existing fileId so a re-import overwrites in place", async () => {
+    // The dedup fix: a note already on Drive is updated in place (its fileId
+    // is forwarded), while a genuinely new note is created (fileId undefined).
+    const h = makeHarness();
+    h.store.loadNoteInventory.mockResolvedValue([
+      {
+        noteId: "i1",
+        fileId: "existing-file-1",
+        modifiedTime: "2026-05-01T00:00:00.000Z",
+      },
+    ]);
+    const io = createWorkspaceIO(importDeps(h));
+    await io.importNotes([realNote("i1"), realNote("i2")]);
+    expect(h.store.appendNoteToWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "i1" }),
+      "existing-file-1",
+    );
+    expect(h.store.appendNoteToWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "i2" }),
+      undefined,
+    );
   });
 });

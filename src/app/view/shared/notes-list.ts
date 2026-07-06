@@ -12,6 +12,7 @@ import {
   type OgImageResolver,
 } from "../../logic/og-image-resolver";
 import { buildCardExcerpt } from "../../logic/card-excerpt";
+import { bodyAfterHeadline, firstBodyLine } from "../../logic/note-headline";
 import { describeTaskChip } from "../../logic/task-chip";
 import type { SutraPadDocument } from "../../../types";
 import {
@@ -208,7 +209,14 @@ function buildCardItem(
   // `null` (body is empty after trim) Notes still renders the
   // "Empty note" placeholder so the card never collapses to bare
   // title + meta.
-  const excerptText = buildCardExcerpt(note.body, { maxChars: 72 });
+  // With an empty title the body's first line becomes the card headline (see
+  // buildCardTitle below), so the excerpt is built from the rest of the body
+  // to avoid repeating that line — the fix for imported one-liners where the
+  // whole text would otherwise show as both title and excerpt.
+  const titleIsBlank = note.title.trim() === "";
+  const headline = firstBodyLine(note.body);
+  const excerptSource = titleIsBlank ? bodyAfterHeadline(note.body) : note.body;
+  const excerptText = buildCardExcerpt(excerptSource, { maxChars: 72 });
   // Branching/labelling lives in describeTaskChip so the UI stays purely
   // presentational: pick the class, drop in text + aria-label, or omit.
   const taskChip = describeTaskChip(countTasksInNote(note));
@@ -230,7 +238,11 @@ function buildCardItem(
   // row next to the `.entity-card-open` arrow button. Same affordance
   // as Tasks (which always had the arrow) and Links (which moved off
   // its `.link-card-source` text chip to the arrow pattern).
-  const titleEl = buildCardTitle(note.title, "note");
+  const titleEl = buildCardTitle(
+    note.title,
+    "note",
+    titleIsBlank && headline !== "" ? { fallback: headline } : {},
+  );
   const head = buildCardHead(
     titleEl,
     buildCardOpenButton("Open note", () => onSelectNote(note.id)),
@@ -287,11 +299,17 @@ function buildCardItem(
     meta.append(child);
   }
 
-  const excerptEl = document.createElement("p");
-  excerptEl.className = "card-excerpt";
-  excerptEl.textContent = excerptText ?? "Empty note";
-
-  card.append(head, meta, excerptEl);
+  // A title-less one-liner is shown in full as the headline, so skip the
+  // redundant "Empty note" excerpt rather than stacking an empty line under it.
+  const headlineOnly = titleIsBlank && headline !== "" && excerptText === null;
+  if (headlineOnly) {
+    card.append(head, meta);
+  } else {
+    const excerptEl = document.createElement("p");
+    excerptEl.className = "card-excerpt";
+    excerptEl.textContent = excerptText ?? "Empty note";
+    card.append(head, meta, excerptEl);
+  }
 
   const tagsRow = buildTagChipsRow(note.tags, "note-list-tags");
   if (tagsRow) card.append(tagsRow);

@@ -12,7 +12,7 @@
 
 import { areWorkspacesEqual, stripEmptyDraftNotes } from "../../lib/notebook";
 import type { GoogleDriveStore } from "../../services/drive-store";
-import type { SutraPadWorkspace } from "../../types";
+import type { SutraPadDocument, SutraPadWorkspace } from "../../types";
 import { withAuthRetry, type AuthRetryContext } from "./auth-retry";
 import {
   runWorkspaceLoad,
@@ -25,6 +25,10 @@ import {
   runWorkspaceRefresh,
   type WorkspaceRefreshOptions,
 } from "./workspace-refresh";
+import {
+  runNoteImport,
+  type NoteImportProgress,
+} from "../logic/import-batches";
 
 export interface WorkspaceIODeps {
   getStore: () => GoogleDriveStore;
@@ -51,6 +55,17 @@ export interface WorkspaceIO {
    * through `loadWorkspace` for the all-or-nothing replace semantics.
    */
   refreshWorkspace: (options?: WorkspaceRefreshOptions) => Promise<void>;
+  /**
+   * Batch-imports notes created elsewhere (the drag-and-drop import) by
+   * uploading each through the app's own token so the files are app-owned
+   * and visible under the `drive.file` scope. Uploads run throttled in
+   * batches; once done, the workspace is reloaded from Drive so the imported
+   * notes appear and the clean-snapshot baseline includes them.
+   */
+  importNotes: (
+    notes: SutraPadDocument[],
+    options?: { onProgress?: (progress: NoteImportProgress) => void },
+  ) => Promise<NoteImportProgress>;
   /**
    * Returns `true` when the local workspace carries unsynced changes
    * relative to the last successful Drive load / save. Empty drafts
@@ -255,6 +270,38 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
       options,
     );
 
+  const importNotes = async (
+    notes: SutraPadDocument[],
+    options: { onProgress?: (progress: NoteImportProgress) => void } = {},
+  ): Promise<NoteImportProgress> => {
+    // Look up existing note files once so a re-import updates them in place
+    // (upsert) rather than creating duplicate note-<id>.json files on Drive.
+    const inventory = await withAuthRetry(
+      () => getStore().loadNoteInventory(),
+      retryContext,
+    );
+    const fileIdByNoteId = new Map(
+      inventory.map((entry) => [entry.noteId, entry.fileId]),
+    );
+    const result = await runNoteImport({
+      notes,
+      appendNote: (note) =>
+        withAuthRetry(
+          () =>
+            getStore().appendNoteToWorkspace(note, fileIdByNoteId.get(note.id)),
+          retryContext,
+        ),
+      onProgress: options.onProgress,
+    });
+    // Reconcile: reload the folder view so the imported (app-owned) notes
+    // appear and the clean-snapshot baseline includes them. Skipped when
+    // nothing was uploaded so an empty/failed drop doesn't churn the load.
+    if (result.done > 0) {
+      await loadWorkspace();
+    }
+    return result;
+  };
+
   const isWorkspaceDirty = (): boolean => {
     if (lastSyncedWorkspace === null) return false;
     return !areWorkspacesEqual(
@@ -268,6 +315,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     saveWorkspace,
     restoreWorkspaceAfterSignIn,
     refreshWorkspace,
+    importNotes,
     isWorkspaceDirty,
   };
 }

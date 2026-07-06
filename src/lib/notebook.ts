@@ -912,3 +912,27 @@ export function createTextNoteWorkspace(
     activeNoteId: note.id,
   };
 }
+
+/**
+ * Folds a batch of already-prepared notes into the workspace, deduping by id
+ * with the incoming notes winning (so re-importing an export updates rather
+ * than duplicates). Used by the drag-and-drop import path. `activeNoteId`
+ * moves to the first imported note so the user lands on freshly-added content;
+ * an empty batch is a no-op that returns the workspace unchanged.
+ */
+export function createNotesWorkspace(
+  workspace: SutraPadWorkspace,
+  notes: SutraPadDocument[],
+): SutraPadWorkspace {
+  if (notes.length === 0) return workspace;
+
+  const byId = new Map<string, SutraPadDocument>();
+  for (const note of [...notes, ...workspace.notes]) {
+    if (!byId.has(note.id)) byId.set(note.id, note);
+  }
+
+  return {
+    notes: sortNotes([...byId.values()]),
+    activeNoteId: notes[0].id,
+  };
+}
