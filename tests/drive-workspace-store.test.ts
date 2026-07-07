@@ -419,7 +419,7 @@ describe("GoogleDriveStore.saveWorkspace card metadata in the index", () => {
     const folder = driveFile("folder-1", "SutraPad", {
       mimeType: "application/vnd.google-apps.folder",
     });
-    let indexBody: { notes: Array<Record<string, unknown>> } | null = null;
+    const indexBodies: Array<{ notes: Array<Record<string, unknown>> }> = [];
 
     captureFetch(async (url, init) => {
       if (url.includes("google-apps.folder")) return fileList([folder]);
@@ -429,9 +429,11 @@ describe("GoogleDriveStore.saveWorkspace card metadata in the index", () => {
           await (body.get("metadata") as Blob).text(),
         ) as { name: string; appProperties: Record<string, string> };
         if (meta.appProperties.kind === "index") {
-          indexBody = JSON.parse(await (body.get("file") as Blob).text()) as {
-            notes: Array<Record<string, unknown>>;
-          };
+          indexBodies.push(
+            JSON.parse(await (body.get("file") as Blob).text()) as {
+              notes: Array<Record<string, unknown>>;
+            },
+          );
         }
         return jsonResponse(driveFile(`up-${meta.appProperties.kind}`, meta.name));
       }
@@ -459,8 +461,8 @@ describe("GoogleDriveStore.saveWorkspace card metadata in the index", () => {
       activeNoteId: "a",
     });
 
-    if (indexBody === null) throw new Error("index file was not uploaded");
-    const summary = indexBody.notes[0];
+    expect(indexBodies).toHaveLength(1);
+    const summary = indexBodies[0].notes[0];
     expect(summary.headline).toBe("headline line");
     expect(summary.excerpt).toBe("rest of the body");
     expect(summary.tags).toEqual(["fb"]);
