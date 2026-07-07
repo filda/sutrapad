@@ -129,6 +129,17 @@ export interface SutraPadNoteSummary {
   createdAt: string;
   updatedAt: string;
   fileId?: string;
+  /**
+   * Card metadata precomputed at save time (Phase 2) so the Notes list can
+   * render from the index without hydrating every note body. All optional for
+   * back-compat with indexes written before Phase 2 — a maintenance rebuild
+   * backfills them. Shape mirrors `NoteCardMeta` in `lib/note-card-meta.ts`.
+   */
+  headline?: string;
+  excerpt?: string;
+  tags?: string[];
+  location?: string;
+  tasks?: { open: number; done: number };
 }
 
 export interface SutraPadIndex {

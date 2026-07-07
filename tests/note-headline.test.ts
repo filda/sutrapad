@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bodyAfterHeadline, firstBodyLine } from "../src/app/logic/note-headline";
+import { bodyAfterHeadline, firstBodyLine } from "../src/lib/note-headline";
 
 describe("firstBodyLine", () => {
   it("returns the first non-blank line, trimmed", () => {

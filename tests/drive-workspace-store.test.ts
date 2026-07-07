@@ -411,6 +411,64 @@ describe("GoogleDriveStore.loadWorkspace fallback paths", () => {
   });
 });
 
+describe("GoogleDriveStore.saveWorkspace card metadata in the index", () => {
+  it("writes precomputed headline/excerpt/tags/location/tasks into each index note summary", async () => {
+    // Phase 2: createIndex embeds the card metadata so the Notes list can
+    // render from the index without hydrating bodies. Pin that the fields
+    // actually land in the uploaded index JSON (not just the summary shape).
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    let indexBody: { notes: Array<Record<string, unknown>> } | null = null;
+
+    captureFetch(async (url, init) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("upload/drive/v3/files")) {
+        const body = init?.body as FormData;
+        const meta = JSON.parse(
+          await (body.get("metadata") as Blob).text(),
+        ) as { name: string; appProperties: Record<string, string> };
+        if (meta.appProperties.kind === "index") {
+          indexBody = JSON.parse(await (body.get("file") as Blob).text()) as {
+            notes: Array<Record<string, unknown>>;
+          };
+        }
+        return jsonResponse(driveFile(`up-${meta.appProperties.kind}`, meta.name));
+      }
+      if (url.includes("?fields=")) {
+        return jsonResponse({ ...folder, parents: ["folder-1"] });
+      }
+      if (url.includes("q=") && !url.includes("upload")) return fileList([]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    await store.saveWorkspace({
+      notes: [
+        {
+          id: "a",
+          title: "",
+          body: "headline line\nrest of the body",
+          tags: ["fb"],
+          location: "Praha",
+          urls: [],
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedAt: "2026-05-01T00:00:01.000Z",
+        },
+      ],
+      activeNoteId: "a",
+    });
+
+    if (indexBody === null) throw new Error("index file was not uploaded");
+    const summary = indexBody.notes[0];
+    expect(summary.headline).toBe("headline line");
+    expect(summary.excerpt).toBe("rest of the body");
+    expect(summary.tags).toEqual(["fb"]);
+    expect(summary.location).toBe("Praha");
+    expect(summary.tasks).toEqual({ open: 0, done: 0 });
+  });
+});
+
 describe("GoogleDriveStore.saveWorkspace upload payload contracts", () => {
   it("uploads each derived index file with the canonical filename, appProperties.kind, and `sutrapad: 'true'` tag", async () => {
     // The four derived indexes (head + tags + links + tasks + the

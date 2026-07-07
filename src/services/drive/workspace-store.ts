@@ -24,6 +24,7 @@ import {
   extractUrlsFromText,
 } from "../../lib/notebook";
 import { httpUrlOrNull } from "../../lib/safe-url";
+import { buildNoteCardMeta } from "../../lib/note-card-meta";
 import {
   isNoteFileName,
   noteFileName,
@@ -524,6 +525,9 @@ export class GoogleDriveStore {
     ] = await Promise.all([
       Promise.all(
         workspace.notes.map(async (note) => {
+          // Card metadata written into the index summary so the Notes list can
+          // render from the index without hydrating bodies (Phase 2).
+          const meta = buildNoteCardMeta(note);
           const existingSummary = existingSummaryById.get(note.id);
           const existingFileId = existingSummary?.fileId;
 
@@ -534,6 +538,11 @@ export class GoogleDriveStore {
               createdAt: note.createdAt,
               updatedAt: note.updatedAt,
               fileId: existingFileId,
+              headline: meta.headline,
+              excerpt: meta.excerpt,
+              tags: meta.tags,
+              location: meta.location,
+              tasks: meta.tasks,
             } satisfies SutraPadNoteSummary;
           }
 
@@ -567,6 +576,11 @@ export class GoogleDriveStore {
             createdAt: note.createdAt,
             updatedAt: note.updatedAt,
             fileId: file.id,
+            headline: meta.headline,
+            excerpt: meta.excerpt,
+            tags: meta.tags,
+            location: meta.location,
+            tasks: meta.tasks,
           } satisfies SutraPadNoteSummary;
         }),
       ),

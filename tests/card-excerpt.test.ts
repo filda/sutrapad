@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCardExcerpt } from "../src/app/logic/card-excerpt";
+import { buildCardExcerpt } from "../src/lib/card-excerpt";
 
 // Unit tests for the shared card-excerpt helper. Notes / Links call this
 // via their per-page renderers; the integration tests in

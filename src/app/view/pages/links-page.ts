@@ -4,7 +4,7 @@ import {
   filterNotesByTags,
 } from "../../../lib/notebook";
 import { deriveNotebookPersona } from "../../../lib/notebook-persona";
-import { buildCardExcerpt } from "../../logic/card-excerpt";
+import { buildCardExcerpt } from "../../../lib/card-excerpt";
 import { formatDate } from "../../logic/formatting";
 import { deriveLinkHostname } from "../../logic/link-card";
 import {

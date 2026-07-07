@@ -11,8 +11,8 @@ import {
   createOgImageResolver,
   type OgImageResolver,
 } from "../../logic/og-image-resolver";
-import { buildCardExcerpt } from "../../logic/card-excerpt";
-import { bodyAfterHeadline, firstBodyLine } from "../../logic/note-headline";
+import { buildCardExcerpt } from "../../../lib/card-excerpt";
+import { bodyAfterHeadline, firstBodyLine } from "../../../lib/note-headline";
 import { describeTaskChip } from "../../logic/task-chip";
 import type { SutraPadDocument } from "../../../types";
 import {
