@@ -13,6 +13,10 @@
   3. Code coverage — check the report for the touched area and cover meaningful gaps.
   4. Mutation testing — check Stryker results; a surviving mutant means a missing assertion, so add it.
 
+## Commit Messages
+
+- Do not use Conventional Commits (`feat:`, `fix:`, `chore:` etc.). Write a plain imperative summary, e.g. "Add tag graveyard export" instead of "feat: add tag graveyard export".
+
 ## Local Dev Environment
 
 - A vite dev server is usually already running on `https://localhost:5173` (HTTPS via `VITE_DEV_HTTPS_*` env vars; see [docs/development.md](docs/development.md)). Don't start a second one — port 5173 will be busy and vite silently steps up to 5174/5175/…, so your preview will hit the **other** server and your edits will look invisible. Before starting any preview server, check `curl -ksI https://localhost:5173/` or ask the user.
