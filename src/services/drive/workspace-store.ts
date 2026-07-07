@@ -44,14 +44,23 @@ const TASK_INDEX_FILE_NAME = "sutrapad-tasks.json";
 const WORKSPACE_FOLDER_NAME = "SutraPad";
 const MAX_INDEX_SNAPSHOTS = 10;
 /**
- * Hard cap on the folder-scoped `kind=note` query that drives
- * `loadWorkspace`'s inventory. Drive's `pageSize` maxes at 1000;
- * SutraPad workspaces are nowhere near that today (typical: dozens),
- * so a single page covers every realistic user. If a workspace ever
- * grows past this we'd need pagination here — a load would silently
- * drop notes today, which we'd notice quickly.
+ * Safety ceiling on the folder-scoped note-file query that drives
+ * `loadWorkspace`'s inventory. `findFiles` now paginates (Drive caps a
+ * single page at 1000), so this is no longer a silent one-page cut — it's
+ * just an upper bound to stop a runaway query. Comfortably above any real
+ * workspace (a ~6.5k-note import sits well under it).
  */
-const MAX_WORKSPACE_NOTE_FILES = 1000;
+const MAX_WORKSPACE_NOTE_FILES = 50_000;
+
+/**
+ * Max concurrent note-body fetches during a full `loadWorkspace` hydration.
+ * Firing one request per note at once (Promise.all over the whole folder)
+ * exhausts the browser's socket/memory budget on large workspaces — thousands
+ * of parallel fetches surface as `net::ERR_INSUFFICIENT_RESOURCES`. Chunking
+ * keeps the in-flight count sane. (Phase 2 / lazy bodies removes the need to
+ * hydrate everything up front at all.)
+ */
+const NOTE_HYDRATION_CONCURRENCY = 24;
 
 /**
  * In-place backfills for fields that older note documents on Drive
@@ -332,20 +341,35 @@ export class GoogleDriveStore {
   private async hydrateNoteFiles(
     noteFiles: DriveFileRecord[],
   ): Promise<SutraPadDocument[]> {
-    const results = await Promise.all(
-      noteFiles.map(async (file) => {
-        try {
-          const document =
-            await this.#client.fetchJsonFile<SutraPadDocument>(file.id);
-          return isValidNoteDocument(document)
-            ? normalizeNoteDocument(document)
-            : null;
-        } catch {
-          return null;
-        }
-      }),
-    );
-    return results.filter((note): note is SutraPadDocument => note !== null);
+    const hydrated: SutraPadDocument[] = [];
+    // Fetch bodies in bounded-concurrency chunks rather than all at once —
+    // see NOTE_HYDRATION_CONCURRENCY for why a full-folder Promise.all trips
+    // net::ERR_INSUFFICIENT_RESOURCES on large workspaces.
+    for (
+      let start = 0;
+      start < noteFiles.length;
+      start += NOTE_HYDRATION_CONCURRENCY
+    ) {
+      const chunk = noteFiles.slice(start, start + NOTE_HYDRATION_CONCURRENCY);
+      // oxlint-disable-next-line no-await-in-loop -- chunks are sequential on purpose to cap concurrent Drive fetches
+      const settled = await Promise.all(
+        chunk.map(async (file) => {
+          try {
+            const document =
+              await this.#client.fetchJsonFile<SutraPadDocument>(file.id);
+            return isValidNoteDocument(document)
+              ? normalizeNoteDocument(document)
+              : null;
+          } catch {
+            return null;
+          }
+        }),
+      );
+      for (const note of settled) {
+        if (note !== null) hydrated.push(note);
+      }
+    }
+    return hydrated;
   }
 
   /**

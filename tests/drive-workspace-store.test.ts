@@ -1068,6 +1068,51 @@ describe("GoogleDriveStore.fetchNoteByFileId (progressive refresh phases 2 + 3)"
   });
 });
 
+describe("GoogleDriveStore.loadWorkspace bounded-concurrency hydration", () => {
+  it("hydrates every note across multiple concurrency chunks (>24) without dropping any", async () => {
+    // Regression for net::ERR_INSUFFICIENT_RESOURCES: the load must fetch all
+    // bodies (here 60, spanning several NOTE_HYDRATION_CONCURRENCY chunks) and
+    // return them all — chunking is about pacing, not truncation.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const count = 60;
+    const noteFiles = Array.from({ length: count }, (_, i) =>
+      driveFile(`file-${i}`, `note-n${i}.json`, {
+        appProperties: { sutrapad: "true", kind: "note", noteId: `n${i}` },
+        modifiedTime: "2026-05-01T00:00:00.000Z",
+      }),
+    );
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList(noteFiles);
+      if (url.includes("'head'")) return fileList([]);
+      const media = /\/file-(\d+)\?alt=media/u.exec(url);
+      if (media) {
+        const i = media[1];
+        return jsonResponse({
+          id: `n${i}`,
+          title: "",
+          body: `body ${i}`,
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedAt: `2026-05-01T00:00:00.${i.padStart(3, "0")}Z`,
+        });
+      }
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+    expect(workspace.notes).toHaveLength(count);
+    // Every generated id made it through.
+    const ids = new Set(workspace.notes.map((note) => note.id));
+    expect(ids.size).toBe(count);
+    expect(ids.has("n0")).toBe(true);
+    expect(ids.has("n59")).toBe(true);
+  });
+});
+
 describe("GoogleDriveStore.loadWorkspace path B (folder-as-renderer)", () => {
   it("loads a plain note-<id>.json that carries no appProperties markers", async () => {
     // The whole point of path B: a note file dropped into the folder by

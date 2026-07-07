@@ -50,6 +50,7 @@ import { captureActiveEditorFocus } from "./app/render-helpers";
 import { handleNewNoteCreation } from "./app/lifecycle/handle-new-note";
 import { wirePaletteAccess } from "./app/lifecycle/palette";
 import { wireKeyboardShortcuts } from "./app/lifecycle/keyboard-shortcuts";
+import { installNotesEndlessScroll } from "./app/lifecycle/notes-endless-scroll";
 import { installDragDropImport } from "./app/lifecycle/drag-drop-import";
 import { captureIncomingWorkspaceFromUrl } from "./app/lifecycle/capture-import";
 import { isLocationCaptureEnabled } from "./app/logic/capture-location";
@@ -892,6 +893,13 @@ export function createApp(root: HTMLElement): void {
     render,
   });
 
+  // Endless scroll for the Notes list — grows the visible card limit as the
+  // user nears the bottom (state lives in `logic/endless-scroll`).
+  const disposeNotesEndlessScroll = installNotesEndlessScroll({
+    getActiveMenuItem: () => activeMenuItem$.get(),
+    render,
+  });
+
   // HMR re-runs `createApp` against the same `window` on every save.
   // Without explicit teardown the `keydown` listeners from
   // `wirePaletteAccess` and `wireKeyboardShortcuts` stack — a single
@@ -908,6 +916,7 @@ export function createApp(root: HTMLElement): void {
     import.meta.hot.dispose(() => {
       paletteAccess$.get()?.dispose();
       disposeKeyboardShortcuts();
+      disposeNotesEndlessScroll();
       focusRefresh.stop();
       disposePreferencesAutosave();
       cancelPreferencesSave();

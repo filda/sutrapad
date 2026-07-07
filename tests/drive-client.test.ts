@@ -133,7 +133,7 @@ describe("GoogleDriveClient.findFiles", () => {
     // progressive-refresh inventory has revision timestamps without
     // a separate metadata fan-out. See workspace-refresh.ts.
     expect(url).toContain(
-      "fields=files(id,name,mimeType,modifiedTime,appProperties,parents)",
+      "fields=nextPageToken,files(id,name,mimeType,modifiedTime,appProperties,parents)",
     );
     expect(url).toContain("pageSize=5");
     expect(authHeader(calls[0])).toBe("Bearer tok-1");
@@ -201,6 +201,50 @@ describe("GoogleDriveClient.findFiles", () => {
     await expect(client.findFiles("q", 1)).rejects.toThrow(
       "Failed to query Google Drive. (429): rate limited",
     );
+  });
+
+  it("follows nextPageToken across pages and accumulates every result", async () => {
+    let call = 0;
+    const { calls } = captureFetch(() => {
+      call += 1;
+      if (call === 1) {
+        return jsonResponse({
+          files: [{ id: "a", name: "a", appProperties: {}, parents: [] }],
+          nextPageToken: "tok-page-2",
+        });
+      }
+      return jsonResponse({
+        files: [{ id: "b", name: "b", appProperties: {}, parents: [] }],
+      });
+    });
+    const client = new GoogleDriveClient("tok");
+    const files = await client.findFiles("q", 1000);
+    expect(files.map((file) => file.id)).toEqual(["a", "b"]);
+    expect(calls).toHaveLength(2);
+    // The first page carries no token; the second requests the token
+    // Drive handed back.
+    expect(calls[0].url).not.toContain("pageToken=");
+    expect(calls[1].url).toContain("pageToken=tok-page-2");
+  });
+
+  it("stops once maxResults is reached and slices the overflow", async () => {
+    const { calls } = captureFetch(() =>
+      jsonResponse({
+        files: [
+          { id: "1", name: "1", appProperties: {}, parents: [] },
+          { id: "2", name: "2", appProperties: {}, parents: [] },
+        ],
+        nextPageToken: "more",
+      }),
+    );
+    const client = new GoogleDriveClient("tok");
+    const files = await client.findFiles("q", 3);
+    // Page 1 collects 2 (still short of 3) → page 2 collects 2 more →
+    // 4 total, sliced back to the 3 requested.
+    expect(files.map((file) => file.id)).toEqual(["1", "2", "1"]);
+    expect(calls).toHaveLength(2);
+    // The second page only asks for the remaining count.
+    expect(calls[1].url).toContain("pageSize=1");
   });
 });
 

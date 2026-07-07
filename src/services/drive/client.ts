@@ -100,21 +100,22 @@ export class GoogleDriveClient {
   }
 
   /**
-   * Fires a `files.list` query against Drive. `query` is passed
-   * through verbatim — the caller is responsible for escaping
-   * substituted values via `escapeDriveQueryValue`. `pageSize`
-   * caps the result count; we don't paginate beyond the first
-   * page anywhere, so this is also the practical hard cap.
+   * Fetches a single page of a `files.list` query. `nextPageToken` is
+   * requested explicitly in `fields` — otherwise Drive omits it when a
+   * `files(...)` sub-selection is present, and pagination would be
+   * invisible. `modifiedTime` is carried on every call so the
+   * progressive-refresh inventory has revision timestamps without a
+   * separate metadata fan-out.
    */
-  async findFiles(query: string, pageSize: number): Promise<DriveFileRecord[]> {
-    // `modifiedTime` is the Drive-server-stamped revision timestamp.
-    // It's used by the progressive refresh to order the priority
-    // batch newest-first; carrying it on every `findFiles` call (one
-    // extra field name on the wire, no extra RTT) keeps the inventory
-    // query a single page-1 lookup instead of a `findFiles` + per-file
-    // metadata fan-out.
+  private async fetchFilesPage(
+    query: string,
+    pageSize: number,
+    pageToken: string | null,
+  ): Promise<{ files: DriveFileRecord[]; nextPageToken: string | null }> {
+    const tokenParam =
+      pageToken === null ? "" : `&pageToken=${encodeURIComponent(pageToken)}`;
     const response = await fetch(
-      `${GOOGLE_DRIVE_API}?q=${encodeURIComponent(query)}&fields=files(id,name,mimeType,modifiedTime,appProperties,parents)&pageSize=${pageSize}`,
+      `${GOOGLE_DRIVE_API}?q=${encodeURIComponent(query)}&fields=nextPageToken,files(id,name,mimeType,modifiedTime,appProperties,parents)&pageSize=${pageSize}${tokenParam}`,
       {
         headers: {
           Authorization: `Bearer ${this.#token}`,
@@ -123,8 +124,36 @@ export class GoogleDriveClient {
     );
 
     await ensureDriveOk(response, "Failed to query Google Drive.");
-    const payload = (await response.json()) as { files?: DriveFileRecord[] };
-    return payload.files ?? [];
+    const payload = (await response.json()) as {
+      files?: DriveFileRecord[];
+      nextPageToken?: string;
+    };
+    return { files: payload.files ?? [], nextPageToken: payload.nextPageToken ?? null };
+  }
+
+  /**
+   * Fires a `files.list` query against Drive, following `nextPageToken`
+   * until Drive runs out of pages or `maxResults` rows have been
+   * collected. `query` is passed through verbatim — the caller escapes
+   * substituted values via `escapeDriveQueryValue`. Drive caps a single
+   * page at 1000, so large result sets (a folder with thousands of note
+   * files) now load fully instead of silently truncating at page one;
+   * `findSingleFile` passes `maxResults = 1` for a cheap first-match.
+   */
+  async findFiles(query: string, maxResults: number): Promise<DriveFileRecord[]> {
+    const collected: DriveFileRecord[] = [];
+    let pageToken: string | null = null;
+    do {
+      const pageSize = Math.min(maxResults - collected.length, 1000);
+      // oxlint-disable-next-line no-await-in-loop -- pages are sequential; each request needs the previous page's nextPageToken
+      const page = await this.fetchFilesPage(query, pageSize, pageToken);
+      collected.push(...page.files);
+      pageToken = page.nextPageToken;
+    } while (pageToken !== null && collected.length < maxResults);
+
+    return collected.length > maxResults
+      ? collected.slice(0, maxResults)
+      : collected;
   }
 
   async findSingleFile(query: string): Promise<DriveFileRecord | null> {

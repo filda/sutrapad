@@ -1,4 +1,5 @@
 import { filterNotesByTags } from "../../../lib/notebook";
+import { syncListState } from "../../logic/endless-scroll";
 import type { NotesViewMode } from "../../logic/notes-view";
 import type {
   SutraPadTagFilterMode,
@@ -141,10 +142,16 @@ export function buildNotesPanel({
     }),
   );
 
+  // Endless scroll: render only the first `limit` cards and grow the limit as
+  // the user scrolls near the bottom (the window scroll listener in app.ts
+  // drives growth). The key resets the limit when the filter / view changes.
+  const listKey = `notes|${filterMode}|${selectedTagFilters.toSorted().join(",")}|${notesViewMode ?? "cards"}`;
+  const limit = syncListState(listKey, filteredNotes.length);
+
   notesPanel.append(
     buildNotesList(
       currentNoteId,
-      filteredNotes,
+      filteredNotes.slice(0, limit),
       onSelectNote,
       notesViewMode,
       personaOptions,
