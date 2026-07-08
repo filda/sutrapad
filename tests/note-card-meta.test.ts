@@ -88,6 +88,15 @@ describe("buildNoteSummary", () => {
     expect(summary.tasks).toEqual({ open: meta.tasks.open, done: meta.tasks.done });
   });
 
+  it("carries urls and captureContext for thumb + persona rendering", () => {
+    const ctx = { source: "url-capture" as const };
+    const summary = buildNoteSummary(
+      note({ title: "t", body: "b", urls: ["https://x.test/a"], captureContext: ctx }),
+    );
+    expect(summary.urls).toEqual(["https://x.test/a"]);
+    expect(summary.captureContext).toEqual(ctx);
+  });
+
   it("omits location when the note has none", () => {
     const summary = buildNoteSummary(note({ title: "t", body: "b" }));
     expect(summary.location).toBeUndefined();

@@ -59,5 +59,7 @@ export function buildNoteSummary(note: SutraPadDocument): SutraPadNoteSummary {
     tags: meta.tags,
     location: meta.location,
     tasks: { open: meta.tasks.open, done: meta.tasks.done },
+    urls: note.urls,
+    captureContext: note.captureContext,
   };
 }

@@ -140,6 +140,16 @@ export interface SutraPadNoteSummary {
   tags?: string[];
   location?: string;
   tasks?: { open: number; done: number };
+  /**
+   * Card-render metadata beyond the text blurb (Phase 2 resident model). The
+   * Notes grid needs these to draw the og:image thumb (primary URL derives
+   * from `captureContext.page.canonicalUrl` / `urls`) and the persona layer
+   * (place / source facets come from `captureContext` + `location`). Carried
+   * on the summary so the list renders without hydrating the body — only the
+   * body itself stays lazy. Optional for back-compat with pre-Phase-2 indexes.
+   */
+  urls?: string[];
+  captureContext?: SutraPadCaptureContext;
 }
 
 export interface SutraPadIndex {
