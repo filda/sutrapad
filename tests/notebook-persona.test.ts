@@ -3,6 +3,7 @@ import {
   deriveNotebookPersona,
   pickWhenBucket,
 } from "../src/lib/notebook-persona";
+import { deriveAutoTags } from "../src/lib/auto-tags";
 import type { SutraPadDocument } from "../src/types";
 
 function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
@@ -19,6 +20,10 @@ function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
 }
 
 const NOW = new Date("2026-04-21T12:00:00.000Z");
+
+function hasToGo(p: ReturnType<typeof deriveNotebookPersona>): boolean {
+  return p.stickers.some((s) => s.kind === "to-go");
+}
 
 /**
  * All `createdAt`/`updatedAt` values in this file are ISO-Z, but the
@@ -1589,5 +1594,62 @@ describe("notebook-persona uncovered branches", () => {
     // assertion above to discriminate between sliced and unsliced
     // output. If maxLen stays below 3 we've built a useless test.
     expect(maxLen).toBe(3);
+  });
+});
+
+describe("deriveNotebookPersona: precomputed Phase 2 inputs", () => {
+  it("hasOpenTask option drives the to-go sticker without scanning the body", () => {
+    const fromBody = deriveNotebookPersona(makeNote({ body: "- [ ] do it" }), {
+      now: NOW,
+    });
+    const fromOption = deriveNotebookPersona(makeNote({ body: "" }), {
+      now: NOW,
+      hasOpenTask: true,
+    });
+    expect(hasToGo(fromBody)).toBe(true);
+    expect(hasToGo(fromOption)).toBe(true);
+    // Neither a task body nor the option → no to-go sticker.
+    expect(hasToGo(deriveNotebookPersona(makeNote({ body: "" }), { now: NOW }))).toBe(
+      false,
+    );
+    // A task body but the option explicitly says false → option wins.
+    expect(
+      hasToGo(
+        deriveNotebookPersona(makeNote({ body: "- [ ] do it" }), {
+          now: NOW,
+          hasOpenTask: false,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("precomputed autoTags reproduce the facet-derived persona", () => {
+    const note = makeNote({
+      location: "Praha — Vinohrady",
+      captureContext: { source: "url-capture" },
+    });
+    const derived = deriveNotebookPersona(note, { now: NOW });
+    // A body-less note stripped of location/captureContext, fed the same
+    // auto-tags the full note would derive, must land on the same facets.
+    const precomputed = deriveNotebookPersona(makeNote({ id: note.id }), {
+      now: NOW,
+      autoTags: deriveAutoTags(note, NOW),
+    });
+    expect(precomputed.fontTier).toBe(derived.fontTier);
+    expect(precomputed.density).toEqual(derived.density);
+    expect(precomputed.notebookName).toBe(derived.notebookName);
+  });
+
+  it("allNotesAutoTags feed the regular sticker without per-note derivation", () => {
+    const place = makeNote({ location: "Praha — Vinohrady" });
+    const placeTags = deriveAutoTags(place, NOW);
+    const others = Array.from({ length: 6 }, (_, i) => makeNote({ id: `o${i}` }));
+    const persona = deriveNotebookPersona(makeNote({ id: "subject" }), {
+      now: NOW,
+      autoTags: placeTags,
+      allNotes: others,
+      allNotesAutoTags: others.map(() => placeTags),
+    });
+    expect(persona.stickers.some((s) => s.kind === "regular")).toBe(true);
   });
 });

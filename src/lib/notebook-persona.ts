@@ -88,6 +88,28 @@ export interface NotebookPersonaOptions {
   dark?: boolean;
   /** "Now" for age-based wear + night-owl; injectable for tests. */
   now?: Date;
+  /**
+   * Precomputed auto-tags for `note` (Phase 2). When supplied, the place /
+   * source facets are read from here instead of calling `deriveAutoTags`,
+   * which lets the Notes list derive a persona from an index summary without
+   * the note body. Omitted by the single-note callers (detail / editor / home /
+   * tasks / links) that already hold the full document.
+   */
+  autoTags?: readonly string[];
+  /**
+   * Precomputed "has at least one open task" for `note`. Replaces the body
+   * scan (`OPEN_TASK_PATTERN`) behind the to-go sticker + coffee-ring / pin
+   * patina so a body-less summary still drives those cues from its stored
+   * task counts.
+   */
+  hasOpenTask?: boolean;
+  /**
+   * Precomputed auto-tags per entry in `allNotes`, index-aligned. When
+   * supplied, the `regular` sticker counts place recurrence from here instead
+   * of calling `deriveAutoTags` for every note on every card — the O(N²) that
+   * made persona mode untenable at scale.
+   */
+  allNotesAutoTags?: ReadonlyArray<readonly string[]>;
 }
 
 type WhenBucket =
@@ -183,7 +205,11 @@ function splitNamespacedTag(tag: string): { prefix: string | null; value: string
   };
 }
 
-function extractFacets(note: SutraPadDocument, now: Date): TagFacets {
+function extractFacets(
+  note: SutraPadDocument,
+  now: Date,
+  precomputedAutoTags?: readonly string[],
+): TagFacets {
   const userTags: string[] = [];
   for (const tag of note.tags) {
     const { prefix } = splitNamespacedTag(tag);
@@ -194,7 +220,8 @@ function extractFacets(note: SutraPadDocument, now: Date): TagFacets {
 
   let place: string | null = null;
   let source: string | null = null;
-  for (const autoTag of deriveAutoTags(note, now)) {
+  const autoTags = precomputedAutoTags ?? deriveAutoTags(note, now);
+  for (const autoTag of autoTags) {
     const { prefix, value } = splitNamespacedTag(autoTag);
     if (prefix === "location" && place === null) place = value;
     else if (prefix === "source" && source === null) source = value;
@@ -330,11 +357,13 @@ function regularSticker(
   facets: TagFacets,
   allNotes: readonly SutraPadDocument[],
   now: Date,
+  allNotesAutoTags?: ReadonlyArray<readonly string[]>,
 ): NotebookPersonaSticker | null {
   if (!facets.place || allNotes.length === 0) return null;
   let placeHits = 0;
-  for (const other of allNotes) {
-    for (const autoTag of deriveAutoTags(other, now)) {
+  for (const [index, other] of allNotes.entries()) {
+    const autoTags = allNotesAutoTags?.[index] ?? deriveAutoTags(other, now);
+    for (const autoTag of autoTags) {
       const { prefix, value } = splitNamespacedTag(autoTag);
       if (prefix === "location" && value === facets.place) {
         placeHits += 1;
@@ -361,8 +390,8 @@ function firstOfKindSticker(
   return topicHits === 1 ? { kind: "first-of-kind", label: "only one" } : null;
 }
 
-function toGoSticker(note: SutraPadDocument): NotebookPersonaSticker | null {
-  if (!note.body || !OPEN_TASK_PATTERN.test(note.body)) return null;
+function toGoSticker(hasOpenTask: boolean): NotebookPersonaSticker | null {
+  if (!hasOpenTask) return null;
   return { kind: "to-go", label: "open task" };
 }
 
@@ -382,19 +411,24 @@ function voiceSticker(facets: TagFacets): NotebookPersonaSticker | null {
   return { kind: "voice", label: "voice memo" };
 }
 
-function computeStickers(
-  note: SutraPadDocument,
-  facets: TagFacets,
-  allNotes: readonly SutraPadDocument[],
-  now: Date,
-): NotebookPersonaSticker[] {
+interface StickerContext {
+  note: SutraPadDocument;
+  facets: TagFacets;
+  allNotes: readonly SutraPadDocument[];
+  now: Date;
+  hasOpenTask: boolean;
+  allNotesAutoTags?: ReadonlyArray<readonly string[]>;
+}
+
+function computeStickers(ctx: StickerContext): NotebookPersonaSticker[] {
+  const { note, facets, allNotes, now, hasOpenTask, allNotesAutoTags } = ctx;
   const candidates = [
     nightOwlSticker(note),
     oneShotSticker(note),
     readingSticker(note, facets),
-    regularSticker(facets, allNotes, now),
+    regularSticker(facets, allNotes, now, allNotesAutoTags),
     firstOfKindSticker(facets, allNotes),
-    toGoSticker(note),
+    toGoSticker(hasOpenTask),
     awaySticker(facets),
     voiceSticker(facets),
   ];
@@ -436,10 +470,12 @@ interface PatinaContext {
   /** True when the `when` bucket is weekend/summer — boosts washi probability. */
   saturated: boolean;
   now: Date;
+  /** Precomputed "has an open task" — drives coffee-ring + pin without body. */
+  hasOpenTask: boolean;
 }
 
 function computePatina(ctx: PatinaContext): NotebookPersonaPatina[] {
-  const { note, facets, fontTier, wear, saturated, now } = ctx;
+  const { note, facets, fontTier, wear, saturated, now, hasOpenTask } = ctx;
   const patina: NotebookPersonaPatina[] = [];
 
   // coffee-ring: stale (>7 days since update) AND still has an open task
@@ -447,7 +483,7 @@ function computePatina(ctx: PatinaContext): NotebookPersonaPatina[] {
     const updatedMs = new Date(note.updatedAt).getTime();
     if (Number.isFinite(updatedMs)) {
       const daysSinceUpdate = (now.getTime() - updatedMs) / (1000 * 60 * 60 * 24);
-      if (daysSinceUpdate > 7 && OPEN_TASK_PATTERN.test(note.body ?? "")) {
+      if (daysSinceUpdate > 7 && hasOpenTask) {
         patina.push("coffee-ring");
       }
     }
@@ -487,10 +523,7 @@ function computePatina(ctx: PatinaContext): NotebookPersonaPatina[] {
   }
 
   // pin: keep-visible signal for actionable notes
-  if (
-    OPEN_TASK_PATTERN.test(note.body ?? "") &&
-    pseudoRandom01(note.id, "pin") < 0.22
-  ) {
+  if (hasOpenTask && pseudoRandom01(note.id, "pin") < 0.22) {
     patina.push("pin");
   }
 
@@ -512,7 +545,13 @@ export function deriveNotebookPersona(
   options: NotebookPersonaOptions = {},
 ): NotebookPersona {
   const { allNotes = [], dark = false, now = new Date() } = options;
-  const facets = extractFacets(note, now);
+  // Body-scan fallback keeps the six single-note callers (detail / editor /
+  // home / tasks / links / render-app) working unchanged; the Notes list
+  // passes `hasOpenTask` from the summary's stored task counts so it never
+  // needs the body.
+  const hasOpenTask =
+    options.hasOpenTask ?? OPEN_TASK_PATTERN.test(note.body ?? "");
+  const facets = extractFacets(note, now, options.autoTags);
   const whenBucket = pickWhenBucket(note.createdAt);
   const paperVariant = PAPERS[whenBucket] ?? PAPERS.default;
   const paper = paperVariant[dark ? "dark" : "light"];
@@ -525,8 +564,23 @@ export function deriveNotebookPersona(
   const density = pickDensity(facets.place);
   const rotation = (pseudoRandom01(note.id, "rot") - 0.5) * 1.6;
   const wear = computeWear(note, now);
-  const stickers = computeStickers(note, facets, allNotes, now);
-  const patina = computePatina({ note, facets, fontTier, wear, saturated, now });
+  const stickers = computeStickers({
+    note,
+    facets,
+    allNotes,
+    now,
+    hasOpenTask,
+    allNotesAutoTags: options.allNotesAutoTags,
+  });
+  const patina = computePatina({
+    note,
+    facets,
+    fontTier,
+    wear,
+    saturated,
+    now,
+    hasOpenTask,
+  });
 
   let accent: string | null = null;
   if (saturated) accent = dark ? "#e89a5a" : "#c46a3a";
