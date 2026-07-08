@@ -8,7 +8,7 @@
 import { buildCardExcerpt } from "./card-excerpt";
 import { bodyAfterHeadline, firstBodyLine } from "./note-headline";
 import { countTasksInNote } from "./tasks";
-import type { SutraPadDocument } from "../types";
+import type { SutraPadDocument, SutraPadNoteSummary } from "../types";
 
 /** Card excerpt budget (single line in the Notes grid). */
 export const NOTE_CARD_EXCERPT_MAX = 72;
@@ -36,5 +36,28 @@ export function buildNoteCardMeta(note: SutraPadDocument): NoteCardMeta {
     tags: note.tags,
     location: note.location,
     tasks: countTasksInNote(note),
+  };
+}
+
+/**
+ * Projects a full note document down to the index summary the Notes list
+ * renders from. Card meta is precomputed here so the list can show headline /
+ * excerpt / tags / location / task counts without hydrating the body. Used as
+ * the transition source for the resident summary model (Phase 2 parallel-run):
+ * summaries are derived from the loaded workspace until `loadWorkspace` stops
+ * holding every body, at which point they come straight from the Drive index.
+ */
+export function buildNoteSummary(note: SutraPadDocument): SutraPadNoteSummary {
+  const meta = buildNoteCardMeta(note);
+  return {
+    id: note.id,
+    title: note.title,
+    createdAt: note.createdAt,
+    updatedAt: note.updatedAt,
+    headline: meta.headline,
+    excerpt: meta.excerpt,
+    tags: meta.tags,
+    location: meta.location,
+    tasks: { open: meta.tasks.open, done: meta.tasks.done },
   };
 }

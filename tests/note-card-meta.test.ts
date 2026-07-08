@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildNoteCardMeta } from "../src/lib/note-card-meta";
+import { buildNoteCardMeta, buildNoteSummary } from "../src/lib/note-card-meta";
 import type { SutraPadDocument } from "../src/types";
 
 function note(overrides: Partial<SutraPadDocument>): SutraPadDocument {
@@ -53,5 +53,43 @@ describe("buildNoteCardMeta", () => {
     const meta = buildNoteCardMeta(note({ title: "t", body: "x".repeat(200) }));
     expect(meta.excerpt.length).toBe(72);
     expect(meta.excerpt.endsWith("…")).toBe(true);
+  });
+});
+
+describe("buildNoteSummary", () => {
+  it("carries the identity fields straight through", () => {
+    const summary = buildNoteSummary(
+      note({
+        id: "abc",
+        title: "T",
+        createdAt: "2021-02-03T00:00:00.000Z",
+        updatedAt: "2022-03-04T00:00:00.000Z",
+      }),
+    );
+    expect(summary.id).toBe("abc");
+    expect(summary.title).toBe("T");
+    expect(summary.createdAt).toBe("2021-02-03T00:00:00.000Z");
+    expect(summary.updatedAt).toBe("2022-03-04T00:00:00.000Z");
+  });
+
+  it("mirrors the card meta (headline / excerpt / tags / location / tasks)", () => {
+    const doc = note({
+      title: "",
+      body: "headline here\nthe rest",
+      tags: ["x"],
+      location: "Praha",
+    });
+    const summary = buildNoteSummary(doc);
+    const meta = buildNoteCardMeta(doc);
+    expect(summary.headline).toBe(meta.headline);
+    expect(summary.excerpt).toBe(meta.excerpt);
+    expect(summary.tags).toEqual(meta.tags);
+    expect(summary.location).toBe(meta.location);
+    expect(summary.tasks).toEqual({ open: meta.tasks.open, done: meta.tasks.done });
+  });
+
+  it("omits location when the note has none", () => {
+    const summary = buildNoteSummary(note({ title: "t", body: "b" }));
+    expect(summary.location).toBeUndefined();
   });
 });

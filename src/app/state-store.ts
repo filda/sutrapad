@@ -28,10 +28,12 @@
  */
 import { atom, type Atom, type Readable } from "../lib/store";
 import type {
+  SutraPadNoteSummary,
   SutraPadTagFilterMode,
   SutraPadWorkspace,
   UserProfile,
 } from "../types";
+import { buildNoteSummary } from "../lib/note-card-meta";
 import { loadLocalWorkspace } from "./storage/local-workspace";
 import {
   readActivePageFromLocation,
@@ -89,6 +91,13 @@ export interface AppStateStore {
   // Reactive state — atoms are exposed for `subscribe` / `get` / `set`.
   readonly profile$: Atom<UserProfile | null>;
   readonly workspace$: Atom<SutraPadWorkspace>;
+  /**
+   * Index-summary view of every note — the Phase 2 resident list model.
+   * During the parallel-run transition it is derived from `workspace$`
+   * (see the `workspace$.subscribe` in the factory); once `loadWorkspace`
+   * stops holding every body it is set straight from the Drive index.
+   */
+  readonly noteSummaries$: Atom<SutraPadNoteSummary[]>;
   readonly syncState$: Atom<SyncState>;
   readonly lastError$: Atom<string>;
   readonly bookmarkletMessage$: Atom<string>;
@@ -127,6 +136,7 @@ export interface AppStateStore {
   // from the caller's reference.
   setProfile(next: UserProfile | null): void;
   setWorkspace(next: SutraPadWorkspace): void;
+  setNoteSummaries(next: SutraPadNoteSummary[]): void;
   setSyncState(next: SyncState): void;
   setLastError(next: string): void;
   setBookmarkletMessage(next: string): void;
@@ -181,6 +191,11 @@ export function createAppStateStore({
 }: CreateAppStateStoreOptions): AppStateStore {
   const profile$ = atom<UserProfile | null>(null);
   const workspace$ = atom<SutraPadWorkspace>(loadLocalWorkspace());
+  // Resident summary model. Seeded from the initial (local) workspace and
+  // kept in sync by the `workspace$.subscribe` below during the parallel-run.
+  const noteSummaries$ = atom<SutraPadNoteSummary[]>(
+    workspace$.get().notes.map(buildNoteSummary),
+  );
   const syncState$ = atom<SyncState>("idle");
   const lastError$ = atom("");
   const bookmarkletMessage$ = atom("");
@@ -241,6 +256,12 @@ export function createAppStateStore({
   // theme/persona toggle that lands on the same value is a no-op all
   // the way through.
   const disposers: Array<() => void> = [
+    // Parallel-run: mirror the loaded workspace into the resident summary
+    // model on every workspace change so the Notes list can read summaries
+    // while `loadWorkspace` still hydrates bodies. Removed in the final flip.
+    workspace$.subscribe((ws) => {
+      noteSummaries$.set(ws.notes.map(buildNoteSummary));
+    }),
     notesViewMode$.subscribe(persistNotesView),
     linksViewMode$.subscribe(persistLinksView),
     visibleTagClasses$.subscribe(persistVisibleTagClasses),
@@ -257,6 +278,7 @@ export function createAppStateStore({
   return {
     profile$,
     workspace$,
+    noteSummaries$,
     syncState$,
     lastError$,
     bookmarkletMessage$,
@@ -281,6 +303,7 @@ export function createAppStateStore({
     paletteAccess$,
     setProfile: (next) => profile$.set(next),
     setWorkspace: (next) => workspace$.set(next),
+    setNoteSummaries: (next) => noteSummaries$.set(next),
     setSyncState: (next) => syncState$.set(next),
     setLastError: (next) => lastError$.set(next),
     setBookmarkletMessage: (next) => bookmarkletMessage$.set(next),
