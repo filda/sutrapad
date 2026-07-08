@@ -451,6 +451,68 @@ export class GoogleDriveStore {
   }
 
   /**
+   * Reads the note summaries for the Notes list without hydrating any bodies
+   * (Phase 2, step 3). Each index summary carries the card metadata (headline,
+   * excerpt, tags, location, tasks — see `createIndex` / `buildNoteCardMeta`),
+   * so the list can render from these small records; the full body is fetched
+   * only on open via `fetchNoteByFileId`.
+   *
+   * The folder query is the source of truth for *which* notes exist; index
+   * summaries are matched onto it by id. A note file with no matching summary
+   * (an orphan from silent-capture, or a plain import the index hasn't caught
+   * up with) yields a minimal summary with no card meta — its card falls back
+   * to the default title until a maintenance rebuild backfills the index. A
+   * summary whose note file is gone (deleted elsewhere) is dropped.
+   */
+  async loadNoteSummaries(): Promise<SutraPadNoteSummary[]> {
+    const workspaceFolder = await this.findWorkspaceFolder();
+    if (!workspaceFolder) return [];
+
+    const [noteFiles, indexFile] = await Promise.all([
+      this.findNoteFilesInFolder(workspaceFolder.id),
+      this.resolveActiveIndexFile(workspaceFolder.id),
+    ]);
+
+    const summariesById = new Map<string, SutraPadNoteSummary>();
+    if (indexFile) {
+      try {
+        const index = await this.#client.fetchJsonFile<SutraPadIndex>(
+          indexFile.id,
+        );
+        for (const summary of index.notes) {
+          summariesById.set(summary.id, summary);
+        }
+      } catch {
+        // Corrupt / unreadable index — fall back to minimal summaries below.
+      }
+    }
+
+    const summaries: SutraPadNoteSummary[] = [];
+    for (const file of noteFiles) {
+      const noteId = file.appProperties?.noteId ?? noteIdFromFileName(file.name);
+      if (!noteId) continue;
+      const existing = summariesById.get(noteId);
+      if (existing) {
+        // Keep the meta-bearing summary; trust the folder for the live fileId.
+        summaries.push({ ...existing, fileId: file.id });
+      } else {
+        const timestamp = file.modifiedTime ?? new Date().toISOString();
+        summaries.push({
+          id: noteId,
+          title: "",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          fileId: file.id,
+        });
+      }
+    }
+
+    return summaries.toSorted((left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt),
+    );
+  }
+
+  /**
    * Fetches a single note JSON by its Drive file id and normalises
    * the legacy-shape backfills (`createdAt`, `urls`, `tags`) the same
    * way `loadWorkspace` does. The progressive refresh fans this out

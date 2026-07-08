@@ -1405,3 +1405,144 @@ describe("GoogleDriveStore.loadNoteInventory path B filename fallback", () => {
     ]);
   });
 });
+
+
+describe("GoogleDriveStore.loadNoteSummaries (Phase 2 index-backed list)", () => {
+  it("merges index summaries onto the folder, minimal-fills orphans, drops deleted", async () => {
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    // Folder holds files for "a" (in the index) and "b" (an orphan the index
+    // hasn't caught up with). The index also lists "gone", whose file no
+    // longer exists.
+    const fileA = driveFile("file-a", "note-a.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "a" },
+      modifiedTime: "2026-05-02T00:00:00.000Z",
+    });
+    const fileB = driveFile("file-b", "note-b.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "b" },
+      modifiedTime: "2026-05-01T00:00:00.000Z",
+    });
+    const indexFile = driveFile("idx", "index-x.json", {
+      appProperties: { sutrapad: "true", kind: "index" },
+    });
+    const index: SutraPadIndex = {
+      version: 1,
+      updatedAt: "2026-05-02T00:00:00.000Z",
+      savedAt: "2026-05-02T00:00:00.000Z",
+      activeNoteId: "a",
+      notes: [
+        {
+          id: "a",
+          title: "",
+          createdAt: "2026-05-02T00:00:00.000Z",
+          updatedAt: "2026-05-02T00:00:00.000Z",
+          fileId: "stale-a",
+          headline: "Headline A",
+          excerpt: "Excerpt A",
+          tags: ["t"],
+          location: "Praha",
+          tasks: { open: 1, done: 0 },
+        },
+        {
+          id: "gone",
+          title: "Deleted",
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-01T00:00:00.000Z",
+          fileId: "file-gone",
+        },
+      ],
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([fileA, fileB]);
+      }
+      if (url.includes("'head'") && url.includes("q=")) return fileList([]);
+      if (url.includes("'index'") && url.includes("q=")) {
+        return fileList([indexFile]);
+      }
+      if (url.includes("/idx?alt=media")) return jsonResponse(index);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const summaries = await store.loadNoteSummaries();
+
+    // "gone" dropped; "a" + "b" present, newest-first.
+    expect(summaries.map((s) => s.id)).toEqual(["a", "b"]);
+
+    const a = summaries[0];
+    expect(a.headline).toBe("Headline A");
+    expect(a.excerpt).toBe("Excerpt A");
+    expect(a.tags).toEqual(["t"]);
+    expect(a.location).toBe("Praha");
+    expect(a.tasks).toEqual({ open: 1, done: 0 });
+    // fileId comes from the live folder record, not the stale index copy.
+    expect(a.fileId).toBe("file-a");
+
+    // Orphan "b": minimal summary, no card meta.
+    const b = summaries[1];
+    expect(b.fileId).toBe("file-b");
+    expect(b.title).toBe("");
+    expect(b.headline).toBeUndefined();
+    expect(b.updatedAt).toBe("2026-05-01T00:00:00.000Z");
+  });
+
+  it("returns an empty list when there is no workspace folder", async () => {
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([]);
+      return fileList([]);
+    });
+    const store = new GoogleDriveStore("token");
+    expect(await store.loadNoteSummaries()).toEqual([]);
+  });
+
+  it("derives orphan ids from the note-<id>.json filename and sorts newest-first regardless of input order", async () => {
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    // Older file listed FIRST, and neither carries appProperties.noteId — so
+    // the id must come from the filename and the result must be re-sorted.
+    const older = driveFile("file-old", "note-old.json", {
+      appProperties: {},
+      modifiedTime: "2026-01-01T00:00:00.000Z",
+    });
+    const newer = driveFile("file-new", "note-new.json", {
+      appProperties: {},
+      modifiedTime: "2026-09-09T00:00:00.000Z",
+    });
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([older, newer]);
+      }
+      return fileList([]);
+    });
+    const store = new GoogleDriveStore("token");
+    const summaries = await store.loadNoteSummaries();
+    expect(summaries.map((s) => s.id)).toEqual(["new", "old"]);
+    expect(summaries[0].updatedAt).toBe("2026-09-09T00:00:00.000Z");
+  });
+
+  it("falls back to minimal summaries when the index is missing", async () => {
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const fileA = driveFile("file-a", "note-a.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "a" },
+      modifiedTime: "2026-05-01T00:00:00.000Z",
+    });
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([fileA]);
+      return fileList([]); // no head, no index
+    });
+    const store = new GoogleDriveStore("token");
+    const summaries = await store.loadNoteSummaries();
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0].id).toBe("a");
+    expect(summaries[0].headline).toBeUndefined();
+  });
+});
