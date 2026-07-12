@@ -550,7 +550,7 @@ export function deriveNotebookPersona(
   // passes `hasOpenTask` from the summary's stored task counts so it never
   // needs the body.
   const hasOpenTask =
-    options.hasOpenTask ?? OPEN_TASK_PATTERN.test(note.body ?? "");
+    options.hasOpenTask ?? OPEN_TASK_PATTERN.test(note.body);
   const facets = extractFacets(note, now, options.autoTags);
   const whenBucket = pickWhenBucket(note.createdAt);
   const paperVariant = PAPERS[whenBucket] ?? PAPERS.default;

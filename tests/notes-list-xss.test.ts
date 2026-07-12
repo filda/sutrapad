@@ -11,7 +11,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildNotesList } from "../src/app/view/shared/notes-list";
 import { buildNoteSummary } from "../src/lib/note-card-meta";
-import type { SutraPadDocument } from "../src/types";
+import { DEFAULT_NOTE_TITLE } from "../src/lib/notebook";
+import type { SutraPadDocument, SutraPadNoteSummary } from "../src/types";
 
 // happy-dom auto-fetches og-image proxy URLs the moment `buildLinkThumb`
 // kicks off its resolver (cards mode and the default no-mode call site
@@ -66,6 +67,59 @@ function renderList(
     personaOptions,
   );
 }
+
+describe("buildNotesList — bare index summary defaults", () => {
+  it("renders a summary lacking the optional Phase-2 fields without a bogus title/excerpt", () => {
+    // Pre-Phase-2 index summaries can arrive without headline/excerpt/urls/
+    // tags. cardText() + toDocument() default them; pin that a title-less bare
+    // summary shows the default title + "Empty note" placeholder rather than a
+    // mutated literal leaking through the `?? ""` / `?? []` defaults.
+    const bare: SutraPadNoteSummary = {
+      id: "bare",
+      title: "",
+      createdAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    };
+    const list = buildNotesList("bare", [bare], () => undefined);
+    const card = list.querySelector(".note-list-item");
+    expect(card).not.toBeNull();
+    expect(card?.querySelector(".card-excerpt")?.textContent).toBe("Empty note");
+    expect(card?.textContent).toContain(DEFAULT_NOTE_TITLE);
+  });
+
+  it("keeps a bare summary tag-less (no `.note-list-tags` wrapper)", () => {
+    // toDocument/tag-chips must default missing tags to empty, not a literal.
+    const bare: SutraPadNoteSummary = {
+      id: "bare2",
+      title: "Titled",
+      createdAt: "2020-01-01T00:00:00.000Z",
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    };
+    const list = buildNotesList("bare2", [bare], () => undefined);
+    expect(list.querySelector(".note-list-item .note-list-tags")).toBeNull();
+  });
+});
+
+describe("buildNotesList — summary projection (toDocument)", () => {
+  it("carries the summary's urls + tags into the persona note", () => {
+    // The persona `reading` sticker fires only when the note has BOTH a URL
+    // (note.urls) and the "reading" user tag (note.tags). Both reach the
+    // persona layer solely through `toDocument()`, so a mutant that drops
+    // either the urls or tags projection lands no sticker — this pins them.
+    const doc = makeNote({
+      id: "read",
+      urls: ["https://example.com/a"],
+      tags: ["reading"],
+    });
+    const list = renderList("read", [doc], () => undefined, "cards", {
+      allNotes: [doc],
+      dark: false,
+    });
+    expect(
+      list.querySelector('.note-list-item [data-sticker="reading"]'),
+    ).not.toBeNull();
+  });
+});
 
 describe("buildNotesList — XSS guards", () => {
   it("renders a malicious title as text, never as HTML", () => {
