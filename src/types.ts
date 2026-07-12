@@ -150,6 +150,14 @@ export interface SutraPadNoteSummary {
    */
   urls?: string[];
   captureContext?: SutraPadCaptureContext;
+  /**
+   * Auto-tags derived from the note at build time (`deriveAutoTags`). Stored so
+   * the persona layer's place / source facets + the `regular` recurrence
+   * sticker read from here instead of re-deriving per card (which needs the
+   * body-scan task count and was O(N²) across the list). Optional for
+   * back-compat with pre-Phase-2 indexes.
+   */
+  autoTags?: string[];
 }
 
 export interface SutraPadIndex {

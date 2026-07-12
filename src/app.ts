@@ -168,6 +168,7 @@ export function createApp(root: HTMLElement): void {
   const {
     profile$,
     workspace$,
+    noteSummaries$,
     syncState$,
     lastError$,
     bookmarkletMessage$,
@@ -431,6 +432,7 @@ export function createApp(root: HTMLElement): void {
     currentPanel.replaceWith(
       buildNotesPanel({
         workspace,
+        noteSummaries: noteSummaries$.get(),
         currentNoteId:
           resolveDisplayedNote(workspace, selectedTagFilters, filterMode)?.id ?? "",
         selectedTagFilters,
@@ -637,6 +639,7 @@ export function createApp(root: HTMLElement): void {
       renderAppPage({
         root,
         workspace,
+        noteSummaries: noteSummaries$.get(),
         currentNoteId: displayedNote?.id ?? "",
         selectedTagFilters,
         filterMode,

@@ -97,6 +97,13 @@ describe("buildNoteSummary", () => {
     expect(summary.captureContext).toEqual(ctx);
   });
 
+  it("stores derived auto-tags (source facet from captureContext)", () => {
+    const summary = buildNoteSummary(
+      note({ title: "t", body: "b", captureContext: { source: "url-capture" } }),
+    );
+    expect(summary.autoTags).toContain("source:url-capture");
+  });
+
   it("omits location when the note has none", () => {
     const summary = buildNoteSummary(note({ title: "t", body: "b" }));
     expect(summary.location).toBeUndefined();

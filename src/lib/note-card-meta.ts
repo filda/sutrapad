@@ -8,6 +8,7 @@
 import { buildCardExcerpt } from "./card-excerpt";
 import { bodyAfterHeadline, firstBodyLine } from "./note-headline";
 import { countTasksInNote } from "./tasks";
+import { deriveAutoTags } from "./auto-tags";
 import type { SutraPadDocument, SutraPadNoteSummary } from "../types";
 
 /** Card excerpt budget (single line in the Notes grid). */
@@ -47,7 +48,10 @@ export function buildNoteCardMeta(note: SutraPadDocument): NoteCardMeta {
  * summaries are derived from the loaded workspace until `loadWorkspace` stops
  * holding every body, at which point they come straight from the Drive index.
  */
-export function buildNoteSummary(note: SutraPadDocument): SutraPadNoteSummary {
+export function buildNoteSummary(
+  note: SutraPadDocument,
+  now: Date = new Date(),
+): SutraPadNoteSummary {
   const meta = buildNoteCardMeta(note);
   return {
     id: note.id,
@@ -61,5 +65,6 @@ export function buildNoteSummary(note: SutraPadDocument): SutraPadNoteSummary {
     tasks: { open: meta.tasks.open, done: meta.tasks.done },
     urls: note.urls,
     captureContext: note.captureContext,
+    autoTags: deriveAutoTags(note, now),
   };
 }

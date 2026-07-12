@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildNotesList } from "../src/app/view/shared/notes-list";
+import { buildNoteSummary } from "../src/lib/note-card-meta";
 import type { SutraPadDocument } from "../src/types";
 
 // happy-dom auto-fetches og-image proxy URLs the moment `buildLinkThumb`
@@ -42,12 +43,36 @@ function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
   };
 }
 
+type ListArgs = Parameters<typeof buildNotesList>;
+
+/**
+ * The list now renders from index summaries; these tests build documents, so
+ * project them through `buildNoteSummary` (the same path the app uses) before
+ * handing them to `buildNotesList`. `allNotes` in personaOptions stays as
+ * documents — that argument is unchanged.
+ */
+function renderList(
+  currentNoteId: ListArgs[0],
+  docs: readonly SutraPadDocument[],
+  onSelectNote: ListArgs[2],
+  viewMode?: ListArgs[3],
+  personaOptions?: ListArgs[4],
+): HTMLDivElement {
+  return buildNotesList(
+    currentNoteId,
+    docs.map((doc) => buildNoteSummary(doc)),
+    onSelectNote,
+    viewMode,
+    personaOptions,
+  );
+}
+
 describe("buildNotesList — XSS guards", () => {
   it("renders a malicious title as text, never as HTML", () => {
     const malicious = '<img src=x onerror="window.pwned = true">';
     const note = makeNote({ title: malicious });
 
-    const list = buildNotesList("note-1", [note], () => undefined);
+    const list = renderList("note-1", [note], () => undefined);
     document.body.append(list);
 
     // Any HTML interpretation would produce an <img>; textContent must be the literal string.
@@ -69,7 +94,7 @@ describe("buildNotesList — XSS guards", () => {
     const malicious = '<svg/onload="window.pwnedBody = true"></svg>more text';
     const note = makeNote({ body: malicious });
 
-    const list = buildNotesList("note-1", [note], () => undefined);
+    const list = renderList("note-1", [note], () => undefined);
     document.body.append(list);
 
     // Scope the SVG-absence assertion to `.card-excerpt`: post-#9 the
@@ -92,7 +117,7 @@ describe("buildNotesList — XSS guards", () => {
     // counts into the chip would re-introduce the same bug — keep the structural assertion.
     const note = makeNote({ body: "[x] one\n[x] two" });
 
-    const list = buildNotesList("note-1", [note], () => undefined);
+    const list = renderList("note-1", [note], () => undefined);
     document.body.append(list);
 
     const chip = list.querySelector(".note-list-tasks");
@@ -117,7 +142,7 @@ describe("buildNotesList — XSS guards", () => {
     // drops that line so it isn't repeated).
     const note = makeNote({ title: "", body: "Plain body" });
 
-    const list = buildNotesList("note-1", [note], () => undefined);
+    const list = renderList("note-1", [note], () => undefined);
     document.body.append(list);
 
     const titleEl = list.querySelector(".note-list-item .note-list-title");
@@ -129,7 +154,7 @@ describe("buildNotesList — XSS guards", () => {
   it("falls back to 'Untitled note' when both title and body are empty", () => {
     const note = makeNote({ title: "", body: "" });
 
-    const list = buildNotesList("note-1", [note], () => undefined);
+    const list = renderList("note-1", [note], () => undefined);
     document.body.append(list);
 
     const titleEl = list.querySelector(".note-list-item .note-list-title");
@@ -141,7 +166,7 @@ describe("buildNotesList — XSS guards", () => {
   it("shows a title-less one-liner as the headline with no redundant excerpt", () => {
     const note = makeNote({ title: "", body: "single short line" });
 
-    const list = buildNotesList("note-1", [note], () => undefined);
+    const list = renderList("note-1", [note], () => undefined);
     document.body.append(list);
 
     const item = list.querySelector(".note-list-item");
@@ -157,7 +182,7 @@ describe("buildNotesList — XSS guards", () => {
   it("builds the excerpt from the body minus its headline line for a title-less note", () => {
     const note = makeNote({ title: "", body: "headline line\nthe rest of it" });
 
-    const list = buildNotesList("note-1", [note], () => undefined);
+    const list = renderList("note-1", [note], () => undefined);
     document.body.append(list);
 
     const item = list.querySelector(".note-list-item");
@@ -182,12 +207,12 @@ describe("buildNotesList — structural rendering", () => {
     // Pin the ConditionalExpression on line 48 — `viewMode === undefined`
     // is the toggle between bare `.notes-list` and the suffixed
     // `.notes-list--cards` / `.notes-list--list` variants.
-    const list = buildNotesList("a", [makeNote({ id: "a" })], () => undefined);
+    const list = renderList("a", [makeNote({ id: "a" })], () => undefined);
     expect(list.className).toBe("notes-list");
   });
 
   it("stamps `notes-list notes-list--cards` when viewMode is 'cards'", () => {
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a" })],
       () => undefined,
@@ -197,7 +222,7 @@ describe("buildNotesList — structural rendering", () => {
   });
 
   it("stamps `notes-list notes-list--list` when viewMode is 'list'", () => {
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a" })],
       () => undefined,
@@ -207,10 +232,10 @@ describe("buildNotesList — structural rendering", () => {
   });
 
   it("appends ` notes-list--persona` to the wrapper class only when personaOptions is provided", () => {
-    const without = buildNotesList("a", [makeNote({ id: "a" })], () => undefined);
+    const without = renderList("a", [makeNote({ id: "a" })], () => undefined);
     expect(without.className).not.toContain("notes-list--persona");
 
-    const withPersona = buildNotesList(
+    const withPersona = renderList(
       "a",
       [makeNote({ id: "a" })],
       () => undefined,
@@ -224,7 +249,7 @@ describe("buildNotesList — structural rendering", () => {
     // Pin the `if (notes.length === 0)` branch (line 52) and the
     // EMPTY_COPY.notes_filtered key. Without coverage the entire
     // BlockStatement on line 52 is uncovered.
-    const list = buildNotesList("none", [], () => undefined);
+    const list = renderList("none", [], () => undefined);
     expect(list.querySelector(".note-list-item")).toBeNull();
     // The empty state's helper text always lives in the rendered DOM —
     // exact text comes from `EMPTY_COPY.notes_filtered`, so any node
@@ -237,7 +262,7 @@ describe("buildNotesList — structural rendering", () => {
     // Mutating to `!==` would invert which card carries `is-active`;
     // mutating the empty-string suffix to "Stryker was here!" would
     // produce nonsense classes on the inactive cards.
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a" }), makeNote({ id: "b" })],
       () => undefined,
@@ -251,7 +276,7 @@ describe("buildNotesList — structural rendering", () => {
     // Defends the addEventListener wiring on line 84. `() => undefined`
     // mutant would fire the listener but pass nothing through.
     const onSelect = vi.fn();
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a" }), makeNote({ id: "b" })],
       onSelect,
@@ -267,7 +292,7 @@ describe("buildNotesList — structural rendering", () => {
     // `buildCardItem` uses `?? "Empty note"` so the card stays
     // visually balanced. Mutating the fallback or skipping it would
     // surface as either an empty `<p>` or the text "null".
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a", body: "   \n\t  " })],
       () => undefined,
@@ -281,7 +306,7 @@ describe("buildNotesList — structural rendering", () => {
     // `.note-list-meta` before — see notes-list.ts buildCardItem).
     // The date element keeps its surface-specific class (Notes side
     // uses `.note-list-date`, Links side uses `.link-card-saved`).
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a" })],
       () => undefined,
@@ -294,14 +319,14 @@ describe("buildNotesList — structural rendering", () => {
     // Pin the tags-row branch (line 150-onwards). A workspace with
     // empty tags must NOT render `.note-list-tags`; a workspace with
     // tags must render exactly one chip per tag.
-    const empty = buildNotesList(
+    const empty = renderList(
       "a",
       [makeNote({ id: "a", tags: [] })],
       () => undefined,
     );
     expect(empty.querySelector(".note-list-tags")).toBeNull();
 
-    const tagged = buildNotesList(
+    const tagged = renderList(
       "a",
       [makeNote({ id: "a", tags: ["x", "y", "z"] })],
       () => undefined,
@@ -312,7 +337,7 @@ describe("buildNotesList — structural rendering", () => {
 
   it("renders the row layout (with .nr-swatch / .nr-title / .nr-date) when viewMode is 'list'", () => {
     // The buildRowItem helper is otherwise entirely uncovered.
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a", title: "Hello", body: "first line\nsecond line" })],
       () => undefined,
@@ -329,7 +354,7 @@ describe("buildNotesList — structural rendering", () => {
   });
 
   it("flips `is-active` only on the matching row in list view, the same way cards do", () => {
-    const list = buildNotesList(
+    const list = renderList(
       "b",
       [makeNote({ id: "a" }), makeNote({ id: "b" })],
       () => undefined,
@@ -343,7 +368,7 @@ describe("buildNotesList — structural rendering", () => {
   it("caps row tag chips at four to keep the date visible on narrow rows", () => {
     // The slice(0, 4) on line 213 — one of the ArrayDeclaration
     // survivors. Mutating to `[]` would render no chips at all.
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [
         makeNote({
@@ -364,7 +389,7 @@ describe("buildNotesList — structural rendering", () => {
   });
 
   it("omits the row sub-text when the body is whitespace-only (empty excerpt)", () => {
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a", body: "" })],
       () => undefined,
@@ -377,7 +402,7 @@ describe("buildNotesList — structural rendering", () => {
     // Pins the chip's tone-suffix StringLiteral and the textContent
     // assignment. A note with all checkboxes ticked produces the
     // all-done chip.
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a", body: "[x] done\n[x] also done" })],
       () => undefined,
@@ -405,7 +430,7 @@ describe("buildNotesList — second structural pass", () => {
     // is an a11y anti-pattern — kbd users tab to the arrow now and
     // activate it natively. This test pins that the role + tabIndex
     // are *gone*.
-    const list = buildNotesList("a", [makeNote({ id: "a" })], () => undefined);
+    const list = renderList("a", [makeNote({ id: "a" })], () => undefined);
     const card = list.querySelector(".note-list-item");
     expect(card?.getAttribute("role")).toBeNull();
     expect(card?.getAttribute("tabindex")).toBeNull();
@@ -415,7 +440,7 @@ describe("buildNotesList — second structural pass", () => {
     // The shared `.entity-card-open` arrow is the new keyboard-reachable
     // affordance — pins its presence, the per-surface aria-label, and
     // the head-row wrapper that holds it next to the title.
-    const list = buildNotesList("a", [makeNote({ id: "a" })], () => undefined);
+    const list = renderList("a", [makeNote({ id: "a" })], () => undefined);
     const head = list.querySelector(".note-list-item .entity-card-head");
     expect(head).not.toBeNull();
     const arrow = head?.querySelector<HTMLButtonElement>(".entity-card-open");
@@ -425,7 +450,7 @@ describe("buildNotesList — second structural pass", () => {
 
   it("clicking the inner arrow open-button routes onSelectNote with the card's note id", () => {
     const onSelect = vi.fn();
-    const list = buildNotesList("a", [makeNote({ id: "a" })], onSelect);
+    const list = renderList("a", [makeNote({ id: "a" })], onSelect);
     list
       .querySelector<HTMLButtonElement>(".note-list-item .entity-card-open")
       ?.click();
@@ -438,7 +463,7 @@ describe("buildNotesList — second structural pass", () => {
     // activation still has to go through the arrow button — only the
     // arrow is tabbable.
     const onSelect = vi.fn();
-    const list = buildNotesList("a", [makeNote({ id: "a" })], onSelect);
+    const list = renderList("a", [makeNote({ id: "a" })], onSelect);
     const card = list.querySelector<HTMLElement>(".note-list-item");
     card?.click();
     expect(onSelect).toHaveBeenCalledWith("a");
@@ -452,7 +477,7 @@ describe("buildNotesList — second structural pass", () => {
     // guard absorbs the bubble path so the handler fires exactly
     // once. Test asserts onSelect was called only once, not twice.
     const onSelect = vi.fn();
-    const list = buildNotesList("a", [makeNote({ id: "a" })], onSelect);
+    const list = renderList("a", [makeNote({ id: "a" })], onSelect);
     list
       .querySelector<HTMLButtonElement>(".note-list-item .entity-card-open")
       ?.click();
@@ -463,7 +488,7 @@ describe("buildNotesList — second structural pass", () => {
     // Pin the `if (resolver !== null)` BlockStatement — cards mode
     // builds a resolver and appends a thumb to every card; list mode
     // passes null and skips the thumb entirely.
-    const cardsList = buildNotesList(
+    const cardsList = renderList(
       "a",
       [makeNote({ id: "a" })],
       () => undefined,
@@ -472,7 +497,7 @@ describe("buildNotesList — second structural pass", () => {
       cardsList.querySelector(".note-list-item .link-thumb"),
     ).not.toBeNull();
 
-    const listView = buildNotesList(
+    const listView = renderList(
       "a",
       [makeNote({ id: "a" })],
       () => undefined,
@@ -488,7 +513,7 @@ describe("buildNotesList — second structural pass", () => {
     // the default and lets the excerpt overrun the Notes budget.
     const longBody = "a".repeat(200);
     const note = makeNote({ id: "long", body: longBody });
-    const list = buildNotesList("long", [note], () => undefined);
+    const list = renderList("long", [note], () => undefined);
     const excerpt = list.querySelector(".note-list-item .card-excerpt");
     expect((excerpt?.textContent ?? "").length).toBeLessThanOrEqual(72);
   });
@@ -498,7 +523,7 @@ describe("buildNotesList — second structural pass", () => {
     // all-done chips; mutating the Conditional to `true` would stamp
     // every chip with `is-all-done`.
     const note = makeNote({ id: "mixed", body: "[ ] open\n[x] done" });
-    const list = buildNotesList("mixed", [note], () => undefined);
+    const list = renderList("mixed", [note], () => undefined);
     const chip = list.querySelector(".note-list-tasks");
     expect(chip).not.toBeNull();
     expect(chip?.classList.contains("is-all-done")).toBe(false);
@@ -518,7 +543,7 @@ describe("buildNotesList — second structural pass", () => {
       body: "[ ] still open",
       location: "Praha — Karlin office",
     });
-    const list = buildNotesList("all", [note], () => undefined);
+    const list = renderList("all", [note], () => undefined);
     const meta = list.querySelector(".note-list-item .card-meta");
     if (meta === null) throw new Error("expected .card-meta");
     const seps = meta.querySelectorAll(":scope > .sep");
@@ -539,7 +564,7 @@ describe("buildNotesList — second structural pass", () => {
     // this assertion an `index >= 0` mutant could stamp one leading
     // separator and the date-only test would never catch it.
     const note = makeNote({ id: "bare", body: "no tasks here", location: undefined });
-    const list = buildNotesList("bare", [note], () => undefined);
+    const list = renderList("bare", [note], () => undefined);
     const meta = list.querySelector(".note-list-item .card-meta");
     expect(meta?.querySelectorAll(":scope > .sep")).toHaveLength(0);
   });
@@ -560,7 +585,7 @@ describe("buildNotesList — second structural pass", () => {
     // Anchoring on the leading byte (`m5` vs `M6`) keeps the assertion
     // legible without re-stringifying the full path.
     const openNote = makeNote({ id: "open", body: "[ ] one\n[x] two" });
-    const openChip = buildNotesList("open", [openNote], () => undefined)
+    const openChip = renderList("open", [openNote], () => undefined)
       .querySelector(".note-list-tasks");
     if (openChip === null) throw new Error("expected open chip");
     const openIcon = openChip.firstElementChild;
@@ -573,7 +598,7 @@ describe("buildNotesList — second structural pass", () => {
     );
 
     const doneNote = makeNote({ id: "done", body: "[x] one" });
-    const doneChip = buildNotesList("done", [doneNote], () => undefined)
+    const doneChip = renderList("done", [doneNote], () => undefined)
       .querySelector(".note-list-tasks");
     if (doneChip === null) throw new Error("expected done chip");
     const doneIcon = doneChip.firstElementChild;
@@ -595,7 +620,7 @@ describe("buildNotesList — second structural pass", () => {
       body: "[ ] go shopping",
       location: "Praha — Karlin office",
     });
-    const list = buildNotesList("geo", [note], () => undefined);
+    const list = renderList("geo", [note], () => undefined);
     const meta = list.querySelector(".note-list-item .card-meta");
     expect(meta).not.toBeNull();
     const loc = meta?.querySelector(".card-location");
@@ -610,13 +635,13 @@ describe("buildNotesList — second structural pass", () => {
 
   it("omits the `.card-location` chip from the meta row when the note has no location", () => {
     const note = makeNote({ id: "blank", location: undefined });
-    const list = buildNotesList("blank", [note], () => undefined);
+    const list = renderList("blank", [note], () => undefined);
     expect(list.querySelector(".note-list-item .card-location")).toBeNull();
   });
 
   it("omits the `.card-location` chip when the note's location is the `—` placeholder", () => {
     const note = makeNote({ id: "denied", location: "—" });
-    const list = buildNotesList("denied", [note], () => undefined);
+    const list = renderList("denied", [note], () => undefined);
     expect(list.querySelector(".note-list-item .card-location")).toBeNull();
   });
 
@@ -625,7 +650,7 @@ describe("buildNotesList — second structural pass", () => {
     // mutating the wrapper className to "" leaves the chips queryable
     // but breaks the row container that owns the layout.
     const note = makeNote({ id: "tagged", tags: ["x"] });
-    const list = buildNotesList("tagged", [note], () => undefined);
+    const list = renderList("tagged", [note], () => undefined);
     expect(list.querySelector(".note-list-item .note-list-tags")).not.toBeNull();
   });
 
@@ -635,11 +660,11 @@ describe("buildNotesList — second structural pass", () => {
     // same persona (dark=undefined → light fallback), so the cards
     // collide on identical `--nc-bg` values.
     const note = makeNote({ id: "p", title: "Persona note" });
-    const lightCard = buildNotesList("p", [note], () => undefined, undefined, {
+    const lightCard = renderList("p", [note], () => undefined, undefined, {
       allNotes: [note],
       dark: false,
     }).querySelector<HTMLElement>(".note-list-item");
-    const darkCard = buildNotesList("p", [note], () => undefined, undefined, {
+    const darkCard = renderList("p", [note], () => undefined, undefined, {
       allNotes: [note],
       dark: true,
     }).querySelector<HTMLElement>(".note-list-item");
@@ -655,7 +680,7 @@ describe("buildNotesList — second structural pass", () => {
     // Mutating the empty string to "Stryker was here!" would land
     // garbage class tokens on every non-persona row.
     const note = makeNote({ id: "a" });
-    const withoutPersona = buildNotesList(
+    const withoutPersona = renderList(
       "a",
       [note],
       () => undefined,
@@ -664,7 +689,7 @@ describe("buildNotesList — second structural pass", () => {
     const rowNoPersona = withoutPersona.querySelector(".notebook-row");
     expect(rowNoPersona?.classList.contains("has-persona")).toBe(false);
 
-    const withPersona = buildNotesList("a", [note], () => undefined, "list", {
+    const withPersona = renderList("a", [note], () => undefined, "list", {
       allNotes: [note],
       dark: false,
     });
@@ -677,7 +702,7 @@ describe("buildNotesList — second structural pass", () => {
     // Mutating "true" to "" leaves the attribute present but with
     // an empty value, which AT reads as opt-in (visible to screen
     // readers) — exactly the opposite of the intent.
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a" })],
       () => undefined,
@@ -691,7 +716,7 @@ describe("buildNotesList — second structural pass", () => {
     // The wrapper carries the title + sub elements; without it the
     // CSS rail layout breaks. Mutating the StringLiteral to "" leaves
     // the inner span elements queryable but the parent un-classed.
-    const list = buildNotesList(
+    const list = renderList(
       "a",
       [makeNote({ id: "a" })],
       () => undefined,
@@ -709,7 +734,7 @@ describe("buildNotesList — second structural pass", () => {
       id: "ws",
       body: "    hello world    ",
     });
-    const list = buildNotesList("ws", [note], () => undefined, "list");
+    const list = renderList("ws", [note], () => undefined, "list");
     const sub = list.querySelector(".nr-sub");
     expect(sub?.textContent).toBe("hello world");
   });
@@ -722,7 +747,7 @@ describe("buildNotesList — second structural pass", () => {
       id: "multi-newlines",
       body: "line one\n\n\nline two",
     });
-    const list = buildNotesList(
+    const list = renderList(
       "multi-newlines",
       [note],
       () => undefined,
@@ -732,16 +757,16 @@ describe("buildNotesList — second structural pass", () => {
     expect(sub?.textContent).toBe("line one line two");
   });
 
-  it("caps the row sub-text at 140 chars even for long bodies (kills the `.slice(0, 140)` mutant)", () => {
-    // Pin the slice on `excerpt.slice(0, 140)`. The MethodExpression
-    // mutant drops the slice and lets the full body land on the row,
-    // pushing the right-side date off the rail on narrow viewports.
+  it("renders the row sub-text from the bounded precomputed excerpt, not the raw body", () => {
+    // The row now shows the index summary's excerpt (72-char card budget),
+    // never the full body — so a 300-char note can't push the right-side date
+    // off the rail. Titled so the body becomes the excerpt (not the headline).
     const longBody = "x".repeat(300);
-    const note = makeNote({ id: "long", body: longBody });
-    const list = buildNotesList("long", [note], () => undefined, "list");
+    const note = makeNote({ id: "long", title: "Titled", body: longBody });
+    const list = renderList("long", [note], () => undefined, "list");
     const sub = list.querySelector(".nr-sub");
-    expect((sub?.textContent ?? "").length).toBeLessThanOrEqual(140);
-    expect(sub?.textContent).toBe("x".repeat(140));
+    expect((sub?.textContent ?? "").length).toBeLessThanOrEqual(72);
+    expect(sub?.textContent?.startsWith("x")).toBe(true);
   });
 
   it("omits the `.nr-tags` wrapper entirely when the row note has zero tags", () => {
@@ -749,7 +774,7 @@ describe("buildNotesList — second structural pass", () => {
     // or EqualityOperator `>= 0` mutants would render the tags-row
     // wrapper as an empty `<div>`, breaking spacing on the row.
     const note = makeNote({ id: "no-tags", tags: [] });
-    const list = buildNotesList("no-tags", [note], () => undefined, "list");
+    const list = renderList("no-tags", [note], () => undefined, "list");
     expect(list.querySelector(".notebook-row .nr-tags")).toBeNull();
   });
 });

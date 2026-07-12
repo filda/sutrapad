@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildNotesPanel } from "../src/app/view/pages/notes-page";
 import { INITIAL_LIMIT, resetListState } from "../src/app/logic/endless-scroll";
+import { buildNoteSummary } from "../src/lib/note-card-meta";
 import type { SutraPadWorkspace } from "../src/types";
 
 afterEach(() => {
@@ -29,6 +30,7 @@ function makeWorkspace(count: number): SutraPadWorkspace {
 function panelOptions(workspace: SutraPadWorkspace) {
   return {
     workspace,
+    noteSummaries: workspace.notes.map((note) => buildNoteSummary(note)),
     currentNoteId: workspace.notes[0]?.id ?? "",
     selectedTagFilters: [] as string[],
     filterMode: "all" as const,

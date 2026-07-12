@@ -1,4 +1,5 @@
-import { DEFAULT_NOTE_TITLE, countTasksInNote } from "../../../lib/notebook";
+import { DEFAULT_NOTE_TITLE } from "../../../lib/notebook";
+import { deriveAutoTags } from "../../../lib/auto-tags";
 import {
   deriveNotebookPersona,
   type NotebookPersona,
@@ -11,10 +12,8 @@ import {
   createOgImageResolver,
   type OgImageResolver,
 } from "../../logic/og-image-resolver";
-import { buildCardExcerpt } from "../../../lib/card-excerpt";
-import { bodyAfterHeadline, firstBodyLine } from "../../../lib/note-headline";
 import { describeTaskChip } from "../../logic/task-chip";
-import type { SutraPadDocument } from "../../../types";
+import type { SutraPadDocument, SutraPadNoteSummary } from "../../../types";
 import {
   buildCardDate,
   buildCardHead,
@@ -27,6 +26,29 @@ import { EMPTY_COPY, buildEmptyState } from "./empty-state";
 import { buildIcon } from "./icons";
 import { buildLinkThumb } from "./link-thumb";
 import { applyPersonaStyles, appendPersonaStickers } from "./persona-decor";
+
+/**
+ * Rebuilds a body-less `SutraPadDocument` from an index summary. The card's
+ * thumb / primary-URL / persona helpers take a document; everything they read
+ * (id, title, urls, tags, location, captureContext, timestamps) lives on the
+ * summary, and none of them touch the body — so a synthetic `body: ""` lets
+ * the Notes list render entirely from the resident summary model without
+ * hydrating the note. Persona's body-derived cues (open-task, auto-tag facets)
+ * are passed to `deriveNotebookPersona` as precomputed options instead.
+ */
+function toDocument(summary: SutraPadNoteSummary): SutraPadDocument {
+  return {
+    id: summary.id,
+    title: summary.title,
+    body: "",
+    urls: [...(summary.urls ?? [])],
+    tags: [...(summary.tags ?? [])],
+    location: summary.location,
+    captureContext: summary.captureContext,
+    createdAt: summary.createdAt,
+    updatedAt: summary.updatedAt,
+  };
+}
 
 export interface NotesListPersonaOptions {
   /**
@@ -46,7 +68,7 @@ export interface NotesListPersonaOptions {
 
 export function buildNotesList(
   currentNoteId: string,
-  notes: SutraPadDocument[],
+  notes: SutraPadNoteSummary[],
   onSelectNote: (noteId: string) => void,
   viewMode?: NotesViewMode,
   personaOptions?: NotesListPersonaOptions,
@@ -81,11 +103,22 @@ export function buildNotesList(
   // snapshot, mirroring the Links and Tasks pages.
   const resolver = renderAsRow ? null : createOgImageResolver();
 
+  // Persona's `regular` sticker counts place recurrence across the whole
+  // population. Derive each note's auto-tags ONCE here rather than inside
+  // regularSticker for every card — that nested walk was O(N²) across the list.
+  const personaNow = new Date();
+  const personaAllNotesAutoTags = personaOptions
+    ? personaOptions.allNotes.map((doc) => deriveAutoTags(doc, personaNow))
+    : [];
+
   for (const note of notes) {
     const persona = personaOptions
-      ? deriveNotebookPersona(note, {
+      ? deriveNotebookPersona(toDocument(note), {
           allNotes: personaOptions.allNotes,
           dark: personaOptions.dark,
+          autoTags: note.autoTags,
+          hasOpenTask: (note.tasks?.open ?? 0) > 0,
+          allNotesAutoTags: personaAllNotesAutoTags,
         })
       : null;
 
@@ -122,13 +155,35 @@ function buildMetaSeparator(): HTMLSpanElement {
   return sep;
 }
 
+/**
+ * Card text precomputed at index time (`buildNoteCardMeta`), so the card
+ * renders without the body: `headline` is title-or-first-body-line, `excerpt`
+ * is the 72-char blurb ("" when there's nothing beyond the headline → surfaced
+ * as null here so the "Empty note" placeholder + headline-only paths hold).
+ */
+function cardText(note: SutraPadNoteSummary): {
+  titleIsBlank: boolean;
+  headline: string;
+  excerptText: string | null;
+} {
+  return {
+    titleIsBlank: note.title.trim() === "",
+    headline: note.headline ?? "",
+    excerptText:
+      note.excerpt && note.excerpt.length > 0 ? note.excerpt : null,
+  };
+}
+
 function buildCardItem(
-  note: SutraPadDocument,
+  note: SutraPadNoteSummary,
   persona: NotebookPersona | null,
   currentNoteId: string,
   resolver: OgImageResolver | null,
   onSelectNote: (noteId: string) => void,
 ): HTMLElement {
+  // Synthetic body-less document for the thumb + primary-URL helpers (they
+  // read urls / captureContext / tags / id only).
+  const doc = toDocument(note);
   // Element is `<article>` (not `<button>`) to match the Links/Tasks card
   // renderers and avoid the WebKit/Chromium UA quirks that bit the og:image
   // rendering on the Notes grid — buttons apply enough non-standard handling
@@ -191,13 +246,13 @@ function buildCardItem(
   // collapses to one shared olive bucket — see
   // `pickNoteThumbSeed` for the priority chain.
   if (resolver !== null) {
-    const primaryUrl = deriveNotePrimaryUrl(note);
+    const primaryUrl = deriveNotePrimaryUrl(doc);
     card.append(
       buildLinkThumb({
         url: primaryUrl,
-        notes: [note],
+        notes: [doc],
         resolver,
-        gradientSeed: pickNoteThumbSeed(note),
+        gradientSeed: pickNoteThumbSeed(doc),
       }),
     );
   }
@@ -213,13 +268,10 @@ function buildCardItem(
   // buildCardTitle below), so the excerpt is built from the rest of the body
   // to avoid repeating that line — the fix for imported one-liners where the
   // whole text would otherwise show as both title and excerpt.
-  const titleIsBlank = note.title.trim() === "";
-  const headline = firstBodyLine(note.body);
-  const excerptSource = titleIsBlank ? bodyAfterHeadline(note.body) : note.body;
-  const excerptText = buildCardExcerpt(excerptSource, { maxChars: 72 });
+  const { titleIsBlank, headline, excerptText } = cardText(note);
   // Branching/labelling lives in describeTaskChip so the UI stays purely
   // presentational: pick the class, drop in text + aria-label, or omit.
-  const taskChip = describeTaskChip(countTasksInNote(note));
+  const taskChip = describeTaskChip(note.tasks ?? { open: 0, done: 0 });
 
   // Build the card via DOM APIs (textContent only). The previous template-
   // literal `innerHTML` interpolation made `note.title` and `note.body`
@@ -311,7 +363,7 @@ function buildCardItem(
     card.append(head, meta, excerptEl);
   }
 
-  const tagsRow = buildTagChipsRow(note.tags, "note-list-tags");
+  const tagsRow = buildTagChipsRow(note.tags ?? [], "note-list-tags");
   if (tagsRow) card.append(tagsRow);
 
   if (persona) appendPersonaStickers(card, persona);
@@ -327,7 +379,7 @@ function buildCardItem(
  * neutral accent dot so the row still reads as a clickable item.
  */
 function buildRowItem(
-  note: SutraPadDocument,
+  note: SutraPadNoteSummary,
   persona: NotebookPersona | null,
   currentNoteId: string,
 ): HTMLButtonElement {
@@ -347,25 +399,29 @@ function buildRowItem(
 
   const title = document.createElement("span");
   title.className = "nr-title";
-  title.textContent = note.title || DEFAULT_NOTE_TITLE;
+  // Title-less notes (e.g. imported one-liners) fall back to the precomputed
+  // headline — the first body line — matching the card renderer, so the row
+  // still shows real text rather than "Untitled note".
+  title.textContent = note.title.trim() || note.headline || DEFAULT_NOTE_TITLE;
   body.append(title);
 
-  const excerpt = note.body.trim().replaceAll(/\n+/gu, " ");
+  const excerpt = note.excerpt ?? "";
   if (excerpt.length > 0) {
     const sub = document.createElement("span");
     sub.className = "nr-sub";
-    sub.textContent = excerpt.slice(0, 140);
+    sub.textContent = excerpt;
     body.append(sub);
   }
 
   button.append(body);
 
-  if (note.tags.length > 0) {
+  const rowTags = note.tags ?? [];
+  if (rowTags.length > 0) {
     const tagsRow = document.createElement("div");
     tagsRow.className = "nr-tags";
     // Cap row tag display so a long tag list doesn't push the date off the row;
     // the full set stays discoverable once the note is opened.
-    for (const tag of note.tags.slice(0, 4)) {
+    for (const tag of rowTags.slice(0, 4)) {
       const chip = document.createElement("span");
       chip.className = "tag-chip";
       chip.textContent = tag;

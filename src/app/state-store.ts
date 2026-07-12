@@ -194,7 +194,7 @@ export function createAppStateStore({
   // Resident summary model. Seeded from the initial (local) workspace and
   // kept in sync by the `workspace$.subscribe` below during the parallel-run.
   const noteSummaries$ = atom<SutraPadNoteSummary[]>(
-    workspace$.get().notes.map(buildNoteSummary),
+    workspace$.get().notes.map((note) => buildNoteSummary(note)),
   );
   const syncState$ = atom<SyncState>("idle");
   const lastError$ = atom("");
@@ -260,7 +260,7 @@ export function createAppStateStore({
     // model on every workspace change so the Notes list can read summaries
     // while `loadWorkspace` still hydrates bodies. Removed in the final flip.
     workspace$.subscribe((ws) => {
-      noteSummaries$.set(ws.notes.map(buildNoteSummary));
+      noteSummaries$.set(ws.notes.map((note) => buildNoteSummary(note)));
     }),
     notesViewMode$.subscribe(persistNotesView),
     linksViewMode$.subscribe(persistLinksView),

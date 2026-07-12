@@ -2,6 +2,7 @@ import { filterNotesByTags } from "../../../lib/notebook";
 import { syncListState } from "../../logic/endless-scroll";
 import type { NotesViewMode } from "../../logic/notes-view";
 import type {
+  SutraPadNoteSummary,
   SutraPadTagFilterMode,
   SutraPadWorkspace,
 } from "../../../types";
@@ -15,6 +16,13 @@ import { buildPageHeader } from "../shared/page-header";
 
 export interface NotesPanelOptions {
   workspace: SutraPadWorkspace;
+  /**
+   * Resident index-summary model (Phase 2). The card grid renders from these
+   * so it never needs the note bodies; `workspace.notes` is still used for
+   * tag filtering (which reads auto-tags the summary alone can't reproduce)
+   * until the tag filter moves onto the tag index.
+   */
+  noteSummaries: readonly SutraPadNoteSummary[];
   currentNoteId: string;
   selectedTagFilters: string[];
   filterMode: SutraPadTagFilterMode;
@@ -93,6 +101,7 @@ function buildViewToggle(
  */
 export function buildNotesPanel({
   workspace,
+  noteSummaries,
   currentNoteId,
   selectedTagFilters,
   filterMode,
@@ -110,6 +119,16 @@ export function buildNotesPanel({
     selectedTagFilters,
     filterMode,
   );
+  // The grid renders from the resident summaries. Filtering runs on the full
+  // documents (it reads auto-tags), then we project the surviving ids onto
+  // their summaries, preserving the filtered order.
+  const summaryById = new Map(
+    noteSummaries.map((summary) => [summary.id, summary]),
+  );
+  const filteredSummaries = filteredNotes.flatMap((note) => {
+    const summary = summaryById.get(note.id);
+    return summary ? [summary] : [];
+  });
 
   notesPanel.append(
     buildNotesPageHeader({
@@ -146,12 +165,12 @@ export function buildNotesPanel({
   // the user scrolls near the bottom (the window scroll listener in app.ts
   // drives growth). The key resets the limit when the filter / view changes.
   const listKey = `notes|${filterMode}|${selectedTagFilters.toSorted().join(",")}|${notesViewMode ?? "cards"}`;
-  const limit = syncListState(listKey, filteredNotes.length);
+  const limit = syncListState(listKey, filteredSummaries.length);
 
   notesPanel.append(
     buildNotesList(
       currentNoteId,
-      filteredNotes.slice(0, limit),
+      filteredSummaries.slice(0, limit),
       onSelectNote,
       notesViewMode,
       personaOptions,

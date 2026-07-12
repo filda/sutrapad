@@ -258,6 +258,7 @@ interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
 export function renderAppPage({
   root,
   workspace,
+  noteSummaries,
   currentNoteId,
   selectedTagFilters,
   filterMode,
@@ -563,6 +564,7 @@ export function renderAppPage({
     page.append(
       buildNotesPanel({
         workspace,
+        noteSummaries,
         currentNoteId,
         selectedTagFilters,
         filterMode,
