@@ -25,7 +25,7 @@
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^26.1.0",
     "@vitest/coverage-istanbul": "^4.1.6",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@vitest/coverage-v8": "^4.1.10",
     "fontaine": "^0.8.0",
     "happy-dom": "^20.10.6",
     "oxlint": "^1.72.0",
