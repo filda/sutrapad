@@ -36,6 +36,7 @@ import { buildHomePage } from "./pages/home-page";
 import { buildCapturePage } from "./pages/capture-page";
 import { buildTagsPage } from "./pages/tags-page";
 import { buildLinksPage } from "./pages/links-page";
+import { documentFromSummary } from "../../lib/note-card-meta";
 import type { LinksViewMode } from "../logic/links-view";
 import { buildTasksPage } from "./pages/tasks-page";
 import { buildNotesPanel, type NotesPanelOptions } from "./pages/notes-page";
@@ -349,7 +350,11 @@ export function renderAppPage({
   // the card paper variants on the next re-render without a reload.
   const personaOptions = isPersonaEnabled(personaPreference)
     ? {
-        allNotes: workspace.notes,
+        // Persona recurrence stickers (regular / first-of-kind) read only tags
+        // + place/source facets, so body-less docs rebuilt from the resident
+        // summaries drive them identically — and keep working once
+        // `loadWorkspace` stops holding note bodies (Phase 2 step 3e).
+        allNotes: noteSummaries.map(documentFromSummary),
         dark: isDarkThemeId(resolveThemeId(currentTheme)),
       }
     : undefined;
