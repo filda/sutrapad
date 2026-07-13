@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GoogleDriveStore } from "../src/services/drive/workspace-store";
-import type { SutraPadDocument, SutraPadHead, SutraPadIndex } from "../src/types";
+import {
+  GoogleDriveStore,
+  reconcileLinkIndex,
+  reconcileTaskIndex,
+} from "../src/services/drive/workspace-store";
+import type {
+  SutraPadDocument,
+  SutraPadHead,
+  SutraPadIndex,
+  SutraPadLinkIndex,
+  SutraPadTaskIndex,
+} from "../src/types";
 
 /**
  * Focused tests for the workspace-aware Drive store. The wider load /
@@ -1544,5 +1554,54 @@ describe("GoogleDriveStore.loadNoteSummaries (Phase 2 index-backed list)", () =>
     expect(summaries).toHaveLength(1);
     expect(summaries[0].id).toBe("a");
     expect(summaries[0].headline).toBeUndefined();
+  });
+});
+
+describe("reconcileTaskIndex / reconcileLinkIndex (folder reconcile)", () => {
+  it("reconcileTaskIndex keeps only tasks whose note is still live", () => {
+    const index: SutraPadTaskIndex = {
+      version: 1,
+      savedAt: "2026-05-01T00:00:00.000Z",
+      tasks: [
+        { noteId: "a", lineIndex: 0, text: "keep", done: false, noteUpdatedAt: "u" },
+        { noteId: "gone", lineIndex: 1, text: "drop", done: true, noteUpdatedAt: "u" },
+      ],
+    };
+    const result = reconcileTaskIndex(index, new Set(["a"]));
+    expect(result.tasks.map((t) => t.text)).toEqual(["keep"]);
+    expect(result.savedAt).toBe("2026-05-01T00:00:00.000Z");
+  });
+
+  it("reconcileLinkIndex prunes dead note ids, drops empty links, recomputes count", () => {
+    const index: SutraPadLinkIndex = {
+      version: 1,
+      savedAt: "2026-05-01T00:00:00.000Z",
+      links: [
+        { url: "https://a", noteIds: ["a", "gone"], count: 2, latestUpdatedAt: "u" },
+        { url: "https://b", noteIds: ["gone"], count: 1, latestUpdatedAt: "u" },
+      ],
+    };
+    const result = reconcileLinkIndex(index, new Set(["a"]));
+    expect(result.links).toHaveLength(1);
+    expect(result.links[0]).toMatchObject({
+      url: "https://a",
+      noteIds: ["a"],
+      count: 1,
+    });
+  });
+
+  it("both helpers return empty collections when nothing is live", () => {
+    const taskIndex: SutraPadTaskIndex = {
+      version: 1,
+      savedAt: "s",
+      tasks: [{ noteId: "x", lineIndex: 0, text: "t", done: false, noteUpdatedAt: "u" }],
+    };
+    const linkIndex: SutraPadLinkIndex = {
+      version: 1,
+      savedAt: "s",
+      links: [{ url: "u", noteIds: ["x"], count: 1, latestUpdatedAt: "u" }],
+    };
+    expect(reconcileTaskIndex(taskIndex, new Set()).tasks).toEqual([]);
+    expect(reconcileLinkIndex(linkIndex, new Set()).links).toEqual([]);
   });
 });

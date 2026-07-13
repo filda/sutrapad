@@ -14,7 +14,9 @@ import type {
   SutraPadDocument,
   SutraPadHead,
   SutraPadIndex,
+  SutraPadLinkIndex,
   SutraPadNoteSummary,
+  SutraPadTaskIndex,
   SutraPadWorkspace,
 } from "../../types";
 import {
@@ -191,6 +193,39 @@ function createIndex(
       fileId: previousById.get(note.id)?.fileId,
     })),
   };
+}
+
+/**
+ * Drops task-index entries whose note no longer exists in the folder. Pure so
+ * the folder-reconcile rule the Tasks page relies on is unit-testable without
+ * Drive I/O.
+ */
+export function reconcileTaskIndex(
+  index: SutraPadTaskIndex,
+  liveNoteIds: ReadonlySet<string>,
+): SutraPadTaskIndex {
+  return {
+    ...index,
+    tasks: index.tasks.filter((task) => liveNoteIds.has(task.noteId)),
+  };
+}
+
+/**
+ * Drops dead note ids from each link and removes links left with no live
+ * notes, recomputing `count`. Pure counterpart to `reconcileTaskIndex`.
+ */
+export function reconcileLinkIndex(
+  index: SutraPadLinkIndex,
+  liveNoteIds: ReadonlySet<string>,
+): SutraPadLinkIndex {
+  const links: SutraPadLinkIndex["links"] = [];
+  for (const link of index.links) {
+    const noteIds = link.noteIds.filter((id) => liveNoteIds.has(id));
+    if (noteIds.length > 0) {
+      links.push({ ...link, noteIds, count: noteIds.length });
+    }
+  }
+  return { ...index, links };
 }
 
 export class GoogleDriveStore {
@@ -510,6 +545,75 @@ export class GoogleDriveStore {
     return summaries.toSorted((left, right) =>
       right.updatedAt.localeCompare(left.updatedAt),
     );
+  }
+
+  /** Live note ids present in the workspace folder (drops deleted notes). */
+  private collectLiveNoteIds(noteFiles: DriveFileRecord[]): Set<string> {
+    const ids = new Set<string>();
+    for (const file of noteFiles) {
+      const noteId = file.appProperties?.noteId ?? noteIdFromFileName(file.name);
+      if (noteId) ids.add(noteId);
+    }
+    return ids;
+  }
+
+  /**
+   * Loads the persisted task index (`sutrapad-tasks.json`), reconciled against
+   * the folder inventory so tasks belonging to deleted notes are dropped —
+   * mirroring how `loadNoteSummaries` starts using the notes index. No note
+   * bodies are fetched: the persisted index becomes the source of truth for the
+   * Tasks page. Notes captured since the last interactive save (which rebuilds
+   * the index) won't have their tasks here until that rebuild — the same
+   * eventual-consistency drift the notes index carries.
+   */
+  async loadTaskIndex(): Promise<SutraPadTaskIndex> {
+    const empty: SutraPadTaskIndex = { version: 1, savedAt: "", tasks: [] };
+    const workspaceFolder = await this.findWorkspaceFolder();
+    if (!workspaceFolder) return empty;
+
+    const [noteFiles, indexFile] = await Promise.all([
+      this.findNoteFilesInFolder(workspaceFolder.id),
+      this.findTaskIndexFile(workspaceFolder.id),
+    ]);
+    if (!indexFile) return empty;
+
+    const liveNoteIds = this.collectLiveNoteIds(noteFiles);
+    try {
+      const index = await this.#client.fetchJsonFile<SutraPadTaskIndex>(
+        indexFile.id,
+      );
+      return reconcileTaskIndex(index, liveNoteIds);
+    } catch {
+      return empty;
+    }
+  }
+
+  /**
+   * Loads the persisted link index (`sutrapad-links.json`), reconciled against
+   * the folder inventory: note ids that no longer exist are dropped from each
+   * link, and links left with no live notes are removed. Same
+   * index-is-the-source-of-truth model as `loadTaskIndex`.
+   */
+  async loadLinkIndex(): Promise<SutraPadLinkIndex> {
+    const empty: SutraPadLinkIndex = { version: 1, savedAt: "", links: [] };
+    const workspaceFolder = await this.findWorkspaceFolder();
+    if (!workspaceFolder) return empty;
+
+    const [noteFiles, indexFile] = await Promise.all([
+      this.findNoteFilesInFolder(workspaceFolder.id),
+      this.findLinkIndexFile(workspaceFolder.id),
+    ]);
+    if (!indexFile) return empty;
+
+    const liveNoteIds = this.collectLiveNoteIds(noteFiles);
+    try {
+      const index = await this.#client.fetchJsonFile<SutraPadLinkIndex>(
+        indexFile.id,
+      );
+      return reconcileLinkIndex(index, liveNoteIds);
+    } catch {
+      return empty;
+    }
   }
 
   /**
