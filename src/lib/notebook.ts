@@ -1,6 +1,7 @@
 import type {
   SutraPadDocument,
   SutraPadLinkIndex,
+  SutraPadNoteSummary,
   SutraPadTagEntry,
   SutraPadTagFilterMode,
   SutraPadTagIndex,
@@ -506,6 +507,34 @@ export function filterNotesByTags(
 
   return notes.filter((note) => {
     const tagsForNote = collectAllTagsForNote(note, now);
+    if (mode === "any") {
+      return selectedTags.some((tag) => tagsForNote.has(tag));
+    }
+    return selectedTags.every((tag) => tagsForNote.has(tag));
+  });
+}
+
+/**
+ * Tag filter over index summaries — the Phase 2 counterpart to
+ * `filterNotesByTags`. A summary already carries both its user `tags` and the
+ * precomputed `autoTags` (`deriveAutoTags` was run at build time), so the
+ * Notes list can filter without hydrating bodies or re-deriving per render.
+ * Mirrors the `any` / `all` semantics exactly.
+ */
+export function filterSummariesByTags(
+  summaries: readonly SutraPadNoteSummary[],
+  selectedTags: string[],
+  mode: SutraPadTagFilterMode = "all",
+): SutraPadNoteSummary[] {
+  if (selectedTags.length === 0) {
+    return [...summaries];
+  }
+
+  return summaries.filter((summary) => {
+    const tagsForNote = new Set<string>([
+      ...(summary.tags ?? []),
+      ...(summary.autoTags ?? []),
+    ]);
     if (mode === "any") {
       return selectedTags.some((tag) => tagsForNote.has(tag));
     }

@@ -431,7 +431,6 @@ export function createApp(root: HTMLElement): void {
     const notesViewMode = notesViewMode$.get();
     currentPanel.replaceWith(
       buildNotesPanel({
-        workspace,
         noteSummaries: noteSummaries$.get(),
         currentNoteId:
           resolveDisplayedNote(workspace, selectedTagFilters, filterMode)?.id ?? "",

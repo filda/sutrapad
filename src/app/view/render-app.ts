@@ -15,6 +15,7 @@ import type { TasksFilterId } from "../logic/tasks-filter";
 import type {
   SutraPadDocument,
   SutraPadTagFilterMode,
+  SutraPadWorkspace,
   UserProfile,
 } from "../../types";
 import {
@@ -66,6 +67,13 @@ import {
 // callbacks for the sidebar) inline below.
 interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   root: HTMLElement;
+  /**
+   * Full workspace — the render pass walks `workspace.notes` for the tag
+   * index, persona population, and detail/editor lookups. The Notes panel no
+   * longer needs it (it renders + filters from `noteSummaries`), so it lives
+   * here rather than on `NotesPanelOptions`.
+   */
+  workspace: SutraPadWorkspace;
   /**
    * Drives the chrome topbar's sync-pill (idle / loading / saving /
    * error). The detail-topbar's "synced 22:00" crumb is built from
@@ -563,7 +571,6 @@ export function renderAppPage({
     page.classList.add("page--wide");
     page.append(
       buildNotesPanel({
-        workspace,
         noteSummaries,
         currentNoteId,
         selectedTagFilters,

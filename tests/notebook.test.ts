@@ -17,6 +17,7 @@ import {
   extractHashtagsFromText,
   extractUrlsFromText,
   filterNotesByTags,
+  filterSummariesByTags,
   isEmptyDraftNote,
   isPristineWorkspace,
   mergeHashtagsIntoTags,
@@ -25,7 +26,7 @@ import {
   stripEmptyDraftNotes,
   upsertNote,
 } from "../src/lib/notebook";
-import type { SutraPadDocument } from "../src/types";
+import type { SutraPadDocument, SutraPadNoteSummary } from "../src/types";
 
 function makeNote(
   overrides: Partial<SutraPadDocument> & Pick<SutraPadDocument, "id" | "updatedAt">,
@@ -419,6 +420,66 @@ describe("notebook helpers: indexes and filtering", () => {
       // `device:desktop` only lives on note 2, which was filtered out.
       expect(visible).not.toContain("device:desktop");
     });
+});
+
+function summaryIds(r: SutraPadNoteSummary[]): string[] {
+  return r.map((s) => s.id);
+}
+
+describe("filterSummariesByTags", () => {
+  const summaries: SutraPadNoteSummary[] = [
+    {
+      id: "1",
+      title: "",
+      createdAt: "2026-04-21T08:00:00.000Z",
+      updatedAt: "2026-04-21T08:00:00.000Z",
+      tags: ["work"],
+      autoTags: ["device:mobile"],
+    },
+    {
+      id: "2",
+      title: "",
+      createdAt: "2026-04-21T08:00:00.000Z",
+      updatedAt: "2026-04-21T08:00:00.000Z",
+      tags: ["idea"],
+      autoTags: ["device:desktop"],
+    },
+  ];
+
+  it("matches user tags and precomputed auto-tags (all/any)", () => {
+    expect(summaryIds(filterSummariesByTags(summaries, ["work"], "all"))).toEqual([
+      "1",
+    ]);
+    expect(
+      summaryIds(filterSummariesByTags(summaries, ["device:mobile"], "all")),
+    ).toEqual(["1"]);
+    expect(
+      summaryIds(filterSummariesByTags(summaries, ["work", "device:mobile"], "all")),
+    ).toEqual(["1"]);
+    expect(
+      summaryIds(filterSummariesByTags(summaries, ["work", "idea"], "any")),
+    ).toEqual(["1", "2"]);
+    // "all" with tags split across notes → nothing matches both (pins the
+    // mode branch + the every/some distinction).
+    expect(filterSummariesByTags(summaries, ["work", "idea"], "all")).toEqual([]);
+    expect(summaryIds(filterSummariesByTags(summaries, ["missing"], "any"))).toEqual(
+      [],
+    );
+    expect(filterSummariesByTags(summaries, [], "all")).toEqual(summaries);
+  });
+
+  it("tolerates summaries missing the optional tag fields", () => {
+    const bare: SutraPadNoteSummary[] = [
+      {
+        id: "bare",
+        title: "t",
+        createdAt: "2026-04-21T08:00:00.000Z",
+        updatedAt: "2026-04-21T08:00:00.000Z",
+      },
+    ];
+    expect(filterSummariesByTags(bare, ["work"], "all")).toEqual([]);
+    expect(filterSummariesByTags(bare, [], "all")).toEqual(bare);
+  });
 });
 
 describe("notebook helpers: note updates and creation", () => {

@@ -1,10 +1,9 @@
-import { filterNotesByTags } from "../../../lib/notebook";
+import { filterSummariesByTags } from "../../../lib/notebook";
 import { syncListState } from "../../logic/endless-scroll";
 import type { NotesViewMode } from "../../logic/notes-view";
 import type {
   SutraPadNoteSummary,
   SutraPadTagFilterMode,
-  SutraPadWorkspace,
 } from "../../../types";
 import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
 import {
@@ -15,12 +14,10 @@ import { buildIcon, type IconName } from "../shared/icons";
 import { buildPageHeader } from "../shared/page-header";
 
 export interface NotesPanelOptions {
-  workspace: SutraPadWorkspace;
   /**
-   * Resident index-summary model (Phase 2). The card grid renders from these
-   * so it never needs the note bodies; `workspace.notes` is still used for
-   * tag filtering (which reads auto-tags the summary alone can't reproduce)
-   * until the tag filter moves onto the tag index.
+   * Resident index-summary model (Phase 2). The panel renders AND filters
+   * entirely from these — each summary carries its user `tags` plus the
+   * precomputed `autoTags`, so the note bodies are never needed here.
    */
   noteSummaries: readonly SutraPadNoteSummary[];
   currentNoteId: string;
@@ -100,7 +97,6 @@ function buildViewToggle(
  *   4. Notes list (cards or rows, depending on `notesViewMode`)
  */
 export function buildNotesPanel({
-  workspace,
   noteSummaries,
   currentNoteId,
   selectedTagFilters,
@@ -114,31 +110,21 @@ export function buildNotesPanel({
   const notesPanel = document.createElement("aside");
   notesPanel.className = "notes-panel";
 
-  const filteredNotes = filterNotesByTags(
-    workspace.notes,
+  const filteredSummaries = filterSummariesByTags(
+    noteSummaries,
     selectedTagFilters,
     filterMode,
   );
-  // The grid renders from the resident summaries. Filtering runs on the full
-  // documents (it reads auto-tags), then we project the surviving ids onto
-  // their summaries, preserving the filtered order.
-  const summaryById = new Map(
-    noteSummaries.map((summary) => [summary.id, summary]),
-  );
-  const filteredSummaries = filteredNotes.flatMap((note) => {
-    const summary = summaryById.get(note.id);
-    return summary ? [summary] : [];
-  });
 
   notesPanel.append(
     buildNotesPageHeader({
-      totalNotes: workspace.notes.length,
-      filteredNotes: filteredNotes.length,
+      totalNotes: noteSummaries.length,
+      filteredNotes: filteredSummaries.length,
       filterCount: selectedTagFilters.length,
     }),
   );
 
-  if (workspace.notes.length === 0) {
+  if (noteSummaries.length === 0) {
     // First-run: no notebooks anywhere in the workspace. Show the
     // full-bleed scene with the "Write your first note" CTA instead of
     // rendering the toolbar + inline miss — the user has nothing to
