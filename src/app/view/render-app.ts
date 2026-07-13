@@ -14,7 +14,9 @@ import { suggestTagAliases } from "../logic/tag-aliases";
 import type { TasksFilterId } from "../logic/tasks-filter";
 import type {
   SutraPadDocument,
+  SutraPadLinkIndex,
   SutraPadTagFilterMode,
+  SutraPadTaskIndex,
   SutraPadWorkspace,
   UserProfile,
 } from "../../types";
@@ -74,6 +76,10 @@ interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
    * here rather than on `NotesPanelOptions`.
    */
   workspace: SutraPadWorkspace;
+  /** Resident task index — the Tasks page renders from this, not the bodies. */
+  taskIndex: SutraPadTaskIndex;
+  /** Resident link index — the Links page renders from this, not the bodies. */
+  linkIndex: SutraPadLinkIndex;
   /**
    * Drives the chrome topbar's sync-pill (idle / loading / saving /
    * error). The detail-topbar's "synced 22:00" crumb is built from
@@ -267,6 +273,8 @@ export function renderAppPage({
   root,
   workspace,
   noteSummaries,
+  taskIndex,
+  linkIndex,
   currentNoteId,
   selectedTagFilters,
   filterMode,
@@ -480,7 +488,8 @@ export function renderAppPage({
       page.classList.add("page--wide");
       page.append(
         buildLinksPage({
-          workspace,
+          linkIndex,
+          noteSummaries,
           selectedTagFilters,
           linksViewMode,
           personaOptions,
@@ -494,7 +503,8 @@ export function renderAppPage({
       page.classList.add("page--wide");
       page.append(
         buildTasksPage({
-          workspace,
+          taskIndex,
+          noteSummaries,
           selectedTagFilters,
           tasksFilter,
           tasksShowDone,

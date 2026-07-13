@@ -18,6 +18,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 import { buildNotesList } from "../src/app/view/shared/notes-list";
 import { buildLinksPage } from "../src/app/view/pages/links-page";
+import { buildLinkIndex } from "../src/lib/notebook";
+import { buildNoteSummary } from "../src/lib/note-card-meta";
 
 const HTML_PAYLOAD = '<img src=x onerror="globalThis.xssSentinel = true">';
 const JS_URL = "javascript:globalThis.xssSentinel = true";
@@ -90,7 +92,8 @@ describe("XSS / token-leak regression harness", () => {
     const note = hostileNote();
     const workspace: SutraPadWorkspace = { notes: [note], activeNoteId: note.id };
     const page = buildLinksPage({
-      workspace,
+      linkIndex: buildLinkIndex(workspace),
+      noteSummaries: workspace.notes.map((entry) => buildNoteSummary(entry)),
       selectedTagFilters: [],
       linksViewMode: "list",
       onOpenNote: vi.fn(),

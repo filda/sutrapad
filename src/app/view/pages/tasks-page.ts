@@ -1,10 +1,13 @@
 import {
   DEFAULT_NOTE_TITLE,
-  buildTaskIndex,
-  filterNotesByTags,
+  filterSummariesByTags,
 } from "../../../lib/notebook";
 import { deriveNotebookPersona } from "../../../lib/notebook-persona";
-import type { SutraPadWorkspace } from "../../../types";
+import { documentFromSummary } from "../../../lib/note-card-meta";
+import type {
+  SutraPadNoteSummary,
+  SutraPadTaskIndex,
+} from "../../../types";
 import {
   applyTaskFilter,
   computeTaskCounts,
@@ -62,7 +65,17 @@ const FILTER_DEFS: ReadonlyArray<{
 ];
 
 export interface TasksPageOptions {
-  workspace: SutraPadWorkspace;
+  /**
+   * Resident task index (`sutrapad-tasks.json` model). The Tasks page renders
+   * from this — task text lives on the entries, so no note bodies are needed.
+   */
+  taskIndex: SutraPadTaskIndex;
+  /**
+   * Index summaries for the source notes. Used to build body-less documents
+   * for enrichTasks + the card renderer (title / date / location / persona)
+   * and to resolve the tag filter (each summary carries user + auto tags).
+   */
+  noteSummaries: readonly SutraPadNoteSummary[];
   /**
    * Active topbar tag filter set. The Tasks page narrows to tasks from
    * notes that carry every selected tag (AND), same source-of-truth the
@@ -105,42 +118,43 @@ export function buildTasksPage(options: TasksPageOptions): HTMLElement {
   const section = document.createElement("section");
   section.className = "tasks-page";
 
+  // Body-less workspace synthesised from the resident summaries: enrichTasks
+  // and the card renderer read only note metadata (title, createdAt, location,
+  // persona inputs), never the body — the task text lives on the index entries.
+  const syntheticWorkspace = {
+    notes: options.noteSummaries.map(documentFromSummary),
+    activeNoteId: null,
+  };
   // Always derive the unfiltered enriched list too — the eyebrow needs
   // the unfiltered open/done counts to show "filtered N of M", and the
   // first-run empty scene must stay reachable even when a stray tag
   // filter happens to match nothing.
+  //
+  // `new Date()` is evaluated here on purpose — the tasks page is rebuilt on
+  // every render, so "today" tracks wall-clock time without needing a separate
+  // tick. In tests the logic functions take an explicit `now`.
   const allEnriched = enrichTasks(
-    buildTaskIndex(options.workspace).tasks,
-    options.workspace,
-    // `new Date()` is evaluated here on purpose — the tasks page is
-    // rebuilt on every render, so "today" tracks wall-clock time
-    // without needing a separate tick. In tests the logic functions
-    // take an explicit `now`.
+    options.taskIndex.tasks,
+    syntheticWorkspace,
     new Date(),
   );
 
   const filterCount = options.selectedTagFilters.length;
-  const filteredNotes =
-    filterCount === 0
-      ? options.workspace.notes
-      : filterNotesByTags(
-          options.workspace.notes,
-          [...options.selectedTagFilters],
-          "all",
-        );
-  // Use the same workspace shape (filtered notes + same activeNoteId) so
-  // enrichTasks finds the source notes via the id->note map. Building a
-  // fresh task index from the filtered workspace is cheaper than
-  // post-filtering the enriched list — tasks are ~few-per-note so the
-  // index walk dominates.
-  const enriched =
-    filterCount === 0
-      ? allEnriched
-      : enrichTasks(
-          buildTaskIndex({ ...options.workspace, notes: filteredNotes }).tasks,
-          { ...options.workspace, notes: filteredNotes },
-          new Date(),
-        );
+  // With the resident index the whole list is already enriched, so a tag
+  // filter just keeps the entries whose source note matches — cheaper than
+  // rebuilding an index from filtered notes. The tag test reads each summary's
+  // user + auto tags (see `filterSummariesByTags`).
+  let enriched = allEnriched;
+  if (filterCount > 0) {
+    const matchingIds = new Set(
+      filterSummariesByTags(
+        options.noteSummaries,
+        [...options.selectedTagFilters],
+        "all",
+      ).map((summary) => summary.id),
+    );
+    enriched = allEnriched.filter((entry) => matchingIds.has(entry.note.id));
+  }
 
   const totalOpen = enriched.filter((entry) => !entry.task.done).length;
   const totalDone = enriched.filter((entry) => entry.task.done).length;
@@ -486,6 +500,10 @@ function buildTaskCard(
     ? deriveNotebookPersona(group.note, {
         allNotes: options.personaOptions.allNotes,
         dark: options.personaOptions.dark,
+        // The source note is a body-less synthetic doc now, so the open-task
+        // signal (to-go sticker + coffee-ring / pin patina) comes from the
+        // group's own task entries rather than a body scan.
+        hasOpenTask: group.tasks.some((entry) => !entry.task.done),
       })
     : null;
   if (persona) {

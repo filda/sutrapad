@@ -1,10 +1,9 @@
 import {
   DEFAULT_NOTE_TITLE,
-  buildLinkIndex,
-  filterNotesByTags,
+  filterSummariesByTags,
 } from "../../../lib/notebook";
 import { deriveNotebookPersona } from "../../../lib/notebook-persona";
-import { buildCardExcerpt } from "../../../lib/card-excerpt";
+import { documentFromSummary } from "../../../lib/note-card-meta";
 import { formatDate } from "../../logic/formatting";
 import { deriveLinkHostname } from "../../logic/link-card";
 import {
@@ -29,12 +28,26 @@ import {
 } from "../shared/persona-decor";
 import type { NotesListPersonaOptions } from "../shared/notes-list";
 import { httpUrlOrNull } from "../../../lib/safe-url";
-import type { SutraPadDocument, SutraPadWorkspace } from "../../../types";
+import type {
+  SutraPadDocument,
+  SutraPadLinkIndex,
+  SutraPadNoteSummary,
+} from "../../../types";
 import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
 import { buildPageHeader } from "../shared/page-header";
 
 export interface LinksPageOptions {
-  workspace: SutraPadWorkspace;
+  /**
+   * Resident link index (`sutrapad-links.json` model). The page renders from
+   * this — no note bodies needed. Tag filtering narrows it against the
+   * summaries below.
+   */
+  linkIndex: SutraPadLinkIndex;
+  /**
+   * Index summaries for the source notes: body-less documents for persona /
+   * thumb, the card title / excerpt / tags / location, and the tag filter.
+   */
+  noteSummaries: readonly SutraPadNoteSummary[];
   /**
    * Active topbar tag filter set. The Links page narrows to URLs from
    * notes that carry every selected tag (AND) — the same source-of-truth
@@ -88,7 +101,8 @@ const VIEW_TOGGLE_OPTIONS: ReadonlyArray<{
 ];
 
 export function buildLinksPage({
-  workspace,
+  linkIndex,
+  noteSummaries,
   selectedTagFilters,
   linksViewMode,
   personaOptions,
@@ -101,23 +115,33 @@ export function buildLinksPage({
   const personaClass = personaOptions ? " links-page--persona" : "";
   section.className = `links-page${personaClass}`;
 
-  // Always derive the unfiltered link index too — the eyebrow surfaces a
+  // The resident link index carries every link; the eyebrow surfaces a
   // "filtered N of M" count when a filter is active, mirroring the Notes
   // page's `Notebook · 4 of 12 · filtered by 1 tag` shape.
-  const totalLinkCount = buildLinkIndex(workspace).links.length;
+  const totalLinkCount = linkIndex.links.length;
 
   // Tag filter narrows by source note: a link sticks around when at least
-  // one of its source notes carries every selected tag (AND). Cheaper to
-  // filter the notes first and rebuild the index from the survivors than
-  // to post-filter the link index — the latter would need every note's
-  // tag set re-checked per (link × source-note) pair.
+  // one of its source notes carries every selected tag (AND). Each summary
+  // carries its user + auto tags, so we resolve the matching note ids once
+  // and narrow every link's `noteIds` (dropping links left with none).
   const filterCount = selectedTagFilters.length;
-  const filteredNotes =
-    filterCount === 0
-      ? workspace.notes
-      : filterNotesByTags(workspace.notes, [...selectedTagFilters], "all");
-  const linkIndex = buildLinkIndex({ ...workspace, notes: filteredNotes });
-  const linkCount = linkIndex.links.length;
+  let visibleLinks: readonly LinkEntry[] = linkIndex.links;
+  if (filterCount > 0) {
+    const matchingIds = new Set(
+      filterSummariesByTags(noteSummaries, [...selectedTagFilters], "all").map(
+        (summary) => summary.id,
+      ),
+    );
+    const narrowed: LinkEntry[] = [];
+    for (const link of linkIndex.links) {
+      const noteIds = link.noteIds.filter((id) => matchingIds.has(id));
+      if (noteIds.length > 0) {
+        narrowed.push({ ...link, noteIds, count: noteIds.length });
+      }
+    }
+    visibleLinks = narrowed;
+  }
+  const linkCount = visibleLinks.length;
 
   const eyebrowCount =
     filterCount === 0
@@ -167,7 +191,9 @@ export function buildLinksPage({
 
   section.append(buildLinksToolbar(linksViewMode, onChangeLinksView, filterCount));
 
-  const notesById = new Map(workspace.notes.map((note) => [note.id, note]));
+  const notesById = new Map(
+    noteSummaries.map((summary) => [summary.id, summary]),
+  );
 
   if (linksViewMode === "cards") {
     // Async og:image resolver scoped to this render cycle. The cache
@@ -179,7 +205,7 @@ export function buildLinksPage({
     const resolver = createOgImageResolver();
     section.append(
       buildLinksGrid(
-        linkIndex.links,
+        visibleLinks,
         notesById,
         onOpenNote,
         resolver,
@@ -187,7 +213,7 @@ export function buildLinksPage({
       ),
     );
   } else {
-    section.append(buildLinksList(linkIndex.links, notesById, onOpenNote));
+    section.append(buildLinksList(visibleLinks, notesById, onOpenNote));
   }
 
   return section;
@@ -283,7 +309,7 @@ interface LinkEntry {
  */
 function buildLinksGrid(
   links: readonly LinkEntry[],
-  notesById: ReadonlyMap<string, SutraPadDocument>,
+  notesById: ReadonlyMap<string, SutraPadNoteSummary>,
   onOpenNote: (noteId: string) => void,
   resolver: OgImageResolver,
   personaOptions: NotesListPersonaOptions | undefined,
@@ -302,7 +328,7 @@ function buildLinksGrid(
 
 function buildLinkCard(
   entry: LinkEntry,
-  notesById: ReadonlyMap<string, SutraPadDocument>,
+  notesById: ReadonlyMap<string, SutraPadNoteSummary>,
   onOpenNote: (noteId: string) => void,
   resolver: OgImageResolver,
   personaOptions: NotesListPersonaOptions | undefined,
@@ -321,26 +347,31 @@ function buildLinkCard(
   // using it for the card preview matches "show me the most recent
   // context I saved this link in".
   const primaryNoteId = entry.noteIds[0];
-  const primaryNote = primaryNoteId ? notesById.get(primaryNoteId) ?? null : null;
+  const primarySummary = primaryNoteId
+    ? notesById.get(primaryNoteId) ?? null
+    : null;
 
   // Walk every note containing this URL (not just the primary) so
   // capture-time og:image lookup can pick up a scrape from any past
   // capture of the same link — a user might have captured nytimes.com
-  // three times with a bookmarklet, one of which had og:image.
+  // three times with a bookmarklet, one of which had og:image. Body-less
+  // synthetic docs are enough: the resolver reads urls, never bodies.
   const notesForUrl: SutraPadDocument[] = [];
   for (const noteId of entry.noteIds) {
-    const note = notesById.get(noteId);
-    if (note) notesForUrl.push(note);
+    const summary = notesById.get(noteId);
+    if (summary) notesForUrl.push(documentFromSummary(summary));
   }
 
   // Persona uses the primary source note: same paper/ink/rotation a user
   // would see on that note's card on the Notes page, so the workspace
-  // reads with one consistent visual language across surfaces.
+  // reads with one consistent visual language across surfaces. The
+  // open-task cue comes from the summary's stored counts (body-less doc).
   const persona =
-    personaOptions && primaryNote
-      ? deriveNotebookPersona(primaryNote, {
+    personaOptions && primarySummary
+      ? deriveNotebookPersona(documentFromSummary(primarySummary), {
           allNotes: personaOptions.allNotes,
           dark: personaOptions.dark,
+          hasOpenTask: (primarySummary.tasks?.open ?? 0) > 0,
         })
       : null;
   if (persona) {
@@ -358,17 +389,17 @@ function buildLinkCard(
   // No handler when there's no source note to open — `entry.noteIds`
   // empty / unresolvable would be data weirdness, but the render
   // still has to survive it.
-  if (primaryNote) {
+  if (primarySummary) {
     card.addEventListener("click", (event) => {
       if ((event.target as HTMLElement).closest("a, button")) return;
-      onOpenNote(primaryNote.id);
+      onOpenNote(primarySummary.id);
     });
   }
 
   card.append(
     buildLinkThumb({ url: entry.url, notes: notesForUrl, resolver }),
   );
-  card.append(buildLinkBody(entry, primaryNote, onOpenNote));
+  card.append(buildLinkBody(entry, primarySummary, onOpenNote));
 
   if (persona) appendPersonaStickers(card, persona);
 
@@ -377,7 +408,7 @@ function buildLinkCard(
 
 function buildLinkBody(
   entry: LinkEntry,
-  primaryNote: SutraPadDocument | null,
+  primary: SutraPadNoteSummary | null,
   onOpenNote: (noteId: string) => void,
 ): HTMLElement {
   const body = document.createElement("div");
@@ -399,29 +430,27 @@ function buildLinkBody(
   // to open. URL-without-source falls back to the bare title (no
   // arrow) — opening "the source note" isn't a meaningful action when
   // there isn't one.
-  const titleEl = buildCardTitle(primaryNote?.title ?? "", "link", {
-    fallback: primaryNote ? DEFAULT_NOTE_TITLE : entry.url,
+  const titleEl = buildCardTitle(primary?.title ?? "", "link", {
+    fallback: primary ? DEFAULT_NOTE_TITLE : entry.url,
   });
-  if (primaryNote) {
+  if (primary) {
     body.append(
       buildCardHead(
         titleEl,
-        buildCardOpenButton("Open source note", () =>
-          onOpenNote(primaryNote.id),
-        ),
+        buildCardOpenButton("Open source note", () => onOpenNote(primary.id)),
       ),
     );
   } else {
     body.append(titleEl);
   }
 
-  // Step 6: excerpt comes from the shared `buildCardExcerpt` (Notes
-  // uses the same helper). Element is `<p class="card-excerpt">` —
-  // semantic paragraph + shared styling hook. Tasks doesn't have an
-  // excerpt; its task list takes that slot.
-  const description = primaryNote
-    ? buildCardExcerpt(primaryNote.body, { stripUrl: entry.url })
-    : null;
+  // Step 6: excerpt is the source note's precomputed card excerpt (same
+  // 72-char blurb the Notes card shows) — read from the summary so the Links
+  // page needs no body. `""` (nothing beyond the headline) renders no excerpt.
+  const description =
+    primary && primary.excerpt && primary.excerpt.length > 0
+      ? primary.excerpt
+      : null;
   if (description !== null) {
     const desc = document.createElement("p");
     desc.className = "card-excerpt";
@@ -430,7 +459,7 @@ function buildLinkBody(
   }
 
   body.append(buildLinkUrl(entry.url));
-  body.append(buildLinkMeta(entry, primaryNote));
+  body.append(buildLinkMeta(entry, primary));
 
   // Tag chips reflect the primary source note's tags (the most recently
   // updated note containing this URL — same note that drives the title,
@@ -440,8 +469,8 @@ function buildLinkBody(
   // the row's gap/margin sits in the link-body grid, not Notes' card
   // body. Returns `null` when there are no tags so we can skip the
   // empty `<div>` entirely.
-  if (primaryNote) {
-    const tagsRow = buildTagChipsRow(primaryNote.tags, "link-card-tags");
+  if (primary) {
+    const tagsRow = buildTagChipsRow(primary.tags ?? [], "link-card-tags");
     if (tagsRow) body.append(tagsRow);
   }
 
@@ -471,7 +500,7 @@ function buildLinkUrl(url: string): HTMLElement {
 
 function buildLinkMeta(
   entry: LinkEntry,
-  primaryNote: SutraPadDocument | null,
+  primary: SutraPadNoteSummary | null,
 ): HTMLElement {
   // Step 5: shared `.card-meta` wrapper (Notes + Links). The inner
   // contents (date + source-note chip on Links, date + task chip on
@@ -507,7 +536,7 @@ function buildLinkMeta(
     meta.append(indicator);
   }
 
-  const locationEl = buildLocationLine(primaryNote?.location);
+  const locationEl = buildLocationLine(primary?.location);
   if (locationEl) meta.append(locationEl);
 
   return meta;
@@ -521,7 +550,7 @@ function buildLinkMeta(
  */
 function buildLinksList(
   links: readonly LinkEntry[],
-  notesById: ReadonlyMap<string, SutraPadDocument>,
+  notesById: ReadonlyMap<string, SutraPadNoteSummary>,
   onOpenNote: (noteId: string) => void,
 ): HTMLElement {
   const list = document.createElement("ul");
@@ -536,7 +565,7 @@ function buildLinksList(
 
 function buildLinkListItem(
   entry: LinkEntry,
-  notesById: ReadonlyMap<string, SutraPadDocument>,
+  notesById: ReadonlyMap<string, SutraPadNoteSummary>,
   onOpenNote: (noteId: string) => void,
 ): HTMLElement {
   const item = document.createElement("li");

@@ -13,6 +13,7 @@ import {
   type OgImageResolver,
 } from "../../logic/og-image-resolver";
 import { describeTaskChip } from "../../logic/task-chip";
+import { documentFromSummary } from "../../../lib/note-card-meta";
 import type { SutraPadDocument, SutraPadNoteSummary } from "../../../types";
 import {
   buildCardDate,
@@ -26,29 +27,6 @@ import { EMPTY_COPY, buildEmptyState } from "./empty-state";
 import { buildIcon } from "./icons";
 import { buildLinkThumb } from "./link-thumb";
 import { applyPersonaStyles, appendPersonaStickers } from "./persona-decor";
-
-/**
- * Rebuilds a body-less `SutraPadDocument` from an index summary. The card's
- * thumb / primary-URL / persona helpers take a document; everything they read
- * (id, title, urls, tags, location, captureContext, timestamps) lives on the
- * summary, and none of them touch the body — so a synthetic `body: ""` lets
- * the Notes list render entirely from the resident summary model without
- * hydrating the note. Persona's body-derived cues (open-task, auto-tag facets)
- * are passed to `deriveNotebookPersona` as precomputed options instead.
- */
-function toDocument(summary: SutraPadNoteSummary): SutraPadDocument {
-  return {
-    id: summary.id,
-    title: summary.title,
-    body: "",
-    urls: [...(summary.urls ?? [])],
-    tags: [...(summary.tags ?? [])],
-    location: summary.location,
-    captureContext: summary.captureContext,
-    createdAt: summary.createdAt,
-    updatedAt: summary.updatedAt,
-  };
-}
 
 export interface NotesListPersonaOptions {
   /**
@@ -113,7 +91,7 @@ export function buildNotesList(
 
   for (const note of notes) {
     const persona = personaOptions
-      ? deriveNotebookPersona(toDocument(note), {
+      ? deriveNotebookPersona(documentFromSummary(note), {
           allNotes: personaOptions.allNotes,
           dark: personaOptions.dark,
           autoTags: note.autoTags,
@@ -183,7 +161,7 @@ function buildCardItem(
 ): HTMLElement {
   // Synthetic body-less document for the thumb + primary-URL helpers (they
   // read urls / captureContext / tags / id only).
-  const doc = toDocument(note);
+  const doc = documentFromSummary(note);
   // Element is `<article>` (not `<button>`) to match the Links/Tasks card
   // renderers and avoid the WebKit/Chromium UA quirks that bit the og:image
   // rendering on the Notes grid — buttons apply enough non-standard handling

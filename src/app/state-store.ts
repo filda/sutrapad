@@ -28,12 +28,15 @@
  */
 import { atom, type Atom, type Readable } from "../lib/store";
 import type {
+  SutraPadLinkIndex,
   SutraPadNoteSummary,
   SutraPadTagFilterMode,
+  SutraPadTaskIndex,
   SutraPadWorkspace,
   UserProfile,
 } from "../types";
 import { buildNoteSummary } from "../lib/note-card-meta";
+import { buildLinkIndex, buildTaskIndex } from "../lib/notebook";
 import { loadLocalWorkspace } from "./storage/local-workspace";
 import {
   readActivePageFromLocation,
@@ -98,6 +101,14 @@ export interface AppStateStore {
    * stops holding every body it is set straight from the Drive index.
    */
   readonly noteSummaries$: Atom<SutraPadNoteSummary[]>;
+  /**
+   * Resident task / link indexes — the Phase 2 models the Tasks and Links
+   * pages render from. Derived from `workspace$` during the parallel-run
+   * (see the factory subscription); once `loadWorkspace` stops holding bodies
+   * they are set from the Drive `sutrapad-tasks.json` / `sutrapad-links.json`.
+   */
+  readonly taskIndex$: Atom<SutraPadTaskIndex>;
+  readonly linkIndex$: Atom<SutraPadLinkIndex>;
   readonly syncState$: Atom<SyncState>;
   readonly lastError$: Atom<string>;
   readonly bookmarkletMessage$: Atom<string>;
@@ -137,6 +148,8 @@ export interface AppStateStore {
   setProfile(next: UserProfile | null): void;
   setWorkspace(next: SutraPadWorkspace): void;
   setNoteSummaries(next: SutraPadNoteSummary[]): void;
+  setTaskIndex(next: SutraPadTaskIndex): void;
+  setLinkIndex(next: SutraPadLinkIndex): void;
   setSyncState(next: SyncState): void;
   setLastError(next: string): void;
   setBookmarkletMessage(next: string): void;
@@ -196,6 +209,8 @@ export function createAppStateStore({
   const noteSummaries$ = atom<SutraPadNoteSummary[]>(
     workspace$.get().notes.map((note) => buildNoteSummary(note)),
   );
+  const taskIndex$ = atom<SutraPadTaskIndex>(buildTaskIndex(workspace$.get()));
+  const linkIndex$ = atom<SutraPadLinkIndex>(buildLinkIndex(workspace$.get()));
   const syncState$ = atom<SyncState>("idle");
   const lastError$ = atom("");
   const bookmarkletMessage$ = atom("");
@@ -261,6 +276,8 @@ export function createAppStateStore({
     // while `loadWorkspace` still hydrates bodies. Removed in the final flip.
     workspace$.subscribe((ws) => {
       noteSummaries$.set(ws.notes.map((note) => buildNoteSummary(note)));
+      taskIndex$.set(buildTaskIndex(ws));
+      linkIndex$.set(buildLinkIndex(ws));
     }),
     notesViewMode$.subscribe(persistNotesView),
     linksViewMode$.subscribe(persistLinksView),
@@ -279,6 +296,8 @@ export function createAppStateStore({
     profile$,
     workspace$,
     noteSummaries$,
+    taskIndex$,
+    linkIndex$,
     syncState$,
     lastError$,
     bookmarkletMessage$,
@@ -304,6 +323,8 @@ export function createAppStateStore({
     setProfile: (next) => profile$.set(next),
     setWorkspace: (next) => workspace$.set(next),
     setNoteSummaries: (next) => noteSummaries$.set(next),
+    setTaskIndex: (next) => taskIndex$.set(next),
+    setLinkIndex: (next) => linkIndex$.set(next),
     setSyncState: (next) => syncState$.set(next),
     setLastError: (next) => lastError$.set(next),
     setBookmarkletMessage: (next) => bookmarkletMessage$.set(next),

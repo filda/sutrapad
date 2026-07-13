@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildNotesList } from "../src/app/view/shared/notes-list";
 import { buildLinksPage } from "../src/app/view/pages/links-page";
 import { buildTasksPage } from "../src/app/view/pages/tasks-page";
+import { buildLinkIndex, buildTaskIndex } from "../src/lib/notebook";
+import { buildNoteSummary } from "../src/lib/note-card-meta";
 import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 
 // Same fetch stub the other DOM tests use — the link-thumb resolver and
@@ -66,7 +68,8 @@ describe("entity-card shared shell — Step 1 classnames", () => {
       makeNote({ urls: ["https://example.com/path"] }),
     ]);
     const page = buildLinksPage({
-      workspace,
+      linkIndex: buildLinkIndex(workspace),
+      noteSummaries: workspace.notes.map((note) => buildNoteSummary(note)),
       selectedTagFilters: [],
       linksViewMode: "cards",
       onOpenNote: vi.fn(),
@@ -85,7 +88,8 @@ describe("entity-card shared shell — Step 1 classnames", () => {
       makeNote({ body: "- [ ] do the thing" }),
     ]);
     const page = buildTasksPage({
-      workspace,
+      taskIndex: buildTaskIndex(workspace),
+      noteSummaries: workspace.notes.map((note) => buildNoteSummary(note)),
       selectedTagFilters: [],
       tasksFilter: "all",
       tasksShowDone: false,
@@ -135,10 +139,12 @@ describe("entity-card shared shell — Step 2 semantics", () => {
   });
 
   it("Links card title is rendered as <h3 class=\"link-card-title\">", () => {
+    const workspace = makeWorkspace([
+      makeNote({ urls: ["https://example.com/page"] }),
+    ]);
     const page = buildLinksPage({
-      workspace: makeWorkspace([
-        makeNote({ urls: ["https://example.com/page"] }),
-      ]),
+      linkIndex: buildLinkIndex(workspace),
+      noteSummaries: workspace.notes.map((note) => buildNoteSummary(note)),
       selectedTagFilters: [],
       linksViewMode: "cards",
       onOpenNote: vi.fn(),
@@ -153,10 +159,12 @@ describe("entity-card shared shell — Step 2 semantics", () => {
 
   it("Tasks card anchor is a <time> element with the source note's createdAt as dateTime", () => {
     const createdAt = "2026-04-20T08:00:00.000Z";
+    const workspace = makeWorkspace([
+      makeNote({ body: "- [ ] do it", createdAt }),
+    ]);
     const page = buildTasksPage({
-      workspace: makeWorkspace([
-        makeNote({ body: "- [ ] do it", createdAt }),
-      ]),
+      taskIndex: buildTaskIndex(workspace),
+      noteSummaries: workspace.notes.map((note) => buildNoteSummary(note)),
       selectedTagFilters: [],
       tasksFilter: "all",
       tasksShowDone: false,

@@ -15,6 +15,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildLinksPage } from "../src/app/view/pages/links-page";
+import { buildLinkIndex } from "../src/lib/notebook";
+import { buildNoteSummary } from "../src/lib/note-card-meta";
 import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 
 // happy-dom auto-fetches `<img src=…>` URLs and the og-image resolver
@@ -58,7 +60,8 @@ function buildPage(
   overrides: Partial<Parameters<typeof buildLinksPage>[0]> = {},
 ): HTMLElement {
   return buildLinksPage({
-    workspace,
+    linkIndex: buildLinkIndex(workspace),
+    noteSummaries: workspace.notes.map((note) => buildNoteSummary(note)),
     selectedTagFilters,
     linksViewMode: "list",
     onOpenNote: vi.fn(),

@@ -16,6 +16,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildTasksPage } from "../src/app/view/pages/tasks-page";
+import { buildTaskIndex } from "../src/lib/notebook";
+import { buildNoteSummary } from "../src/lib/note-card-meta";
 import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 
 // happy-dom triggers a real fetch the moment a `<link-thumb>` resolver
@@ -58,7 +60,8 @@ function buildPage(
   overrides: Partial<Parameters<typeof buildTasksPage>[0]> = {},
 ): HTMLElement {
   return buildTasksPage({
-    workspace,
+    taskIndex: buildTaskIndex(workspace),
+    noteSummaries: workspace.notes.map((note) => buildNoteSummary(note)),
     selectedTagFilters,
     tasksFilter: "all",
     tasksShowDone: false,

@@ -68,3 +68,27 @@ export function buildNoteSummary(
     autoTags: deriveAutoTags(note, now),
   };
 }
+
+/**
+ * Rebuilds a body-less `SutraPadDocument` from an index summary — the inverse
+ * of `buildNoteSummary` minus the body. The card / tasks / links renderers and
+ * their persona / thumb / primary-URL helpers all take a document but read
+ * only non-body fields, so this lets those surfaces render from the resident
+ * summary model without hydrating the note. Persona's body-derived cues are
+ * passed to `deriveNotebookPersona` as precomputed options instead.
+ */
+export function documentFromSummary(
+  summary: SutraPadNoteSummary,
+): SutraPadDocument {
+  return {
+    id: summary.id,
+    title: summary.title,
+    body: "",
+    urls: [...(summary.urls ?? [])],
+    tags: [...(summary.tags ?? [])],
+    location: summary.location,
+    captureContext: summary.captureContext,
+    createdAt: summary.createdAt,
+    updatedAt: summary.updatedAt,
+  };
+}
