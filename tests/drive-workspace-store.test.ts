@@ -422,7 +422,7 @@ describe("GoogleDriveStore.loadWorkspace fallback paths", () => {
 });
 
 describe("GoogleDriveStore.saveWorkspace card metadata in the index", () => {
-  it("writes precomputed headline/excerpt/tags/location/tasks into each index note summary", async () => {
+  it("writes the full precomputed summary (headline/excerpt/tags/location/tasks + urls/captureContext/autoTags) into each index note summary", async () => {
     // Phase 2: createIndex embeds the card metadata so the Notes list can
     // render from the index without hydrating bodies. Pin that the fields
     // actually land in the uploaded index JSON (not just the summary shape).
@@ -463,7 +463,8 @@ describe("GoogleDriveStore.saveWorkspace card metadata in the index", () => {
           body: "headline line\nrest of the body",
           tags: ["fb"],
           location: "Praha",
-          urls: [],
+          urls: ["https://ex.test/x"],
+          captureContext: { source: "url-capture" },
           createdAt: "2026-05-01T00:00:00.000Z",
           updatedAt: "2026-05-01T00:00:01.000Z",
         },
@@ -478,6 +479,12 @@ describe("GoogleDriveStore.saveWorkspace card metadata in the index", () => {
     expect(summary.tags).toEqual(["fb"]);
     expect(summary.location).toBe("Praha");
     expect(summary.tasks).toEqual({ open: 0, done: 0 });
+    // Phase 2 (3e prep): the persisted index also carries the fields the
+    // Notes thumb / persona / Links surfaces need, so `loadNoteSummaries`
+    // returns complete summaries once bodies stop loading.
+    expect(summary.urls).toEqual(["https://ex.test/x"]);
+    expect(summary.captureContext).toEqual({ source: "url-capture" });
+    expect(summary.autoTags).toContain("source:url-capture");
   });
 });
 
