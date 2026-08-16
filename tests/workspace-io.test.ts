@@ -110,6 +110,36 @@ describe("createWorkspaceIO", () => {
     expect(h.cancelAutoSave).toHaveBeenCalledTimes(1);
   });
 
+  it("fetchNoteBody fetches through getStore() and remembers the id as a known-on-Drive id", async () => {
+    // The hydrate-on-open counterpart to loadWorkspace's placeholders
+    // (Phase 2 notes-scaling). Pin the closure binding + the
+    // knownDriveIds bookkeeping the same way `loadWorkspace` is pinned
+    // above, so a future refactor can't silently drop either.
+    const h = makeHarness();
+    const fetched = realNote("note-abc");
+    h.store.fetchNoteByFileId.mockResolvedValue(fetched);
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => makeWorkspace([]),
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    const result = await io.fetchNoteBody("drive-file-id");
+
+    expect(h.store.fetchNoteByFileId).toHaveBeenCalledWith("drive-file-id");
+    expect(result).toBe(fetched);
+  });
+
   it("saveWorkspace strips empty-draft notes before pushing to remote", async () => {
     // The local workspace can carry a freshly-spawned draft (user hit
     // `N`, never typed). We must never persist that to Drive — the next

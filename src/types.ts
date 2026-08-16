@@ -121,6 +121,32 @@ export interface SutraPadDocument {
   createdAt: string;
   updatedAt: string;
   tags: string[];
+  /**
+   * `false` marks a body-less placeholder (Phase 2 notes-scaling): `loadWorkspace`
+   * populates `workspace.notes` from `sutrapad-index.json` summaries without
+   * fetching bodies, so most resident notes start as a placeholder with
+   * `body: ""` and this flag set. Absent or `true` means the document's `body`
+   * is real and safe to read/edit/persist — every note constructed in-memory
+   * (new note, capture, import, drag-drop) is hydrated from the moment it's
+   * created and never sets this field.
+   *
+   * `upsertNote` refuses to commit an edit against a placeholder (see its
+   * guard) — this is the load-bearing half of the data-loss safety invariant:
+   * a body-less placeholder must never overwrite a real note file on Drive.
+   * The other half is hydrating on detail-open before any edit UI is enabled
+   * (see `src/app/logic/note-hydration.ts`).
+   */
+  hydrated?: boolean;
+  /**
+   * Drive file id, carried on a placeholder (see `hydrated`) so the
+   * hydrate-on-open lifecycle (`src/app/lifecycle/hydrate-note-on-open.ts`)
+   * knows what to fetch without a separate lookup into the resident
+   * summary model. Undefined for a note that has never round-tripped
+   * through the Drive index (a brand-new draft, or a pre-Phase-2 index
+   * entry the maintenance rebuild hasn't backfilled yet) — hydration has
+   * nothing to fetch in that case and leaves the note alone.
+   */
+  fileId?: string;
 }
 
 export interface SutraPadNoteSummary {

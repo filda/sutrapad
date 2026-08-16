@@ -584,6 +584,64 @@ describe("notebook helpers: note updates and creation", () => {
       expect(updated.activeNoteId).toBe("none");
     });
 
+    // Data-loss safety invariant (Phase 2 notes-scaling): `loadWorkspace`
+    // seeds `workspace.notes` with body-less placeholders (`hydrated: false`,
+    // `body: ""`) until the detail view fetches the real body. `upsertNote`
+    // is the single funnel every editor/task-toggle write goes through, so
+    // refusing here is what stops a placeholder's empty body from ever
+    // reaching `saveWorkspace` as a "real" edit — see its doc comment and
+    // `src/app/logic/note-hydration.ts`.
+    it("returns the workspace unchanged when the target note is an unhydrated placeholder", () => {
+      const placeholder = makeNote({
+        id: "1",
+        title: "Real title from the index",
+        body: "",
+        updatedAt: "2026-04-13T10:00:00.000Z",
+        hydrated: false,
+      });
+      const workspace = { activeNoteId: "1", notes: [placeholder] };
+      const updater = vi.fn((note: SutraPadDocument) => ({
+        ...note,
+        body: "this would silently wipe the real note on Drive",
+        updatedAt: "2026-04-13T12:00:00.000Z",
+      }));
+
+      const updated = upsertNote(workspace, "1", updater);
+
+      expect(updater).not.toHaveBeenCalled();
+      expect(updated).toBe(workspace);
+      expect(updated.notes[0].body).toBe("");
+    });
+
+    it("commits an edit once the note is hydrated (hydrated: true or absent)", () => {
+      const hydratedExplicit = makeNote({
+        id: "1",
+        body: "real content",
+        updatedAt: "2026-04-13T10:00:00.000Z",
+        hydrated: true,
+      });
+      const updated = upsertNote(
+        { activeNoteId: "1", notes: [hydratedExplicit] },
+        "1",
+        (note) => ({ ...note, body: "edited", updatedAt: "2026-04-13T12:00:00.000Z" }),
+      );
+      expect(updated.notes[0].body).toBe("edited");
+
+      // `hydrated` absent (every in-memory-created note: new/capture/import)
+      // behaves the same as `hydrated: true` — only an explicit `false` blocks.
+      const hydratedAbsent = makeNote({
+        id: "2",
+        body: "real content",
+        updatedAt: "2026-04-13T10:00:00.000Z",
+      });
+      const updatedAbsent = upsertNote(
+        { activeNoteId: "2", notes: [hydratedAbsent] },
+        "2",
+        (note) => ({ ...note, body: "edited", updatedAt: "2026-04-13T12:00:00.000Z" }),
+      );
+      expect(updatedAbsent.notes[0].body).toBe("edited");
+    });
+
     it("creates a new note and makes it active", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-04-13T13:00:00.000Z"));

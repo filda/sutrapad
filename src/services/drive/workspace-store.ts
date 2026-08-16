@@ -26,7 +26,7 @@ import {
   extractUrlsFromText,
 } from "../../lib/notebook";
 import { httpUrlOrNull } from "../../lib/safe-url";
-import { buildNoteSummary } from "../../lib/note-card-meta";
+import { buildNoteSummary, buildPlaceholderNote } from "../../lib/note-card-meta";
 import {
   isNoteFileName,
   noteFileName,
@@ -239,35 +239,37 @@ export class GoogleDriveStore {
   /**
    * Loads the workspace from Drive.
    *
-   * **Folder-query-driven inventory**, not index-driven. The list of
-   * notes is whatever `kind=note` files actually exist inside the
-   * SutraPad workspace folder; the index file is only consulted for
-   * the `activeNoteId` hint. This is the trade-off that lets the
-   * silent-capture path (`appendNoteToWorkspace`) stay 3-RTT cheap by
-   * not touching the index at all — the price is that the index can
-   * drift behind the folder by N captures, and we have to be tolerant
-   * of that drift here on the read side.
+   * **Index-as-read-source with folder-query reconcile** (Phase 2 notes-
+   * scaling). The folder query is still the source of truth for *which*
+   * notes exist — same drift-tolerance `appendNoteToWorkspace` (silent
+   * capture) relies on — but no note body is fetched for any note the
+   * index already knows about. Each such note becomes a body-less
+   * placeholder (`buildPlaceholderNote`, `hydrated: false`); the detail
+   * view fetches the real body on open (`fetchNoteByFileId` + the resident
+   * LRU cache, see `src/app/logic/note-hydration.ts`).
    *
-   * Self-healing: the next interactive `saveWorkspace` rebuilds the
-   * index from `workspace.notes`, so any orphan files captured by the
-   * bookmarklet between two main-app sessions are folded into the
-   * canonical index the moment the user makes any edit.
+   * **Orphan reconcile**: a note file with no matching index summary —
+   * silent-capture drift between saves, or a plain import — gets its body
+   * fetched right here, once, via the same bounded-concurrency path the
+   * pre-Phase-2 loader used (`hydrateNoteFiles`). We're already paying a
+   * Drive round trip for it either way, so there's no reason to throw the
+   * body away and re-fetch it again the moment the note is opened; it
+   * lands in `workspace.notes` fully hydrated. The next interactive save
+   * folds it into the canonical index (self-healing, same as before).
    *
-   * Critical-path round-trips (happy path with both index + folder
-   * present): folder lookup → parallel(index lookup, notes-in-folder
-   * query) → parallel(head JSON fetch, all note JSON fetches). The
-   * index fetch never extends critical path because it runs alongside
-   * the always-required note JSON fetches.
+   * Critical-path round-trips (happy path, no orphans): folder lookup →
+   * parallel(index lookup, notes-in-folder query). No note JSON fetches at
+   * all — the whole point of the flip.
    */
   async loadWorkspace(): Promise<SutraPadWorkspace> {
     const workspaceFolder = await this.findWorkspaceFolder();
 
     // Two parallel inventories: the canonical "what notes exist in
     // the folder right now" query (source of truth for `notes`), and
-    // the index file lookup (source of truth for `activeNoteId`).
-    // Either may be missing in legitimate workspaces — first-ever
-    // load before any save, or migrated-from-legacy users — and the
-    // fallback paths below handle each case.
+    // the index file lookup (source of truth for card metadata +
+    // `activeNoteId`). Either may be missing in legitimate workspaces
+    // — first-ever load before any save, or migrated-from-legacy
+    // users — and the fallback paths below handle each case.
     const [noteFiles, indexFile] = await Promise.all([
       workspaceFolder ? this.findNoteFilesInFolder(workspaceFolder.id) : Promise.resolve([]),
       this.resolveActiveIndexFile(workspaceFolder?.id),
@@ -289,52 +291,67 @@ export class GoogleDriveStore {
       return createEmptyWorkspace();
     }
 
-    // Fetch every note file in parallel alongside the (optional)
-    // index JSON. The index is only used to look up `activeNoteId`
-    // — its `notes` array is ignored because the folder query is
-    // authoritative. We tolerate index fetch failure (corrupt JSON,
-    // 404 on stale head pointer) and fall back to "first note is
-    // active".
-    const [hydratedNotes, indexActiveNoteId] = await Promise.all([
-      this.hydrateNoteFiles(noteFiles),
-      this.fetchIndexActiveNoteId(indexFile),
-    ]);
-
-    if (hydratedNotes.length === 0) {
-      return createEmptyWorkspace();
+    const index = await this.fetchIndex(indexFile);
+    const summariesById = new Map<string, SutraPadNoteSummary>();
+    if (index) {
+      for (const entry of index.notes) {
+        summariesById.set(entry.id, entry);
+      }
     }
+
+    const orphanFiles: DriveFileRecord[] = [];
+    const placeholders: SutraPadDocument[] = [];
+    for (const file of noteFiles) {
+      const noteId = file.appProperties?.noteId ?? noteIdFromFileName(file.name);
+      if (!noteId) continue;
+      const summary = summariesById.get(noteId);
+      if (summary) {
+        // Trust the folder for the live fileId — the index can lag a
+        // re-upload (same reasoning as `loadNoteSummaries`).
+        placeholders.push(buildPlaceholderNote({ ...summary, fileId: file.id }));
+      } else {
+        orphanFiles.push(file);
+      }
+    }
+
+    const orphanNotes = await this.hydrateNoteFiles(orphanFiles);
 
     // Sort newest-first, then collapse duplicate ids keeping the first
     // (most recently updated) survivor — a note id can legitimately exist
     // as both an app-written file and a plain dropped-in `note-<id>.json`.
-    const sortedNotes = dedupeNotesById(
-      hydratedNotes.toSorted((left, right) =>
+    const allNotes = dedupeNotesById(
+      [...placeholders, ...orphanNotes].toSorted((left, right) =>
         right.updatedAt.localeCompare(left.updatedAt),
       ),
     );
+
+    if (allNotes.length === 0) {
+      return createEmptyWorkspace();
+    }
+
+    const indexActiveNoteId = index?.activeNoteId ?? null;
     const activeNoteId =
-      indexActiveNoteId !== null && sortedNotes.some((note) => note.id === indexActiveNoteId)
+      indexActiveNoteId !== null && allNotes.some((note) => note.id === indexActiveNoteId)
         ? indexActiveNoteId
-        : sortedNotes[0].id;
+        : allNotes[0].id;
 
     return {
-      notes: sortedNotes,
+      notes: allNotes,
       activeNoteId,
     };
   }
 
   /**
-   * Defensive index read used by `loadWorkspace`. Returns the
-   * `activeNoteId` if the index is fetchable + parseable, `null`
-   * otherwise. Failures here are not fatal — load picks the most
-   * recently updated note as the active one and the next save
-   * rewrites the index.
+   * Defensive index read shared by `loadWorkspace` and `loadNoteSummaries`.
+   * Returns the parsed index if it's fetchable + parseable, `null`
+   * otherwise. Failures here are not fatal — callers fall back to treating
+   * every note as an orphan / picking the most recently updated note as
+   * active, and the next interactive save rewrites the index.
    */
-  private async fetchIndexActiveNoteId(indexFile: DriveFileRecord | null): Promise<string | null> {
+  private async fetchIndex(indexFile: DriveFileRecord | null): Promise<SutraPadIndex | null> {
     if (!indexFile) return null;
     try {
-      const index = await this.#client.fetchJsonFile<SutraPadIndex>(indexFile.id);
-      return index.activeNoteId ?? null;
+      return await this.#client.fetchJsonFile<SutraPadIndex>(indexFile.id);
     } catch {
       return null;
     }
@@ -508,17 +525,11 @@ export class GoogleDriveStore {
       this.resolveActiveIndexFile(workspaceFolder.id),
     ]);
 
+    const index = await this.fetchIndex(indexFile);
     const summariesById = new Map<string, SutraPadNoteSummary>();
-    if (indexFile) {
-      try {
-        const index = await this.#client.fetchJsonFile<SutraPadIndex>(
-          indexFile.id,
-        );
-        for (const summary of index.notes) {
-          summariesById.set(summary.id, summary);
-        }
-      } catch {
-        // Corrupt / unreadable index — fall back to minimal summaries below.
+    if (index) {
+      for (const summary of index.notes) {
+        summariesById.set(summary.id, summary);
       }
     }
 

@@ -48,6 +48,8 @@ import { createAppStateStore } from "./app/state-store";
 import { createRenderCallbacks } from "./app/render-callbacks";
 import { captureActiveEditorFocus } from "./app/render-helpers";
 import { handleNewNoteCreation } from "./app/lifecycle/handle-new-note";
+import { hydrateNoteOnOpen } from "./app/lifecycle/hydrate-note-on-open";
+import { createNoteBodyCache } from "./app/logic/note-body-cache";
 import { wirePaletteAccess } from "./app/lifecycle/palette";
 import { wireKeyboardShortcuts } from "./app/lifecycle/keyboard-shortcuts";
 import { installNotesEndlessScroll } from "./app/lifecycle/notes-endless-scroll";
@@ -496,6 +498,14 @@ export function createApp(root: HTMLElement): void {
     }
   };
 
+  // Phase 2 notes-scaling: bounded cache of hydrated bodies + the set of
+  // note ids with a hydration fetch currently in flight. Both live for the
+  // whole app session (not per-render) — see `hydrateNoteOnOpen`, called
+  // below from `render()` whenever the displayed note is still a
+  // body-less placeholder.
+  const noteBodyCache = createNoteBodyCache();
+  const hydratingNoteIds = new Set<string>();
+
   const render = (): void => {
     // Set the flag *true* for the entire body of render(): the
     // mutations below (`syncSelectedTagFilters` filters into a fresh
@@ -590,6 +600,23 @@ export function createApp(root: HTMLElement): void {
           : null;
       const displayedNote =
         detailNote ?? resolveDisplayedNote(workspace, selectedTagFilters, filterMode);
+      // Phase 2 notes-scaling: the note actually being shown for editing may
+      // still be a body-less placeholder (`loadWorkspace` no longer fetches
+      // bodies up front). Kick off (or apply an already-cached) hydration;
+      // no-ops instantly for an already-hydrated note or a fetch already in
+      // flight, so it's safe to call on every render.
+      if (displayedNote) {
+        hydrateNoteOnOpen({
+          note: displayedNote,
+          bodyCache: noteBodyCache,
+          inFlight: hydratingNoteIds,
+          fetchNoteBody: workspaceIO.fetchNoteBody,
+          getWorkspace: () => workspace$.get(),
+          setWorkspace: setWorkspaceState,
+          persistWorkspace: persistLocalWorkspace,
+          render,
+        });
+      }
       const callbacks = createRenderCallbacks({
         auth,
         appRootUrl,

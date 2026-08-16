@@ -174,6 +174,44 @@ describe("buildEditorCard", () => {
     expect(onInputsChange).toHaveBeenLastCalledWith("t1", "b1");
   });
 
+  it("disables both inputs and shows a loading placeholder for an unhydrated placeholder note", () => {
+    // Phase 2 notes-scaling: a note fresh from `loadWorkspace`'s index read
+    // may still be `hydrated: false` (body-less). Typing into it before the
+    // real body lands would be replaced wholesale the moment hydration
+    // resolves — belt-and-suspenders alongside `upsertNote`'s own guard.
+    const placeholder = makeNote({ id: "n1", title: "Real title", body: "", hydrated: false });
+    const card = buildEditorCard({
+      note: placeholder,
+      currentNote: placeholder,
+      selectedTagFilters: [],
+      onTitleInput: () => {},
+      onBodyInput: () => {},
+    });
+    expect(card.classList.contains("is-hydrating")).toBe(true);
+    const titleInput = card.querySelector<HTMLInputElement>(".editor-title");
+    const bodyInput = card.querySelector<HTMLTextAreaElement>(".editor-body");
+    expect(titleInput?.disabled).toBe(true);
+    expect(bodyInput?.disabled).toBe(true);
+    expect(bodyInput?.placeholder).toBe("Loading…");
+    // The real title from the index summary still shows — only the body
+    // (which the placeholder doesn't have) is masked.
+    expect(titleInput?.value).toBe("Real title");
+  });
+
+  it("leaves inputs enabled for a hydrated note (hydrated: true or absent)", () => {
+    const hydrated = makeNote({ id: "n1", body: "real content" });
+    const card = buildEditorCard({
+      note: hydrated,
+      currentNote: hydrated,
+      selectedTagFilters: [],
+      onTitleInput: () => {},
+      onBodyInput: () => {},
+    });
+    expect(card.classList.contains("is-hydrating")).toBe(false);
+    expect(card.querySelector<HTMLInputElement>(".editor-title")?.disabled).toBe(false);
+    expect(card.querySelector<HTMLTextAreaElement>(".editor-body")?.disabled).toBe(false);
+  });
+
   it("omits the title input when showTitleInput is false", () => {
     // Detail-route opts out of the editor-card's title input because
     // the editable title moves up into `.note-detail-hero-title`. Pin

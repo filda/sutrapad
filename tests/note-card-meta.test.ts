@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildNoteCardMeta, buildNoteSummary } from "../src/lib/note-card-meta";
-import type { SutraPadDocument } from "../src/types";
+import {
+  buildNoteCardMeta,
+  buildNoteSummary,
+  buildPlaceholderNote,
+} from "../src/lib/note-card-meta";
+import type { SutraPadDocument, SutraPadNoteSummary } from "../src/types";
 
 function note(overrides: Partial<SutraPadDocument>): SutraPadDocument {
   return {
@@ -107,5 +111,44 @@ describe("buildNoteSummary", () => {
   it("omits location when the note has none", () => {
     const summary = buildNoteSummary(note({ title: "t", body: "b" }));
     expect(summary.location).toBeUndefined();
+  });
+});
+
+function summary(overrides: Partial<SutraPadNoteSummary> & Pick<SutraPadNoteSummary, "id">): SutraPadNoteSummary {
+  return {
+    title: "Real title",
+    createdAt: "2026-04-13T10:00:00.000Z",
+    updatedAt: "2026-04-13T10:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("buildPlaceholderNote", () => {
+  it("carries the summary's real metadata with an empty, unhydrated body", () => {
+    const placeholder = buildPlaceholderNote(
+      summary({
+        id: "1",
+        tags: ["kept-tag"],
+        location: "Prague",
+        urls: ["https://example.com"],
+        fileId: "drive-file-1",
+      }),
+    );
+
+    expect(placeholder.id).toBe("1");
+    expect(placeholder.title).toBe("Real title");
+    expect(placeholder.tags).toEqual(["kept-tag"]);
+    expect(placeholder.location).toBe("Prague");
+    expect(placeholder.urls).toEqual(["https://example.com"]);
+    expect(placeholder.body).toBe("");
+    expect(placeholder.hydrated).toBe(false);
+    // The hydrate-on-open lifecycle needs this to know what to fetch.
+    expect(placeholder.fileId).toBe("drive-file-1");
+  });
+
+  it("defaults to no tags/urls when the summary predates Phase 2 card metadata", () => {
+    const placeholder = buildPlaceholderNote(summary({ id: "1" }));
+    expect(placeholder.tags).toEqual([]);
+    expect(placeholder.urls).toEqual([]);
   });
 });

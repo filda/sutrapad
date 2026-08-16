@@ -813,6 +813,14 @@ export function areWorkspacesEqual(
  * would otherwise silently clobber an unrelated note's body (see the autosave
  * "jumps to a different note and overwrites it" bug report). Dropping the
  * edit is recoverable; overwriting a different note is not.
+ *
+ * Same reasoning protects a body-less placeholder (Phase 2 notes-scaling,
+ * `note.hydrated === false`, see `SutraPadDocument`): every editor/task-toggle
+ * write funnels through this one function, so refusing here is the single
+ * choke point that stops a placeholder's empty body from ever reaching
+ * `saveWorkspace` as a "real" edit. Hydrating a placeholder is a different
+ * operation (`applyHydratedNote` in `src/app/logic/note-hydration.ts`) and
+ * does not go through `upsertNote`.
  */
 export function upsertNote(
   workspace: SutraPadWorkspace,
@@ -820,7 +828,7 @@ export function upsertNote(
   updater: (note: SutraPadDocument) => SutraPadDocument,
 ): SutraPadWorkspace {
   const current = workspace.notes.find((entry) => entry.id === noteId);
-  if (!current) {
+  if (!current || current.hydrated === false) {
     return workspace;
   }
 

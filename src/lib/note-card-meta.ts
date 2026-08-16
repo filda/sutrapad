@@ -90,5 +90,19 @@ export function documentFromSummary(
     captureContext: summary.captureContext,
     createdAt: summary.createdAt,
     updatedAt: summary.updatedAt,
+    fileId: summary.fileId,
   };
+}
+
+/**
+ * Builds the resident placeholder `loadWorkspace` seeds `workspace.notes`
+ * with (Phase 2 notes-scaling): the real metadata from the index summary,
+ * an empty body, and `hydrated: false` so every downstream reader (the
+ * editor, `upsertNote`'s no-op guard, the hydrate-on-open lifecycle) can
+ * tell it apart from a real note. See `SutraPadDocument.hydrated` and
+ * `src/app/logic/note-hydration.ts` (`applyHydratedNote`, the counterpart
+ * that replaces this placeholder once the real body is fetched).
+ */
+export function buildPlaceholderNote(summary: SutraPadNoteSummary): SutraPadDocument {
+  return { ...documentFromSummary(summary), hydrated: false };
 }

@@ -136,7 +136,7 @@ describe("GoogleDriveStore loadWorkspace", () => {
     expect(workspace.notes[0].tags).toEqual([]);
   });
 
-  it("loads notes from the workspace folder, with active note from the index", async () => {
+  it("loads a note present in the index as a body-less, unhydrated placeholder carrying the index's card metadata (Phase 2)", async () => {
     const folder = driveFile("folder-1", "SutraPad", { mimeType: "application/vnd.google-apps.folder" });
     const noteDriveFile = driveFile("note-file-1", "note-note-abc.json", {
       appProperties: { sutrapad: "true", kind: "note", noteId: "note-abc" },
@@ -160,16 +160,18 @@ describe("GoogleDriveStore loadWorkspace", () => {
         createdAt: "2026-04-13T10:00:00.000Z",
         updatedAt: "2026-04-13T10:00:00.000Z",
         fileId: "note-file-1",
+        headline: "My note",
+        excerpt: "Hello world",
+        tags: ["work"],
+        urls: ["https://example.com/hello"],
       }],
     };
-    const note = {
-      id: "note-abc",
-      title: "My note",
-      body: "Hello world https://example.com/hello",
-      tags: ["work"],
-      createdAt: "2026-04-13T10:00:00.000Z",
-      updatedAt: "2026-04-13T10:00:00.000Z",
-    };
+    // A note present in the index must NOT be fetched at all — that's the
+    // whole point of the flip. No `content:note-file-1` response is
+    // registered; if `loadWorkspace` tried to fetch it, the handler's
+    // fallback (`fileList([])`) would produce a shape that fails
+    // `isValidNoteDocument` and the assertions below would catch a body
+    // that isn't the placeholder's empty string.
 
     mockFetch(
       createLoadWorkspaceHandler({
@@ -179,7 +181,6 @@ describe("GoogleDriveStore loadWorkspace", () => {
         "content:head-1": json(head),
         "metadata:index-1": json(indexFile),
         "content:index-1": json(index),
-        "content:note-file-1": json(note),
       }),
     );
 
@@ -188,10 +189,18 @@ describe("GoogleDriveStore loadWorkspace", () => {
 
     expect(workspace.notes).toHaveLength(1);
     expect(workspace.notes[0].id).toBe("note-abc");
-    expect(workspace.notes[0].body).toBe("Hello world https://example.com/hello");
+    expect(workspace.notes[0].title).toBe("My note");
+    expect(workspace.notes[0].body).toBe("");
+    expect(workspace.notes[0].hydrated).toBe(false);
     expect(workspace.notes[0].tags).toEqual(["work"]);
     expect(workspace.notes[0].urls).toEqual(["https://example.com/hello"]);
     expect(workspace.activeNoteId).toBe("note-abc");
+    // The whole point of the flip: no round trip for the note's own body.
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    const fetchedNoteBody = calls.some((call) =>
+      String(call[0]).includes("/note-file-1?alt=media"),
+    );
+    expect(fetchedNoteBody).toBe(false);
   });
 
   it("includes orphan note files that the index does not know about (silent capture)", async () => {

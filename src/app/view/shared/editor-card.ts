@@ -156,6 +156,21 @@ export function buildEditorCard({
     ? buildKindChipForNote(displayedNote.title, displayedNote.body)
     : null;
 
+  // Phase 2 notes-scaling: `displayedNote` may still be a body-less
+  // placeholder (`hydrated: false`) — `loadWorkspace` no longer fetches
+  // bodies up front, and `hydrateNoteOnOpen` (triggered from `app.ts`'s
+  // `render()`) fetches this note's real body in the background. Disabling
+  // the inputs here is belt-and-suspenders: `upsertNote`'s own guard
+  // already refuses to commit an edit against a placeholder (see its doc
+  // comment), but letting the user type into a body that's about to be
+  // replaced wholesale by the fetched content would be a jarring UX even
+  // though it's safe. The card re-renders (enabled) the moment hydration
+  // lands.
+  const isHydrating = displayedNote.hydrated === false;
+  if (isHydrating) {
+    editor.classList.add("is-hydrating");
+  }
+
   // Title input is conditional. The detail route opts out via
   // `showTitleInput: false` because the editable title moves up to
   // `.note-detail-hero-title` so the writing surface stays body-only.
@@ -170,12 +185,14 @@ export function buildEditorCard({
     titleInput.className = "title-input editor-title";
     titleInput.placeholder = "Note title";
     titleInput.value = displayedNote.title;
+    titleInput.disabled = isHydrating;
   }
 
   const bodyInput = document.createElement("textarea");
   bodyInput.className = "body-input editor-body";
-  bodyInput.placeholder = "Start writing...";
+  bodyInput.placeholder = isHydrating ? "Loading…" : "Start writing...";
   bodyInput.value = displayedNote.body;
+  bodyInput.disabled = isHydrating;
 
   // After any keystroke we recompute the kind chip in place rather than
   // going through an outer render pass — the outer pass is skipped on

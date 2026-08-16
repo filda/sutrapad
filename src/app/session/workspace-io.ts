@@ -48,6 +48,12 @@ export interface WorkspaceIO {
   saveWorkspace: (mode?: SaveMode) => Promise<void>;
   restoreWorkspaceAfterSignIn: () => Promise<void>;
   /**
+   * Fetches a single note's real body by Drive file id — the hydrate-on-open
+   * counterpart to the body-less placeholders `loadWorkspace` now seeds
+   * `workspace.notes` with. See `src/app/lifecycle/hydrate-note-on-open.ts`.
+   */
+  fetchNoteBody: (fileId: string) => Promise<SutraPadDocument>;
+  /**
    * Cross-device progressive refresh. Phase-1 inventory updates the
    * count + drops deleted notes; subsequent phases stream the JSONs
    * newest-first. Used by the focus / visibility-driven refresh
@@ -156,6 +162,23 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
       render,
       cancelAutoSave,
     });
+
+  // Phase 2 notes-scaling: fetches one note's real body on detail-open
+  // (see `hydrateNoteOnOpen`). Interactive mode — the user is actively
+  // waiting to see the note, unlike the background autosave path, so a
+  // silent-refresh focus hiccup on a 401 is an acceptable trade for
+  // actually showing their content. Folds the id into `knownDriveIds` like
+  // every other successful Drive read: a placeholder can only exist because
+  // `loadWorkspace` saw this note on Drive, so this isn't new information,
+  // but keeping the bookkeeping uniform costs nothing.
+  const fetchNoteBody = async (fileId: string): Promise<SutraPadDocument> => {
+    const note = await withAuthRetry(
+      () => getStore().fetchNoteByFileId(fileId),
+      retryContext,
+    );
+    rememberDriveIds([note]);
+    return note;
+  };
 
   const restoreWorkspaceAfterSignIn = (): Promise<void> =>
     runWorkspaceRestoreAfterSignIn({
@@ -314,6 +337,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     loadWorkspace,
     saveWorkspace,
     restoreWorkspaceAfterSignIn,
+    fetchNoteBody,
     refreshWorkspace,
     importNotes,
     isWorkspaceDirty,
