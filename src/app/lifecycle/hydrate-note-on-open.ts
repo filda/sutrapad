@@ -69,7 +69,8 @@ export function hydrateNoteOnOpen(options: HydrateNoteOnOpenOptions): void {
     return;
   }
 
-  if (!note.fileId) {
+  const fileId = note.fileId;
+  if (!fileId) {
     // No fileId to fetch from — a placeholder built from a pre-Phase-2
     // index entry the maintenance rebuild hasn't backfilled yet. Nothing
     // to do until then.
@@ -77,20 +78,24 @@ export function hydrateNoteOnOpen(options: HydrateNoteOnOpenOptions): void {
   }
 
   inFlight.add(note.id);
-  void fetchNoteBody(note.fileId)
-    .then((hydrated) => {
+  // async/await (not a .then/.catch/.finally chain) — matches the
+  // fire-and-forget pattern used elsewhere (e.g. `onSignIn` in
+  // render-callbacks.ts) and sidesteps the `promise/no-callback-in-promise`
+  // + `promise/always-return` lint rules a chained version tripped here.
+  void (async () => {
+    try {
+      const hydrated = await fetchNoteBody(fileId);
       bodyCache.set(note.id, hydrated);
       const next = applyHydratedNote(getWorkspace(), note.id, hydrated);
       if (next !== getWorkspace()) {
         setWorkspace(next);
         persistWorkspace(next);
       }
-    })
-    .catch((error: unknown) => {
+    } catch (error) {
       console.warn("Failed to hydrate note body:", error);
-    })
-    .finally(() => {
+    } finally {
       inFlight.delete(note.id);
       render();
-    });
+    }
+  })();
 }

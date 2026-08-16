@@ -63,7 +63,7 @@ describe("buildNoteCardMeta", () => {
 
 describe("buildNoteSummary", () => {
   it("carries the identity fields straight through", () => {
-    const summary = buildNoteSummary(
+    const result = buildNoteSummary(
       note({
         id: "abc",
         title: "T",
@@ -71,10 +71,10 @@ describe("buildNoteSummary", () => {
         updatedAt: "2022-03-04T00:00:00.000Z",
       }),
     );
-    expect(summary.id).toBe("abc");
-    expect(summary.title).toBe("T");
-    expect(summary.createdAt).toBe("2021-02-03T00:00:00.000Z");
-    expect(summary.updatedAt).toBe("2022-03-04T00:00:00.000Z");
+    expect(result.id).toBe("abc");
+    expect(result.title).toBe("T");
+    expect(result.createdAt).toBe("2021-02-03T00:00:00.000Z");
+    expect(result.updatedAt).toBe("2022-03-04T00:00:00.000Z");
   });
 
   it("mirrors the card meta (headline / excerpt / tags / location / tasks)", () => {
@@ -84,34 +84,34 @@ describe("buildNoteSummary", () => {
       tags: ["x"],
       location: "Praha",
     });
-    const summary = buildNoteSummary(doc);
+    const result = buildNoteSummary(doc);
     const meta = buildNoteCardMeta(doc);
-    expect(summary.headline).toBe(meta.headline);
-    expect(summary.excerpt).toBe(meta.excerpt);
-    expect(summary.tags).toEqual(meta.tags);
-    expect(summary.location).toBe(meta.location);
-    expect(summary.tasks).toEqual({ open: meta.tasks.open, done: meta.tasks.done });
+    expect(result.headline).toBe(meta.headline);
+    expect(result.excerpt).toBe(meta.excerpt);
+    expect(result.tags).toEqual(meta.tags);
+    expect(result.location).toBe(meta.location);
+    expect(result.tasks).toEqual({ open: meta.tasks.open, done: meta.tasks.done });
   });
 
   it("carries urls and captureContext for thumb + persona rendering", () => {
     const ctx = { source: "url-capture" as const };
-    const summary = buildNoteSummary(
+    const result = buildNoteSummary(
       note({ title: "t", body: "b", urls: ["https://x.test/a"], captureContext: ctx }),
     );
-    expect(summary.urls).toEqual(["https://x.test/a"]);
-    expect(summary.captureContext).toEqual(ctx);
+    expect(result.urls).toEqual(["https://x.test/a"]);
+    expect(result.captureContext).toEqual(ctx);
   });
 
   it("stores derived auto-tags (source facet from captureContext)", () => {
-    const summary = buildNoteSummary(
+    const result = buildNoteSummary(
       note({ title: "t", body: "b", captureContext: { source: "url-capture" } }),
     );
-    expect(summary.autoTags).toContain("source:url-capture");
+    expect(result.autoTags).toContain("source:url-capture");
   });
 
   it("omits location when the note has none", () => {
-    const summary = buildNoteSummary(note({ title: "t", body: "b" }));
-    expect(summary.location).toBeUndefined();
+    const result = buildNoteSummary(note({ title: "t", body: "b" }));
+    expect(result.location).toBeUndefined();
   });
 });
 
