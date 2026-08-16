@@ -43,6 +43,7 @@ import { buildTasksPage } from "./pages/tasks-page";
 import { buildNotesPanel, type NotesPanelOptions } from "./pages/notes-page";
 import { buildPagePlaceholder } from "./pages/placeholder-page";
 import { buildSettingsPage } from "./pages/settings-page";
+import type { RebuildStatus } from "../logic/rebuild-status";
 import { buildPrivacyPage } from "./pages/privacy-page";
 import { buildAboutPage } from "./pages/about-page";
 import { buildTermsPage } from "./pages/terms-page";
@@ -142,6 +143,13 @@ interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
   onSignIn: () => void;
   onLoadNotebook: () => void;
   onSaveNotebook: () => void;
+  /**
+   * Maintenance-rebuild status for the Settings → Backup card (Phase 2
+   * notes-scaling) — see `describeRebuildStatus` for the display text.
+   */
+  rebuildStatus: RebuildStatus;
+  /** Fires the manual "Rebuild index" action from the Backup card. */
+  onRebuildIndex: () => void;
   onSignOut: () => void;
   onCopyBookmarklet: () => void;
   onToggleTask: (noteId: string, lineIndex: number) => void;
@@ -292,6 +300,8 @@ export function renderAppPage({
   onSignIn,
   onLoadNotebook,
   onSaveNotebook,
+  rebuildStatus,
+  onRebuildIndex,
   onSignOut,
   onCopyBookmarklet,
   onSelectNote,
@@ -563,6 +573,8 @@ export function renderAppPage({
           onChangeCaptureLocationPreference,
           onLoadNotebook,
           onSaveNotebook,
+          rebuildStatus,
+          onRebuildIndex,
           onSignIn,
           onMergeTagAlias,
           onDismissTagAlias,

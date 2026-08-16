@@ -120,6 +120,13 @@ export interface RenderCallbackOptions {
   loadWorkspace: () => Promise<void>;
   saveWorkspace: () => Promise<void>;
   restoreWorkspaceAfterSignIn: () => Promise<void>;
+  /**
+   * Maintenance rebuild (Phase 2 notes-scaling): manual Settings-page
+   * action, wired here as the same fire-and-forget shape as `loadWorkspace`
+   * / `saveWorkspace` above. `app.ts` owns the `rebuildStatus$` transitions
+   * (running → done/error) around the call.
+   */
+  rebuildIndex: () => Promise<void>;
   replaceCurrentNote: (updater: (note: SutraPadDocument) => SutraPadDocument) => void;
   /**
    * Applies `updater` to a specific note by id. Used by the editor
@@ -180,6 +187,7 @@ export function createRenderCallbacks({
   loadWorkspace,
   saveWorkspace,
   restoreWorkspaceAfterSignIn,
+  rebuildIndex,
   replaceCurrentNote,
   replaceNote,
   persistWorkspace,
@@ -278,6 +286,7 @@ export function createRenderCallbacks({
     },
     onLoadNotebook: () => void loadWorkspace(),
     onSaveNotebook: () => void saveWorkspace(),
+    onRebuildIndex: () => void rebuildIndex(),
     onSignOut: () => {
       auth.signOut();
       setProfile(null);

@@ -196,6 +196,7 @@ export function createApp(root: HTMLElement): void {
     dismissedTagAliases$,
     recentTagFilters$,
     paletteAccess$,
+    rebuildStatus$,
   } = store;
   const setProfileState = store.setProfile;
   const setWorkspaceState = store.setWorkspace;
@@ -219,6 +220,7 @@ export function createApp(root: HTMLElement): void {
   const setTagsSearchQueryState = store.setTagsSearchQuery;
   const setDismissedTagAliasesState = store.setDismissedTagAliases;
   const setRecentTagFiltersState = store.setRecentTagFilters;
+  const setRebuildStatusState = store.setRebuildStatus;
 
   // When the user picked "auto", the concrete palette depends on the OS
   // light/dark preference. Subscribe once so a system switch during a live
@@ -664,6 +666,7 @@ export function createApp(root: HTMLElement): void {
         loadWorkspace,
         saveWorkspace: () => saveWorkspace(),
         restoreWorkspaceAfterSignIn,
+        rebuildIndex,
         replaceCurrentNote,
         replaceNote,
         persistWorkspace: persistLocalWorkspace,
@@ -708,6 +711,7 @@ export function createApp(root: HTMLElement): void {
         tagsSearchQuery: tagsSearchQuery$.get(),
         dismissedTagAliases: dismissedTagAliases$.get(),
         recentTagFilters: recentTagFilters$.get(),
+        rebuildStatus: rebuildStatus$.get(),
         currentTheme: currentTheme$.get(),
         personaPreference: personaPreference$.get(),
         captureLocationPreference: captureLocationPreference$.get(),
@@ -889,6 +893,30 @@ export function createApp(root: HTMLElement): void {
   };
   const { saveWorkspace, refreshWorkspace, importNotes, isWorkspaceDirty } =
     workspaceIO;
+
+  /**
+   * Maintenance rebuild (Phase 2 notes-scaling): manual Settings → Backup
+   * action. Delegates the actual Drive work to
+   * `workspaceIO.rebuildIndexes()` (which hydrates every note once and
+   * rewrites the persisted tag/link/task indexes); this closure just owns
+   * the `rebuildStatus$` transitions + the explicit `render()` calls the
+   * atom isn't wired to trigger on its own (same pattern as
+   * `reseedResidentIndexesFromDrive`).
+   */
+  const rebuildIndex = async (): Promise<void> => {
+    setRebuildStatusState({ state: "running" });
+    render();
+    try {
+      const { noteCount } = await workspaceIO.rebuildIndexes();
+      setRebuildStatusState({ state: "done", noteCount });
+    } catch (error) {
+      setRebuildStatusState({
+        state: "error",
+        message: error instanceof Error ? error.message : "Rebuild failed.",
+      });
+    }
+    render();
+  };
 
   // Drag-and-drop import. Files dropped onto the app are turned into notes
   // and uploaded through the app's own token (so they're app-owned and

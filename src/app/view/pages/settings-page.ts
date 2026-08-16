@@ -8,6 +8,10 @@ import type { AliasSuggestion } from "../../logic/tag-aliases";
 import { THEMES, type ThemeChoice } from "../../logic/theme";
 import { buildTagPill } from "../shared/tag-pill";
 import { buildMicrophoneConsentCard } from "../shared/microphone-consent-card";
+import {
+  describeRebuildStatus,
+  type RebuildStatus,
+} from "../../logic/rebuild-status";
 
 /**
  * Builds a settings card's `<header>` — an eyebrow `<p>` + an `<h2>` title.
@@ -52,6 +56,13 @@ export interface SettingsPageOptions {
   ) => void;
   onLoadNotebook: () => void;
   onSaveNotebook: () => void;
+  /**
+   * Maintenance-rebuild status shown as the Backup card's third action's
+   * status line. See `describeRebuildStatus` for the state → text mapping.
+   */
+  rebuildStatus: RebuildStatus;
+  /** Fires the manual "Rebuild index" action. */
+  onRebuildIndex: () => void;
   onSignIn: () => void;
   /** Collapses a suggestion into `canonical` across every note that carries an alias. */
   onMergeTagAlias: (from: string, to: string) => void;
@@ -83,6 +94,8 @@ export function buildSettingsPage({
   onChangeCaptureLocationPreference,
   onLoadNotebook,
   onSaveNotebook,
+  rebuildStatus,
+  onRebuildIndex,
   onSignIn,
   onMergeTagAlias,
   onDismissTagAlias,
@@ -103,7 +116,14 @@ export function buildSettingsPage({
     }),
   );
   page.append(
-    buildBackupCard({ profile, onLoadNotebook, onSaveNotebook, onSignIn }),
+    buildBackupCard({
+      profile,
+      onLoadNotebook,
+      onSaveNotebook,
+      rebuildStatus,
+      onRebuildIndex,
+      onSignIn,
+    }),
   );
   page.append(
     buildPrivacyCard({
@@ -623,12 +643,15 @@ interface BackupCardOptions {
   profile: UserProfile | null;
   onLoadNotebook: () => void;
   onSaveNotebook: () => void;
+  rebuildStatus: RebuildStatus;
+  onRebuildIndex: () => void;
   onSignIn: () => void;
 }
 
 /**
  * Backup card. Surfaces the manual Load/Save actions that used to live in
- * the top account bar. These are rarely needed in normal use — the workspace
+ * the top account bar, plus the Phase 2 notes-scaling "Rebuild index"
+ * maintenance action. These are rarely needed in normal use — the workspace
  * syncs automatically for signed-in users — so the card leads with an
  * explanation of *when* you'd want to reach for these buttons instead of
  * assuming the reader knows.
@@ -637,6 +660,8 @@ function buildBackupCard({
   profile,
   onLoadNotebook,
   onSaveNotebook,
+  rebuildStatus,
+  onRebuildIndex,
   onSignIn,
 }: BackupCardOptions): HTMLElement {
   const card = document.createElement("section");
@@ -692,6 +717,19 @@ function buildBackupCard({
     }),
   );
 
+  list.append(
+    buildBackupAction({
+      title: "Rebuild index",
+      description:
+        "Walks every note in Drive once and rewrites the tag, link, and task indexes from scratch. Use this if a note's tags, tasks, or links look out of date and a normal load/save doesn't fix it. This can take a few minutes for a large notebook.",
+      buttonLabel: "Rebuild",
+      buttonClass: "button",
+      onClick: onRebuildIndex,
+      disabled: rebuildStatus.state === "running",
+      statusText: describeRebuildStatus(rebuildStatus) ?? undefined,
+    }),
+  );
+
   card.append(list);
   return card;
 }
@@ -702,6 +740,14 @@ interface BackupActionOptions {
   buttonLabel: string;
   buttonClass: string;
   onClick: () => void;
+  /** Disables the button — used while a rebuild is already running. */
+  disabled?: boolean;
+  /**
+   * Optional status line appended below the description, e.g. the
+   * rebuild's running / done / error text. Omitted entirely (rather than
+   * an empty node) when there's nothing to show.
+   */
+  statusText?: string;
 }
 
 function buildBackupAction({
@@ -710,6 +756,8 @@ function buildBackupAction({
   buttonLabel,
   buttonClass,
   onClick,
+  disabled = false,
+  statusText,
 }: BackupActionOptions): HTMLElement {
   const row = document.createElement("div");
   row.className = "settings-backup-action";
@@ -727,10 +775,18 @@ function buildBackupAction({
 
   text.append(heading, desc);
 
+  if (statusText) {
+    const status = document.createElement("p");
+    status.className = "settings-backup-action-status";
+    status.textContent = statusText;
+    text.append(status);
+  }
+
   const button = document.createElement("button");
   button.type = "button";
   button.className = `${buttonClass} settings-backup-action-button`;
   button.textContent = buttonLabel;
+  button.disabled = disabled;
   button.addEventListener("click", onClick);
 
   row.append(text, button);

@@ -342,6 +342,51 @@ export class GoogleDriveStore {
   }
 
   /**
+   * Maintenance rebuild (Phase 2 notes-scaling): fetches every note's real
+   * body from Drive once and rewrites the persisted index + tag/link/task
+   * indexes from scratch by delegating to `saveWorkspace` — the same write
+   * path an interactive save already uses, so there's no second index-
+   * writing implementation to keep in sync. This is the one deliberate,
+   * user-triggered escape hatch that reads every body; everything else
+   * (`loadWorkspace`, filters, Links, Tasks) is built to avoid exactly this
+   * cost. Call sparingly — for a multi-thousand-note workspace this is
+   * thousands of Drive reads even at bounded concurrency.
+   *
+   * `activeNoteId` is set to the most recently updated note rather than
+   * preserved from the current index — cheap and harmless: the next fresh
+   * `loadWorkspace` already falls back to the same choice whenever the
+   * index's `activeNoteId` is stale or missing (see above), and this
+   * rebuild only touches Drive-side derived state, never the app's live
+   * `workspace$`, so there's no in-session "active note" to disturb.
+   *
+   * Existing `updatedAt`s are unchanged (we're re-saving each note's
+   * current content, not editing it), so `saveWorkspace`'s
+   * unchanged-note skip means the bulk of the cost here is the body
+   * reads, not re-uploading every note file.
+   */
+  async rebuildIndexes(): Promise<{ noteCount: number }> {
+    const workspaceFolder = await this.findWorkspaceFolder();
+    if (!workspaceFolder) return { noteCount: 0 };
+
+    const noteFiles = await this.findNoteFilesInFolder(workspaceFolder.id);
+    if (noteFiles.length === 0) return { noteCount: 0 };
+
+    const hydrated = await this.hydrateNoteFiles(noteFiles);
+    if (hydrated.length === 0) return { noteCount: 0 };
+
+    // Same dedup rule as `loadWorkspace`: a note id can legitimately exist
+    // as both an app-written file and a plain dropped-in re-import; keep
+    // the most recently updated survivor rather than saving both under one
+    // id.
+    const notes = dedupeNotesById(
+      hydrated.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    );
+
+    await this.saveWorkspace({ notes, activeNoteId: notes[0].id });
+    return { noteCount: notes.length };
+  }
+
+  /**
    * Defensive index read shared by `loadWorkspace` and `loadNoteSummaries`.
    * Returns the parsed index if it's fetchable + parseable, `null`
    * otherwise. Failures here are not fatal — callers fall back to treating

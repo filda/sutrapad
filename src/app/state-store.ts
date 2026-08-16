@@ -89,6 +89,7 @@ import {
 import type { TasksFilterId } from "./logic/tasks-filter";
 import type { PaletteAccess } from "./view/palette-types";
 import type { SyncState } from "./session/workspace-sync";
+import { IDLE_REBUILD_STATUS, type RebuildStatus } from "./logic/rebuild-status";
 
 export interface AppStateStore {
   // Reactive state — atoms are exposed for `subscribe` / `get` / `set`.
@@ -141,6 +142,14 @@ export interface AppStateStore {
   readonly dismissedTagAliases$: Atom<Set<string>>;
   readonly recentTagFilters$: Atom<readonly string[]>;
   readonly paletteAccess$: Atom<PaletteAccess | null>;
+  /**
+   * Maintenance-rebuild status for the Settings page's Backup card (Phase 2
+   * notes-scaling). Not in `renderingAtoms` — like `noteSummaries$` /
+   * `taskIndex$` / `linkIndex$`, the async rebuild flow in `app.ts` calls
+   * `render()` explicitly at each status transition rather than relying on
+   * atom-driven scheduling.
+   */
+  readonly rebuildStatus$: Atom<RebuildStatus>;
   // Setter wrappers — used by render-callbacks and external lifecycle
   // pieces that don't see the atoms directly. `setRecentTagFilters`
   // deep-copies its input so the atom's stored value stays unaliased
@@ -170,6 +179,7 @@ export interface AppStateStore {
   setTagsSearchQuery(next: string): void;
   setDismissedTagAliases(next: Set<string>): void;
   setRecentTagFilters(next: readonly string[]): void;
+  setRebuildStatus(next: RebuildStatus): void;
   /**
    * Returns the list of atoms that contribute to the user-visible
    * UI (workspace, filters, route, view modes, …) — every one of
@@ -277,6 +287,10 @@ export function createAppStateStore({
   );
   const recentTagFilters$ = atom<readonly string[]>(loadRecentTagFilters());
   const paletteAccess$ = atom<PaletteAccess | null>(null);
+  // Purely runtime UI state, like `locationConsentBlocked$` — a reload
+  // returns the Backup card to idle, which is the right default (the
+  // rebuild itself is not resumed across a reload).
+  const rebuildStatus$ = atom<RebuildStatus>(IDLE_REBUILD_STATUS);
 
   // Persist side-effect subscribers. Each one writes to localStorage
   // (or, in the theme case, applies a CSS-class change) on every
@@ -337,6 +351,7 @@ export function createAppStateStore({
     dismissedTagAliases$,
     recentTagFilters$,
     paletteAccess$,
+    rebuildStatus$,
     setProfile: (next) => profile$.set(next),
     setWorkspace: (next) => workspace$.set(next),
     setNoteSummaries: (next) => noteSummaries$.set(next),
@@ -366,6 +381,7 @@ export function createAppStateStore({
     // distinct array to detect a "real" change, and callers might pass
     // a snapshot they keep mutating.
     setRecentTagFilters: (next) => recentTagFilters$.set([...next]),
+    setRebuildStatus: (next) => rebuildStatus$.set(next),
     renderingAtoms: [
       workspace$,
       profile$,

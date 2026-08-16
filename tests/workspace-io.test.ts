@@ -41,6 +41,7 @@ interface IOHarness {
     loadNoteInventory: Mock;
     fetchNoteByFileId: Mock;
     appendNoteToWorkspace: Mock;
+    rebuildIndexes: Mock;
   };
   getStore: () => GoogleDriveStore;
   refreshSession: Mock;
@@ -61,6 +62,7 @@ function makeHarness(): IOHarness {
     loadNoteInventory: vi.fn().mockResolvedValue([]),
     fetchNoteByFileId: vi.fn(),
     appendNoteToWorkspace: vi.fn().mockResolvedValue(undefined),
+    rebuildIndexes: vi.fn().mockResolvedValue({ noteCount: 0 }),
   };
   return {
     store,
@@ -138,6 +140,34 @@ describe("createWorkspaceIO", () => {
 
     expect(h.store.fetchNoteByFileId).toHaveBeenCalledWith("drive-file-id");
     expect(result).toBe(fetched);
+  });
+
+  it("rebuildIndexes routes through getStore() and returns the note count", async () => {
+    // Phase 2 notes-scaling maintenance rebuild — pin the closure binding
+    // the same way loadWorkspace/fetchNoteBody are pinned above, so a
+    // future refactor can't silently drop the withAuthRetry wrapping.
+    const h = makeHarness();
+    h.store.rebuildIndexes.mockResolvedValue({ noteCount: 42 });
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => makeWorkspace([]),
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    const result = await io.rebuildIndexes();
+
+    expect(h.store.rebuildIndexes).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ noteCount: 42 });
   });
 
   it("saveWorkspace strips empty-draft notes before pushing to remote", async () => {

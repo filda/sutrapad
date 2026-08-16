@@ -1612,3 +1612,135 @@ describe("reconcileTaskIndex / reconcileLinkIndex (folder reconcile)", () => {
     expect(reconcileLinkIndex(linkIndex, new Set()).links).toEqual([]);
   });
 });
+
+describe("GoogleDriveStore.rebuildIndexes (Phase 2 maintenance rebuild)", () => {
+  it("hydrates every note in the folder (not just orphans) and delegates the rewrite to saveWorkspace", async () => {
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const noteFiles = [
+      driveFile("file-a", "note-a.json", {
+        appProperties: { sutrapad: "true", kind: "note", noteId: "a" },
+      }),
+      driveFile("file-b", "note-b.json", {
+        appProperties: { sutrapad: "true", kind: "note", noteId: "b" },
+      }),
+    ];
+    const docs: Record<string, unknown> = {
+      "file-a": {
+        id: "a",
+        title: "A",
+        body: "body a",
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z",
+      },
+      "file-b": {
+        id: "b",
+        title: "B",
+        body: "body b",
+        createdAt: "2026-05-02T00:00:00.000Z",
+        updatedAt: "2026-05-02T00:00:00.000Z",
+      },
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList(noteFiles);
+      const media = /\/(file-[ab])\?alt=media/u.exec(url);
+      if (media) return jsonResponse(docs[media[1]]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const saveWorkspaceSpy = vi
+      .spyOn(store, "saveWorkspace")
+      .mockResolvedValue(undefined);
+
+    const result = await store.rebuildIndexes();
+
+    expect(result).toEqual({ noteCount: 2 });
+    expect(saveWorkspaceSpy).toHaveBeenCalledTimes(1);
+    const savedWorkspace = saveWorkspaceSpy.mock.calls[0][0];
+    expect(savedWorkspace.notes.map((n) => n.id).toSorted()).toEqual(["a", "b"]);
+    // Every note's real body was fetched — not left as a placeholder.
+    expect(savedWorkspace.notes.every((n) => n.body.length > 0)).toBe(true);
+    // Most recently updated note wins the (otherwise inconsequential) activeNoteId slot.
+    expect(savedWorkspace.activeNoteId).toBe("b");
+  });
+
+  it("dedupes two files resolving to the same note id, keeping the most recently updated", async () => {
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const older = driveFile("nf-old", "note-a.json", { appProperties: {} });
+    const newer = driveFile("nf-new", "note-a-copy.json", { appProperties: {} });
+    const olderDoc = {
+      id: "a",
+      title: "Older",
+      body: "stale copy",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    };
+    const newerDoc = {
+      id: "a",
+      title: "Newer",
+      body: "fresh copy",
+      createdAt: "2026-05-02T00:00:00.000Z",
+      updatedAt: "2026-05-02T00:00:00.000Z",
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([older, newer]);
+      if (url.includes("/nf-old?alt=media")) return jsonResponse(olderDoc);
+      if (url.includes("/nf-new?alt=media")) return jsonResponse(newerDoc);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const saveWorkspaceSpy = vi
+      .spyOn(store, "saveWorkspace")
+      .mockResolvedValue(undefined);
+
+    const result = await store.rebuildIndexes();
+
+    expect(result).toEqual({ noteCount: 1 });
+    const savedWorkspace = saveWorkspaceSpy.mock.calls[0][0];
+    expect(savedWorkspace.notes).toHaveLength(1);
+    expect(savedWorkspace.notes[0].body).toBe("fresh copy");
+  });
+
+  it("returns noteCount 0 and never calls saveWorkspace when there is no workspace folder yet", async () => {
+    captureFetch(() => fileList([]));
+
+    const store = new GoogleDriveStore("token");
+    const saveWorkspaceSpy = vi
+      .spyOn(store, "saveWorkspace")
+      .mockResolvedValue(undefined);
+
+    const result = await store.rebuildIndexes();
+
+    expect(result).toEqual({ noteCount: 0 });
+    expect(saveWorkspaceSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns noteCount 0 and never calls saveWorkspace when the folder has no note files", async () => {
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const saveWorkspaceSpy = vi
+      .spyOn(store, "saveWorkspace")
+      .mockResolvedValue(undefined);
+
+    const result = await store.rebuildIndexes();
+
+    expect(result).toEqual({ noteCount: 0 });
+    expect(saveWorkspaceSpy).not.toHaveBeenCalled();
+  });
+});

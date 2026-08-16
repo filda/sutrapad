@@ -73,6 +73,15 @@ export interface WorkspaceIO {
     options?: { onProgress?: (progress: NoteImportProgress) => void },
   ) => Promise<NoteImportProgress>;
   /**
+   * Maintenance rebuild (Phase 2 notes-scaling): walks every note's real
+   * body on Drive once and rewrites the persisted index + tag/link/task
+   * indexes from scratch. See `GoogleDriveStore.rebuildIndexes` for the
+   * mechanics. Interactive-only (no background mode) — this is a manual,
+   * user-triggered action from the Settings page, not something autosave
+   * ever calls.
+   */
+  rebuildIndexes: () => Promise<{ noteCount: number }>;
+  /**
    * Returns `true` when the local workspace carries unsynced changes
    * relative to the last successful Drive load / save. Empty drafts
    * are normalised away before the comparison so a brand-new untouched
@@ -325,6 +334,12 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     return result;
   };
 
+  // Interactive-only: a rebuild is a deliberate Settings-page action the
+  // user is actively waiting on, not a background/autosave path — so a
+  // 401 mid-rebuild is fine to resolve via the normal silent-refresh retry.
+  const rebuildIndexes = (): Promise<{ noteCount: number }> =>
+    withAuthRetry(() => getStore().rebuildIndexes(), retryContext);
+
   const isWorkspaceDirty = (): boolean => {
     if (lastSyncedWorkspace === null) return false;
     return !areWorkspacesEqual(
@@ -340,6 +355,7 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     fetchNoteBody,
     refreshWorkspace,
     importNotes,
+    rebuildIndexes,
     isWorkspaceDirty,
   };
 }
