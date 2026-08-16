@@ -103,6 +103,49 @@ export function buildTaskIndex(
 }
 
 /**
+ * Rebuilds the resident task index for the current workspace (Phase 2
+ * notes-scaling). A hydrated note's task entries are always reparsed fresh
+ * from its body — cheap, and correct the instant a checkbox line changes. A
+ * placeholder note (`hydrated: false`) has an empty body, so reparsing it
+ * would wrongly report zero tasks; its entries came from the Drive task
+ * index (at load, or a previous reconcile) and are carried forward
+ * unchanged for the same reason `reconcileNoteSummaries` carries forward a
+ * placeholder's card metadata — nothing about a placeholder changes except
+ * by being hydrated, and hydration doesn't touch tasks either.
+ *
+ * Falls back to no entries for a placeholder with no previous entries —
+ * only possible transiently, e.g. the very first render before a Drive
+ * load has completed.
+ */
+export function reconcileTaskIndexForWorkspace(
+  workspace: SutraPadWorkspace,
+  previousIndex: SutraPadTaskIndex,
+  savedAt = new Date().toISOString(),
+): SutraPadTaskIndex {
+  const previousByNoteId = new Map<string, SutraPadTaskEntry[]>();
+  for (const task of previousIndex.tasks) {
+    const entries = previousByNoteId.get(task.noteId) ?? [];
+    entries.push(task);
+    previousByNoteId.set(task.noteId, entries);
+  }
+
+  const tasks: SutraPadTaskEntry[] = [];
+  for (const note of workspace.notes) {
+    if (note.hydrated === false) {
+      tasks.push(...(previousByNoteId.get(note.id) ?? []));
+    } else {
+      tasks.push(...parseTasksFromNote(note));
+    }
+  }
+
+  return {
+    version: 1,
+    savedAt,
+    tasks: tasks.toSorted(compareTaskEntries),
+  };
+}
+
+/**
  * Flips the done-state of a single task at `lineIndex` within `body`. Unknown
  * or non-checkbox lines are returned unchanged so callers can safely invoke
  * this even if the index is momentarily stale (e.g. the user edited the note

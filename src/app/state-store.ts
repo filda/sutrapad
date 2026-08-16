@@ -35,8 +35,8 @@ import type {
   SutraPadWorkspace,
   UserProfile,
 } from "../types";
-import { buildNoteSummary } from "../lib/note-card-meta";
-import { buildLinkIndex, buildTaskIndex } from "../lib/notebook";
+import { reconcileNoteSummaries } from "../lib/note-card-meta";
+import { buildLinkIndex, reconcileTaskIndexForWorkspace } from "../lib/notebook";
 import { loadLocalWorkspace } from "./storage/local-workspace";
 import {
   readActivePageFromLocation,
@@ -204,12 +204,26 @@ export function createAppStateStore({
 }: CreateAppStateStoreOptions): AppStateStore {
   const profile$ = atom<UserProfile | null>(null);
   const workspace$ = atom<SutraPadWorkspace>(loadLocalWorkspace());
-  // Resident summary model. Seeded from the initial (local) workspace and
-  // kept in sync by the `workspace$.subscribe` below during the parallel-run.
+  // Resident summary / task model (Phase 2 notes-scaling). Seeded from the
+  // initial (local) workspace and kept in sync by the `workspace$.subscribe`
+  // below. `reconcileNoteSummaries` / `reconcileTaskIndexForWorkspace` only
+  // recompute a note's contribution when it's actually hydrated — a
+  // body-less placeholder (`hydrated: false`, most notes right after a
+  // fresh `loadWorkspace`) has nothing to derive card metadata / tasks from,
+  // so its previous entry (`[]` here, at cold boot) is carried forward
+  // instead of overwriting good data with blanks. `loadWorkspace` /
+  // `restoreWorkspaceAfterSignIn` re-seed both atoms straight from the Drive
+  // index once the load completes (see `app.ts`), correcting this initial
+  // best-effort guess.
   const noteSummaries$ = atom<SutraPadNoteSummary[]>(
-    workspace$.get().notes.map((note) => buildNoteSummary(note)),
+    reconcileNoteSummaries(workspace$.get(), []),
   );
-  const taskIndex$ = atom<SutraPadTaskIndex>(buildTaskIndex(workspace$.get()));
+  const taskIndex$ = atom<SutraPadTaskIndex>(
+    reconcileTaskIndexForWorkspace(workspace$.get(), { version: 1, savedAt: "", tasks: [] }),
+  );
+  // `buildLinkIndex` only reads `note.urls` / `updatedAt` / `id` — every one
+  // of which a placeholder already carries over from its index summary
+  // (`documentFromSummary`), so it stays correct without a reconcile helper.
   const linkIndex$ = atom<SutraPadLinkIndex>(buildLinkIndex(workspace$.get()));
   const syncState$ = atom<SyncState>("idle");
   const lastError$ = atom("");
@@ -271,12 +285,15 @@ export function createAppStateStore({
   // theme/persona toggle that lands on the same value is a no-op all
   // the way through.
   const disposers: Array<() => void> = [
-    // Parallel-run: mirror the loaded workspace into the resident summary
-    // model on every workspace change so the Notes list can read summaries
-    // while `loadWorkspace` still hydrates bodies. Removed in the final flip.
+    // Keeps the resident summary / task / link models in sync with every
+    // workspace change (Phase 2 notes-scaling). Summaries and tasks use the
+    // hydration-aware reconcile helpers — see the atoms' init comment above
+    // for why a placeholder's entry is carried forward instead of
+    // recomputed from its empty body. Links stay on the plain builder: it
+    // only needs fields every placeholder already carries.
     workspace$.subscribe((ws) => {
-      noteSummaries$.set(ws.notes.map((note) => buildNoteSummary(note)));
-      taskIndex$.set(buildTaskIndex(ws));
+      noteSummaries$.set(reconcileNoteSummaries(ws, noteSummaries$.get()));
+      taskIndex$.set(reconcileTaskIndexForWorkspace(ws, taskIndex$.get()));
       linkIndex$.set(buildLinkIndex(ws));
     }),
     notesViewMode$.subscribe(persistNotesView),

@@ -432,6 +432,7 @@ export {
   buildTaskIndex,
   compareTaskEntries,
   countTasksInNote,
+  reconcileTaskIndexForWorkspace,
   toggleTaskInBody,
 } from "./tasks";
 

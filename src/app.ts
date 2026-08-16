@@ -30,7 +30,7 @@ import {
   syncViewToLocation,
 } from "./app/sync-helpers";
 import { runAppBootstrap } from "./app/session/session";
-import type { AuthRetryContext } from "./app/session/auth-retry";
+import { withAuthRetry, type AuthRetryContext } from "./app/session/auth-retry";
 import { createWorkspaceIO } from "./app/session/workspace-io";
 import { createPreferencesIO } from "./app/session/preferences-io";
 import { persistLocalWorkspace } from "./app/storage/local-workspace";
@@ -836,6 +836,34 @@ export function createApp(root: HTMLElement): void {
     void runOgImagePrewarm(targets);
   };
 
+  // Phase 2 notes-scaling: re-seeds the resident summary / task / link
+  // models straight from the Drive index right after a fresh workspace
+  // load. Between app boot and this point, `noteSummaries$` / `taskIndex$`
+  // may hold a best-effort guess derived from whatever `loadLocalWorkspace`
+  // returned (blank card metadata / zero tasks for any note that was a
+  // placeholder in last session's local cache — see the atoms' init
+  // comment in `state-store.ts`); this call corrects that the moment real
+  // data is available. `linkIndex$` doesn't strictly need this (its
+  // `workspace$`-derived value is already correct), but re-seeding it too
+  // keeps all three on the same authoritative source and costs nothing
+  // extra — the three reads already run in parallel.
+  //
+  // None of these three atoms are in `renderingAtoms` (they're mirrored
+  // side effects of `workspace$`, not independently rendered state), so
+  // setting them doesn't schedule a render on its own — the explicit
+  // `render()` at the end is what actually surfaces the corrected data.
+  const reseedResidentIndexesFromDrive = async (): Promise<void> => {
+    const [summaries, taskIndex, linkIndex] = await Promise.all([
+      withAuthRetry(() => getStore().loadNoteSummaries(), retryContext),
+      withAuthRetry(() => getStore().loadTaskIndex(), retryContext),
+      withAuthRetry(() => getStore().loadLinkIndex(), retryContext),
+    ]);
+    noteSummaries$.set(summaries);
+    taskIndex$.set(taskIndex);
+    linkIndex$.set(linkIndex);
+    render();
+  };
+
   // Compose the two IO concerns: every successful Drive workspace
   // load / sign-in restore also pulls the preferences file. We do
   // this at the app-wiring layer (rather than threading a callback
@@ -843,12 +871,12 @@ export function createApp(root: HTMLElement): void {
   // the notebook concern and the composition is visible at a glance.
   const loadWorkspace = async (): Promise<void> => {
     await workspaceIO.loadWorkspace();
-    await loadPreferences();
+    await Promise.all([loadPreferences(), reseedResidentIndexesFromDrive()]);
     scheduleOgImagePrewarm();
   };
   const restoreWorkspaceAfterSignIn = async (): Promise<void> => {
     await workspaceIO.restoreWorkspaceAfterSignIn();
-    await loadPreferences();
+    await Promise.all([loadPreferences(), reseedResidentIndexesFromDrive()]);
     scheduleOgImagePrewarm();
   };
   const { saveWorkspace, refreshWorkspace, importNotes, isWorkspaceDirty } =

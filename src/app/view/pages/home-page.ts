@@ -1,9 +1,5 @@
-import {
-  buildCombinedTagIndex,
-  buildLinkIndex,
-} from "../../../lib/notebook";
-import { countTasksInNote } from "../../../lib/tasks";
 import { deriveNotebookPersona } from "../../../lib/notebook-persona";
+import { documentFromSummary } from "../../../lib/note-card-meta";
 import {
   formatHomeHeaderDate,
   formatNoteTime,
@@ -12,8 +8,9 @@ import {
   type HomeGreeting,
 } from "../../logic/home-groups";
 import type {
-  SutraPadDocument,
-  SutraPadWorkspace,
+  SutraPadLinkIndex,
+  SutraPadNoteSummary,
+  SutraPadTaskIndex,
   UserProfile,
 } from "../../../types";
 import { buildPageHeader } from "../shared/page-header";
@@ -32,14 +29,36 @@ interface HomeStatsSummary {
   links: number;
 }
 
-function summariseWorkspace(workspace: SutraPadWorkspace): HomeStatsSummary {
+/**
+ * Builds the today-stats + subtitle numbers from the resident summary /
+ * task / link models (Phase 2 notes-scaling) instead of scanning
+ * `workspace.notes` bodies — a placeholder note (not yet opened this
+ * session) has no body, so a body-scan would undercount open tasks and
+ * miss task-derived auto-tags. `noteSummaries[].tags` / `.autoTags` and
+ * `taskIndex` / `linkIndex` are all precomputed at save time (or read
+ * straight from the Drive index) and stay correct regardless of hydration.
+ */
+function summariseNotebook(
+  noteSummaries: readonly SutraPadNoteSummary[],
+  taskIndex: SutraPadTaskIndex,
+  linkIndex: SutraPadLinkIndex,
+): HomeStatsSummary {
+  const distinctTags = new Set<string>();
+  for (const summary of noteSummaries) {
+    for (const tag of summary.tags ?? []) distinctTags.add(tag);
+    for (const tag of summary.autoTags ?? []) distinctTags.add(tag);
+  }
+
   let openTasks = 0;
-  for (const note of workspace.notes) openTasks += countTasksInNote(note).open;
+  for (const task of taskIndex.tasks) {
+    if (!task.done) openTasks += 1;
+  }
+
   return {
-    notes: workspace.notes.length,
+    notes: noteSummaries.length,
     openTasks,
-    tags: buildCombinedTagIndex(workspace).tags.length,
-    links: buildLinkIndex(workspace).links.length,
+    tags: distinctTags.size,
+    links: linkIndex.links.length,
   };
 }
 
@@ -74,7 +93,8 @@ function buildTodayStats(summary: HomeStatsSummary): HTMLElement {
 }
 
 function buildTimelineItem(
-  note: SutraPadDocument,
+  summary: SutraPadNoteSummary,
+  hasOpenTask: boolean,
   onOpenNote: (noteId: string) => void,
   personaOptions: NotesListPersonaOptions | undefined,
 ): HTMLElement {
@@ -83,23 +103,28 @@ function buildTimelineItem(
 
   const time = document.createElement("p");
   time.className = "tl-time";
-  time.textContent = formatNoteTime(note.updatedAt);
+  time.textContent = formatNoteTime(summary.updatedAt);
   item.append(time);
 
   const card = document.createElement("button");
   card.type = "button";
   card.className = "tl-card";
-  card.addEventListener("click", () => onOpenNote(note.id));
+  card.addEventListener("click", () => onOpenNote(summary.id));
 
   // Persona decoration is opt-in: when the user has "Persona" enabled we
   // derive the same paper/rotation/font identity the notes list uses, but
   // tune it down for a stacked timeline — halved rotation so cards don't
   // clash with the left rule, and at most one sticker so the column stays
-  // calm per the handoff's "keep it calm" note on Today.
+  // calm per the handoff's "keep it calm" note on Today. `hasOpenTask` /
+  // `autoTags` come precomputed from the summary (Phase 2) so this never
+  // needs the note's body — mirrors how the Notes list feeds the same
+  // derivation.
   const persona = personaOptions
-    ? deriveNotebookPersona(note, {
+    ? deriveNotebookPersona(documentFromSummary(summary), {
         allNotes: personaOptions.allNotes,
         dark: personaOptions.dark,
+        hasOpenTask,
+        autoTags: summary.autoTags,
       })
     : null;
   if (persona) {
@@ -109,10 +134,14 @@ function buildTimelineItem(
 
   const title = document.createElement("h4");
   title.className = "tl-title";
-  title.textContent = note.title.trim() || "Untitled note";
+  title.textContent = summary.title.trim() || "Untitled note";
   card.append(title);
 
-  const excerpt = buildExcerpt(note.body);
+  // `excerpt` is precomputed at save time (Phase 2 card metadata, 72-char
+  // budget — same source and length the Notes grid card uses) rather than
+  // trimmed here from the body, which a not-yet-hydrated placeholder
+  // doesn't have.
+  const excerpt = summary.excerpt ?? "";
   if (excerpt) {
     const p = document.createElement("p");
     p.className = "tl-excerpt";
@@ -120,25 +149,26 @@ function buildTimelineItem(
     card.append(p);
   }
 
-  if (note.tags.length > 0) {
-    const tags = document.createElement("div");
-    tags.className = "tl-tags";
+  const tags = summary.tags ?? [];
+  if (tags.length > 0) {
+    const tagsRow = document.createElement("div");
+    tagsRow.className = "tl-tags";
     // Limit to six chips so a note with a lot of auto-tags doesn't wrap the
     // card into a tall strip; the overflow indicator mirrors the handoff.
-    // `note.tags` only ever contains user-authored tags (auto-tags are
-    // derived at query time and aren't persisted on the note), so every
-    // pill here lands in the `topic` class.
-    const shown = note.tags.slice(0, 6);
+    // `summary.tags` only ever contains user-authored tags (auto-tags are
+    // derived separately and aren't persisted on the note), so every pill
+    // here lands in the `topic` class.
+    const shown = tags.slice(0, 6);
     for (const tag of shown) {
-      tags.append(buildTagPill({ tag, kind: "user" }));
+      tagsRow.append(buildTagPill({ tag, kind: "user" }));
     }
-    if (note.tags.length > shown.length) {
+    if (tags.length > shown.length) {
       const more = document.createElement("span");
       more.className = "tl-tag-more";
-      more.textContent = `+${note.tags.length - shown.length}`;
-      tags.append(more);
+      more.textContent = `+${tags.length - shown.length}`;
+      tagsRow.append(more);
     }
-    card.append(tags);
+    card.append(tagsRow);
   }
 
   // Stickers go last so they read as a subtle tag-like accent under the card
@@ -158,24 +188,14 @@ function buildTimelineItem(
   return item;
 }
 
-function buildExcerpt(body: string): string {
-  // Same trimming rule as the handoff timeline: collapse whitespace into
-  // single spaces and cap at roughly two lines of reading before adding an
-  // ellipsis. Keeps the card's vertical rhythm consistent across notes.
-  const collapsed = body.replaceAll(/\s+/gu, " ").trim();
-  if (!collapsed) return "";
-  const limit = 180;
-  if (collapsed.length <= limit) return collapsed;
-  return `${collapsed.slice(0, limit).trimEnd()}…`;
-}
-
 function buildTimelineSection(
   label: string,
-  notes: readonly SutraPadDocument[],
+  summaries: readonly SutraPadNoteSummary[],
+  hasOpenTaskById: ReadonlySet<string>,
   onOpenNote: (noteId: string) => void,
   personaOptions: NotesListPersonaOptions | undefined,
 ): HTMLElement | null {
-  if (notes.length === 0) return null;
+  if (summaries.length === 0) return null;
   const wrapper = document.createElement("div");
   wrapper.className = "tl-section";
 
@@ -184,19 +204,27 @@ function buildTimelineSection(
   divider.textContent = label;
   wrapper.append(divider);
 
-  for (const note of notes) {
-    wrapper.append(buildTimelineItem(note, onOpenNote, personaOptions));
+  for (const summary of summaries) {
+    wrapper.append(
+      buildTimelineItem(
+        summary,
+        hasOpenTaskById.has(summary.id),
+        onOpenNote,
+        personaOptions,
+      ),
+    );
   }
 
   return wrapper;
 }
 
 function buildTimeline(
-  workspace: SutraPadWorkspace,
+  noteSummaries: readonly SutraPadNoteSummary[],
+  taskIndex: SutraPadTaskIndex,
   onOpenNote: (noteId: string) => void,
   personaOptions: NotesListPersonaOptions | undefined,
 ): HTMLElement | null {
-  const groups = groupNotesByRecency(workspace.notes, new Date());
+  const groups = groupNotesByRecency(noteSummaries, new Date());
   // If every bucket is empty we skip the timeline entirely so the empty
   // page doesn't render a lonely left-rule with nothing attached.
   if (
@@ -211,14 +239,27 @@ function buildTimeline(
   timeline.className = "timeline";
   if (personaOptions) timeline.classList.add("timeline--persona");
 
-  const sections: Array<[string, readonly SutraPadDocument[]]> = [
+  // Precompute once per render rather than filtering `taskIndex.tasks` per
+  // note — the persona derivation only needs a yes/no per note id.
+  const hasOpenTaskById = new Set<string>();
+  for (const task of taskIndex.tasks) {
+    if (!task.done) hasOpenTaskById.add(task.noteId);
+  }
+
+  const sections: Array<[string, readonly SutraPadNoteSummary[]]> = [
     ["Today", groups.today],
     ["Yesterday", groups.yesterday],
     ["Earlier", groups.earlier],
   ];
 
-  for (const [label, notes] of sections) {
-    const section = buildTimelineSection(label, notes, onOpenNote, personaOptions);
+  for (const [label, summaries] of sections) {
+    const section = buildTimelineSection(
+      label,
+      summaries,
+      hasOpenTaskById,
+      onOpenNote,
+      personaOptions,
+    );
     if (section) timeline.append(section);
   }
 
@@ -286,7 +327,14 @@ function summaryPhrase(summary: HomeStatsSummary): string {
 }
 
 export interface HomePageOptions {
-  workspace: SutraPadWorkspace;
+  /**
+   * Resident per-note card metadata (Phase 2 notes-scaling) — read instead
+   * of `workspace.notes` bodies so Home stays correct for placeholder notes
+   * that haven't been hydrated this session yet.
+   */
+  noteSummaries: readonly SutraPadNoteSummary[];
+  taskIndex: SutraPadTaskIndex;
+  linkIndex: SutraPadLinkIndex;
   profile: UserProfile | null;
   /**
    * When provided, Home timeline cards pick up the same paper palette and
@@ -307,7 +355,9 @@ export interface HomePageOptions {
 }
 
 export function buildHomePage({
-  workspace,
+  noteSummaries,
+  taskIndex,
+  linkIndex,
   profile,
   personaOptions,
   hintBanner,
@@ -316,7 +366,7 @@ export function buildHomePage({
   const section = document.createElement("section");
   section.className = "home-page";
 
-  const summary = summariseWorkspace(workspace);
+  const summary = summariseNotebook(noteSummaries, taskIndex, linkIndex);
 
   section.append(buildHomeHeader(profile, summary));
 
@@ -328,7 +378,7 @@ export function buildHomePage({
   // an empty placeholder would be visual noise on a clean home.
   if (hintBanner) section.append(hintBanner);
 
-  const timeline = buildTimeline(workspace, onOpenNote, personaOptions);
+  const timeline = buildTimeline(noteSummaries, taskIndex, onOpenNote, personaOptions);
   if (timeline) section.append(timeline);
 
   return section;

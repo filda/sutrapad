@@ -1,19 +1,24 @@
-import type { SutraPadDocument } from "../../types";
+import type { SutraPadNoteSummary } from "../../types";
 
 /**
- * Pure helpers for the Home / Today page. Splits a workspace's notes into
- * Today / Yesterday / Earlier buckets, derives the greeting based on the
- * current hour, and formats the header date and item time strings used in
- * the timeline.
+ * Pure helpers for the Home / Today page. Splits the resident note
+ * summaries into Today / Yesterday / Earlier buckets, derives the greeting
+ * based on the current hour, and formats the header date and item time
+ * strings used in the timeline.
+ *
+ * Operates on `SutraPadNoteSummary` (Phase 2 notes-scaling) rather than a
+ * full `SutraPadDocument` — only `updatedAt` is ever read, and the summary
+ * is what's actually resident for every note regardless of hydration
+ * state.
  *
  * Kept DOM-free so the timeline logic (which is easy to get wrong on
  * day-boundary edges) is unit-testable without spinning up the renderer.
  */
 
 export interface HomeNoteGroups {
-  today: SutraPadDocument[];
-  yesterday: SutraPadDocument[];
-  earlier: SutraPadDocument[];
+  today: SutraPadNoteSummary[];
+  yesterday: SutraPadNoteSummary[];
+  earlier: SutraPadNoteSummary[];
 }
 
 /**
@@ -23,7 +28,7 @@ export interface HomeNoteGroups {
  * first so the timeline reads top-down in recency order within a section.
  */
 export function groupNotesByRecency(
-  notes: readonly SutraPadDocument[],
+  notes: readonly SutraPadNoteSummary[],
   now: Date,
 ): HomeNoteGroups {
   const todayKey = toLocalDateKey(now);
@@ -36,9 +41,9 @@ export function groupNotesByRecency(
     a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0,
   );
 
-  const today: SutraPadDocument[] = [];
-  const yesterday: SutraPadDocument[] = [];
-  const earlier: SutraPadDocument[] = [];
+  const today: SutraPadNoteSummary[] = [];
+  const yesterday: SutraPadNoteSummary[] = [];
+  const earlier: SutraPadNoteSummary[] = [];
 
   for (const note of sorted) {
     const key = toLocalDateKey(new Date(note.updatedAt));

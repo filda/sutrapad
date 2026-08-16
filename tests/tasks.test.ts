@@ -3,9 +3,15 @@ import {
   buildTaskIndex,
   compareTaskEntries,
   countTasksInNote,
+  reconcileTaskIndexForWorkspace,
   toggleTaskInBody,
 } from "../src/lib/notebook";
-import type { SutraPadDocument, SutraPadTaskEntry, SutraPadWorkspace } from "../src/types";
+import type {
+  SutraPadDocument,
+  SutraPadTaskEntry,
+  SutraPadTaskIndex,
+  SutraPadWorkspace,
+} from "../src/types";
 
 function makeNote(
   overrides: Partial<SutraPadDocument> & Pick<SutraPadDocument, "id" | "updatedAt" | "body">,
@@ -381,5 +387,53 @@ describe("compareTaskEntries", () => {
     const later = makeTaskEntry({ lineIndex: 7 });
     expect(compareTaskEntries(first, later)).toBe(-5);
     expect(compareTaskEntries(later, first)).toBe(5);
+  });
+});
+
+describe("reconcileTaskIndexForWorkspace", () => {
+  function taskIndex(tasks: SutraPadTaskEntry[]): SutraPadTaskIndex {
+    return { version: 1, savedAt: "2026-04-20T10:00:00.000Z", tasks };
+  }
+
+  it("reparses a hydrated note's tasks fresh from its body", () => {
+    const note = makeNote({ id: "1", body: "- [ ] fresh task", updatedAt: "2026-04-20T10:00:00.000Z" });
+    const workspace = makeWorkspace([note]);
+
+    const index = reconcileTaskIndexForWorkspace(workspace, taskIndex([]));
+
+    expect(index.tasks).toHaveLength(1);
+    expect(index.tasks[0].text).toBe("fresh task");
+  });
+
+  it("carries forward a placeholder's previous task entries instead of reporting zero tasks from its empty body", () => {
+    const placeholder = makeNote({ id: "1", body: "", updatedAt: "2026-04-20T10:00:00.000Z", hydrated: false });
+    const workspace = makeWorkspace([placeholder]);
+    const previousEntry = makeTaskEntry({ noteId: "1", text: "real task from the index" });
+
+    const index = reconcileTaskIndexForWorkspace(workspace, taskIndex([previousEntry]));
+
+    expect(index.tasks).toEqual([previousEntry]);
+  });
+
+  it("falls back to no entries for a placeholder with nothing to carry forward", () => {
+    const placeholder = makeNote({ id: "1", body: "", updatedAt: "2026-04-20T10:00:00.000Z", hydrated: false });
+    const workspace = makeWorkspace([placeholder]);
+
+    const index = reconcileTaskIndexForWorkspace(workspace, taskIndex([]));
+
+    expect(index.tasks).toEqual([]);
+  });
+
+  it("drops entries for notes no longer in the workspace", () => {
+    const note = makeNote({ id: "1", body: "", updatedAt: "2026-04-20T10:00:00.000Z" });
+    const workspace = makeWorkspace([note]);
+    const previous = taskIndex([
+      makeTaskEntry({ noteId: "1" }),
+      makeTaskEntry({ noteId: "deleted" }),
+    ]);
+
+    const index = reconcileTaskIndexForWorkspace(workspace, previous);
+
+    expect(index.tasks.every((t) => t.noteId === "1")).toBe(true);
   });
 });

@@ -3,8 +3,9 @@ import {
   buildNoteCardMeta,
   buildNoteSummary,
   buildPlaceholderNote,
+  reconcileNoteSummaries,
 } from "../src/lib/note-card-meta";
-import type { SutraPadDocument, SutraPadNoteSummary } from "../src/types";
+import type { SutraPadDocument, SutraPadNoteSummary, SutraPadWorkspace } from "../src/types";
 
 function note(overrides: Partial<SutraPadDocument>): SutraPadDocument {
   return {
@@ -150,5 +151,52 @@ describe("buildPlaceholderNote", () => {
     const placeholder = buildPlaceholderNote(summary({ id: "1" }));
     expect(placeholder.tags).toEqual([]);
     expect(placeholder.urls).toEqual([]);
+  });
+});
+
+describe("reconcileNoteSummaries", () => {
+  it("recomputes the summary fresh for a hydrated note", () => {
+    const hydrated = note({ id: "1", title: "", body: "headline\nrest" });
+    const workspace: SutraPadWorkspace = { activeNoteId: "1", notes: [hydrated] };
+
+    const summaries = reconcileNoteSummaries(workspace, []);
+
+    expect(summaries[0].headline).toBe("headline");
+    expect(summaries[0].excerpt).toBe("rest");
+  });
+
+  it("carries forward the previous summary for a placeholder instead of deriving blank card meta from its empty body", () => {
+    const previous: SutraPadNoteSummary[] = [
+      summary({ id: "1", headline: "Real headline from the index", excerpt: "Real excerpt" }),
+    ];
+    const placeholder = buildPlaceholderNote(previous[0]);
+    const workspace: SutraPadWorkspace = { activeNoteId: "1", notes: [placeholder] };
+
+    const summaries = reconcileNoteSummaries(workspace, previous);
+
+    expect(summaries[0]).toBe(previous[0]);
+  });
+
+  it("falls back to a blank-card-meta summary for a placeholder with no previous entry (first render before Drive load lands)", () => {
+    const placeholder = buildPlaceholderNote(summary({ id: "1", title: "" }));
+    const workspace: SutraPadWorkspace = { activeNoteId: "1", notes: [placeholder] };
+
+    const summaries = reconcileNoteSummaries(workspace, []);
+
+    expect(summaries[0].headline).toBe("");
+    expect(summaries[0].excerpt).toBe("");
+  });
+
+  it("drops summaries for notes no longer in the workspace", () => {
+    const hydrated = note({ id: "1" });
+    const workspace: SutraPadWorkspace = { activeNoteId: "1", notes: [hydrated] };
+    const previous: SutraPadNoteSummary[] = [
+      summary({ id: "1" }),
+      summary({ id: "deleted" }),
+    ];
+
+    const summaries = reconcileNoteSummaries(workspace, previous);
+
+    expect(summaries.map((s) => s.id)).toEqual(["1"]);
   });
 });

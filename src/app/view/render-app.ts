@@ -354,7 +354,7 @@ export function renderAppPage({
         // + place/source facets, so body-less docs rebuilt from the resident
         // summaries drive them identically — and keep working once
         // `loadWorkspace` stops holding note bodies (Phase 2 step 3e).
-        allNotes: noteSummaries.map(documentFromSummary),
+        allNotes: noteSummaries.map((summary) => documentFromSummary(summary)),
         dark: isDarkThemeId(resolveThemeId(currentTheme)),
       }
     : undefined;
@@ -452,7 +452,9 @@ export function renderAppPage({
 
     page.append(
       buildHomePage({
-        workspace,
+        noteSummaries,
+        taskIndex,
+        linkIndex,
         profile,
         personaOptions,
         hintBanner,

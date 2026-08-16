@@ -9,7 +9,7 @@ import { buildCardExcerpt } from "./card-excerpt";
 import { bodyAfterHeadline, firstBodyLine } from "./note-headline";
 import { countTasksInNote } from "./tasks";
 import { deriveAutoTags } from "./auto-tags";
-import type { SutraPadDocument, SutraPadNoteSummary } from "../types";
+import type { SutraPadDocument, SutraPadNoteSummary, SutraPadWorkspace } from "../types";
 
 /** Card excerpt budget (single line in the Notes grid). */
 export const NOTE_CARD_EXCERPT_MAX = 72;
@@ -105,4 +105,34 @@ export function documentFromSummary(
  */
 export function buildPlaceholderNote(summary: SutraPadNoteSummary): SutraPadDocument {
   return { ...documentFromSummary(summary), hydrated: false };
+}
+
+/**
+ * Rebuilds the resident summary list for the current workspace (Phase 2
+ * notes-scaling). A hydrated note's summary is always recomputed fresh —
+ * cheap, and correct the instant an edit lands. A placeholder note
+ * (`hydrated: false`) has no body to derive anything from; its summary
+ * came from the Drive index (at load, or a previous reconcile) and is
+ * carried forward unchanged, because a placeholder can only change by
+ * being hydrated — never edited directly, see `upsertNote`'s guard — and
+ * hydration itself doesn't touch card metadata.
+ *
+ * Falls back to `buildNoteSummary` (blank headline/excerpt until real data
+ * arrives) for a placeholder with no previous entry — only possible
+ * transiently, e.g. the very first render before a Drive load has
+ * completed and there's nothing to carry forward yet.
+ */
+export function reconcileNoteSummaries(
+  workspace: SutraPadWorkspace,
+  previousSummaries: readonly SutraPadNoteSummary[],
+  now: Date = new Date(),
+): SutraPadNoteSummary[] {
+  const previousById = new Map(previousSummaries.map((summary) => [summary.id, summary]));
+
+  return workspace.notes.map((note) => {
+    if (note.hydrated === false) {
+      return previousById.get(note.id) ?? buildNoteSummary(note, now);
+    }
+    return buildNoteSummary(note, now);
+  });
 }
