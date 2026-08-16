@@ -10,7 +10,11 @@ import {
   type PaletteEntry,
   type PaletteGroups,
 } from "../src/app/logic/palette";
-import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
+import type {
+  SutraPadDocument,
+  SutraPadTaskIndex,
+  SutraPadWorkspace,
+} from "../src/types";
 
 function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
   return {
@@ -126,6 +130,27 @@ describe("buildPaletteEntries", () => {
     const ids = [...groups.notes, ...groups.tags].map((entry) => entry.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(expect.arrayContaining(["note:x", "tag:x"]));
+  });
+
+  // Phase 2 notes-scaling: a placeholder note's body is "" (not yet
+  // hydrated this session), so its `tasks:*` auto-tag would otherwise
+  // always come back `tasks:none`. Passing the resident `taskIndex`
+  // corrects this per note — see `buildTaskFacetByNoteId`'s doc.
+  it("uses the taskIndex's real task state for a body-less note instead of scanning its empty body", () => {
+    const placeholder = makeNote({ id: "a", body: "" });
+    const taskIndex: SutraPadTaskIndex = {
+      version: 1,
+      savedAt: "2026-04-21T09:00:00.000Z",
+      tasks: [{ noteId: "a", lineIndex: 0, text: "real task", done: false, noteUpdatedAt: "2026-04-21T09:00:00.000Z" }],
+    };
+
+    const withoutTaskIndex = buildPaletteEntries(makeWorkspace([placeholder]));
+    expect(withoutTaskIndex.tags.map((t) => t.label)).toContain("tasks:none");
+
+    const withTaskIndex = buildPaletteEntries(makeWorkspace([placeholder]), taskIndex);
+    const labels = withTaskIndex.tags.map((t) => t.label);
+    expect(labels).toContain("tasks:open");
+    expect(labels).not.toContain("tasks:none");
   });
 });
 

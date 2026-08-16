@@ -145,6 +145,39 @@ export function reconcileTaskIndexForWorkspace(
   };
 }
 
+export type TaskFacet = "none" | "open" | "done";
+
+/**
+ * Per-note `tasks:none|open|done` facet, derived from the resident task
+ * index instead of scanning a note's body (Phase 2 notes-scaling). A
+ * placeholder note (`hydrated: false`) has no body to scan, but its task
+ * entries are still correctly tracked in `taskIndex` (reconciled from the
+ * Drive index / carried forward, see `reconcileTaskIndexForWorkspace`) — so
+ * this map lets `deriveAutoTags` skip the body scan for the one facet that
+ * actually needs it (every other facet reads `captureContext`/`location`,
+ * which a placeholder carries through unchanged).
+ *
+ * A note absent from the map (no task lines at all) is left out on purpose:
+ * `deriveAutoTags`'s fallback body-scan gives `tasks:none` for an empty body,
+ * which is the correct answer for a genuinely task-free note regardless of
+ * hydration state — no override needed.
+ */
+export function buildTaskFacetByNoteId(
+  taskIndex: SutraPadTaskIndex,
+): Map<string, TaskFacet> {
+  const hasOpenByNoteId = new Map<string, boolean>();
+  for (const task of taskIndex.tasks) {
+    const hasOpen = hasOpenByNoteId.get(task.noteId) ?? false;
+    hasOpenByNoteId.set(task.noteId, hasOpen || !task.done);
+  }
+
+  const result = new Map<string, TaskFacet>();
+  for (const [noteId, hasOpen] of hasOpenByNoteId) {
+    result.set(noteId, hasOpen ? "open" : "done");
+  }
+  return result;
+}
+
 /**
  * Flips the done-state of a single task at `lineIndex` within `body`. Unknown
  * or non-checkbox lines are returned unchanged so callers can safely invoke

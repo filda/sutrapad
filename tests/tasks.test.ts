@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildTaskFacetByNoteId,
   buildTaskIndex,
   compareTaskEntries,
   countTasksInNote,
@@ -38,6 +39,10 @@ function makeTaskEntry(overrides: Partial<SutraPadTaskEntry> = {}): SutraPadTask
     noteUpdatedAt: "2026-04-20T10:00:00.000Z",
     ...overrides,
   };
+}
+
+function taskIndex(tasks: SutraPadTaskEntry[]): SutraPadTaskIndex {
+  return { version: 1, savedAt: "2026-04-20T10:00:00.000Z", tasks };
 }
 
 describe("buildTaskIndex", () => {
@@ -391,10 +396,6 @@ describe("compareTaskEntries", () => {
 });
 
 describe("reconcileTaskIndexForWorkspace", () => {
-  function taskIndex(tasks: SutraPadTaskEntry[]): SutraPadTaskIndex {
-    return { version: 1, savedAt: "2026-04-20T10:00:00.000Z", tasks };
-  }
-
   it("reparses a hydrated note's tasks fresh from its body", () => {
     const note = makeNote({ id: "1", body: "- [ ] fresh task", updatedAt: "2026-04-20T10:00:00.000Z" });
     const workspace = makeWorkspace([note]);
@@ -435,5 +436,47 @@ describe("reconcileTaskIndexForWorkspace", () => {
     const index = reconcileTaskIndexForWorkspace(workspace, previous);
 
     expect(index.tasks.every((t) => t.noteId === "1")).toBe(true);
+  });
+});
+
+describe("buildTaskFacetByNoteId", () => {
+  it("maps a note with at least one open task to 'open'", () => {
+    const map = buildTaskFacetByNoteId(
+      taskIndex([
+        makeTaskEntry({ noteId: "1", done: false }),
+        makeTaskEntry({ noteId: "1", done: true }),
+      ]),
+    );
+
+    expect(map.get("1")).toBe("open");
+  });
+
+  it("maps a note whose every task is done to 'done'", () => {
+    const map = buildTaskFacetByNoteId(
+      taskIndex([
+        makeTaskEntry({ noteId: "1", done: true }),
+        makeTaskEntry({ noteId: "1", done: true }),
+      ]),
+    );
+
+    expect(map.get("1")).toBe("done");
+  });
+
+  it("omits a note with no task entries at all (caller falls back to body scan)", () => {
+    const map = buildTaskFacetByNoteId(taskIndex([]));
+
+    expect(map.has("1")).toBe(false);
+  });
+
+  it("tracks multiple notes independently", () => {
+    const map = buildTaskFacetByNoteId(
+      taskIndex([
+        makeTaskEntry({ noteId: "open-note", done: false }),
+        makeTaskEntry({ noteId: "done-note", done: true }),
+      ]),
+    );
+
+    expect(map.get("open-note")).toBe("open");
+    expect(map.get("done-note")).toBe("done");
   });
 });

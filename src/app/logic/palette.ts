@@ -1,9 +1,11 @@
 import type {
   SutraPadDocument,
   SutraPadTagEntry,
+  SutraPadTaskIndex,
   SutraPadWorkspace,
 } from "../../types";
 import { buildCombinedTagIndex } from "../../lib/notebook";
+import { buildTaskFacetByNoteId } from "../../lib/tasks";
 
 /**
  * Pure logic for the global command palette (opened with `/`). Builds a flat
@@ -57,8 +59,16 @@ export interface PaletteGroups {
  */
 export const PALETTE_EMPTY_QUERY_RECENT_NOTES = 5;
 
+/**
+ * `taskIndex` (Phase 2 notes-scaling, optional) corrects the `tasks:*`
+ * auto-tag facet for notes that are still body-less placeholders this
+ * session — see `buildTaskFacetByNoteId`'s doc (`lib/tasks.ts`). Omitting it
+ * falls back to scanning each note's body, which is only wrong for a
+ * placeholder note.
+ */
 export function buildPaletteEntries(
   workspace: SutraPadWorkspace,
+  taskIndex?: SutraPadTaskIndex,
 ): PaletteGroups {
   // Order notes newest-first so the empty-query default naturally slices the
   // top of the list and so an active-substring filter preserves a recency
@@ -83,7 +93,12 @@ export function buildPaletteEntries(
   // that ordering verbatim for the palette — the palette's tag group is an
   // alternate surface for the Tags page, so matching its sort keeps the two
   // feeling like the same list.
-  const tagIndex = buildCombinedTagIndex(workspace);
+  const tagIndex = buildCombinedTagIndex(
+    workspace,
+    new Date(),
+    undefined,
+    taskIndex ? buildTaskFacetByNoteId(taskIndex) : undefined,
+  );
   const tags: PaletteEntry[] = tagIndex.tags.map((entry) => ({
     id: `tag:${entry.tag}`,
     kind: "tag",

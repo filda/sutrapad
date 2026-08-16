@@ -540,6 +540,27 @@ describe("deriveAutoTags: tasks", () => {
     expect(tags).not.toContain("tasks:open");
     expect(tags).not.toContain("tasks:none");
   });
+
+  // Phase 2 notes-scaling: a placeholder note's body is always "" (no
+  // checkboxes to scan), so without an override every placeholder would
+  // wrongly report tasks:none regardless of its real task state. The
+  // `taskFacet` param lets a caller (armed with the resident task index)
+  // supply the real answer instead.
+  it("uses the taskFacet override instead of scanning the body when provided", () => {
+    const emptyBodyNote = makeNote({ body: "" });
+
+    expect(deriveAutoTags(emptyBodyNote, NOW, "open")).toContain("tasks:open");
+    expect(deriveAutoTags(emptyBodyNote, NOW, "open")).not.toContain("tasks:none");
+
+    expect(deriveAutoTags(emptyBodyNote, NOW, "done")).toContain("tasks:done");
+  });
+
+  it("falls back to the body scan when no override is given", () => {
+    const noteWithOpenTask = makeNote({ body: "- [ ] real open task" });
+
+    expect(deriveAutoTags(noteWithOpenTask, NOW)).toContain("tasks:open");
+    expect(deriveAutoTags(noteWithOpenTask, NOW, undefined)).toContain("tasks:open");
+  });
 });
 
 describe("deriveAutoTags: domains are handled by the Links page, not tags", () => {

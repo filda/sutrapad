@@ -15,7 +15,11 @@ import type { MenuItemId } from "../logic/menu";
 import { applyVisibleActiveNoteSelection, syncTagFiltersToLocation } from "../sync-helpers";
 import { mountPalette, type PaletteHandle } from "../view/palette";
 import type { PaletteAccess } from "../view/palette-types";
-import type { SutraPadTagFilterMode, SutraPadWorkspace } from "../../types";
+import type {
+  SutraPadTagFilterMode,
+  SutraPadTaskIndex,
+  SutraPadWorkspace,
+} from "../../types";
 
 /**
  * Pages whose render honours `selectedTagFilters`. When a palette tag pick
@@ -35,6 +39,11 @@ export interface WirePaletteAccessOptions {
   host: HTMLElement;
   getWorkspace: () => SutraPadWorkspace;
   setWorkspace: (next: SutraPadWorkspace) => void;
+  /**
+   * Resident task index (Phase 2 notes-scaling) — corrects the palette's
+   * tag group for placeholder notes. See `buildPaletteEntries`'s doc.
+   */
+  getTaskIndex: () => SutraPadTaskIndex;
   /**
    * Reads the currently active page so the tag-pick handler can decide
    * whether to keep the user on it (notes/links/tasks/tags all visualise
@@ -89,7 +98,7 @@ export function wirePaletteAccess(options: WirePaletteAccessOptions): PaletteAcc
     if (handle !== null) return;
     handle = mountPalette({
       host: options.host,
-      groups: buildPaletteEntries(options.getWorkspace()),
+      groups: buildPaletteEntries(options.getWorkspace(), options.getTaskIndex()),
       selectedTagFilters: options.getSelectedTagFilters(),
       onSelectEntry: (entry) => {
         handle = null;
@@ -161,7 +170,10 @@ export function wirePaletteAccess(options: WirePaletteAccessOptions): PaletteAcc
   return {
     open,
     refresh: (workspace, selectedTagFilters) => {
-      handle?.update(buildPaletteEntries(workspace), selectedTagFilters);
+      handle?.update(
+        buildPaletteEntries(workspace, options.getTaskIndex()),
+        selectedTagFilters,
+      );
     },
     dispose: (): void => {
       // HMR re-runs `createApp` against the same `window`. Without

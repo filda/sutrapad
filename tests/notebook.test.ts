@@ -409,8 +409,7 @@ describe("notebook helpers: indexes and filtering", () => {
         workspace,
         ["device:mobile"],
         "all",
-        now,
-        "2026-04-21T12:00:00.000Z",
+        { now, savedAt: "2026-04-21T12:00:00.000Z" },
       );
 
       const visible = index.tags.map((entry) => entry.tag);
@@ -420,6 +419,88 @@ describe("notebook helpers: indexes and filtering", () => {
       // `device:desktop` only lives on note 2, which was filtered out.
       expect(visible).not.toContain("device:desktop");
     });
+
+});
+
+// Phase 2 notes-scaling: a placeholder note's body is "" (not yet hydrated
+// this session), so without an override its `tasks:*` facet would always
+// come back `tasks:none` regardless of its real state. `taskFacetByNoteId`
+// (sourced from the resident task index) corrects this — see
+// `buildTaskFacetByNoteId` in `lib/tasks.ts`. Kept as sibling describes
+// (rather than folded into the block above) so this file's biggest describe
+// callback doesn't creep past the lint line-count budget.
+describe("Phase 2 taskFacetByNoteId overrides", () => {
+  function makePlaceholder(): SutraPadDocument {
+    return makeNote({
+      id: "1",
+      body: "",
+      updatedAt: "2026-04-21T08:00:00.000Z",
+      createdAt: "2026-04-21T08:00:00.000Z",
+    });
+  }
+
+  it("collectAllTagsForNote uses the taskFacet override instead of scanning an empty placeholder body", () => {
+    const now = new Date("2026-04-21T12:00:00.000Z");
+    const placeholder = makePlaceholder();
+
+    const withoutOverride = collectAllTagsForNote(placeholder, now);
+    expect(withoutOverride.has("tasks:none")).toBe(true);
+
+    const withOverride = collectAllTagsForNote(placeholder, now, "open");
+    expect(withOverride.has("tasks:open")).toBe(true);
+    expect(withOverride.has("tasks:none")).toBe(false);
+  });
+
+  it("filterNotesByTags uses taskFacetByNoteId to match a placeholder note by its real task state", () => {
+    const now = new Date("2026-04-21T12:00:00.000Z");
+    const placeholder = makePlaceholder();
+
+    // Without the override the placeholder's empty body scans as
+    // tasks:none, so a tasks:open filter would wrongly exclude it.
+    expect(
+      filterNotesByTags([placeholder], ["tasks:open"], "all", now),
+    ).toEqual([]);
+
+    expect(
+      filterNotesByTags(
+        [placeholder],
+        ["tasks:open"],
+        "all",
+        now,
+        new Map([["1", "open" as const]]),
+      ),
+    ).toEqual([placeholder]);
+  });
+
+  it("buildCombinedTagIndex uses taskFacetByNoteId to correct the tasks:* facet for a body-less note", () => {
+    const now = new Date("2026-04-21T12:00:00.000Z");
+    const workspace = { activeNoteId: "1", notes: [makePlaceholder()] };
+
+    const withoutOverride = buildCombinedTagIndex(workspace, now);
+    expect(withoutOverride.tags.map((e) => e.tag)).toContain("tasks:none");
+
+    const withOverride = buildCombinedTagIndex(
+      workspace,
+      now,
+      undefined,
+      new Map([["1", "open" as const]]),
+    );
+    const tags = withOverride.tags.map((e) => e.tag);
+    expect(tags).toContain("tasks:open");
+    expect(tags).not.toContain("tasks:none");
+  });
+
+  it("buildAvailableCombinedTagIndex forwards taskFacetByNoteId through to the narrowed index", () => {
+    const now = new Date("2026-04-21T12:00:00.000Z");
+    const workspace = { activeNoteId: "1", notes: [makePlaceholder()] };
+
+    const index = buildAvailableCombinedTagIndex(workspace, [], "all", {
+      now,
+      taskFacetByNoteId: new Map([["1", "done" as const]]),
+    });
+
+    expect(index.tags.map((e) => e.tag)).toContain("tasks:done");
+  });
 });
 
 function summaryIds(r: SutraPadNoteSummary[]): string[] {

@@ -8,6 +8,7 @@ import type {
   SutraPadWorkspace,
 } from "../types";
 import { deriveAutoTags } from "./auto-tags";
+import type { TaskFacet } from "./tasks";
 
 export const DEFAULT_NOTE_TITLE = "Untitled note";
 
@@ -84,17 +85,24 @@ export function buildTagIndex(
  * the auto-tag `device:mobile` are distinct chips (different tag values),
  * so no collision is possible by construction — this is exactly why auto
  * tags are namespaced.
+ *
+ * `taskFacetByNoteId` (Phase 2 notes-scaling, optional) overrides the
+ * `tasks:*` facet per note from the resident task index instead of scanning
+ * `note.body` — see `buildTaskFacetByNoteId` (`lib/tasks.ts`). Every other
+ * facet already survives a not-yet-hydrated placeholder note unchanged, so
+ * this is the only override `deriveAutoTags` needs here.
  */
 export function buildCombinedTagIndex(
   workspace: SutraPadWorkspace,
   now: Date = new Date(),
   savedAt = new Date().toISOString(),
+  taskFacetByNoteId?: ReadonlyMap<string, TaskFacet>,
 ): SutraPadTagIndex {
   const userEntries = buildTagIndex(workspace, savedAt).tags;
 
   const autoNoteIdsByTag = new Map<string, string[]>();
   for (const note of workspace.notes) {
-    for (const tag of deriveAutoTags(note, now)) {
+    for (const tag of deriveAutoTags(note, now, taskFacetByNoteId?.get(note.id))) {
       const existingNoteIds = autoNoteIdsByTag.get(tag) ?? [];
       autoNoteIdsByTag.set(tag, [...existingNoteIds, note.id]);
     }
@@ -132,6 +140,17 @@ export function buildAvailableTagIndex(
   return buildTagIndex({ ...workspace, notes: filteredNotes }, savedAt);
 }
 
+export interface AvailableCombinedTagIndexOptions {
+  now?: Date;
+  savedAt?: string;
+  /**
+   * Phase 2 notes-scaling, optional — overrides the `tasks:*` facet per note
+   * from the resident task index instead of scanning `note.body`. See
+   * `buildCombinedTagIndex`'s doc.
+   */
+  taskFacetByNoteId?: ReadonlyMap<string, TaskFacet>;
+}
+
 /**
  * Combined-index companion to `buildAvailableTagIndex`: narrows the workspace
  * to notes matching the active filter (respecting `mode` so auto and user
@@ -143,9 +162,10 @@ export function buildAvailableCombinedTagIndex(
   workspace: SutraPadWorkspace,
   selectedTagFilters: string[],
   mode: SutraPadTagFilterMode = "all",
-  now: Date = new Date(),
-  savedAt = new Date().toISOString(),
+  options: AvailableCombinedTagIndexOptions = {},
 ): SutraPadTagIndex {
+  const now = options.now ?? new Date();
+  const savedAt = options.savedAt ?? new Date().toISOString();
   const filteredNotes = filterNotesByTags(
     workspace.notes,
     selectedTagFilters,
@@ -156,6 +176,7 @@ export function buildAvailableCombinedTagIndex(
     { ...workspace, notes: filteredNotes },
     now,
     savedAt,
+    options.taskFacetByNoteId,
   );
 }
 
@@ -429,6 +450,7 @@ export function buildLinkIndex(
 // Re-exported here to keep every existing `import … from "./notebook"`
 // call-site working unchanged.
 export {
+  buildTaskFacetByNoteId,
   buildTaskIndex,
   compareTaskEntries,
   countTasksInNote,
@@ -472,13 +494,18 @@ export function filterTagSuggestions(
  * hand-curated `note.tags` and every auto-tag derived from its metadata.
  * Used by `filterNotesByTags`; kept DOM-free and exported so tests can
  * assert the exact set without indirection.
+ *
+ * `taskFacet` (Phase 2 notes-scaling, optional) overrides the `tasks:*`
+ * facet from the resident task index — see `buildCombinedTagIndex`'s doc for
+ * why this is the only facet that needs one.
  */
 export function collectAllTagsForNote(
   note: SutraPadDocument,
   now: Date = new Date(),
+  taskFacet?: TaskFacet,
 ): Set<string> {
   const set = new Set<string>(note.tags);
-  for (const tag of deriveAutoTags(note, now)) {
+  for (const tag of deriveAutoTags(note, now, taskFacet)) {
     set.add(tag);
   }
   return set;
@@ -495,19 +522,26 @@ export function collectAllTagsForNote(
  *   - `"any"`: a note matches if it carries at least one of the selected tags.
  *
  * An empty selection returns the input unchanged under both modes.
+ *
+ * `taskFacetByNoteId` (Phase 2 notes-scaling, optional) — see
+ * `buildCombinedTagIndex`'s doc. Callers that don't pass it (e.g.
+ * `sync-helpers.ts`'s active-note visibility check) keep the original
+ * body-scan behaviour, which is correct as long as the note in question is
+ * hydrated.
  */
 export function filterNotesByTags(
   notes: SutraPadDocument[],
   selectedTags: string[],
   mode: SutraPadTagFilterMode = "all",
   now: Date = new Date(),
+  taskFacetByNoteId?: ReadonlyMap<string, TaskFacet>,
 ): SutraPadDocument[] {
   if (selectedTags.length === 0) {
     return notes;
   }
 
   return notes.filter((note) => {
-    const tagsForNote = collectAllTagsForNote(note, now);
+    const tagsForNote = collectAllTagsForNote(note, now, taskFacetByNoteId?.get(note.id));
     if (mode === "any") {
       return selectedTags.some((tag) => tagsForNote.has(tag));
     }

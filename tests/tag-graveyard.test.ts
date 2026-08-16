@@ -93,6 +93,29 @@ describe("computeLastUsedByTag", () => {
   it("returns an empty map for an empty workspace", () => {
     expect(computeLastUsedByTag(workspaceOf([]), NOW).size).toBe(0);
   });
+
+  // Phase 2 notes-scaling: a placeholder note's body is "" (not yet
+  // hydrated this session), so its real `tasks:open`/`tasks:done` facet
+  // would otherwise never surface in `lastUsedByTag` — a note with real
+  // open tasks would wrongly look like it has none. `taskFacetByNoteId`
+  // (from the resident task index) corrects this per note.
+  it("uses taskFacetByNoteId to track a placeholder note's real tasks:* facet", () => {
+    const ws = workspaceOf([
+      note({ id: "a", updatedAt: daysAgoIso(3), tags: [] }),
+    ]);
+
+    const withoutOverride = computeLastUsedByTag(ws, NOW);
+    expect(withoutOverride.has("tasks:open")).toBe(false);
+    expect(withoutOverride.get("tasks:none")).toBe(daysAgoIso(3));
+
+    const withOverride = computeLastUsedByTag(
+      ws,
+      NOW,
+      new Map([["a", "open" as const]]),
+    );
+    expect(withOverride.get("tasks:open")).toBe(daysAgoIso(3));
+    expect(withOverride.has("tasks:none")).toBe(false);
+  });
 });
 
 describe("isGraveyardTag", () => {
@@ -276,6 +299,29 @@ describe("splitGraveyard", () => {
 
     const { living, graveyard } = splitGraveyard(idx, ws, NOW);
     expect(living.map((e) => e.tag)).toEqual(["writing"]);
+    expect(graveyard).toEqual([]);
+  });
+
+  it("forwards taskFacetByNoteId to computeLastUsedByTag so a placeholder's tasks:open tag isn't wrongly buried", () => {
+    // A solo, 100-day-old `tasks:open` tag would normally sink into the
+    // graveyard (count 1, past the threshold) — but only because the
+    // placeholder's body scan can't see the real open task. The override
+    // makes lastUsed reflect the note's actual (recent) updatedAt instead
+    // of `tasks:none`'s unrelated lastUsed.
+    const ws = workspaceOf([
+      note({ id: "a", updatedAt: daysAgoIso(3), tags: [] }),
+    ]);
+    const idx = index([entry("tasks:open", ["a"], "auto")]);
+
+    const { living, graveyard } = splitGraveyard(
+      idx,
+      ws,
+      NOW,
+      GRAVEYARD_THRESHOLD_DAYS,
+      new Map([["a", "open" as const]]),
+    );
+
+    expect(living.map((e) => e.tag)).toEqual(["tasks:open"]);
     expect(graveyard).toEqual([]);
   });
 });

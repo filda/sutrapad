@@ -95,6 +95,7 @@ function setup(activeMenuItem: MenuItemId, initialFilters: string[] = []) {
     host: document.body,
     getWorkspace: () => workspace,
     setWorkspace,
+    getTaskIndex: () => ({ version: 1, savedAt: "2026-04-21T09:00:00.000Z", tasks: [] }),
     getActiveMenuItem,
     setActiveMenuItem,
     setDetailNoteId,

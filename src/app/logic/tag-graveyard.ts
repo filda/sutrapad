@@ -4,6 +4,7 @@ import type {
   SutraPadWorkspace,
 } from "../../types";
 import { deriveAutoTags } from "../../lib/auto-tags";
+import type { TaskFacet } from "../../lib/tasks";
 
 /**
  * Handoff v2 threshold — a tag with exactly one carrier note that hasn't
@@ -34,16 +35,24 @@ export interface GraveyardSplit {
  * keeps auto-tag graveyard behaviour correct — e.g. `date:today` is always
  * re-derived as today's ISO date, so it can't drift into the graveyard just
  * because the note itself is old.
+ *
+ * `taskFacetByNoteId` (Phase 2 notes-scaling, optional) overrides the
+ * `tasks:*` facet per note from the resident task index instead of scanning
+ * `note.body` — see `buildCombinedTagIndex`'s doc (`lib/notebook.ts`) for why
+ * this is the only facet a not-yet-hydrated placeholder note gets wrong.
  */
 export function computeLastUsedByTag(
   workspace: SutraPadWorkspace,
   now: Date = new Date(),
+  taskFacetByNoteId?: ReadonlyMap<string, TaskFacet>,
 ): Map<string, string> {
   const lastUsed = new Map<string, string>();
 
   for (const note of workspace.notes) {
     const tagsForNote = new Set<string>(note.tags);
-    for (const tag of deriveAutoTags(note, now)) tagsForNote.add(tag);
+    for (const tag of deriveAutoTags(note, now, taskFacetByNoteId?.get(note.id))) {
+      tagsForNote.add(tag);
+    }
 
     for (const tag of tagsForNote) {
       const previous = lastUsed.get(tag);
@@ -91,14 +100,18 @@ export function isGraveyardTag(
  * shouldn't change just because a few tags were culled. The graveyard is
  * re-sorted oldest-first so the most sunset-looking entries sit at the top
  * of the collapsed section, which is what the handoff's muted pile implies.
+ *
+ * `taskFacetByNoteId` (Phase 2 notes-scaling, optional) is forwarded to
+ * `computeLastUsedByTag` — see its doc.
  */
 export function splitGraveyard(
   index: SutraPadTagIndex,
   workspace: SutraPadWorkspace,
   now: Date = new Date(),
   thresholdDays: number = GRAVEYARD_THRESHOLD_DAYS,
+  taskFacetByNoteId?: ReadonlyMap<string, TaskFacet>,
 ): GraveyardSplit {
-  const lastUsedByTag = computeLastUsedByTag(workspace, now);
+  const lastUsedByTag = computeLastUsedByTag(workspace, now, taskFacetByNoteId);
   const living: SutraPadTagEntry[] = [];
   const graveyard: SutraPadTagEntry[] = [];
 

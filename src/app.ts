@@ -9,6 +9,7 @@ import {
   stripEmptyDraftNotes,
   upsertNote,
 } from "./lib/notebook";
+import { buildTaskFacetByNoteId } from "./lib/tasks";
 import type { SutraPadDocument } from "./types";
 import { resolveDisplayedNote } from "./app/logic/displayed-note";
 import { formatBuildStamp } from "./app/logic/formatting";
@@ -328,8 +329,15 @@ export function createApp(root: HTMLElement): void {
     // Combined index covers both user tags and auto-derived tags, so a filter
     // like `device:mobile` survives a workspace reload instead of being
     // silently dropped because `buildTagIndex` only knew about user tags.
+    // `taskFacetByNoteId` corrects the `tasks:*` facet for placeholder notes
+    // (Phase 2 notes-scaling) — see `buildTaskFacetByNoteId`'s doc.
     const availableTags = new Set(
-      buildCombinedTagIndex(workspace$.get()).tags.map((entry) => entry.tag),
+      buildCombinedTagIndex(
+        workspace$.get(),
+        new Date(),
+        undefined,
+        buildTaskFacetByNoteId(taskIndex$.get()),
+      ).tags.map((entry) => entry.tag),
     );
     const currentFilters = selectedTagFilters$.get();
     const nextFilters = currentFilters.filter((tag) => availableTags.has(tag));
@@ -933,6 +941,7 @@ export function createApp(root: HTMLElement): void {
     host: document.body,
     getWorkspace: () => workspace$.get(),
     setWorkspace: setWorkspaceState,
+    getTaskIndex: () => taskIndex$.get(),
     getActiveMenuItem: () => activeMenuItem$.get(),
     setActiveMenuItem: setActiveMenuItemState,
     setDetailNoteId: setDetailNoteIdState,

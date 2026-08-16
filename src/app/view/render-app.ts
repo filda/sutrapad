@@ -25,6 +25,7 @@ import {
   type NotebookPersona,
 } from "../../lib/notebook-persona";
 import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
+import { buildTaskFacetByNoteId } from "../../lib/tasks";
 import { createOgImageResolver } from "../logic/og-image-resolver";
 import type { LexiconStore } from "../../services/drive/lexicon-store";
 import { pickNoteThumbSeed } from "../logic/link-thumb-seed";
@@ -362,8 +363,15 @@ export function renderAppPage({
   // Auto-tag lookup is also consumed below by the editor-card on the detail
   // route, but the topbar needs it for chip styling too, so we build it once
   // at the top of the render pass and hand both surfaces the same Set.
+  // `taskFacetByNoteId` corrects the `tasks:*` facet for placeholder notes
+  // (Phase 2 notes-scaling) — see `buildTaskFacetByNoteId`'s doc.
   const autoTagLookup = new Set(
-    buildCombinedTagIndex(workspace).tags
+    buildCombinedTagIndex(
+      workspace,
+      new Date(),
+      undefined,
+      buildTaskFacetByNoteId(taskIndex),
+    ).tags
       .filter((entry) => entry.kind === "auto")
       .map((entry) => entry.tag),
   );
@@ -477,6 +485,7 @@ export function renderAppPage({
       page.append(
         buildTagsPage({
           workspace,
+          taskIndex,
           selectedTagFilters,
           filterMode,
           currentNoteId,

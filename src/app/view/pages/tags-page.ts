@@ -11,10 +11,12 @@ import {
   type TagClassId,
 } from "../../logic/tag-class";
 import { splitGraveyard } from "../../logic/tag-graveyard";
+import { buildTaskFacetByNoteId } from "../../../lib/tasks";
 import type {
   SutraPadTagEntry,
   SutraPadTagFilterMode,
   SutraPadTagIndex,
+  SutraPadTaskIndex,
   SutraPadWorkspace,
 } from "../../../types";
 import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
@@ -27,6 +29,12 @@ import { buildTagPill } from "../shared/tag-pill";
 
 export interface TagsPageOptions {
   workspace: SutraPadWorkspace;
+  /**
+   * Resident task index (Phase 2 notes-scaling) — used to correct the
+   * `tasks:*` auto-tag facet for notes that are still body-less placeholders
+   * this session. See `buildTaskFacetByNoteId` (`lib/tasks.ts`).
+   */
+  taskIndex: SutraPadTaskIndex;
   selectedTagFilters: string[];
   filterMode: SutraPadTagFilterMode;
   currentNoteId: string;
@@ -457,6 +465,7 @@ function buildListView(
 
 export function buildTagsPage({
   workspace,
+  taskIndex,
   selectedTagFilters,
   filterMode,
   currentNoteId,
@@ -473,13 +482,24 @@ export function buildTagsPage({
   const section = document.createElement("section");
   section.className = "tags-page";
 
+  // Corrects the `tasks:*` auto-tag facet for placeholder notes (Phase 2
+  // notes-scaling) — see `buildTaskFacetByNoteId`'s doc. Computed once and
+  // threaded through every `deriveAutoTags`-backed call below.
+  const now = new Date();
+  const taskFacetByNoteId = buildTaskFacetByNoteId(taskIndex);
+
   // We build the full combined index (not the narrowed "available" one) so
   // the empty-state decision is based on whether *any* tag exists anywhere —
   // narrowing by the current filter would mislead a user whose selection
   // accidentally filtered out every other tag. The left-panel Classes row
   // counts also read from this index so the population never shifts as the
   // user toggles classes off.
-  const fullIndex = buildCombinedTagIndex(workspace);
+  const fullIndex = buildCombinedTagIndex(
+    workspace,
+    now,
+    now.toISOString(),
+    taskFacetByNoteId,
+  );
 
   const noteCount = workspace.notes.length;
   const actions: HTMLElement[] = [
@@ -517,7 +537,13 @@ export function buildTagsPage({
   // workspace, so a tag stays "rare" based on its real history — not whatever
   // subset the current filter has narrowed us to. The resulting set culls
   // the main list and feeds the collapsible section at the bottom.
-  const { graveyard } = splitGraveyard(fullIndex, workspace);
+  const { graveyard } = splitGraveyard(
+    fullIndex,
+    workspace,
+    now,
+    undefined,
+    taskFacetByNoteId,
+  );
   const graveyardTags = new Set(graveyard.map((entry) => entry.tag));
 
   // For the rendered list we use the *available* index: narrows to tags
@@ -529,6 +555,7 @@ export function buildTagsPage({
     workspace,
     selectedTagFilters,
     filterMode,
+    { now, savedAt: now.toISOString(), taskFacetByNoteId },
   );
   const livingAvailable = availableIndex.tags.filter(
     (entry) => !graveyardTags.has(entry.tag),
@@ -595,6 +622,8 @@ export function buildTagsPage({
     workspace.notes,
     selectedTagFilters,
     filterMode,
+    now,
+    taskFacetByNoteId,
   );
 
   if (filteredNotes.length > 0) {

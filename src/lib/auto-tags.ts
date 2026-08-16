@@ -1,5 +1,5 @@
 import type { SutraPadDocument } from "../types";
-import { countTasksInNote } from "./tasks";
+import { countTasksInNote, type TaskFacet } from "./tasks";
 
 /**
  * Automatic tags are derived from the metadata a note already carries —
@@ -27,10 +27,18 @@ import { countTasksInNote } from "./tasks";
  *
  * The `now` parameter is injectable so tests can pin "today" without mocking
  * globals; callers in the app pass `new Date()`.
+ *
+ * `taskFacet` (Phase 2 notes-scaling) lets a caller supply the `tasks:*`
+ * facet from the resident task index instead of scanning `note.body` — the
+ * one facet here that actually needs the body. Every other facet reads
+ * `captureContext`/`location`/`createdAt`, which a not-yet-hydrated
+ * placeholder note carries through unchanged, so only this facet goes wrong
+ * without an override. See `buildTaskFacetByNoteId` (`lib/tasks.ts`).
  */
 export function deriveAutoTags(
   note: SutraPadDocument,
   now: Date = new Date(),
+  taskFacet?: TaskFacet,
 ): string[] {
   const tags = new Set<string>();
 
@@ -47,7 +55,7 @@ export function deriveAutoTags(
   addBatteryTags(tags, note);
   addScrollTags(tags, note);
   addEngagementTags(tags, note);
-  addTaskTags(tags, note);
+  addTaskTags(tags, note, taskFacet);
   // Domains are intentionally *not* emitted as auto-tags: the Links page
   // already gives every saved URL its own first-class row, so a `domain:*`
   // chip in the tag cloud would just be a second, less-informative UI for
@@ -307,7 +315,15 @@ function addEngagementTags(tags: Set<string>, note: SutraPadDocument): void {
  * checklist), distinct from a note that never had tasks; that's why we
  * emit three values rather than a boolean `has-tasks` flag.
  */
-function addTaskTags(tags: Set<string>, note: SutraPadDocument): void {
+function addTaskTags(
+  tags: Set<string>,
+  note: SutraPadDocument,
+  taskFacet?: TaskFacet,
+): void {
+  if (taskFacet) {
+    tags.add(`tasks:${taskFacet}`);
+    return;
+  }
   const { open, done } = countTasksInNote(note);
   if (open === 0 && done === 0) tags.add("tasks:none");
   else if (open === 0) tags.add("tasks:done");
