@@ -832,3 +832,134 @@ describe("buildNotesList — second structural pass", () => {
     expect(list.querySelector(".notebook-row .nr-tags")).toBeNull();
   });
 });
+
+describe("buildNotesList — summary projection edges the card layer reads", () => {
+  it("lands the persona to-go sticker for a note with an open task", () => {
+    // `hasOpenTask` is the only route from the summary's task counts into the
+    // persona layer; the to-go sticker is its single observable effect.
+    const doc = makeNote({ id: "todo", body: "- [ ] buy milk" });
+    const list = renderList("todo", [doc], () => undefined, "cards", {
+      allNotes: [doc],
+      dark: false,
+    });
+    expect(
+      list.querySelector('.note-list-item [data-sticker="to-go"]'),
+    ).not.toBeNull();
+  });
+
+  it("lands no to-go sticker when the note has no open task", () => {
+    // The counterpart: a boundary mutant that treats zero open tasks as "has
+    // open task" would sticker every note in the list.
+    const doc = makeNote({ id: "done", body: "- [x] bought milk" });
+    const list = renderList("done", [doc], () => undefined, "cards", {
+      allNotes: [doc],
+      dark: false,
+    });
+    expect(list.querySelector('.note-list-item [data-sticker="to-go"]')).toBeNull();
+  });
+
+  it("treats a whitespace-only card title as blank and falls back to the headline", () => {
+    // Imported one-liners can carry a title of spaces. Without the trim the
+    // title reads as non-blank, the headline fallback is skipped, and the card
+    // shows "Untitled note" instead of the note's first line.
+    const summary: SutraPadNoteSummary = {
+      id: "ws",
+      title: "   ",
+      headline: "First body line",
+      excerpt: "rest of the body",
+      createdAt: "2026-04-25T10:00:00.000Z",
+      updatedAt: "2026-04-25T10:00:00.000Z",
+    };
+    const list = buildNotesList("ws", [summary], () => undefined, "cards");
+    expect(list.querySelector(".note-list-title")?.textContent).toBe(
+      "First body line",
+    );
+  });
+
+  it("shows the Empty-note placeholder for a summary whose excerpt is an empty string", () => {
+    // An empty-string excerpt must collapse to the placeholder, not to an
+    // empty `.card-excerpt` that leaves a blank line in the card.
+    const summary: SutraPadNoteSummary = {
+      id: "empty-ex",
+      title: "Titled",
+      headline: "",
+      excerpt: "",
+      createdAt: "2026-04-25T10:00:00.000Z",
+      updatedAt: "2026-04-25T10:00:00.000Z",
+    };
+    const list = buildNotesList("empty-ex", [summary], () => undefined, "cards");
+    expect(list.querySelector(".card-excerpt")?.textContent).toBe("Empty note");
+  });
+});
+
+describe("buildNotesList — row mode wiring and fallbacks", () => {
+  it("opens the note when the row itself is clicked", () => {
+    // Rows have no inner interactives, so the click listener is attached to
+    // the row element in `buildNotesList` rather than inside the row builder.
+    const onSelectNote = vi.fn();
+    const list = renderList(
+      "row-1",
+      [makeNote({ id: "row-1", title: "Row note" })],
+      onSelectNote,
+      "list",
+    );
+    document.body.append(list);
+
+    const row = list.querySelector(".notebook-row");
+    expect(row).not.toBeNull();
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(onSelectNote).toHaveBeenCalledTimes(1);
+    expect(onSelectNote).toHaveBeenCalledWith("row-1");
+
+    list.remove();
+  });
+
+  it("falls back to the headline for a row whose title is whitespace-only", () => {
+    const summary: SutraPadNoteSummary = {
+      id: "row-ws",
+      title: "  ",
+      headline: "Row headline",
+      createdAt: "2026-04-25T10:00:00.000Z",
+      updatedAt: "2026-04-25T10:00:00.000Z",
+    };
+    const list = buildNotesList("row-ws", [summary], () => undefined, "list");
+    expect(list.querySelector(".nr-title")?.textContent).toBe("Row headline");
+  });
+
+  it("falls back to the default title for a row with neither title nor headline", () => {
+    const summary: SutraPadNoteSummary = {
+      id: "row-none",
+      title: "",
+      headline: "",
+      createdAt: "2026-04-25T10:00:00.000Z",
+      updatedAt: "2026-04-25T10:00:00.000Z",
+    };
+    const list = buildNotesList("row-none", [summary], () => undefined, "list");
+    expect(list.querySelector(".nr-title")?.textContent).toBe(DEFAULT_NOTE_TITLE);
+  });
+
+  it("omits the row sub-text for a pre-Phase-2 summary that carries no excerpt field", () => {
+    // Distinct from an empty-string excerpt: here the field is absent, so the
+    // `?? ""` default is what keeps a literal out of the row.
+    const summary: SutraPadNoteSummary = {
+      id: "row-bare",
+      title: "Titled",
+      createdAt: "2026-04-25T10:00:00.000Z",
+      updatedAt: "2026-04-25T10:00:00.000Z",
+    };
+    const list = buildNotesList("row-bare", [summary], () => undefined, "list");
+    expect(list.querySelector(".nr-sub")).toBeNull();
+  });
+
+  it("omits the row tag wrapper for a pre-Phase-2 summary that carries no tags field", () => {
+    const summary: SutraPadNoteSummary = {
+      id: "row-untagged",
+      title: "Titled",
+      createdAt: "2026-04-25T10:00:00.000Z",
+      updatedAt: "2026-04-25T10:00:00.000Z",
+    };
+    const list = buildNotesList("row-untagged", [summary], () => undefined, "list");
+    expect(list.querySelector(".nr-tags")).toBeNull();
+  });
+});
