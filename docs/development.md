@@ -186,6 +186,16 @@ This runs:
 npm run test:mutation
 ```
 
+StrykerJS needs TypeScript 6.x. Both its tsconfig preprocessor and the
+`typescript-checker` plugin call `ts.parseConfigFileTextToJson`, which the
+TypeScript 7 rewrite removed — on TypeScript 7 the run dies with
+`TypeError: ts.parseConfigFileTextToJson is not a function` right after
+instrumentation, while `npm run check` stays green because `tsc` itself is
+happy. Stryker 10 makes the same call, so upgrading Stryker is not a way out.
+The `typescript` dependency is therefore held at `^6.0.3`, with matching holds
+in `renovate.json` and `.github/dependabot.yml`; lift all three together once
+Stryker supports TypeScript 7.
+
 This runs StrykerJS mutation testing. The current mutate scope is set in `stryker.config.mjs` and covers:
 
 - `src/lib/**/*.ts` — pure helpers

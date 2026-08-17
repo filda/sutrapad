@@ -1744,3 +1744,881 @@ describe("GoogleDriveStore.rebuildIndexes (Phase 2 maintenance rebuild)", () => 
     expect(saveWorkspaceSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("GoogleDriveStore.loadTaskIndex / loadLinkIndex (Phase 2 folder reconcile)", () => {
+  const folder = () =>
+    driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+
+  it("returns the empty task index verbatim when there is no workspace folder", async () => {
+    // The empty fallback is a contract, not a placeholder: `savedAt: ""`
+    // marks "never persisted", which the Tasks page distinguishes from a
+    // real index whose savedAt is a timestamp.
+    captureFetch(() => fileList([]));
+
+    const store = new GoogleDriveStore("token");
+    await expect(store.loadTaskIndex()).resolves.toEqual({
+      version: 1,
+      savedAt: "",
+      tasks: [],
+    });
+  });
+
+  it("returns the empty task index when the folder exists but carries no tasks file", async () => {
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    await expect(store.loadTaskIndex()).resolves.toEqual({
+      version: 1,
+      savedAt: "",
+      tasks: [],
+    });
+  });
+
+  it("drops tasks whose note is no longer in the folder and keeps the live ones", async () => {
+    // The folder inventory — not the index — decides what still exists.
+    const live = driveFile("nf-live", "note-live.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "live" },
+    });
+    const taskFile = driveFile("tasks-1", "sutrapad-tasks.json", {
+      appProperties: { sutrapad: "true", kind: "tasks" },
+    });
+    const persisted: SutraPadTaskIndex = {
+      version: 1,
+      savedAt: "2026-08-01T00:00:00.000Z",
+      tasks: [
+        {
+          noteId: "live",
+          lineIndex: 0,
+          text: "still here",
+          done: false,
+          noteUpdatedAt: "2026-08-01T00:00:00.000Z",
+        },
+        {
+          noteId: "deleted",
+          lineIndex: 0,
+          text: "note is gone",
+          done: false,
+          noteUpdatedAt: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'tasks'")) return fileList([taskFile]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([live]);
+      if (url.includes("/tasks-1?alt=media")) return jsonResponse(persisted);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const index = await store.loadTaskIndex();
+
+    expect(index.savedAt).toBe("2026-08-01T00:00:00.000Z");
+    expect(index.tasks.map((task) => task.noteId)).toEqual(["live"]);
+  });
+
+  it("derives the live note id from the note-<id>.json filename when appProperties.noteId is absent", async () => {
+    // Path B files (dropped in, never stamped by the app) have no noteId
+    // appProperty, so `collectLiveNoteIds` has to fall back to the filename
+    // — otherwise every task on such a note looks orphaned and gets pruned.
+    const plain = driveFile("nf-plain", "note-dropped.json", {
+      appProperties: {},
+    });
+    const taskFile = driveFile("tasks-1", "sutrapad-tasks.json", {
+      appProperties: { sutrapad: "true", kind: "tasks" },
+    });
+    const persisted: SutraPadTaskIndex = {
+      version: 1,
+      savedAt: "2026-08-02T00:00:00.000Z",
+      tasks: [
+        {
+          noteId: "dropped",
+          lineIndex: 2,
+          text: "keep me",
+          done: false,
+          noteUpdatedAt: "2026-08-02T00:00:00.000Z",
+        },
+      ],
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'tasks'")) return fileList([taskFile]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([plain]);
+      if (url.includes("/tasks-1?alt=media")) return jsonResponse(persisted);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const index = await store.loadTaskIndex();
+
+    expect(index.tasks.map((task) => task.noteId)).toEqual(["dropped"]);
+  });
+
+  it("returns the empty task index when the persisted body fails to fetch", async () => {
+    const taskFile = driveFile("tasks-1", "sutrapad-tasks.json", {
+      appProperties: { sutrapad: "true", kind: "tasks" },
+    });
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'tasks'")) return fileList([taskFile]);
+      if (url.includes("/tasks-1?alt=media")) {
+        return new Response("nope", { status: 500 });
+      }
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    await expect(store.loadTaskIndex()).resolves.toEqual({
+      version: 1,
+      savedAt: "",
+      tasks: [],
+    });
+  });
+
+  it("returns the empty link index verbatim when there is no workspace folder", async () => {
+    captureFetch(() => fileList([]));
+
+    const store = new GoogleDriveStore("token");
+    await expect(store.loadLinkIndex()).resolves.toEqual({
+      version: 1,
+      savedAt: "",
+      links: [],
+    });
+  });
+
+  it("prunes dead note ids from links, drops links left empty, and recomputes count", async () => {
+    const live = driveFile("nf-live", "note-live.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "live" },
+    });
+    const linkFile = driveFile("links-1", "sutrapad-links.json", {
+      appProperties: { sutrapad: "true", kind: "links" },
+    });
+    const persisted: SutraPadLinkIndex = {
+      version: 1,
+      savedAt: "2026-08-03T00:00:00.000Z",
+      links: [
+        {
+          url: "https://kept.example",
+          noteIds: ["live", "deleted"],
+          count: 2,
+          latestUpdatedAt: "2026-08-01T00:00:00.000Z",
+        },
+        {
+          url: "https://dropped.example",
+          noteIds: ["deleted"],
+          count: 1,
+          latestUpdatedAt: "2026-07-01T00:00:00.000Z",
+        },
+      ],
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'links'")) return fileList([linkFile]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([live]);
+      if (url.includes("/links-1?alt=media")) return jsonResponse(persisted);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const index = await store.loadLinkIndex();
+
+    expect(index.links).toEqual([
+      {
+        url: "https://kept.example",
+        noteIds: ["live"],
+        count: 1,
+        latestUpdatedAt: "2026-08-01T00:00:00.000Z",
+      },
+    ]);
+  });
+});
+
+function validNoteBody(id: string, updatedAt = "2026-08-01T00:00:00.000Z") {
+  return {
+    id,
+    title: `note ${id}`,
+    body: "x",
+    createdAt: updatedAt,
+    updatedAt,
+  };
+}
+
+describe("isNoteFileRecord candidate filtering (observable through rebuildIndexes)", () => {
+  // `loadWorkspace` filters candidates twice — `isNoteFileRecord` and then the
+  // `noteId ?? noteIdFromFileName` guard — so a false positive is invisible
+  // there. `rebuildIndexes` hydrates whatever the filter returns, which makes
+  // it the surface where the filter's own decisions are observable.
+  const folder = () =>
+    driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+
+  async function rebuildWith(
+    candidates: Record<string, unknown>[],
+    bodies: Record<string, unknown>,
+  ): Promise<{
+    result: { noteCount: number };
+    saved: ReturnType<typeof vi.spyOn>;
+    fetched: string[];
+  }> {
+    const fetched: string[] = [];
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList(candidates);
+      const media = /\/([^/?]+)\?alt=media/u.exec(url);
+      if (media && bodies[media[1]]) {
+        fetched.push(media[1]);
+        return jsonResponse(bodies[media[1]]);
+      }
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const saved = vi.spyOn(store, "saveWorkspace").mockResolvedValue(undefined);
+    const result = await store.rebuildIndexes();
+    return { result, saved, fetched };
+  }
+
+  it("rebuilds from a canonical note file while never hydrating a footnote-*.json false positive", async () => {
+    // `footnote-1.json` matches Drive's `name contains 'note-'` but is not a
+    // note. Its body here is a perfectly valid note document, so only the
+    // filename check can keep it out.
+    const { result, saved, fetched } = await rebuildWith(
+      [
+        driveFile("nf-real", "note-real.json", { appProperties: {} }),
+        driveFile("nf-foot", "footnote-1.json", { appProperties: {} }),
+      ],
+      { "nf-real": validNoteBody("real"), "nf-foot": validNoteBody("foot") },
+    );
+
+    expect(result).toEqual({ noteCount: 1 });
+    expect(fetched).toEqual(["nf-real"]);
+    const workspace = saved.mock.calls[0][0] as { notes: { id: string }[] };
+    expect(workspace.notes.map((note) => note.id)).toEqual(["real"]);
+  });
+
+  it("accepts a non-canonical filename that carries the sutrapad + kind=note markers", async () => {
+    // The app itself only writes `note-<id>.json`, but a renamed or
+    // externally-created file with the markers is still a note.
+    const { result, fetched } = await rebuildWith(
+      [
+        driveFile("nf-marked", "my-export.json", {
+          appProperties: { sutrapad: "true", kind: "note", noteId: "marked" },
+        }),
+      ],
+      { "nf-marked": validNoteBody("marked") },
+    );
+
+    expect(result).toEqual({ noteCount: 1 });
+    expect(fetched).toEqual(["nf-marked"]);
+  });
+
+  it("rejects a marked artifact whose kind is not note", async () => {
+    // The widened query can return the app's own artifacts; `kind` is what
+    // separates a note from the tags/links/index sidecars.
+    const { result, fetched } = await rebuildWith(
+      [
+        driveFile("nf-tags", "sutrapad-tags.json", {
+          appProperties: { sutrapad: "true", kind: "tags" },
+        }),
+      ],
+      { "nf-tags": validNoteBody("tags-artifact") },
+    );
+
+    expect(result).toEqual({ noteCount: 0 });
+    expect(fetched).toEqual([]);
+  });
+
+  it("rejects a file whose sutrapad marker is not exactly \"true\"", async () => {
+    const { result, fetched } = await rebuildWith(
+      [
+        driveFile("nf-false", "some-file.json", {
+          appProperties: { sutrapad: "false", kind: "note" },
+        }),
+      ],
+      { "nf-false": validNoteBody("not-ours") },
+    );
+
+    expect(result).toEqual({ noteCount: 0 });
+    expect(fetched).toEqual([]);
+  });
+
+  it("tolerates a candidate with no appProperties at all", async () => {
+    // Drive omits `appProperties` entirely for files that never had any, so
+    // the guard has to survive a missing object rather than assume `{}`.
+    const { result, fetched } = await rebuildWith(
+      [driveFile("nf-bare", "unrelated.json", { appProperties: undefined })],
+      { "nf-bare": validNoteBody("bare") },
+    );
+
+    expect(result).toEqual({ noteCount: 0 });
+    expect(fetched).toEqual([]);
+  });
+});
+
+describe("GoogleDriveStore note-body guards and hydration chunking", () => {
+  const folder = () =>
+    driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+
+  function loadWithBody(body: unknown): Promise<{ notes: { id: string }[] }> {
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([
+          driveFile("nf-good", "note-good.json", {
+            appProperties: { sutrapad: "true", kind: "note", noteId: "good" },
+          }),
+          driveFile("nf-bad", "note-bad.json", {
+            appProperties: { sutrapad: "true", kind: "note", noteId: "bad" },
+          }),
+        ]);
+      }
+      if (url.includes("/nf-good?alt=media")) {
+        return jsonResponse({
+          id: "good",
+          title: "Good",
+          body: "x",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        });
+      }
+      if (url.includes("/nf-bad?alt=media")) return jsonResponse(body);
+      return fileList([]);
+    });
+
+    return new GoogleDriveStore("token").loadWorkspace();
+  }
+
+  it("skips a body whose id is an empty string", async () => {
+    // An empty id would still be a string, so only the length check keeps it
+    // out — and a note with no id breaks routing and dedup downstream.
+    const workspace = await loadWithBody({
+      id: "",
+      title: "No id",
+      body: "x",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    });
+
+    expect(workspace.notes.map((note) => note.id)).toEqual(["good"]);
+  });
+
+  it("skips a body whose updatedAt is an empty string", async () => {
+    // `updatedAt` drives sorting and the createdAt backfill; empty is as
+    // unusable as missing.
+    const workspace = await loadWithBody({
+      id: "bad",
+      title: "No timestamp",
+      body: "x",
+      updatedAt: "",
+    });
+
+    expect(workspace.notes.map((note) => note.id)).toEqual(["good"]);
+  });
+
+  it("fetches each note body exactly once when the folder spans several concurrency chunks", async () => {
+    // Chunking must slice the pending window, not re-submit the whole list per
+    // iteration: 30 files means 30 body fetches, not 30 per chunk.
+    const count = 30;
+    const noteFiles = Array.from({ length: count }, (_, i) =>
+      driveFile(`file-${i}`, `note-n${i}.json`, {
+        appProperties: { sutrapad: "true", kind: "note", noteId: `n${i}` },
+      }),
+    );
+    const bodyFetches: string[] = [];
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList(noteFiles);
+      const media = /\/file-(\d+)\?alt=media/u.exec(url);
+      if (media) {
+        bodyFetches.push(media[1]);
+        return jsonResponse({
+          id: `n${media[1]}`,
+          title: "",
+          body: `body ${media[1]}`,
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        });
+      }
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+
+    expect(workspace.notes).toHaveLength(count);
+    expect(bodyFetches).toHaveLength(count);
+    expect(new Set(bodyFetches).size).toBe(count);
+  });
+});
+
+describe("GoogleDriveStore.loadWorkspace fallbacks when the folder yields nothing usable", () => {
+  const folder = () =>
+    driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+
+  it("returns the seeded starter workspace when every candidate body is invalid", async () => {
+    // Note files exist, so the legacy path is skipped, but nothing hydrates.
+    // Without the empty-set guard the active-note pick would dereference an
+    // empty array and the whole load would reject.
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([
+          driveFile("nf-bad", "note-bad.json", { appProperties: {} }),
+        ]);
+      }
+      if (url.includes("/nf-bad?alt=media")) return jsonResponse({ body: "no id" });
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+
+    expect(workspace.notes).toHaveLength(1);
+    expect(workspace.notes[0].title).toBe("My first note");
+    expect(workspace.activeNoteId).toBe(workspace.notes[0].id);
+  });
+
+  it("falls back to the newest note when the index's activeNoteId no longer exists", async () => {
+    const indexFile = driveFile("idx-1", "sutrapad-index.json", {
+      appProperties: { sutrapad: "true", kind: "index" },
+    });
+    const index: SutraPadIndex = {
+      version: 1,
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      savedAt: "2026-08-01T00:00:00.000Z",
+      activeNoteId: "deleted-note",
+      notes: [],
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'head'")) return fileList([]);
+      if (url.includes("'index'")) return fileList([indexFile]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([
+          driveFile("nf-old", "note-old.json", { appProperties: {} }),
+          driveFile("nf-new", "note-new.json", { appProperties: {} }),
+        ]);
+      }
+      if (url.includes("/idx-1?alt=media")) return jsonResponse(index);
+      if (url.includes("/nf-old?alt=media")) {
+        return jsonResponse({
+          id: "old",
+          title: "Old",
+          body: "x",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          updatedAt: "2026-07-01T00:00:00.000Z",
+        });
+      }
+      if (url.includes("/nf-new?alt=media")) {
+        return jsonResponse({
+          id: "new",
+          title: "New",
+          body: "x",
+          createdAt: "2026-08-05T00:00:00.000Z",
+          updatedAt: "2026-08-05T00:00:00.000Z",
+        });
+      }
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+
+    // Notes are sorted newest-first, so the fallback is the newest note.
+    expect(workspace.notes.map((note) => note.id)).toEqual(["new", "old"]);
+    expect(workspace.activeNoteId).toBe("new");
+  });
+
+  it("keeps the index's activeNoteId when that note is still in the folder", async () => {
+    const indexFile = driveFile("idx-1", "sutrapad-index.json", {
+      appProperties: { sutrapad: "true", kind: "index" },
+    });
+    const index: SutraPadIndex = {
+      version: 1,
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      savedAt: "2026-08-01T00:00:00.000Z",
+      activeNoteId: "old",
+      notes: [],
+    };
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'head'")) return fileList([]);
+      if (url.includes("'index'")) return fileList([indexFile]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([
+          driveFile("nf-old", "note-old.json", { appProperties: {} }),
+          driveFile("nf-new", "note-new.json", { appProperties: {} }),
+        ]);
+      }
+      if (url.includes("/idx-1?alt=media")) return jsonResponse(index);
+      if (url.includes("/nf-old?alt=media")) {
+        return jsonResponse({
+          id: "old",
+          title: "Old",
+          body: "x",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          updatedAt: "2026-07-01T00:00:00.000Z",
+        });
+      }
+      if (url.includes("/nf-new?alt=media")) {
+        return jsonResponse({
+          id: "new",
+          title: "New",
+          body: "x",
+          createdAt: "2026-08-05T00:00:00.000Z",
+          updatedAt: "2026-08-05T00:00:00.000Z",
+        });
+      }
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+
+    expect(workspace.activeNoteId).toBe("old");
+  });
+});
+
+const MARKER_ONLY_SWEEP_QUERY =
+  "trashed = false and appProperties has { key='sutrapad' and value='true' }";
+
+/** The `q` search parameter of a Drive list request, or null for non-list URLs. */
+function queryOf(url: string): string | null {
+  return new URL(url).searchParams.get("q");
+}
+
+/** True when the request is the folder-scoped variant of a lookup. */
+function isFolderScoped(url: string): boolean {
+  return queryOf(url)?.includes("in parents") ?? false;
+}
+
+/** Every Drive search query issued, in call order. */
+function searchQueries(calls: FetchCall[]): string[] {
+  return calls
+    .map((call) => queryOf(call.url))
+    .filter((query): query is string => query !== null);
+}
+
+describe("GoogleDriveStore legacy-file lookup fallback ladder", () => {
+  // `findLegacyFile` tries three increasingly broad queries. Each stage must
+  // short-circuit on a hit — a stray extra query is a wasted Drive round trip
+  // on every cold load of a pre-split workspace, and the query texts are the
+  // contract with Drive's search syntax.
+  const folder = () =>
+    driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+
+  const legacyDoc = {
+    id: "legacy-1",
+    title: "Before the split",
+    body: "one file held everything",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-02T00:00:00.000Z",
+  };
+
+  it("stops at the folder-scoped name query when it hits", async () => {
+    const legacyFile = driveFile("legacy-file", "sutrapad-data.json", {
+      appProperties: { sutrapad: "true" },
+    });
+
+    const { calls } = captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("sutrapad-data.json")) return fileList([legacyFile]);
+      if (url.includes("/legacy-file?alt=media")) return jsonResponse(legacyDoc);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+
+    expect(workspace.notes.map((note) => note.id)).toEqual(["legacy-1"]);
+    const legacyLookups = searchQueries(calls).filter((query) =>
+      query.includes("sutrapad-data.json"),
+    );
+    expect(legacyLookups).toEqual([
+      "trashed = false and 'folder-1' in parents and name = 'sutrapad-data.json' and appProperties has { key='sutrapad' and value='true' }",
+    ]);
+  });
+
+  it("falls back to the folder-less name query when the folder-scoped one misses", async () => {
+    // A legacy file that predates the workspace folder lives in Drive root.
+    const legacyFile = driveFile("legacy-file", "sutrapad-data.json", {
+      appProperties: { sutrapad: "true" },
+      parents: [],
+    });
+
+    const { calls } = captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("sutrapad-data.json")) {
+        // Folder-scoped query misses, the global one hits.
+        return isFolderScoped(url) ? fileList([]) : fileList([legacyFile]);
+      }
+      if (url.includes("/legacy-file?alt=media")) return jsonResponse(legacyDoc);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+
+    expect(workspace.notes.map((note) => note.id)).toEqual(["legacy-1"]);
+    expect(searchQueries(calls)).toContain(
+      "trashed = false and name = 'sutrapad-data.json' and appProperties has { key='sutrapad' and value='true' }",
+    );
+  });
+
+  it("falls back to the marker-only sweep when neither name query hits", async () => {
+    // Last resort for a legacy file that was renamed: anything carrying the
+    // app's marker. Only reached when both name queries came back empty.
+    const renamed = driveFile("legacy-file", "my-notes-backup.json", {
+      appProperties: { sutrapad: "true" },
+    });
+
+    const { calls } = captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("sutrapad-data.json")) return fileList([]);
+      if (queryOf(url) === MARKER_ONLY_SWEEP_QUERY) return fileList([renamed]);
+      if (url.includes("/legacy-file?alt=media")) return jsonResponse(legacyDoc);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+
+    expect(workspace.notes.map((note) => note.id)).toEqual(["legacy-1"]);
+    expect(searchQueries(calls)).toContain(MARKER_ONLY_SWEEP_QUERY);
+  });
+
+  it("returns the seeded workspace when every legacy query comes back empty", async () => {
+    const { calls } = captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+
+    expect(workspace.notes).toHaveLength(1);
+    expect(workspace.notes[0].title).toBe("My first note");
+    // All three ladder rungs were tried before giving up.
+    const queries = searchQueries(calls);
+    expect(queries.filter((query) => query.includes("sutrapad-data.json"))).toHaveLength(2);
+    expect(queries).toContain(MARKER_ONLY_SWEEP_QUERY);
+  });
+});
+
+describe("GoogleDriveStore artifact + head lookup short-circuits", () => {
+  const folder = () =>
+    driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+
+  it("does not issue the folder-less artifact query when the folder-scoped head lookup hits", async () => {
+    // `findArtifactFile` falls back to a name-based global query only when the
+    // file isn't in the workspace folder. Hitting Drive twice for every
+    // head/index/tags/links/tasks lookup would triple the cold-load cost.
+    const headFile = driveFile("head-1", "sutrapad-head.json", {
+      appProperties: { sutrapad: "true", kind: "head" },
+    });
+    const indexFile = driveFile("idx-1", "sutrapad-index.json", {
+      appProperties: { sutrapad: "true", kind: "index" },
+    });
+    const noteFile = driveFile("nf-a", "note-a.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "a" },
+    });
+
+    const { calls } = captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'head'")) return fileList([headFile]);
+      if (url.includes("'note'") && url.includes("q=")) return fileList([noteFile]);
+      if (url.includes("/head-1?alt=media")) {
+        return jsonResponse({ version: 1, activeIndexId: "idx-1", savedAt: "x" });
+      }
+      if (url.includes("/idx-1?fields=")) return jsonResponse(indexFile);
+      if (url.includes("/idx-1?alt=media")) {
+        return jsonResponse({
+          version: 1,
+          updatedAt: "2026-08-01T00:00:00.000Z",
+          savedAt: "2026-08-01T00:00:00.000Z",
+          activeNoteId: "a",
+          notes: [],
+        });
+      }
+      if (url.includes("/nf-a?alt=media")) {
+        return jsonResponse({
+          id: "a",
+          title: "A",
+          body: "x",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        });
+      }
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    await store.loadWorkspace();
+
+    const headLookups = searchQueries(calls).filter((query) => query.includes("'head'"));
+    expect(headLookups).toEqual([
+      "trashed = false and 'folder-1' in parents and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='head' }",
+    ]);
+  });
+
+  it("falls back to the index file when the head points at an index that can't be fetched", async () => {
+    // A head whose `activeIndexId` was trashed must not blank the index —
+    // otherwise the stored activeNoteId is lost and the newest note wins.
+    const headFile = driveFile("head-1", "sutrapad-head.json", {
+      appProperties: { sutrapad: "true", kind: "head" },
+    });
+    const indexFile = driveFile("idx-live", "sutrapad-index.json", {
+      appProperties: { sutrapad: "true", kind: "index" },
+    });
+
+    captureFetch((url) => {
+      if (url.includes("google-apps.folder")) return fileList([folder()]);
+      if (url.includes("'head'")) return fileList([headFile]);
+      if (url.includes("'index'")) return fileList([indexFile]);
+      if (url.includes("'note'") && url.includes("q=")) {
+        return fileList([
+          driveFile("nf-old", "note-old.json", { appProperties: {} }),
+          driveFile("nf-new", "note-new.json", { appProperties: {} }),
+        ]);
+      }
+      if (url.includes("/head-1?alt=media")) {
+        return jsonResponse({ version: 1, activeIndexId: "gone", savedAt: "x" });
+      }
+      // The head's index id no longer resolves.
+      if (url.includes("/gone?fields=")) return new Response("nope", { status: 404 });
+      if (url.includes("/idx-live?alt=media")) {
+        return jsonResponse({
+          version: 1,
+          updatedAt: "2026-08-01T00:00:00.000Z",
+          savedAt: "2026-08-01T00:00:00.000Z",
+          activeNoteId: "old",
+          notes: [],
+        });
+      }
+      if (url.includes("/nf-old?alt=media")) {
+        return jsonResponse({
+          id: "old",
+          title: "Old",
+          body: "x",
+          createdAt: "2026-07-01T00:00:00.000Z",
+          updatedAt: "2026-07-01T00:00:00.000Z",
+        });
+      }
+      if (url.includes("/nf-new?alt=media")) {
+        return jsonResponse({
+          id: "new",
+          title: "New",
+          body: "x",
+          createdAt: "2026-08-05T00:00:00.000Z",
+          updatedAt: "2026-08-05T00:00:00.000Z",
+        });
+      }
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    const workspace = await store.loadWorkspace();
+
+    // The fallback index still carried activeNoteId, so it wins over "newest".
+    expect(workspace.activeNoteId).toBe("old");
+  });
+});
+
+describe("GoogleDriveStore.saveWorkspace note-file lookup by id", () => {
+  // A note the app has never uploaded (or whose fileId was lost) is resolved
+  // by its `noteId` appProperty: folder-scoped first, then Drive-wide.
+  async function saveOneNote(
+    respond: (url: string) => Response | null,
+  ): Promise<FetchCall[]> {
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+
+    const { calls } = captureFetch(async (url, init) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      const custom = respond(url);
+      if (custom) return custom;
+      if (url.includes("upload/drive/v3/files")) {
+        const body = init?.body as FormData;
+        const metaText = await (body.get("metadata") as Blob).text();
+        const meta = JSON.parse(metaText) as { name: string };
+        return jsonResponse(driveFile("uploaded", meta.name));
+      }
+      if (url.includes("?fields=")) return jsonResponse({ ...folder, parents: ["folder-1"] });
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    await store.saveWorkspace({
+      notes: [
+        {
+          id: "a",
+          title: "A",
+          body: "hello",
+          tags: [],
+          urls: [],
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+      activeNoteId: "a",
+    });
+    return calls;
+  }
+
+  it("stops at the folder-scoped noteId query when it hits", async () => {
+    const existing = driveFile("nf-a", "note-a.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "a" },
+    });
+
+    const calls = await saveOneNote((url) =>
+      url.includes("'noteId'") ? fileList([existing]) : null,
+    );
+
+    const noteLookups = searchQueries(calls).filter((query) => query.includes("'noteId'"));
+    expect(noteLookups).toEqual([
+      "trashed = false and 'folder-1' in parents and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' } and appProperties has { key='noteId' and value='a' }",
+    ]);
+  });
+
+  it("falls back to the Drive-wide noteId query when the note isn't in the folder", async () => {
+    // The note file exists but was moved out of the workspace folder; the
+    // fallback finds it so the save updates it in place instead of
+    // duplicating it.
+    const strayFile = driveFile("nf-stray", "note-a.json", {
+      appProperties: { sutrapad: "true", kind: "note", noteId: "a" },
+      parents: ["other-folder"],
+    });
+
+    const calls = await saveOneNote((url) => {
+      if (!queryOf(url)?.includes("'noteId'")) return null;
+      return isFolderScoped(url) ? fileList([]) : fileList([strayFile]);
+    });
+
+    const noteLookups = searchQueries(calls).filter((query) => query.includes("'noteId'"));
+    expect(noteLookups).toHaveLength(2);
+    expect(noteLookups[1]).toBe(
+      "trashed = false and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='note' } and appProperties has { key='noteId' and value='a' }",
+    );
+  });
+});

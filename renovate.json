@@ -48,6 +48,11 @@
       "groupName": "fontsource"
     },
     {
+      "description": "TypeScript stays on 6.x — StrykerJS (checked up to 10.0.0) needs the legacy ts.parseConfigFileTextToJson API that TypeScript 7 removed, and the breakage only shows up in the mutation workflow, not in npm run check",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
       "description": "Major bumps need explicit approval via the dashboard issue",
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true

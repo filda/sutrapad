@@ -12,6 +12,15 @@ updates:
     labels:
       - "dependencies"
       - "npm"
+    ignore:
+      # TypeScript must stay on 6.x. StrykerJS (checked up to 10.0.0) calls the
+      # legacy `ts.parseConfigFileTextToJson` API that the TypeScript 7 rewrite
+      # removed, so a major bump makes `npm run test:mutation` crash during
+      # sandbox preparation while `npm run check` stays green — the breakage is
+      # invisible until the Daily Mutation Testing workflow fails. Drop this
+      # entry once Stryker ships TypeScript 7 support.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
