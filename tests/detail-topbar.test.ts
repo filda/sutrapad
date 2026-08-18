@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildDetailTopbar } from "../src/app/view/shared/detail-topbar";
 import type { SutraPadDocument } from "../src/types";
 
@@ -203,5 +203,148 @@ describe("buildDetailTopbar", () => {
       .querySelector<HTMLElement>(".detail-kind-chip")
       ?.dataset.kind;
     expect(after).not.toBe(before);
+  });
+});
+
+/** Text of every crumb in the breadcrumb row, separators excluded. */
+function crumbTexts(element: HTMLElement): string[] {
+  return [...element.querySelectorAll(".crumb")].map((el) => el.textContent ?? "");
+}
+
+function topbarFor(overrides: Partial<SutraPadDocument> & { id: string }) {
+  return buildDetailTopbar({
+    note: makeNote(overrides),
+    syncCrumb: null,
+  }).element;
+}
+
+describe("buildDetailTopbar back button", () => {
+  it("carries the canonical label and reports the click", () => {
+    const onBackToNotes = vi.fn();
+    const handle = buildDetailTopbar({
+      note: null,
+      syncCrumb: null,
+      onBackToNotes,
+    });
+    const button = handle.element.querySelector<HTMLButtonElement>(
+      ".editor-back-button",
+    );
+    expect(button?.textContent).toBe("← Back to notes");
+    expect(button?.type).toBe("button");
+    button?.click();
+    expect(onBackToNotes).toHaveBeenCalledTimes(1);
+  });
+
+  it("is omitted when no handler was passed", () => {
+    const handle = buildDetailTopbar({ note: null, syncCrumb: null });
+    expect(handle.element.querySelector(".editor-back-button")).toBeNull();
+  });
+});
+
+describe("buildDetailTopbar breadcrumb copy", () => {
+  it("always shows word count and read time, singular at one word", () => {
+    expect(crumbTexts(topbarFor({ id: "n", body: "hello" }))).toEqual([
+      "1 word",
+      "1 min read",
+    ]);
+  });
+
+  it("pluralizes the word count and floors read time at one minute", () => {
+    expect(crumbTexts(topbarFor({ id: "n", body: "hello there friend" }))).toEqual([
+      "3 words",
+      "1 min read",
+    ]);
+  });
+
+  it("reads `0 words` on an empty note rather than skipping the crumb", () => {
+    expect(crumbTexts(topbarFor({ id: "n", body: "   " }))).toEqual([
+      "0 words",
+      "1 min read",
+    ]);
+  });
+
+  it("sums open and done tasks into the `open/total` form", () => {
+    // The total is open + done, so a note with one open and two done reads
+    // "1/3", not "1/1" or "1/2".
+    const crumbs = crumbTexts(
+      topbarFor({ id: "n", body: "- [ ] a\n- [x] b\n- [x] c" }),
+    );
+    expect(crumbs).toContain("1/3 tasks open");
+  });
+
+  it("switches to the all-done form, pluralized", () => {
+    expect(crumbTexts(topbarFor({ id: "n", body: "- [x] a\n- [x] b" }))).toContain(
+      "2 tasks done",
+    );
+  });
+
+  it("uses the singular all-done form for a single finished task", () => {
+    expect(crumbTexts(topbarFor({ id: "n", body: "- [x] a" }))).toContain(
+      "1 task done",
+    );
+  });
+
+  it("omits the task crumb entirely for a note with no checkboxes", () => {
+    const crumbs = crumbTexts(topbarFor({ id: "n", body: "just prose" }));
+    expect(crumbs.some((text) => text.includes("task"))).toBe(false);
+  });
+
+  it("counts links in the singular and plural, and omits the crumb at zero", () => {
+    expect(
+      crumbTexts(topbarFor({ id: "n", body: "x", urls: ["https://a.example"] })),
+    ).toContain("1 link");
+    expect(
+      crumbTexts(
+        topbarFor({
+          id: "n",
+          body: "x",
+          urls: ["https://a.example", "https://b.example"],
+        }),
+      ),
+    ).toContain("2 links");
+    const none = crumbTexts(topbarFor({ id: "n", body: "x" }));
+    expect(none.some((text) => text.includes("link"))).toBe(false);
+  });
+
+  it("counts tags in the singular and plural, and omits the crumb at zero", () => {
+    expect(crumbTexts(topbarFor({ id: "n", body: "x", tags: ["work"] }))).toContain(
+      "1 tag",
+    );
+    expect(
+      crumbTexts(topbarFor({ id: "n", body: "x", tags: ["work", "urgent"] })),
+    ).toContain("2 tags");
+    const none = crumbTexts(topbarFor({ id: "n", body: "x" }));
+    expect(none.some((text) => text.includes("tag"))).toBe(false);
+  });
+
+  it("puts the sync crumb last, and drops it when there is nothing to say", () => {
+    const withSync = buildDetailTopbar({
+      note: makeNote({ id: "n", body: "hello" }),
+      syncCrumb: "synced 22:00",
+    }).element;
+    const sync = withSync.querySelector(".crumb-sync");
+    expect(sync?.className).toBe("crumb crumb-sync");
+    expect(sync?.textContent).toBe("synced 22:00");
+    expect(crumbTexts(withSync).at(-1)).toBe("synced 22:00");
+
+    const withoutSync = buildDetailTopbar({
+      note: makeNote({ id: "n", body: "hello" }),
+      syncCrumb: null,
+    }).element;
+    expect(withoutSync.querySelector(".crumb-sync")).toBeNull();
+  });
+
+  it("separates every crumb with one aria-hidden `·`", () => {
+    // Screen readers hear the three facts as separate chunks; the dot is
+    // decoration between them.
+    const element = buildDetailTopbar({
+      note: makeNote({ id: "n", body: "hello", tags: ["work"] }),
+      syncCrumb: "synced 22:00",
+    }).element;
+    const seps = [...element.querySelectorAll(".crumb-sep")];
+    // 4 crumbs (words, read, tag, sync) → 3 separators.
+    expect(seps).toHaveLength(3);
+    expect(seps.every((sep) => sep.getAttribute("aria-hidden") === "true")).toBe(true);
+    expect(seps.every((sep) => sep.textContent === "·")).toBe(true);
   });
 });
