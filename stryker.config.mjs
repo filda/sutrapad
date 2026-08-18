@@ -106,29 +106,38 @@ const config = {
     fileName: "reports/mutation/mutation.json",
   },
   thresholds: {
-    // Loosened 2026-08-17 — deliberately, and temporarily.
+    // Ratcheted 2026-08-17, second pass — the loosening earlier that day
+    // (78/80/85) was explicitly temporary and its condition is now met.
     //
-    // The mutate scope grew from 101 to 110 files that day (see the view
-    // block above). On the old scope the suite measured 90.8 %; with the
-    // newly-promoted pages included the same suite measures **83.1 %**.
-    // Nothing got worse — the score finally covers ~9 000 mutants of view
-    // code that used to be invisible. Keeping `break: 80` would leave
-    // barely 3 pp of headroom, so the gate drops to 78 and the warning
-    // band to 80 while the promoted pages get real tests.
+    // Story of the day, in order: the mutate scope grew from 101 to 110
+    // files, which dropped the measured overall from 90.5 % to 83.4 %
+    // because ~1 400 mutants of view code stopped being invisible. All six
+    // newly-promoted files then got behavioural tests:
     //
-    // The deferred work, worst first (measured 2026-08-17):
-    //   notes-page 22.9 % · lexicon-page 27.4 % · settings-page 28.4 %
-    //   home-page 40.8 % · detail-topbar 55.1 % · persona-decor 57.1 %
-    // Every one of those has a test file that asserts structure but almost
-    // no behaviour — that's the gap, not the promotion.
+    //   notes-page     22.9 → 97.6      home-page      40.8 → 98.6
+    //   lexicon-page   27.4 → 95.2      detail-topbar  55.1 → 100
+    //   settings-page  28.4 → 100       persona-decor  57.1 → 97.1
     //
-    // Ratchet back to `break 82 / low 85 / high 88` once those six clear
-    // ~80 % each; the rest of the suite is already there (38 files at
-    // 100 %, workspace-store 92.0 %, notes-list 97.3 %). See
+    // Composite overall after those passes is **92.0 %** over 109 files
+    // (44 at 100 %, 5 still under 80 %). That number is arithmetic — the
+    // 2026-08-17 full run plus the ten focused re-measurements that
+    // followed it, not a fresh end-to-end run. The nightly `Daily Mutation
+    // Testing` workflow is the confirmation; if it reports materially
+    // lower, walk `break` back rather than leaving CI red.
+    //
+    // `break: 85` keeps ~7 pp of headroom (the band overall has drifted
+    // within between runs is well under 1 pp). `low: 88` puts a yellow
+    // warning just below the current level, `high: 90` stays reachable
+    // without being permanent-green.
+    //
+    // Next ratchet (`break 88 / low 90 / high 92`) wants the last five
+    // sub-80 files: focus-refresh 72.7 · og-image 74.3 ·
+    // lexicon/typeahead 76.7 · links-page 76.7 · active-page 78.1 (that
+    // last one needs the stacked-fallback refactor, not tests). See
     // `project_sutrapad_mutation_2026_08.md` (auto-memory) for the map.
-    high: 85,
-    low: 80,
-    break: 78,
+    high: 90,
+    low: 88,
+    break: 85,
   },
   vitest: {
     configFile: "vitest.config.ts",
