@@ -84,4 +84,12 @@ describe("filterTargetSuggestions", () => {
       "prach",
     ]);
   });
+
+  it("returns an empty list for a negative limit even with an empty query", () => {
+    // The `limit <= 0` guard is the only thing standing between a negative
+    // limit and `allTargets.slice(0, -1)`, which would silently return every
+    // target but the last instead of nothing.
+    expect(filterTargetSuggestions("", ["praha", "brno", "plzen"], -1)).toEqual([]);
+    expect(filterTargetSuggestions("   ", ["praha", "brno", "plzen"], -2)).toEqual([]);
+  });
 });

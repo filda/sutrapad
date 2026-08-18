@@ -264,4 +264,71 @@ describe("createFocusRefreshCoordinator", () => {
 
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  it("uses a 15-second default throttle window", async () => {
+    // The default is only exercised when `minIntervalMs` is omitted, so it
+    // needs its own test: a trigger one second later must still be dropped.
+    const handle = fakeEnv("visible");
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const coordinator = createFocusRefreshCoordinator({
+      refresh,
+      canRefresh: () => true,
+      environment: handle.env,
+    });
+
+    await coordinator.trigger();
+    handle.setNow(1000);
+    await coordinator.trigger();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    // Just past the window it runs again.
+    handle.setNow(15_001);
+    await coordinator.trigger();
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets a trigger through exactly at the interval boundary", async () => {
+    // `nowMs - lastRunAt < minIntervalMs` — at exactly the window the wait is
+    // over, so the boundary belongs to the caller, not to the throttle.
+    const handle = fakeEnv("visible");
+    const refresh = vi.fn().mockResolvedValue(undefined);
+    const coordinator = createFocusRefreshCoordinator({
+      refresh,
+      canRefresh: () => true,
+      environment: handle.env,
+      minIntervalMs: 1000,
+    });
+
+    await coordinator.trigger();
+    handle.setNow(999);
+    await coordinator.trigger();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    handle.setNow(1000);
+    await coordinator.trigger();
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("unsubscribes once even when stop() is called twice", () => {
+    // HMR can call stop() on a coordinator that was already torn down; a
+    // second unsubscribe pass would be a double-removal on the real DOM.
+    const unsubscribeVisibility = vi.fn();
+    const unsubscribePageShow = vi.fn();
+    const coordinator = createFocusRefreshCoordinator({
+      refresh: () => Promise.resolve(),
+      canRefresh: () => true,
+      environment: {
+        onVisibilityChange: () => unsubscribeVisibility,
+        onPageShow: () => unsubscribePageShow,
+        getVisibilityState: () => "visible",
+        now: () => 0,
+      },
+    });
+
+    coordinator.stop();
+    coordinator.stop();
+
+    expect(unsubscribeVisibility).toHaveBeenCalledTimes(1);
+    expect(unsubscribePageShow).toHaveBeenCalledTimes(1);
+  });
 });
