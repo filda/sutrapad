@@ -91,3 +91,26 @@ describe("local workspace storage", () => {
     expect(loadLocalWorkspace({ getItem: () => "{nope" }).notes).toHaveLength(1);
   });
 });
+
+describe("local workspace storage — key + empty-notes contract", () => {
+  it("persists under the `sutrapad-local-workspace` key", () => {
+    // The literal key is the contract with every previously-shipped build: a
+    // changed key looks exactly like "all my offline notes disappeared".
+    const setItem = vi.fn();
+    persistLocalWorkspace(
+      { activeNoteId: null, notes: [] },
+      { setItem },
+    );
+    expect(setItem.mock.calls[0][0]).toBe("sutrapad-local-workspace");
+    expect(LOCAL_WORKSPACE_KEY).toBe("sutrapad-local-workspace");
+  });
+
+  it("returns a fresh seeded workspace when the stored one has zero notes", () => {
+    // Without the empty guard the `notes[0].id` fallback for activeNoteId
+    // dereferences an empty array and the whole local load throws — which on
+    // the bootstrap path means a blank app instead of a starter note.
+    const normalized = normalizeWorkspace({ activeNoteId: null, notes: [] });
+    expect(normalized.notes).toHaveLength(1);
+    expect(normalized.activeNoteId).toBe(normalized.notes[0].id);
+  });
+});

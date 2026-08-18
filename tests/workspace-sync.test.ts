@@ -188,3 +188,164 @@ describe("runWorkspaceSave", () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe("runWorkspaceLoad effect contract", () => {
+  it("clears the error banner, applies the loaded workspace, and lands on idle", async () => {
+    // The `setLastError("")` on entry is what wipes a previous failure's
+    // banner; a mutant that passes any other string leaves stale text on
+    // screen through a successful reload.
+    const remote = makeWorkspace("loaded-id");
+    const setLastError = vi.fn();
+    const setWorkspace = vi.fn();
+    const persistLocalWorkspace = vi.fn();
+    const states: string[] = [];
+
+    await runWorkspaceLoad({
+      loadRemoteWorkspace: () => Promise.resolve(remote),
+      setWorkspace,
+      persistLocalWorkspace,
+      setSyncState: (state) => states.push(state),
+      setLastError,
+      render: () => undefined,
+    });
+
+    expect(setLastError).toHaveBeenCalledWith("");
+    expect(setWorkspace).toHaveBeenCalledWith(remote);
+    expect(persistLocalWorkspace).toHaveBeenCalledWith(remote);
+    expect(states).toEqual(["loading", "idle"]);
+  });
+
+  it("surfaces a thrown Error's message and switches to the error state", async () => {
+    const setLastError = vi.fn();
+    const setWorkspace = vi.fn();
+    const states: string[] = [];
+
+    await runWorkspaceLoad({
+      loadRemoteWorkspace: () => Promise.reject(new Error("Drive said no")),
+      setWorkspace,
+      persistLocalWorkspace: () => undefined,
+      setSyncState: (state) => states.push(state),
+      setLastError,
+      render: () => undefined,
+    });
+
+    expect(states).toEqual(["loading", "error"]);
+    expect(setLastError).toHaveBeenLastCalledWith("Drive said no");
+    // A failed load must not clobber whatever the user already has.
+    expect(setWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the generic copy when the thrown value isn't an Error", async () => {
+    // Drive client code can reject with a bare string or a DOMException-like
+    // object; `error.message` would be undefined and the banner would go blank.
+    const setLastError = vi.fn();
+
+    await runWorkspaceLoad({
+      loadRemoteWorkspace: () => Promise.reject("just a string"),
+      setWorkspace: () => undefined,
+      persistLocalWorkspace: () => undefined,
+      setSyncState: () => undefined,
+      setLastError,
+      render: () => undefined,
+    });
+
+    expect(setLastError).toHaveBeenLastCalledWith("Loading from Google Drive failed.");
+  });
+});
+
+describe("runWorkspaceRestoreAfterSignIn effect contract", () => {
+  it("skips the remote push when the merge produced nothing new", async () => {
+    // Equality check exists to avoid a pointless write on every sign-in. With
+    // it forced on, every sign-in costs an upload and flashes "saving".
+    const remote = makeWorkspace();
+    const saveRemoteWorkspace = vi.fn().mockResolvedValue(undefined);
+    const states: string[] = [];
+
+    await runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () => Promise.resolve(remote),
+      saveRemoteWorkspace,
+      // Local is the same workspace, so the merge is a no-op.
+      getWorkspace: () => makeWorkspace(),
+      setWorkspace: () => undefined,
+      persistLocalWorkspace: () => undefined,
+      setSyncState: (state) => states.push(state),
+      setLastError: () => undefined,
+      render: () => undefined,
+    });
+
+    expect(saveRemoteWorkspace).not.toHaveBeenCalled();
+    expect(states).toEqual(["loading", "idle"]);
+    expect(states).not.toContain("saving");
+  });
+
+  it("pushes the merged workspace when the local side had something extra", async () => {
+    const remote = makeWorkspace();
+    const local: SutraPadWorkspace = {
+      activeNoteId: "note-b",
+      notes: [
+        {
+          id: "note-b",
+          title: "B",
+          body: "beta",
+          urls: [],
+          tags: [],
+          createdAt: "2026-04-26T10:00:00.000Z",
+          updatedAt: "2026-04-26T10:00:00.000Z",
+        },
+      ],
+    };
+    const saveRemoteWorkspace = vi.fn().mockResolvedValue(undefined);
+    const states: string[] = [];
+
+    await runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () => Promise.resolve(remote),
+      saveRemoteWorkspace,
+      getWorkspace: () => local,
+      setWorkspace: () => undefined,
+      persistLocalWorkspace: () => undefined,
+      setSyncState: (state) => states.push(state),
+      setLastError: () => undefined,
+      render: () => undefined,
+    });
+
+    expect(saveRemoteWorkspace).toHaveBeenCalledTimes(1);
+    expect(states).toEqual(["loading", "saving", "idle"]);
+  });
+
+  it("clears the error banner on entry and reports a thrown Error's message", async () => {
+    const setLastError = vi.fn();
+    const states: string[] = [];
+
+    await runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () => Promise.reject(new Error("merge failed")),
+      saveRemoteWorkspace: () => Promise.resolve(),
+      getWorkspace: () => makeWorkspace(),
+      setWorkspace: () => undefined,
+      persistLocalWorkspace: () => undefined,
+      setSyncState: (state) => states.push(state),
+      setLastError,
+      render: () => undefined,
+    });
+
+    expect(setLastError).toHaveBeenNthCalledWith(1, "");
+    expect(setLastError).toHaveBeenLastCalledWith("merge failed");
+    expect(states).toEqual(["loading", "error"]);
+  });
+
+  it("falls back to the generic copy on a non-Error rejection", async () => {
+    const setLastError = vi.fn();
+
+    await runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () => Promise.reject({ status: 500 }),
+      saveRemoteWorkspace: () => Promise.resolve(),
+      getWorkspace: () => makeWorkspace(),
+      setWorkspace: () => undefined,
+      persistLocalWorkspace: () => undefined,
+      setSyncState: () => undefined,
+      setLastError,
+      render: () => undefined,
+    });
+
+    expect(setLastError).toHaveBeenLastCalledWith("Loading from Google Drive failed.");
+  });
+});

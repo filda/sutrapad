@@ -262,3 +262,98 @@ describe("createPreferencesIO.cancelPreferencesSave", () => {
     expect(h.fake.savePreferences).not.toHaveBeenCalled();
   });
 });
+
+describe("createPreferencesIO size-guard + logging contract", () => {
+  /**
+   * Builds an IO wired to a set the test owns, so the "current" set can be
+   * shrunk after a load without going through `setDismissedTagAliases`. The
+   * shared `harness` helper hides its ref, and the subset case needs exactly
+   * that: current ⊂ lastSynced.
+   */
+  function ioWithOwnedSet(current: Set<string>, fake: FakeStore) {
+    return createPreferencesIO({
+      getPreferencesStore: () => fake as unknown as GoogleDrivePreferencesStore,
+      retryContext: { refreshSession: vi.fn() },
+      getDismissedTagAliases: () => current,
+      setDismissedTagAliases: () => undefined,
+      getProfile: () => PROFILE,
+    });
+  }
+
+  it("pushes when the current set is a strict subset of the last Drive sync", async () => {
+    // `setsEqual` returns early on differing sizes. Without that check the
+    // element loop only proves current ⊆ lastSynced, so un-dismissing an alias
+    // would look "already synced" and never reach Drive.
+    const fake = createFakeStore();
+    const loaded: SutraPadPreferences = {
+      version: 1,
+      savedAt: "2026-08-01T00:00:00.000Z",
+      dismissedTagAliases: ["cafe|coffee", "praha|prague"],
+    };
+    fake.loadPreferences.mockResolvedValue(loaded);
+
+    const current = new Set(["cafe|coffee", "praha|prague"]);
+    const io = ioWithOwnedSet(current, fake);
+    await io.loadPreferences();
+
+    // The user un-dismisses one pair: same subset, smaller size.
+    current.delete("praha|prague");
+    io.schedulePreferencesSave();
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(fake.savePreferences).toHaveBeenCalledTimes(1);
+    expect(fake.savePreferences.mock.calls[0][0]).toMatchObject({
+      dismissedTagAliases: ["cafe|coffee"],
+    });
+  });
+
+  it("arms no timer at all when the user is signed out at schedule time", async () => {
+    // The signed-out check exists so a background timer never gets armed;
+    // `flushSave` re-checks too, so only the timer count proves this guard.
+    const fake = createFakeStore();
+    const io = createPreferencesIO({
+      getPreferencesStore: () => null,
+      retryContext: { refreshSession: vi.fn() },
+      getDismissedTagAliases: () => new Set(["a|b"]),
+      setDismissedTagAliases: () => undefined,
+      getProfile: () => null,
+    });
+
+    io.schedulePreferencesSave();
+
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(fake.savePreferences).not.toHaveBeenCalled();
+  });
+
+  it("logs the load failure with its own message", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fake = createFakeStore();
+    fake.loadPreferences.mockRejectedValue(new Error("offline"));
+
+    await ioWithOwnedSet(new Set<string>(), fake).loadPreferences();
+
+    expect(warn).toHaveBeenCalledWith(
+      "Failed to load preferences from Drive",
+      expect.any(Error),
+    );
+    warn.mockRestore();
+  });
+
+  it("logs the save failure with its own message and leaves the timer clean", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fake = createFakeStore();
+    fake.savePreferences.mockRejectedValue(new Error("quota"));
+
+    const io = ioWithOwnedSet(new Set(["a|b"]), fake);
+    io.schedulePreferencesSave();
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(warn).toHaveBeenCalledWith(
+      "Failed to save preferences to Drive",
+      expect.any(Error),
+    );
+    expect(vi.getTimerCount()).toBe(0);
+    warn.mockRestore();
+  });
+});

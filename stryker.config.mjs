@@ -27,10 +27,14 @@ const config = {
 
     // Lifecycle wiring with a dedicated test (`lifecycle-palette`).
     // The remaining lifecycle modules (capture-import, handle-new-note,
-    // keyboard-shortcuts) only have indirect coverage via the smoke test
-    // and are deferred until they get focused tests.
+    // keyboard-shortcuts, drag-drop-import, notes-endless-scroll) only have
+    // indirect coverage via the smoke test and are deferred until they get
+    // focused tests. NB `tests/keyboard-shortcuts.test.ts` covers
+    // `src/lib/keyboard-shortcuts.ts`, not the lifecycle module of the same
+    // name — don't promote the latter on the strength of that filename.
     "src/app/lifecycle/palette.ts",
     "src/app/lifecycle/focus-refresh.ts",
+    "src/app/lifecycle/hydrate-note-on-open.ts",
     "src/app/lifecycle/run-location-backfill.ts",
 
     // View modules with dedicated happy-dom tests. Each file below has
@@ -38,17 +42,38 @@ const config = {
     // pragma makes it run in a real DOM. Other view files are still
     // excluded — they only render through `create-app-smoke.test.ts`,
     // which is too coarse to discriminate mutants.
+    //
+    // 2026-08-16: promoted every remaining view module that a test imports at
+    // runtime, on the principle that an unmeasured file is worse than a
+    // low-scoring one — 42 % of `src/` used to sit outside this list and
+    // contributed nothing to the overall score. Files whose only coverage is
+    // `create-app-smoke.test.ts` (notably `src/app.ts`, `render-app.ts`,
+    // `render-callbacks.ts`, `state-store.ts`, `silent-capture-runner.ts`)
+    // stay out until they get focused tests, and `src/services/drive/
+    // lexicon-store.ts` stays out because `lexicon-page.test.ts` only
+    // imports its *type*.
+    // `src/app/view/palette.ts` — NOT in scope. `lifecycle-palette.test.ts`
+    //   imports it but `vi.mock`s the whole module, so the real code never
+    //   runs: a 2026-08-17 measurement put it at 0.00 % with all 166 mutants
+    //   NoCoverage. "A test imports it" is not the promotion bar — check for
+    //   `vi.mock` first.
+    "src/app/view/chrome/app-fab.ts",
     "src/app/view/chrome/mobile-nav.ts",
+    "src/app/view/pages/home-page.ts",
+    // `lexicon-page.ts` had a narrow regression test for the save-status
+    //   rerender bug; the typeahead UI, import card, retry-load and candidate
+    //   picker still lack dedicated coverage. Promoted anyway so the gap is
+    //   visible in the report instead of hidden — if it turns out to drag the
+    //   overall too far, exclude it again with the measured number in hand.
+    "src/app/view/pages/lexicon-page.ts",
     "src/app/view/pages/links-page.ts",
+    "src/app/view/pages/notes-page.ts",
     "src/app/view/pages/privacy-page.ts",
+    "src/app/view/pages/settings-page.ts",
     "src/app/view/pages/tasks-page.ts",
-    // `src/app/view/pages/lexicon-page.ts` — has a narrow regression
-    //   test for the save-status rerender bug, but the rest of the page
-    //   (typeahead UI, import card, retry-load, candidate picker)
-    //   doesn't have dedicated coverage yet. Adding the file to the
-    //   mutate set now would drag overall below break:80. Widen the
-    //   test surface first, then promote.
     "src/app/view/shared/card-header.ts",
+    "src/app/view/shared/detail-stage-persona.ts",
+    "src/app/view/shared/detail-topbar.ts",
     "src/app/view/shared/editor-card.ts",
     "src/app/view/shared/inline.ts",
     "src/app/view/shared/link-thumb.ts",
@@ -56,6 +81,7 @@ const config = {
     "src/app/view/shared/microphone-consent-card.ts",
     "src/app/view/shared/notes-list.ts",
     "src/app/view/shared/page-title.ts",
+    "src/app/view/shared/persona-decor.ts",
     "src/app/view/shared/tag-input.ts",
 
     // Exclusions.
@@ -80,25 +106,29 @@ const config = {
     fileName: "reports/mutation/mutation.json",
   },
   thresholds: {
-    // Ratcheted 2026-05-03 after the mutate-scope expansion + targeted
-    // test pass on services, view files, tasks-page (55 → 77 %), and
-    // privacy-page (14 → 100 %) lifted overall from 82.14 % to 86.08 %.
-    // New `break: 80` leaves ~6 pp headroom against the current floor
-    // — a regression that drops a single 100-percent file (palette,
-    // link-thumb, mobile-nav, drive-client, privacy-page) back to 80 %
-    // would still pass; a broader slip down toward 80 % overall fails
-    // CI. `low: 82` hugs the actual baseline so a dip below 82 %
-    // surfaces yellow before turning red. `high: 85` holds — moving it
-    // to 88 would put the current 86.08 % back in the warning band
-    // immediately, which isn't useful until we sustainably clear 88 %.
-    // Reach the next ratchet by chasing the remaining tasks-page
-    // survivors (buildTaskCard persona stickers, deeper renderIcon
-    // SVG, secondary copy variants) and lifting workspace-store from
-    // 80 % toward 90+. See `project_sutrapad_mutation_gaps.md`
-    // (auto-memory) for the per-file map.
+    // Loosened 2026-08-17 — deliberately, and temporarily.
+    //
+    // The mutate scope grew from 101 to 110 files that day (see the view
+    // block above). On the old scope the suite measured 90.8 %; with the
+    // newly-promoted pages included the same suite measures **83.1 %**.
+    // Nothing got worse — the score finally covers ~9 000 mutants of view
+    // code that used to be invisible. Keeping `break: 80` would leave
+    // barely 3 pp of headroom, so the gate drops to 78 and the warning
+    // band to 80 while the promoted pages get real tests.
+    //
+    // The deferred work, worst first (measured 2026-08-17):
+    //   notes-page 22.9 % · lexicon-page 27.4 % · settings-page 28.4 %
+    //   home-page 40.8 % · detail-topbar 55.1 % · persona-decor 57.1 %
+    // Every one of those has a test file that asserts structure but almost
+    // no behaviour — that's the gap, not the promotion.
+    //
+    // Ratchet back to `break 82 / low 85 / high 88` once those six clear
+    // ~80 % each; the rest of the suite is already there (38 files at
+    // 100 %, workspace-store 92.0 %, notes-list 97.3 %). See
+    // `project_sutrapad_mutation_2026_08.md` (auto-memory) for the map.
     high: 85,
-    low: 82,
-    break: 80,
+    low: 80,
+    break: 78,
   },
   vitest: {
     configFile: "vitest.config.ts",
