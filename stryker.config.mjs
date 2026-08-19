@@ -80,6 +80,13 @@ const config = {
     //   `vi.mock` first.
     "src/app/view/chrome/app-fab.ts",
     "src/app/view/chrome/mobile-nav.ts",
+    // 2026-08-19: `tag-filter-bar.ts` and `capture-page.ts` promoted with
+    // dedicated suites. Both were smoke-test-only, and in both cases the
+    // smoke pass only ever saw one state — the filter bar never focused
+    // (so its dropdown and the whole keyboard contract never ran) and the
+    // capture page never switched platform.
+    "src/app/view/chrome/tag-filter-bar.ts",
+    "src/app/view/pages/capture-page.ts",
     "src/app/view/pages/home-page.ts",
     // `lexicon-page.ts` had a narrow regression test for the save-status
     //   rerender bug; the typeahead UI, import card, retry-load and candidate
