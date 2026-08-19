@@ -330,6 +330,18 @@ function pathsForKind(kind: EmptyStateKind): readonly InkPrimitive[] {
 // `docs/design_handoff_sutrapad2/src/empty_states.jsx`. Stroke widths,
 // dash patterns, and transforms are kept in sync with the handoff so a
 // side-by-side against the prototype reads identically.
+//
+// Everything below here is data, not logic — the same category as
+// `logic/lexicon/stoplist.ts`, which `stryker.config.mjs` excludes outright.
+// A mutated `d` attribute or stroke width yields a mutant that no
+// behavioural test can distinguish from the original unless the test pastes
+// the path data back in, which would make it a copy of the source rather
+// than an assertion about it. `tests/empty-state.test.ts` asserts the
+// *structure* each kind produces (how many primitives, of which element
+// types, with which palette colours) so a table that is truncated, emptied
+// or re-pointed at another kind still fails.
+//
+// Stryker disable all : hand-tuned SVG path data, see above
 
 const TODAY_PATHS: readonly InkPrimitive[] = [
   {

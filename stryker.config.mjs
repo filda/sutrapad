@@ -87,6 +87,15 @@ const config = {
     // capture page never switched platform.
     "src/app/view/chrome/tag-filter-bar.ts",
     "src/app/view/pages/capture-page.ts",
+    // `tags-page.ts` + `empty-state.ts` followed the same day. The Tags page
+    // has four states the smoke test never reaches (first-run, no-selection,
+    // filtered-with-matches, filtered-with-nothing) and three stacked
+    // narrowing mechanisms; `empty-state.ts` carries the copy table both of
+    // them render. NB `empty-state.ts` holds ~350 lines of hand-tuned SVG
+    // path data behind a `// Stryker disable all` comment in the file — data,
+    // not logic, same call as the `lexicon/stoplist.ts` exclusion below.
+    "src/app/view/pages/tags-page.ts",
+    "src/app/view/shared/empty-state.ts",
     "src/app/view/pages/home-page.ts",
     // `lexicon-page.ts` had a narrow regression test for the save-status
     //   rerender bug; the typeahead UI, import card, retry-load and candidate
