@@ -31,8 +31,13 @@ const config = {
     // and the `renderingAtoms` contract — which is what promoted it out of
     // `DEFERRED_FROM_MUTATION`. Its siblings (`render-callbacks.ts`,
     // `render-helpers.ts`, `sync-helpers.ts`, `silent-capture-runner.ts`)
-    // are still smoke-test-only and stay out.
+    // are still smoke-test-only and stay out. `render-callbacks.ts` followed
+    // on 2026-08-19 with `tests/render-callbacks.test.ts` — the callback bag
+    // is a pure function of its 35 injected callbacks, so every handler is
+    // reachable with spies; the `replace*` fakes apply the updater they get
+    // so the writer closures are asserted too, not just call counts.
     "src/app/state-store.ts",
+    "src/app/render-callbacks.ts",
 
     // Lifecycle wiring with a dedicated test (`lifecycle-palette`).
     // The remaining lifecycle modules (capture-import, handle-new-note,

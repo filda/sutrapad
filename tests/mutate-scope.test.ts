@@ -35,7 +35,6 @@ const DEFERRED_FROM_MUTATION: Readonly<Record<string, string>> = {
   "src/main.ts": "bootstrap entry point; no seams to assert against yet",
   "src/types.ts": "type declarations only",
   "src/fonts.ts": "static font registration",
-  "src/app/render-callbacks.ts": "glue; needs a focused test first",
   "src/app/render-helpers.ts": "glue; needs a focused test first",
   "src/app/sync-helpers.ts": "glue; needs a focused test first",
   "src/app/silent-capture-runner.ts": "background runner; needs a focused test first",
