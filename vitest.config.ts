@@ -1,5 +1,21 @@
 import { defineConfig } from "vitest/config";
 
+/**
+ * Vitest auto-enables its `github-actions` reporter whenever `GITHUB_ACTIONS`
+ * is set, and that reporter appends a markdown job summary on every run. Under
+ * Stryker vitest runs once per mutant — ~9 700 times on this repo — so those
+ * appends pile up past GitHub's 1 MB `$GITHUB_STEP_SUMMARY` cap and the
+ * mutation job finishes with a red "upload aborted" annotation even though the
+ * run itself succeeded (seen on the 2026-08-18 nightly: 1 188k).
+ *
+ * Inside a Stryker worker the per-mutant summary has no audience anyway, so pin
+ * the plain reporter there. `STRYKER_MUTATOR_WORKER` is set on every worker
+ * process by `@stryker-mutator/core` (child-process-proxy), which makes it a
+ * reliable "am I a mutant run?" marker. The regular test job keeps its
+ * annotations.
+ */
+const UNDER_STRYKER = process.env.STRYKER_MUTATOR_WORKER !== undefined;
+
 export default defineConfig({
   // The three `__APP_*` globals are injected by `vite.config.ts` via its own
   // `define` block at build/dev time. Vitest does NOT inherit the Vite
@@ -16,6 +32,7 @@ export default defineConfig({
     __APP_COMMIT_HASH__: JSON.stringify("test"),
   },
   test: {
+    ...(UNDER_STRYKER ? { reporters: ["default"] } : {}),
     environment: "node",
     include: ["tests/**/*.test.ts"],
     typecheck: {
