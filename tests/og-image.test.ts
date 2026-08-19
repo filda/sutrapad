@@ -427,3 +427,85 @@ describe("resolveOgImageForUrl", () => {
     expect(cache.store[url]?.imageUrl).toBeNull();
   });
 });
+
+describe("extractOgImageFromHtml — attribute syntax variants", () => {
+  const base = "https://nytimes.com/article/42";
+
+  it("falls back to og:image:url when the canonical tag is absent", () => {
+    const html = `<meta property="og:image:url" content="https://cdn/url.jpg">`;
+    expect(extractOgImageFromHtml(html, base)).toBe("https://cdn/url.jpg");
+  });
+
+  it("falls back to og:image:secure_url when the canonical tag is absent", () => {
+    const html = `<meta property="og:image:secure_url" content="https://cdn/secure.jpg">`;
+    expect(extractOgImageFromHtml(html, base)).toBe("https://cdn/secure.jpg");
+  });
+
+  it("tolerates whitespace around the `=` in property and content", () => {
+    // Spec-legal HTML, and real pages ship it. `\s*` in the attribute patterns
+    // is the only thing that allows it.
+    const html = `<meta property = "og:image" content = "https://cdn/spaced.jpg">`;
+    expect(extractOgImageFromHtml(html, base)).toBe("https://cdn/spaced.jpg");
+  });
+
+  it("reads unquoted property and content values", () => {
+    // The third branch of each attribute pattern — bare-word attributes are
+    // permitted for values without whitespace, and minifiers emit them.
+    const html = `<meta property=og:image content=https://cdn/bare.jpg>`;
+    expect(extractOgImageFromHtml(html, base)).toBe("https://cdn/bare.jpg");
+  });
+
+  it("reads a single-quoted name attribute", () => {
+    // The existing single-quote test covers `property`; the `name` pattern is a
+    // separate regex, so twitter tags need their own fixture.
+    const html = `<meta name='twitter:image' content='https://cdn/tw-single.jpg'>`;
+    expect(extractOgImageFromHtml(html, base)).toBe("https://cdn/tw-single.jpg");
+  });
+
+  it("reads a spaced, unquoted name attribute", () => {
+    const html = `<meta name = twitter:image content = https://cdn/tw-bare.jpg>`;
+    expect(extractOgImageFromHtml(html, base)).toBe("https://cdn/tw-bare.jpg");
+  });
+
+  it("skips a higher-priority tag whose content is whitespace-only", () => {
+    // `content` is trimmed before the truthiness check, so a blank og:image
+    // must not shadow a usable og:image:url below it. Without the trim the
+    // blank value wins and the whole lookup returns null.
+    const html = [
+      `<meta property="og:image" content="   ">`,
+      `<meta property="og:image:url" content="https://cdn/fallback.jpg">`,
+    ].join("");
+    expect(extractOgImageFromHtml(html, base)).toBe("https://cdn/fallback.jpg");
+  });
+
+  it("indexes a name-only meta tag under the name key", () => {
+    // A tag carrying `name` but no `property` has to fall through to the name
+    // branch; treating the missing property as present would drop it entirely.
+    const html = `<meta name="twitter:image" content="https://cdn/name-only.jpg" charset="utf-8">`;
+    expect(extractOgImageFromHtml(html, base)).toBe("https://cdn/name-only.jpg");
+  });
+});
+
+describe("resolveOgImageForUrl — response gating", () => {
+  const url = "https://nytimes.com/article";
+
+  it("does not parse the body of a non-OK proxy response", async () => {
+    // allorigins answers 4xx/5xx with an HTML error page of its own; parsing it
+    // would attach a thumbnail scraped from the proxy's error page.
+    const cache = setupCache();
+    const result = await resolveOgImageForUrl({
+      url,
+      notes: [],
+      getCachedEntry: cache.getCachedEntry,
+      putCachedEntry: cache.putCachedEntry,
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(`<meta property="og:image" content="https://cdn/proxy-error.jpg">`, {
+            status: 502,
+          }),
+        ),
+    });
+    expect(result).toBeNull();
+    expect(cache.store[url]?.imageUrl).toBeNull();
+  });
+});
