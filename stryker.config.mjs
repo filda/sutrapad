@@ -25,6 +25,15 @@ const config = {
     "src/services/drive/preferences-store.ts",
     "src/services/drive/workspace-store.ts",
 
+    // App-level wiring with a dedicated test. `state-store.ts` got
+    // `tests/state-store.test.ts` on 2026-08-19 — route/preference seeding,
+    // the workspace→indexes subscription, every persist subscriber, dispose,
+    // and the `renderingAtoms` contract — which is what promoted it out of
+    // `DEFERRED_FROM_MUTATION`. Its siblings (`render-callbacks.ts`,
+    // `render-helpers.ts`, `sync-helpers.ts`, `silent-capture-runner.ts`)
+    // are still smoke-test-only and stay out.
+    "src/app/state-store.ts",
+
     // Lifecycle wiring with a dedicated test (`lifecycle-palette`).
     // The remaining lifecycle modules (capture-import, handle-new-note,
     // keyboard-shortcuts, drag-drop-import, notes-endless-scroll) only have
