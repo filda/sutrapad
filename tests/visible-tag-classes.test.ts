@@ -199,3 +199,18 @@ describe("toggleTagClassVisibility", () => {
     expect(next).not.toBe(current);
   });
 });
+
+describe("loadStoredVisibleTagClasses whitespace handling", () => {
+  it("treats a whitespace-only slot as a persisted empty set", () => {
+    // Distinct from `null` (nothing persisted → caller falls back to the
+    // default set): the user really did hide every class.
+    const loaded = loadStoredVisibleTagClasses({ getItem: () => "   \n " });
+    expect(loaded).not.toBeNull();
+    expect(loaded?.size).toBe(0);
+  });
+
+  it("parses a value padded with surrounding whitespace", () => {
+    const loaded = loadStoredVisibleTagClasses({ getItem: () => "  topic , place  " });
+    expect([...(loaded ?? [])].toSorted()).toEqual(["place", "topic"]);
+  });
+});

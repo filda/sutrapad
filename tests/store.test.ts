@@ -245,6 +245,64 @@ describe("combine", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("does NOT notify when a real input change collapses to the same output", () => {
+    // The test above stops one step short of the guard it looks like it
+    // covers: its second `a.set(7)` is a no-op at the *atom* level, so
+    // `combine`'s recompute never runs and the `Object.is(cached, next)`
+    // early return is never reached. `Math.max` is the shape that does reach
+    // it — `a` genuinely changes, the atom notifies, `combine` recomputes,
+    // and the result comes out identical.
+    const a = atom(1);
+    const b = atom(5);
+    const peak = combine(a, b, (x, y) => Math.max(x, y));
+    const listener = vi.fn();
+    peak.subscribe(listener);
+
+    a.set(3); // 3 < 5, so the max stays 5
+    expect(peak.get()).toBe(5);
+    expect(listener).not.toHaveBeenCalled();
+
+    a.set(9); // now the max really moves
+    expect(peak.get()).toBe(9);
+    expect(listener).toHaveBeenCalledExactlyOnceWith(9);
+  });
+
+  it("stops notifying a combined subscriber after it unsubscribes", () => {
+    // `combine`'s subscribe returns the teardown; nothing in the suite called
+    // it, so the whole disposer body was uncovered — a leak there keeps a
+    // detached page's listener alive for the rest of the session.
+    const a = atom(1);
+    const b = atom(2);
+    const sum = combine(a, b, (x, y) => x + y);
+    const listener = vi.fn();
+    const unsubscribe = sum.subscribe(listener);
+
+    a.set(10);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+    a.set(20);
+    expect(listener).toHaveBeenCalledTimes(1);
+    // The combined value still tracks its inputs — only the notification stopped.
+    expect(sum.get()).toBe(22);
+  });
+
+  it("keeps notifying the remaining subscribers after one unsubscribes", () => {
+    const a = atom(0);
+    const b = atom(0);
+    const sum = combine(a, b, (x, y) => x + y);
+    const stays = vi.fn();
+    const leaves = vi.fn();
+    sum.subscribe(stays);
+    const unsubscribe = sum.subscribe(leaves);
+
+    unsubscribe();
+    a.set(3);
+
+    expect(stays).toHaveBeenCalledWith(3);
+    expect(leaves).not.toHaveBeenCalled();
+  });
+
   it("composes with computed for chained derivations", () => {
     // The realistic shape from app.ts: combine(workspace, filterMode)
     // fed into another computed that turns into the available tag list.

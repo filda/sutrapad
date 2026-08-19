@@ -15,9 +15,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildLinksPage } from "../src/app/view/pages/links-page";
-import { buildLinkIndex } from "../src/lib/notebook";
+import { buildLinkIndex, DEFAULT_NOTE_TITLE } from "../src/lib/notebook";
 import { buildNoteSummary } from "../src/lib/note-card-meta";
-import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
+import type {
+  SutraPadDocument,
+  SutraPadLinkIndex,
+  SutraPadNoteSummary,
+  SutraPadWorkspace,
+} from "../src/types";
 
 // happy-dom auto-fetches `<img src=…>` URLs and the og-image resolver
 // pings the public proxy on every render. Without this stub the
@@ -692,5 +697,278 @@ describe("buildLinksPage list layout", () => {
     expect(
       page.querySelector(".link-notebooks-label")?.textContent,
     ).toBe("Found in");
+  });
+});
+
+/**
+ * Builds the page from a hand-made link index + summaries instead of deriving
+ * both from a workspace. Several branches only exist for data the deriver can't
+ * produce — a link whose source note is missing, a duplicate note id, an entry
+ * without `latestUpdatedAt`, a pre-Phase-2 summary with no `tags` field.
+ */
+function buildPageFromIndex(
+  links: SutraPadLinkIndex["links"],
+  summaries: SutraPadNoteSummary[],
+  overrides: Partial<Parameters<typeof buildLinksPage>[0]> = {},
+): HTMLElement {
+  return buildLinksPage({
+    linkIndex: { version: 1, savedAt: "2026-04-21T09:00:00.000Z", links },
+    noteSummaries: summaries,
+    selectedTagFilters: [],
+    linksViewMode: "list",
+    onOpenNote: vi.fn(),
+    onOpenCapture: vi.fn(),
+    onChangeLinksView: vi.fn(),
+    onClearTagFilters: vi.fn(),
+    ...overrides,
+  });
+}
+
+function linkEntry(
+  overrides: Partial<SutraPadLinkIndex["links"][number]> = {},
+): SutraPadLinkIndex["links"][number] {
+  return {
+    url: "https://example.com/a",
+    noteIds: ["n"],
+    count: 1,
+    latestUpdatedAt: "2026-04-21T09:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function summary(overrides: Partial<SutraPadNoteSummary> = {}): SutraPadNoteSummary {
+  return {
+    id: "n",
+    title: "Source note",
+    createdAt: "2026-04-21T09:00:00.000Z",
+    updatedAt: "2026-04-21T09:00:00.000Z",
+    tags: [],
+    ...overrides,
+  };
+}
+
+describe("buildLinksPage header copy", () => {
+  const url = { urls: ["https://example.com/a"] };
+
+  it("keeps the title and subtitle copy", () => {
+    const page = buildPage(makeWorkspace([makeNote({ id: "n", ...url })]));
+    expect(page.querySelector(".page-title")?.textContent).toBe(
+      "A library of what caught your eye.",
+    );
+    expect(page.querySelector(".page-title em")?.textContent).toBe("library");
+    expect(page.querySelector(".page-subtitle")?.textContent).toBe(
+      "Every URL you've captured into a note, gathered here with the notebooks they first appeared in.",
+    );
+  });
+
+  it("counts bare links when nothing is filtered", () => {
+    const page = buildPage(makeWorkspace([makeNote({ id: "n", ...url })]));
+    expect(page.querySelector(".page-eyebrow")?.textContent).toBe("Links · 1");
+  });
+
+  it("switches to `N of M` with a singular tag suffix for one filter", () => {
+    const tagged = makeNote({ id: "t", tags: ["work"], urls: ["https://example.com/a"] });
+    const other = makeNote({ id: "o", tags: ["home"], urls: ["https://example.com/b"] });
+    const page = buildPage(makeWorkspace([tagged, other]), ["work"]);
+    expect(page.querySelector(".page-eyebrow")?.textContent).toBe(
+      "Links · 1 of 2 · filtered by 1 tag",
+    );
+  });
+
+  it("pluralizes the tag suffix for two filters", () => {
+    const tagged = makeNote({
+      id: "t",
+      tags: ["work", "urgent"],
+      urls: ["https://example.com/a"],
+    });
+    const other = makeNote({ id: "o", tags: ["home"], urls: ["https://example.com/b"] });
+    const page = buildPage(makeWorkspace([tagged, other]), ["work", "urgent"]);
+    expect(page.querySelector(".page-eyebrow")?.textContent).toBe(
+      "Links · 1 of 2 · filtered by 2 tags",
+    );
+  });
+
+  it("persists the page-intro state under the `links` pageId", () => {
+    window.localStorage.removeItem("sp.intros.v1");
+    buildPage(makeWorkspace([makeNote({ id: "n", ...url })]));
+    expect(window.localStorage.getItem("sp.intros.v1") ?? "").toContain('"links"');
+  });
+});
+
+describe("buildLinksPage card body edges", () => {
+  it("falls back to the bare URL and drops the arrow when the source note is gone", () => {
+    // Data drift: the index still references a note id the summaries no longer
+    // carry. "Open source note" isn't a meaningful action then, so no arrow.
+    const page = buildPageFromIndex([linkEntry({ noteIds: ["missing"] })], [], {
+      linksViewMode: "cards",
+    });
+    const card = page.querySelector(".link-card");
+    expect(card?.querySelector(".link-card-title")?.textContent).toBe(
+      "https://example.com/a",
+    );
+    expect(card?.querySelector(".entity-card-open")).toBeNull();
+    expect(card?.querySelector(".entity-card-head")).toBeNull();
+  });
+
+  it("shows the source note's excerpt and omits it when the excerpt is empty", () => {
+    const withExcerpt = buildPageFromIndex(
+      [linkEntry()],
+      [summary({ excerpt: "the first line of the note" })],
+      { linksViewMode: "cards" },
+    );
+    expect(withExcerpt.querySelector(".link-card .card-excerpt")?.textContent).toBe(
+      "the first line of the note",
+    );
+
+    const blank = buildPageFromIndex([linkEntry()], [summary({ excerpt: "" })], {
+      linksViewMode: "cards",
+    });
+    expect(blank.querySelector(".link-card .card-excerpt")).toBeNull();
+  });
+
+  it("wraps the card body and grid in their layout classes", () => {
+    const page = buildPageFromIndex([linkEntry()], [summary()], {
+      linksViewMode: "cards",
+    });
+    expect(page.querySelector(".links-grid")).not.toBeNull();
+    expect(page.querySelector(".link-card .link-body")).not.toBeNull();
+  });
+
+  it("omits the tag row for a pre-Phase-2 summary with no tags field", () => {
+    const bare: SutraPadNoteSummary = {
+      id: "n",
+      title: "Source note",
+      createdAt: "2026-04-21T09:00:00.000Z",
+      updatedAt: "2026-04-21T09:00:00.000Z",
+    };
+    const page = buildPageFromIndex([linkEntry()], [bare], { linksViewMode: "cards" });
+    expect(page.querySelector(".link-card-tags")).toBeNull();
+  });
+
+  it("omits the saved-date chip when the entry carries no timestamp", () => {
+    const page = buildPageFromIndex(
+      [linkEntry({ latestUpdatedAt: "" })],
+      [summary()],
+      { linksViewMode: "cards" },
+    );
+    expect(page.querySelector(".link-card .card-meta time")).toBeNull();
+  });
+});
+
+/** Value of `--nc-bg` on the first link card, or "" when undecorated. */
+function cardPaperBg(page: HTMLElement): string {
+  return (
+    page.querySelector<HTMLElement>(".link-card")?.style.getPropertyValue("--nc-bg") ?? ""
+  );
+}
+
+describe("buildLinksPage persona layer", () => {
+  const doc: SutraPadDocument = {
+    id: "n",
+    title: "Source note",
+    body: "text",
+    tags: [],
+    urls: ["https://example.com/a"],
+    createdAt: "2026-04-14T09:00:00.000Z",
+    updatedAt: "2026-04-21T09:00:00.000Z",
+  };
+
+  it("stamps the persona modifier on the page and decorates the card", () => {
+    const plain = buildPageFromIndex([linkEntry()], [summary()], {
+      linksViewMode: "cards",
+    });
+    expect(plain.className).toBe("links-page");
+    expect(plain.querySelector(".link-card")?.classList.contains("has-persona")).toBe(
+      false,
+    );
+
+    const persona = buildPageFromIndex([linkEntry()], [summary()], {
+      linksViewMode: "cards",
+      personaOptions: { allNotes: [doc], dark: false },
+    });
+    expect(persona.className).toBe("links-page links-page--persona");
+    const card = persona.querySelector<HTMLElement>(".link-card");
+    expect(card?.classList.contains("has-persona")).toBe(true);
+    expect(card?.style.getPropertyValue("--nc-bg")).not.toBe("");
+  });
+
+  it("passes the dark flag into the persona derivation", () => {
+    const light = cardPaperBg(
+      buildPageFromIndex([linkEntry()], [summary()], {
+        linksViewMode: "cards",
+        personaOptions: { allNotes: [doc], dark: false },
+      }),
+    );
+    const dark = cardPaperBg(
+      buildPageFromIndex([linkEntry()], [summary()], {
+        linksViewMode: "cards",
+        personaOptions: { allNotes: [doc], dark: true },
+      }),
+    );
+    expect(light).not.toBe("");
+    expect(dark).not.toBe(light);
+  });
+
+  it("derives the to-go sticker from the primary summary's open-task count", () => {
+    // The open-task cue comes from the stored counts, not a body scan — the
+    // Links page never loads note bodies.
+    const withOpen = buildPageFromIndex(
+      [linkEntry()],
+      [summary({ tasks: { open: 1, done: 0 } })],
+      { linksViewMode: "cards", personaOptions: { allNotes: [doc], dark: false } },
+    );
+    expect(withOpen.querySelector('[data-sticker="to-go"]')).not.toBeNull();
+
+    const allDone = buildPageFromIndex(
+      [linkEntry()],
+      [summary({ tasks: { open: 0, done: 2 } })],
+      { linksViewMode: "cards", personaOptions: { allNotes: [doc], dark: false } },
+    );
+    expect(allDone.querySelector('[data-sticker="to-go"]')).toBeNull();
+  });
+});
+
+describe("buildLinksPage list layout edges", () => {
+  it("wraps rows in `.links-list` and marks the favicon decorative", () => {
+    const page = buildPageFromIndex([linkEntry()], [summary()]);
+    expect(page.querySelector("ul.links-list")).not.toBeNull();
+    const favicon = page.querySelector<HTMLImageElement>(".link-favicon");
+    // Empty alt: the URL right next to it already says where this goes.
+    expect(favicon?.alt).toBe("");
+    expect(favicon?.getAttribute("alt")).toBe("");
+  });
+
+  it("shows the last-added line with its machine-readable timestamp", () => {
+    const page = buildPageFromIndex([linkEntry()], [summary()]);
+    const lastAdded = page.querySelector<HTMLTimeElement>(".link-last-added");
+    expect(lastAdded?.dateTime).toBe("2026-04-21T09:00:00.000Z");
+    expect(lastAdded?.textContent?.startsWith("Last added ")).toBe(true);
+  });
+
+  it("omits the last-added line when the entry carries no timestamp", () => {
+    const page = buildPageFromIndex([linkEntry({ latestUpdatedAt: "" })], [summary()]);
+    expect(page.querySelector(".link-last-added")).toBeNull();
+    expect(page.querySelector(".link-notebooks")).not.toBeNull();
+  });
+
+  it("renders one chip per distinct source note, deduplicating repeats", () => {
+    // `noteIds` can legitimately repeat when the same note captured the URL
+    // more than once; the chip row is a list of notebooks, not of captures.
+    const page = buildPageFromIndex(
+      [linkEntry({ noteIds: ["n", "n", "m"], count: 3 })],
+      [summary({ id: "n" }), summary({ id: "m", title: "Other note" })],
+    );
+    const chips = [...page.querySelectorAll(".link-notebook-chip")];
+    expect(chips.map((chip) => chip.textContent)).toEqual([
+      "Source note",
+      "Other note",
+    ]);
+  });
+
+  it("falls back to the default title for a chip whose note has none", () => {
+    const page = buildPageFromIndex([linkEntry()], [summary({ title: "   " })]);
+    expect(page.querySelector(".link-notebook-chip")?.textContent).toBe(
+      DEFAULT_NOTE_TITLE,
+    );
   });
 });
