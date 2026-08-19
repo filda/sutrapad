@@ -29,15 +29,22 @@ const config = {
     // `tests/state-store.test.ts` on 2026-08-19 — route/preference seeding,
     // the workspace→indexes subscription, every persist subscriber, dispose,
     // and the `renderingAtoms` contract — which is what promoted it out of
-    // `DEFERRED_FROM_MUTATION`. Its siblings (`render-callbacks.ts`,
-    // `render-helpers.ts`, `sync-helpers.ts`, `silent-capture-runner.ts`)
-    // are still smoke-test-only and stay out. `render-callbacks.ts` followed
+    // `DEFERRED_FROM_MUTATION`. Of its siblings only `silent-capture-runner.ts`
+    // is still smoke-test-only. `render-callbacks.ts` followed
     // on 2026-08-19 with `tests/render-callbacks.test.ts` — the callback bag
     // is a pure function of its 35 injected callbacks, so every handler is
     // reachable with spies; the `replace*` fakes apply the updater they get
     // so the writer closures are asserted too, not just call counts.
     "src/app/state-store.ts",
     "src/app/render-callbacks.ts",
+    // `sync-helpers.ts` / `render-helpers.ts` promoted the same day. Both were
+    // already executed indirectly by `render-callbacks.test.ts` (URL writes,
+    // focus-preserving renders); the dedicated suites add the branches no
+    // handler reaches — the stale `?view=` strip and the "wrote nothing"
+    // early outs in sync-helpers, the hero-title / outside-the-editor focus
+    // paths in render-helpers.
+    "src/app/sync-helpers.ts",
+    "src/app/render-helpers.ts",
 
     // Lifecycle wiring with a dedicated test (`lifecycle-palette`).
     // The remaining lifecycle modules (capture-import, handle-new-note,
