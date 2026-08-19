@@ -196,26 +196,41 @@ The `typescript` dependency is therefore held at `^6.0.3`, with matching holds
 in `renovate.json` and `.github/dependabot.yml`; lift all three together once
 Stryker supports TypeScript 7.
 
-This runs StrykerJS mutation testing. The current mutate scope is set in `stryker.config.mjs` and covers:
+This runs StrykerJS mutation testing. **`stryker.config.mjs` is the single
+source of truth for the mutate scope** — it carries a comment per entry
+explaining why the file is in or out. This page used to duplicate the list and
+went stale the moment the scope was widened (6 view modules documented vs. 21
+actually configured), so it describes the *shape* instead:
 
-- `src/lib/**/*.ts` — pure helpers
-- `src/app/logic/**/*.ts` — DOM-free logic modules
-- `src/app/storage/**/*.ts`, `src/app/session/**/*.ts`, `src/app/capture/**/*.ts` — extracted helper areas
-- `src/services/{google-auth,drive-store}.ts` and `src/services/drive/{client,workspace-store}.ts` — auth + Drive store; tests exercise these via the `drive-store` facade and vitest's related-test resolver picks them up transitively
-- `src/app/lifecycle/palette.ts` — has a dedicated happy-dom test
-- `src/app/view/{chrome/mobile-nav,pages/links-page,pages/privacy-page,pages/tasks-page,shared/link-thumb,shared/notes-list}.ts` — view modules with dedicated happy-dom tests
-
-Explicitly excluded so the score isn't dragged down by meaningless mutants:
-
-- `*.d.ts` — declaration-only
-- `src/app/logic/lexicon/stoplist.ts` — frozen Czech-stopword Set, pure data; mutating each word's StringLiteral generates dozens of survivors no real test can pin
-- `src/app/logic/lexicon/types.ts` — type-only
+- **Globbed wholesale**, so a new module in one of these is mutated
+  automatically: `src/lib/**`, `src/app/logic/**`, `src/app/storage/**`,
+  `src/app/session/**`, `src/app/capture/**`.
+- **Listed one by one**, because their directories also hold modules without
+  dedicated tests: the Drive services, `src/app/lifecycle/*`, and the
+  `src/app/view/**` modules that have a `// @vitest-environment happy-dom`
+  suite of their own.
+- **Explicitly excluded** with a `!` pattern: `*.d.ts`, and pure-data modules
+  like `src/app/logic/lexicon/stoplist.ts` (a frozen Czech-stopword Set —
+  Stryker fires a StringLiteral mutant per word and no real test can pin them)
+  and `src/app/logic/lexicon/types.ts`.
 
 Adding a new source file:
 
-- If it lands in one of the already-globbed directories, the include is automatic.
-- Otherwise, add an explicit path to `mutate:` in the same change as the file. If it's pure data or types, add a matching `!` exclusion so the score reflects logic only.
-- A new file that pulls overall below `thresholds.break` is a signal to either write more tests before merging or to lower `break:` temporarily with a comment explaining the deferred work — never silently merge a file that pulls CI red.
+- If it lands in one of the globbed directories, the include is automatic.
+- Otherwise, add an explicit path to `mutate:` in the same change as the file.
+  If it's pure data or types, add a matching `!` exclusion so the score
+  reflects logic only. If it genuinely has to wait for a test, add it to
+  `DEFERRED_FROM_MUTATION` in `tests/mutate-scope.test.ts` with a reason.
+- **`tests/mutate-scope.test.ts` enforces all of the above** — it fails when a
+  `src/**/*.ts` is none of mutated, `!`-excluded, or deferred-with-a-reason, so
+  a module can no longer go silently unmeasured. It also fails on a mutated
+  module whose only test `vi.mock`s it or imports just its type: that shape
+  reports every mutant as NoCoverage, which is how `src/app/view/palette.ts`
+  sat at 0.00 % with 166 mutants.
+- A new file that pulls overall below `thresholds.break` is a signal to either
+  write more tests before merging or to lower `break:` temporarily with a
+  comment explaining the deferred work — never silently merge a file that pulls
+  CI red.
 
 The HTML report is written to:
 
@@ -362,8 +377,8 @@ Compatibility notes:
 - When a piece of logic becomes awkward to test through DOM setup in `src/app.ts`, extract it into `src/app/logic/**`, `src/app/storage/**`, or another pure helper module first.
 - Coverage and mutation testing both improve faster when new behavior lands in pure modules instead of controller or DOM wiring code.
 - `src/app/view/render-app.ts` is intentionally still mostly untested at the unit level; prefer moving decision-heavy logic out of it before adding large DOM-heavy tests.
-- Stryker mutates the pure-helper areas (`src/lib`, `src/app/{logic,storage,session,capture}`), the auth + Drive services (`src/services/google-auth.ts`, `src/services/drive-store.ts` and the underlying `src/services/drive/{client,workspace-store}.ts`), `src/app/lifecycle/palette.ts`, and the subset of `src/app/view/**` that has dedicated happy-dom tests. The full list lives in `stryker.config.mjs` — keep it in sync when adding new files.
-- View files without a dedicated test, the composition root in `src/app.ts`, and glue modules under `src/app/{render-callbacks,render-helpers,silent-capture-runner,state-store,sync-helpers}.ts` are intentionally not mutated yet — their only coverage is the smoke test, which is too coarse to discriminate mutants. Add a focused test before widening the mutate scope to one of these.
+- Stryker mutates the pure-helper areas (`src/lib`, `src/app/{logic,storage,session,capture}`), the auth + Drive services, the `src/app/lifecycle` modules with focused tests, and the subset of `src/app/view/**` that has dedicated happy-dom tests. The full list lives in `stryker.config.mjs`; `tests/mutate-scope.test.ts` fails if a new module isn't classified, so the two can't drift apart silently.
+- View files without a dedicated test, the composition root in `src/app.ts`, and glue modules under `src/app/{render-callbacks,render-helpers,silent-capture-runner,state-store,sync-helpers}.ts` are intentionally not mutated yet — their only coverage is the smoke test, which is too coarse to discriminate mutants. Add a focused test before widening the mutate scope to one of these; each one is listed with its reason in `DEFERRED_FROM_MUTATION` (`tests/mutate-scope.test.ts`), so that list doubles as the backlog.
 
 ## Structure
 
