@@ -12,7 +12,10 @@ import {
  */
 function normalizeBase(base: string): string {
   const trimmed = base.trim();
-  if (trimmed === "" || trimmed === "/") return "/";
+  // No fast path for `""` / `"/"`: both already fall out of the two lines
+  // below as `"/"` (`""` gains the leading slash, which is also a trailing
+  // one). A separate guard for them was five unkillable mutants pretending to
+  // be a branch.
   const withLeading = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
   return withLeading.endsWith("/") ? withLeading : `${withLeading}/`;
 }
@@ -38,13 +41,14 @@ function readPathSegments(url: string, base: string): string[] {
  */
 export function readActivePageFromLocation(url: string, base: string): MenuItemId {
   const baseWithSlash = normalizeBase(base);
-  const baseWithoutTrailingSlash = baseWithSlash.slice(0, -1);
   const { pathname } = new URL(url);
 
-  if (pathname === baseWithSlash || pathname === baseWithoutTrailingSlash) {
-    return DEFAULT_MENU_ITEM;
-  }
-
+  // One gate, not three. The two paths that used to get their own early
+  // returns land here anyway: `<base>` with its trailing slash leaves an empty
+  // remainder, which is not a menu id, and `<base>` without it fails
+  // `startsWith` — both end at `DEFAULT_MENU_ITEM` like every other miss. The
+  // separate guards were seven mutants no test could kill, because every arm
+  // of the funnel returns the same value.
   if (!pathname.startsWith(baseWithSlash)) {
     return DEFAULT_MENU_ITEM;
   }

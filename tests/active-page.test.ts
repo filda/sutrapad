@@ -48,6 +48,14 @@ describe("readActivePageFromLocation", () => {
     expect(readActivePageFromLocation(url("/sutrapad/add"), BASE)).toBe("notes");
   });
 
+  it("resolves the base path with no trailing slash through the one gate", () => {
+    // After the 2026-08-19 flatten there is no dedicated early return for
+    // `<base>` — it fails `startsWith("<base>/")` and falls out as the default,
+    // which is the same answer the removed guard gave.
+    expect(readActivePageFromLocation(url("/sutrapad"), BASE)).toBe("notes");
+    expect(readActivePageFromLocation(url("/sutrapad?tags=a"), BASE)).toBe("notes");
+  });
+
   it("does not confuse a path that merely shares the base prefix", () => {
     // `/sutrapadXlinks` shares the leading "/sutrapad" string but is not
     // under the "/sutrapad/" base. Without the `startsWith(baseWithSlash)`
@@ -102,6 +110,15 @@ describe("writeActivePageToLocation", () => {
 });
 
 describe("readNoteDetailIdFromLocation", () => {
+  it("refuses a detail path that sits outside the app's base", () => {
+    // The base-prefix guard in `readPathSegments` is only observable when the
+    // *sliced* remainder would itself look like a detail route: with a
+    // one-segment base, dropping the guard turns `/b/notes/n-1` into the
+    // segments `["notes", "n-1"]` and the id leaks through from another app
+    // on the same origin.
+    expect(readNoteDetailIdFromLocation(url("/b/notes/n-1"), "/a/")).toBeNull();
+  });
+
   it("reads a decoded id from a notes/<id> path", () => {
     expect(readNoteDetailIdFromLocation(url("/sutrapad/notes/abc123"), BASE)).toBe(
       "abc123",

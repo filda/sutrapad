@@ -143,38 +143,37 @@ const config = {
     fileName: "reports/mutation/mutation.json",
   },
   thresholds: {
-    // Ratcheted 2026-08-17, second pass — the loosening earlier that day
-    // (78/80/85) was explicitly temporary and its condition is now met.
+    // Ratcheted 2026-08-19 (third pass) from 85/88/90, now that the condition
+    // the previous note set is met: **no file in scope is under 80 %** any
+    // more. `active-page` was the last one at 78.1 %, and it got there by
+    // deleting redundant guards rather than by adding tests — every arm of its
+    // funnel returned `DEFAULT_MENU_ITEM`, so the branches were unkillable by
+    // construction (78.1 → 97.9 with one new test and two guards gone).
     //
-    // Story of the day, in order: the mutate scope grew from 101 to 110
-    // files, which dropped the measured overall from 90.5 % to 83.4 %
-    // because ~1 400 mutants of view code stopped being invisible. All six
-    // newly-promoted files then got behavioural tests:
+    // The day's other work: eight previously unmeasured modules promoted into
+    // scope with dedicated suites (state-store, render-callbacks,
+    // sync-helpers, render-helpers, tag-filter-bar, capture-page, tags-page,
+    // empty-state) and capture-context lifted 84.7 → 96.1. Scope is 117 files.
     //
-    //   notes-page     22.9 → 97.6      home-page      40.8 → 98.6
-    //   lexicon-page   27.4 → 95.2      detail-topbar  55.1 → 100
-    //   settings-page  28.4 → 100       persona-decor  57.1 → 97.1
+    // Composite overall: **93.9 %**. That number is arithmetic — the
+    // 2026-08-17 full run plus every focused re-measurement since, not a fresh
+    // end-to-end run. The method is trustworthy: the 2026-08-18 nightly
+    // reported 92.18 % against a 92.20 % estimate for the same commit. The
+    // nightly `Daily Mutation Testing` workflow stays the confirmation; if it
+    // reports materially lower, walk `break` back rather than leaving CI red.
     //
-    // Composite overall after those passes is **92.0 %** over 109 files
-    // (44 at 100 %, 5 still under 80 %). That number is arithmetic — the
-    // 2026-08-17 full run plus the ten focused re-measurements that
-    // followed it, not a fresh end-to-end run. The nightly `Daily Mutation
-    // Testing` workflow is the confirmation; if it reports materially
-    // lower, walk `break` back rather than leaving CI red.
+    // `break: 88` keeps ~6 pp of headroom (run-to-run drift is well under
+    // 1 pp). `low: 90` puts a yellow warning just below the current level,
+    // `high: 92` stays reachable without being permanent-green.
     //
-    // `break: 85` keeps ~7 pp of headroom (the band overall has drifted
-    // within between runs is well under 1 pp). `low: 88` puts a yellow
-    // warning just below the current level, `high: 90` stays reachable
-    // without being permanent-green.
-    //
-    // Next ratchet (`break 88 / low 90 / high 92`) wants the last five
-    // sub-80 files: focus-refresh 72.7 · og-image 74.3 ·
-    // lexicon/typeahead 76.7 · links-page 76.7 · active-page 78.1 (that
-    // last one needs the stacked-fallback refactor, not tests). See
-    // `project_sutrapad_mutation_2026_08.md` (auto-memory) for the map.
-    high: 90,
-    low: 88,
-    break: 85,
+    // Next ratchet wants the two remaining 80–85 % files (workspace-io 81.3,
+    // note-primary-url 83.3) and the last big unmeasured modules
+    // (`view/render-app.ts` 939 LOC, `silent-capture-runner.ts` 552) — the
+    // latter will *lower* the overall when promoted, so ratchet after that,
+    // not before. See `project_sutrapad_mutation_2026_08.md` (auto-memory).
+    high: 92,
+    low: 90,
+    break: 88,
   },
   vitest: {
     configFile: "vitest.config.ts",
