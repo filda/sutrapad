@@ -763,3 +763,82 @@ describe("createWorkspaceIO importNotes", () => {
     );
   });
 });
+
+// The two `rememberDriveIds([note])` calls on the single-note fetch paths are
+// deliberately redundant — the source says so: a placeholder can only exist
+// because `loadWorkspace` saw the note, and a refresh fetch only happens for
+// an id the inventory just listed. Their `ArrayDeclaration → []` mutants are
+// therefore equivalent, and chasing them would mean asserting bookkeeping that
+// carries no information.
+describe("createWorkspaceIO known-Drive-id bookkeeping", () => {
+  it("drops a note Drive has stopped listing, but only once Drive has confirmed it", async () => {
+    // `knownDriveIds` is the difference between two identical-looking
+    // situations: a local note missing from the inventory because another
+    // device deleted it (drop), and one missing because this device has not
+    // pushed it yet (keep). The set is filled from every successful Drive
+    // read — if that bookkeeping stops, a cross-device delete silently stops
+    // propagating and the note comes back on every refresh.
+    const h = makeHarness();
+    const remote = realNote("remote-1");
+    let local = makeWorkspace([remote]);
+    h.store.loadWorkspace.mockResolvedValue(makeWorkspace([remote]));
+    // Drive no longer lists the note: it was deleted on another device.
+    h.store.loadNoteInventory.mockResolvedValue([]);
+
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => local,
+      setWorkspace: (next) => {
+        local = next;
+        h.setWorkspace(next);
+      },
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    // The load is what teaches this session that "remote-1" exists on Drive.
+    await io.loadWorkspace();
+    await io.refreshWorkspace();
+
+    expect(local.notes.map((note) => note.id)).toEqual([]);
+  });
+
+  it("keeps a note this device has never pushed", async () => {
+    // Same inventory answer (empty), opposite verdict: no Drive read has ever
+    // mentioned `local-only`, so its absence means "not synced yet".
+    const h = makeHarness();
+    let local = makeWorkspace([realNote("local-only")]);
+    h.store.loadNoteInventory.mockResolvedValue([]);
+
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: {
+        refreshSession: h.refreshSession,
+        onProfileRefreshed: h.onProfileRefreshed,
+      },
+      getWorkspace: () => local,
+      setWorkspace: (next) => {
+        local = next;
+        h.setWorkspace(next);
+      },
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+
+    await io.refreshWorkspace();
+
+    expect(local.notes.map((note) => note.id)).toEqual(["local-only"]);
+  });
+});

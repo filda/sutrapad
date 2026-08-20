@@ -69,3 +69,18 @@ describe("deriveNotePrimaryUrl", () => {
     expect(deriveNotePrimaryUrl(note)).toBeNull();
   });
 });
+
+describe("deriveNotePrimaryUrl defensive reads", () => {
+  it("steps over a null entry in a persisted urls array", () => {
+    // `urls` is `string[]` at the type level, but the array is persisted to
+    // localStorage and to Drive: a note written by an older build (or a
+    // hand-edited backup) can carry a null in it. The `?.` in the loop is
+    // what keeps the whole card from throwing on that note — without it the
+    // Notes list stops rendering entirely.
+    const note = makeNote({
+      urls: [null as unknown as string, "https://example.com/real"],
+    });
+
+    expect(deriveNotePrimaryUrl(note)).toBe("https://example.com/real");
+  });
+});
