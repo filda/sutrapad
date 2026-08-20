@@ -118,6 +118,16 @@ const config = {
     "src/app/view/shared/microphone-consent-card.ts",
     "src/app/view/shared/notes-list.ts",
     "src/app/view/shared/page-title.ts",
+    // 2026-08-19, third batch: the shared primitives every page composes.
+    // `tag-pill` and `page-header` were the two files the deferred list
+    // excused as "asserted indirectly" — six suites executed them and none
+    // asserted a hue, an element type or the intro-fade counter. `kind-chip`
+    // joined them: it deliberately mutates itself in place instead of
+    // rebuilding (the editor must not lose caret state), which nothing else
+    // could observe.
+    "src/app/view/shared/kind-chip.ts",
+    "src/app/view/shared/page-header.ts",
+    "src/app/view/shared/tag-pill.ts",
     "src/app/view/shared/persona-decor.ts",
     "src/app/view/shared/tag-input.ts",
 

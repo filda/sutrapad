@@ -56,9 +56,6 @@ const DEFERRED_FROM_MUTATION: Readonly<Record<string, string>> = {
   "src/app/view/shared/editor-sidebar.ts": "no dedicated test yet",
   "src/app/view/shared/hint-banner.ts": "no dedicated test yet",
   "src/app/view/shared/icons.ts": "icon path data; asserted indirectly by its consumers",
-  "src/app/view/shared/kind-chip.ts": "no dedicated test yet",
-  "src/app/view/shared/page-header.ts": "asserted indirectly through the pages that build it",
-  "src/app/view/shared/tag-pill.ts": "asserted indirectly through the pages that build it",
   "src/app/view/update-notification.ts": "no dedicated test yet",
   "src/services/drive/lexicon-store.ts":
     "lexicon-page.test.ts imports only its type, so mutants would be coverage-free",
