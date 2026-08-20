@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildScreenSnapshot,
+  resolveCurrentWeather,
   collectCaptureContext,
   computeScrollSnapshot,
   detectBrowser,
@@ -720,5 +721,461 @@ describe("capture context sensors", () => {
       motionStatus: undefined,
       noiseLevelDb: -20,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Gap-closing block added 2026-08-19 after a focused mutation run put this
+// file at 84.7 % with 35 survivors. Each describe below targets a branch the
+// original suite reached but never discriminated — mostly "the guard that
+// converts a hostile browser API into `undefined`", which is the whole job of
+// this module: capture must never throw, and must never invent a reading.
+//
+// What is left in the report afterwards is equivalent by construction, and
+// there is one recurring shape worth naming: **an empty `catch {}` is
+// indistinguishable from `catch { return undefined; }` when the function ends
+// right after the try/catch** — control falls out of the block and the
+// function returns `undefined` either way. That covers the catch blocks in
+// `resolveBatterySnapshot`, `resolveAmbientLightSnapshot`,
+// `resolveCurrentWeather` and `resolveNoiseLevelDb`. The one exception is
+// `resolveMotionStatus`'s permission catch, where code follows the block — so
+// that one *is* asserted below.
+//
+// Also equivalent: the `?? ""` fallbacks on `platform` and `userAgent` (a junk
+// string matches none of the sniffing branches, so it behaves like the empty
+// one), and the `typeof addEventListener !== "function"` half of the motion
+// guard (with no way to subscribe, the sampling path still ends at
+// `classifyMotion([])` → `undefined`; the `removeEventListener` half is the
+// killable one and is covered).
+//
+// After this block the file measures **220 / 229 (96.1 %)**. The nine left are
+// the four empty-catch pairs, the two `?? ""` fallbacks, the `addEventListener`
+// half of the motion guard, and the redundant `?.` before `trim()` (the chain
+// already short-circuits at `?.brand`). `resolveMotionStatus`'s permission
+// catch is reported as NoCoverage rather than Killed because Stryker's
+// per-test coverage cannot attribute an async continuation to the test that
+// awaited it — the assertion for it is real, see "gives up when the iOS
+// permission gate throws".
+// ---------------------------------------------------------------------------
+
+/** Ambient-light sensor fake whose listeners are keyed by event type. */
+function createAmbientSensor({
+  illuminance = 320 as unknown,
+  emit = true,
+  throwOnConstruct = false,
+}: { illuminance?: unknown; emit?: boolean; throwOnConstruct?: boolean } = {}) {
+  const calls: {
+    added: string[];
+    removed: string[];
+    stopped: number;
+    started: number;
+    cleared?: unknown;
+  } = { added: [], removed: [], stopped: 0, started: 0 };
+  const listeners = new Map<string, Array<() => void>>();
+
+  class FakeSensor {
+    illuminance = illuminance;
+    constructor() {
+      if (throwOnConstruct) throw new Error("sensor unavailable");
+    }
+    addEventListener(type: string, listener: () => void): void {
+      calls.added.push(type);
+      listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+    }
+    removeEventListener(type: string, listener: () => void): void {
+      calls.removed.push(type);
+      listeners.set(
+        type,
+        (listeners.get(type) ?? []).filter((entry) => entry !== listener),
+      );
+    }
+    stop(): void {
+      calls.stopped += 1;
+    }
+    start(): void {
+      calls.started += 1;
+      // A real sensor fires asynchronously; firing on `start` keeps the test
+      // synchronous while still going through the listener registry, so the
+      // registered event *name* is load-bearing.
+      if (emit) for (const listener of listeners.get("reading") ?? []) listener();
+    }
+  }
+
+  const timeouts: Array<() => void> = [];
+  const currentWindow = {
+    innerWidth: 1,
+    innerHeight: 1,
+    AmbientLightSensor: FakeSensor as unknown as WindowLike["AmbientLightSensor"],
+    setTimeout: ((callback: () => void) => {
+      timeouts.push(callback);
+      return 7 as unknown as ReturnType<typeof setTimeout>;
+    }) as typeof setTimeout,
+    clearTimeout: ((handle: unknown) => {
+      calls.cleared = handle;
+    }) as unknown as typeof clearTimeout,
+  } as WindowLike & { AmbientLightSensor: unknown };
+
+  return { currentWindow, calls, timeouts };
+}
+
+describe("capture context device and browser detection edges", () => {
+  it("sizes a mobile-hinted device by its widest dimension", () => {
+    // A phone reports a narrow viewport and a wide screen (or vice versa after
+    // a rotation). Taking the smaller of the two would file every tablet as a
+    // phone.
+    expect(
+      detectDeviceType({ mobileHint: true, viewportWidth: 500, screenWidth: 1400 }),
+    ).toBe("tablet");
+    expect(
+      detectDeviceType({ mobileHint: true, viewportWidth: 400, screenWidth: 600 }),
+    ).toBe("mobile");
+  });
+
+  it("sizes a touch device by its widest dimension too", () => {
+    expect(
+      detectDeviceType({ maxTouchPoints: 5, viewportWidth: 600, screenWidth: 1200 }),
+    ).toBe("tablet");
+    expect(
+      detectDeviceType({ maxTouchPoints: 5, viewportWidth: 600, screenWidth: 800 }),
+    ).toBe("mobile");
+  });
+
+  it("skips the placeholder brand Chromium sends", () => {
+    // `userAgentData.brands` always carries a decoy entry ("Not/A)Brand" and
+    // friends) to keep sniffers honest; picking it would name the browser
+    // after the anti-fingerprinting filler.
+    expect(
+      detectBrowser("Mozilla/5.0 Chrome/123.0", [
+        { brand: "Not/A)Brand", version: "8" },
+        { brand: "Chromium", version: "123" },
+      ]),
+    ).toBe("Chromium");
+  });
+
+  it("trims the brand string it reports", () => {
+    // Chromium pads brand entries in some builds; an untrimmed value ends up
+    // in the note's captured context and in every downstream comparison.
+    expect(
+      detectBrowser("Mozilla/5.0 Chrome/123.0", [{ brand: "  Chromium  ", version: "123" }]),
+    ).toBe("Chromium");
+  });
+
+  it("falls back to the user agent when every brand is a decoy", () => {
+    // `find` returns undefined here, so the whole `?.brand?.trim()` chain has
+    // to stay optional — otherwise capture throws on a browser that only
+    // reports decoys.
+    expect(
+      detectBrowser("Mozilla/5.0 Firefox/126.0", [{ brand: "Not.A/Brand", version: "99" }]),
+    ).toBe("Firefox");
+  });
+});
+
+describe("capture context battery edges", () => {
+  it("reports no charging verdict when the API returns a non-boolean", () => {
+    return expect(
+      resolveBatterySnapshot({
+        getBattery: () =>
+          Promise.resolve({ level: 0.5, charging: "yes" } as unknown as { level: number; charging: boolean }),
+      }),
+    ).resolves.toEqual({ levelPercent: 50, charging: undefined });
+  });
+
+  it("survives a getBattery that rejects", () => {
+    return expect(
+      resolveBatterySnapshot({ getBattery: () => Promise.reject(new Error("no battery")) }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("capture context ambient light edges", () => {
+  it("reads the illuminance through a 'reading' listener and cleans up after itself", async () => {
+    const { currentWindow, calls } = createAmbientSensor({ illuminance: 42 });
+
+    await expect(resolveAmbientLightSnapshot(currentWindow)).resolves.toEqual({
+      ambientLightLux: 42,
+    });
+
+    expect(calls.added).toEqual(["reading"]);
+    // Cleanup is what stops a sensor from streaming for the rest of the
+    // session: the same event name comes off, the timer is cleared, the
+    // hardware is stopped.
+    expect(calls.removed).toEqual(["reading"]);
+    expect(calls.cleared).toBe(7);
+    expect(calls.stopped).toBe(1);
+  });
+
+  it("gives up when the sensor never reports a reading", async () => {
+    const { currentWindow, calls, timeouts } = createAmbientSensor({ emit: false });
+
+    const pending = resolveAmbientLightSnapshot(currentWindow);
+    // Fire the 150 ms bail-out the sensor path arms.
+    for (const callback of timeouts) callback();
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(calls.removed).toEqual(["reading"]);
+    expect(calls.stopped).toBe(1);
+  });
+
+  it("reports nothing when the reading is not a number", async () => {
+    const { currentWindow } = createAmbientSensor({ illuminance: "bright" });
+
+    await expect(resolveAmbientLightSnapshot(currentWindow)).resolves.toBeUndefined();
+  });
+
+  it("survives a sensor constructor that throws", async () => {
+    const { currentWindow } = createAmbientSensor({ throwOnConstruct: true });
+
+    await expect(resolveAmbientLightSnapshot(currentWindow)).resolves.toBeUndefined();
+  });
+});
+
+describe("capture context motion edges", () => {
+  it("refuses to sample without a way to unsubscribe", async () => {
+    // Registering a `devicemotion` listener we can never remove would keep the
+    // accelerometer awake for the rest of the session.
+    const events = gravity([8, 12, 7, 13]);
+    const noRemove = {
+      innerWidth: 1,
+      innerHeight: 1,
+      setTimeout: ((callback: () => void) => {
+        queueMicrotask(callback);
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeout: (() => {}) as typeof clearTimeout,
+      addEventListener: (type: string, listener: (event: unknown) => void) => {
+        if (type !== "devicemotion") return;
+        for (const event of events) listener(event);
+      },
+    } as unknown as WindowLike;
+
+    await expect(resolveMotionStatus(noRemove, MOBILE_NAV)).resolves.toBeUndefined();
+  });
+
+  it("unsubscribes from the same event it subscribed to", async () => {
+    // A mismatched name leaves the accelerometer listener attached for the
+    // rest of the session — invisible in a fake that fires synchronously, so
+    // the event name is asserted directly.
+    const removed: string[] = [];
+    const events = gravity([8, 12, 7, 13]);
+    const window = {
+      innerWidth: 1,
+      innerHeight: 1,
+      setTimeout: ((callback: () => void) => {
+        queueMicrotask(callback);
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }) as typeof setTimeout,
+      clearTimeout: (() => {}) as typeof clearTimeout,
+      addEventListener: (type: string, listener: (event: unknown) => void) => {
+        if (type !== "devicemotion") return;
+        for (const event of events) listener(event);
+      },
+      removeEventListener: (type: string) => {
+        removed.push(type);
+      },
+    } as unknown as WindowLike;
+
+    await resolveMotionStatus(window, MOBILE_NAV);
+
+    expect(removed).toEqual(["devicemotion"]);
+  });
+
+  it("stops at the sample cap instead of listening to the whole window", async () => {
+    // 32 near-identical samples (still) followed by eight violent ones. The cap
+    // means the verdict comes from the first 32 — without it, or with an
+    // off-by-one, the outliers leak in and the verdict flips to "moving".
+    const samples = [...Array.from({ length: 32 }, () => 9.81), ...Array.from({ length: 8 }, () => 50)];
+
+    await expect(
+      resolveMotionStatus(createMotionWindow(gravity(samples)), MOBILE_NAV),
+    ).resolves.toBe("still");
+  });
+
+  it("gives up when the iOS permission gate throws", async () => {
+    // `requestPermission` rejects on a cross-origin iframe; capture must fall
+    // through to "no verdict" rather than sampling anyway.
+    const window = createMotionWindow(gravity([8, 12, 7, 13]), {
+      requestPermission: () => Promise.reject(new Error("blocked")),
+    });
+
+    await expect(resolveMotionStatus(window, MOBILE_NAV)).resolves.toBeUndefined();
+  });
+});
+
+/** Replaces global `fetch` with a stub resolving to `response`. */
+function stubFetch(response: unknown) {
+  const fetchMock = vi.fn().mockResolvedValue(response);
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+describe("capture context weather", () => {
+  const PRAGUE = { latitude: 50.0755, longitude: 14.4378 };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("asks open-meteo for exactly the four fields the snapshot needs", async () => {
+    const fetchMock = stubFetch({ ok: true, json: () => ({ current: {} }) });
+
+    await resolveCurrentWeather(PRAGUE);
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.origin + url.pathname).toBe("https://api.open-meteo.com/v1/forecast");
+    expect(url.searchParams.get("latitude")).toBe("50.0755");
+    expect(url.searchParams.get("longitude")).toBe("14.4378");
+    // Dropping a field here silently blanks that part of every capture.
+    expect(url.searchParams.get("current")).toBe(
+      "temperature_2m,weather_code,wind_speed_10m,is_day",
+    );
+    // One day is all the snapshot reads; a wider forecast is wasted payload.
+    expect(url.searchParams.get("forecast_days")).toBe("1");
+  });
+
+  it("maps a full payload onto the snapshot", async () => {
+    stubFetch({
+      ok: true,
+      json: () => ({
+        current: { temperature_2m: 17.5, weather_code: 2, wind_speed_10m: 8.4, is_day: 1 },
+      }),
+    });
+
+    await expect(resolveCurrentWeather(PRAGUE)).resolves.toEqual({
+      temperatureC: 17.5,
+      weatherCode: 2,
+      windSpeedKmh: 8.4,
+      isDay: true,
+      source: "open-meteo",
+    });
+  });
+
+  it("reads is_day: 0 as night, and a missing is_day as no verdict", async () => {
+    stubFetch({ ok: true, json: () => ({ current: { is_day: 0 } }) });
+    await expect(resolveCurrentWeather(PRAGUE)).resolves.toMatchObject({ isDay: false });
+
+    vi.unstubAllGlobals();
+    stubFetch({ ok: true, json: () => ({ current: { temperature_2m: 3 } }) });
+    await expect(resolveCurrentWeather(PRAGUE)).resolves.toMatchObject({ isDay: undefined });
+  });
+
+  it("ignores a body that arrives with a non-OK status", async () => {
+    // The gate is only observable with a parseable body: an error page that
+    // happens to be valid JSON would otherwise be read as a forecast.
+    stubFetch({
+      ok: false,
+      json: () => ({ current: { temperature_2m: -99, is_day: 1 } }),
+    });
+
+    await expect(resolveCurrentWeather(PRAGUE)).resolves.toBeUndefined();
+  });
+
+  it("returns nothing when the request itself fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+
+    await expect(resolveCurrentWeather(PRAGUE)).resolves.toBeUndefined();
+  });
+
+  it("does not call out at all without coordinates", async () => {
+    const fetchMock = stubFetch({ ok: true, json: () => ({}) });
+
+    await expect(resolveCurrentWeather(undefined)).resolves.toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("capture context assembly edges", () => {
+  const NO_WEATHER = { ok: false, json: () => ({}) };
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(NO_WEATHER));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Minimal live environment: no sensors, no battery, nothing async. */
+  const bareWindow = { innerWidth: 1024, innerHeight: 768 } as WindowLike;
+
+  it("keeps a partly-filled page snapshot from the source page", async () => {
+    // The bookmarklet often captures a title but no description. Requiring
+    // *every* field to be present would throw the whole snapshot away.
+    const context = await collectCaptureContext({
+      source: "url-capture",
+      currentWindow: bareWindow,
+      currentDocument: createDocumentStub({}),
+      navigatorLike: {},
+      sourceSnapshot: { page: { title: "Example page", description: undefined } },
+    });
+
+    expect(context.page?.title).toBe("Example page");
+  });
+
+  it("drops a page snapshot with nothing in it", async () => {
+    const context = await collectCaptureContext({
+      source: "url-capture",
+      currentWindow: bareWindow,
+      currentDocument: createDocumentStub({}),
+      navigatorLike: {},
+      sourceSnapshot: { page: { title: undefined } },
+    });
+
+    expect(context.page).toBeUndefined();
+  });
+
+  it("falls back to navigator.platform when userAgentData has no platform", async () => {
+    // Chromium exposes `userAgentData` without `platform` in some embedded
+    // builds; losing the fallback would blank the OS for those users.
+    const context = await collectCaptureContext({
+      source: "url-capture",
+      currentWindow: bareWindow,
+      currentDocument: createDocumentStub({}),
+      navigatorLike: {
+        platform: "Win32",
+        userAgent: "Mozilla/5.0 AppleWebKit/537.36 Chrome/123.0",
+        userAgentData: { mobile: false },
+      },
+    });
+
+    expect(context.os).toBe("Windows");
+  });
+
+  it("takes the referrer from the live document when the capture carried none", async () => {
+    const context = await collectCaptureContext({
+      source: "new-note",
+      currentWindow: bareWindow,
+      currentDocument: createDocumentStub({ referrer: "https://news.example.com/story" }),
+      navigatorLike: {},
+    });
+
+    expect(context.referrer).toBe("https://news.example.com/story");
+  });
+
+  it("classifies the device from the live navigator and screen", async () => {
+    // The whole options bag has to reach `detectDeviceType`: with an empty one
+    // every capture would claim "desktop".
+    const context = await collectCaptureContext({
+      source: "new-note",
+      currentWindow: { innerWidth: 390, innerHeight: 844 } as WindowLike,
+      currentDocument: createDocumentStub({}),
+      navigatorLike: { userAgentData: { mobile: true } },
+    });
+
+    expect(context.deviceType).toBe("mobile");
+  });
+
+  it("prefers the Intl locale over navigator.language", async () => {
+    // `resolvedOptions().locale` is the one the app formats dates with, so the
+    // capture has to record that rather than the raw navigator string.
+    const intlLocale = new Intl.DateTimeFormat().resolvedOptions().locale;
+    const context = await collectCaptureContext({
+      source: "new-note",
+      currentWindow: bareWindow,
+      currentDocument: createDocumentStub({}),
+      navigatorLike: { language: "xx-XX" },
+    });
+
+    expect(context.locale).toBe(intlLocale);
+    expect(context.locale).not.toBe("xx-XX");
   });
 });
