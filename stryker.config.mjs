@@ -85,6 +85,14 @@ const config = {
     // smoke pass only ever saw one state — the filter bar never focused
     // (so its dropdown and the whole keyboard contract never ran) and the
     // capture page never switched platform.
+    // 2026-08-19, fourth batch: the chrome that frames the static pages.
+    // `account-bar` is the one with real behaviour — a click-toggled menu
+    // whose outside-click listener is registered in the capture phase
+    // *during* the opening click, and removed again on close because the
+    // topbar is rebuilt on most state changes.
+    "src/app/view/chrome/account-bar.ts",
+    "src/app/view/chrome/site-footer.ts",
+    "src/app/view/chrome/static-page-shell.ts",
     "src/app/view/chrome/tag-filter-bar.ts",
     "src/app/view/pages/capture-page.ts",
     // `tags-page.ts` + `empty-state.ts` followed the same day. The Tags page
