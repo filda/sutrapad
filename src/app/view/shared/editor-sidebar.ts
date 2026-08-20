@@ -81,6 +81,15 @@ function buildTagsCard(
  */
 function buildAutoDetectedCard(note: SutraPadDocument): HTMLElement | null {
   const autoTags = deriveAutoTags(note);
+  // Unreachable as of 2026-08-20 and kept anyway: `deriveAutoTags` emits the
+  // `tasks:*` facet unconditionally (`tasks:none` when a note has no
+  // checkboxes at all), so even a note with an unparseable `createdAt` and no
+  // capture context comes back with one tag. The guard is the contract this
+  // card actually depends on — "don't render an eyebrow over an empty grid" —
+  // rather than a restatement of today's facet list, so it stays; the mutant
+  // that deletes it is equivalent by construction, not by test gap. See
+  // `tests/editor-sidebar.test.ts` for the invariant asserted directly.
+  // Stryker disable next-line all : unreachable while the tasks facet is unconditional
   if (autoTags.length === 0) return null;
 
   const card = document.createElement("section");

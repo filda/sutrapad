@@ -49,11 +49,7 @@ const DEFERRED_FROM_MUTATION: Readonly<Record<string, string>> = {
   "src/app/view/pages/placeholder-page.ts": "static stub",
   "src/app/view/pages/shortcuts-page.ts": "static copy page; no dedicated test yet",
   "src/app/view/pages/terms-page.ts": "static copy page; no dedicated test yet",
-  "src/app/view/chrome/topbar.ts": "no dedicated test yet",
-  "src/app/view/shared/editor-sidebar.ts": "no dedicated test yet",
-  "src/app/view/shared/hint-banner.ts": "no dedicated test yet",
   "src/app/view/shared/icons.ts": "icon path data; asserted indirectly by its consumers",
-  "src/app/view/update-notification.ts": "no dedicated test yet",
   "src/services/drive/lexicon-store.ts":
     "lexicon-page.test.ts imports only its type, so mutants would be coverage-free",
 };

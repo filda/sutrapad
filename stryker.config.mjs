@@ -94,6 +94,27 @@ const config = {
     "src/app/view/chrome/site-footer.ts",
     "src/app/view/chrome/static-page-shell.ts",
     "src/app/view/chrome/tag-filter-bar.ts",
+    // 2026-08-20: `topbar.ts` and `hint-banner.ts` — the two files in the
+    // small-chrome batch with real behaviour (the rest of it is static copy
+    // pages). The topbar's own logic is the slot order, the `add` skip in the
+    // nav loop and the sync pill's two metadata channels; everything else it
+    // renders now belongs to a module with its own suite. `hint-banner.ts`
+    // rotates a dismissible hint through localStorage: impressions are
+    // recorded *before* the builder runs, so a throwing builder still
+    // advances the rotation instead of wedging on one hint forever.
+    "src/app/view/chrome/topbar.ts",
+    "src/app/view/shared/hint-banner.ts",
+    // Same batch, the two remaining non-copy files. `editor-sidebar.ts` is
+    // mostly composition, but it owns the per-tag confidence lookup that puts
+    // the `NN%` badge on a `weather:*` pill and leaves `year:*` clean — and a
+    // guard that turns out to be unreachable (see the comment in the file:
+    // `deriveAutoTags` always emits a `tasks:*` facet, so the auto card can
+    // never be empty). `update-notification.ts` had never executed at all —
+    // the smoke test never has a waiting service worker — and its `setBusy`
+    // has to be reversible or a failed reload strands the user on a disabled
+    // "Reloading…" button.
+    "src/app/view/shared/editor-sidebar.ts",
+    "src/app/view/update-notification.ts",
     "src/app/view/pages/capture-page.ts",
     // `tags-page.ts` + `empty-state.ts` followed the same day. The Tags page
     // has four states the smoke test never reaches (first-run, no-selection,
