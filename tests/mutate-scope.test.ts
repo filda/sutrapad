@@ -45,10 +45,6 @@ const DEFERRED_FROM_MUTATION: Readonly<Record<string, string>> = {
   "src/app/view/render-app.ts": "largest untested surface; decision-heavy logic should move out first",
   "src/app/view/palette.ts": "lifecycle-palette.test.ts vi.mocks it — zero real coverage",
   "src/app/view/palette-types.ts": "type declarations only",
-  "src/app/view/pages/about-page.ts": "static copy page; no dedicated test yet",
-  "src/app/view/pages/placeholder-page.ts": "static stub",
-  "src/app/view/pages/shortcuts-page.ts": "static copy page; no dedicated test yet",
-  "src/app/view/pages/terms-page.ts": "static copy page; no dedicated test yet",
   "src/app/view/shared/icons.ts": "icon path data; asserted indirectly by its consumers",
   "src/services/drive/lexicon-store.ts":
     "lexicon-page.test.ts imports only its type, so mutants would be coverage-free",

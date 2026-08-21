@@ -115,6 +115,19 @@ const config = {
     // "Reloading…" button.
     "src/app/view/shared/editor-sidebar.ts",
     "src/app/view/update-notification.ts",
+    // 2026-08-20, last of the batch: the four static copy pages. Copy pages
+    // look like the least valuable thing to measure and are close to the
+    // opposite — they have almost no branches, so nearly every mutant is a
+    // *string*, which means the score answers "is the shipped wording
+    // asserted anywhere". It was not. `terms-page` carries obligations that
+    // still need a lawyer pass; `shortcuts-page` promises in its own subtitle
+    // that every key listed is wired in the current build, and its test now
+    // cross-checks that against `reduceShortcut` rather than trusting the
+    // table; `about-page` was lifted verbatim from the v3 handoff.
+    "src/app/view/pages/about-page.ts",
+    "src/app/view/pages/placeholder-page.ts",
+    "src/app/view/pages/shortcuts-page.ts",
+    "src/app/view/pages/terms-page.ts",
     "src/app/view/pages/capture-page.ts",
     // `tags-page.ts` + `empty-state.ts` followed the same day. The Tags page
     // has four states the smoke test never reaches (first-run, no-selection,
