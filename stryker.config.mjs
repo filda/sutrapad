@@ -46,17 +46,26 @@ const config = {
     "src/app/sync-helpers.ts",
     "src/app/render-helpers.ts",
 
-    // Lifecycle wiring with a dedicated test (`lifecycle-palette`).
-    // The remaining lifecycle modules (capture-import, handle-new-note,
-    // keyboard-shortcuts, drag-drop-import, notes-endless-scroll) only have
-    // indirect coverage via the smoke test and are deferred until they get
-    // focused tests. NB `tests/keyboard-shortcuts.test.ts` covers
-    // `src/lib/keyboard-shortcuts.ts`, not the lifecycle module of the same
-    // name — don't promote the latter on the strength of that filename.
+    // Lifecycle wiring. `capture-import` and `handle-new-note` are the two
+    // still deferred — both are async orchestration over the capture stack
+    // rather than DOM glue, and want their own batch.
+    //
+    // 2026-08-20: `keyboard-shortcuts`, `drag-drop-import` and
+    // `notes-endless-scroll` promoted with focused suites. All three were
+    // "only covered via the smoke test", which for the drop importer meant
+    // literally nothing but its two `addEventListener` calls had ever run —
+    // the smoke test never drops a file. NB `tests/keyboard-shortcuts.test.ts`
+    // covers `src/lib/keyboard-shortcuts.ts` (the pure reducer); the lifecycle
+    // module of the same name is the DOM adapter around it and now has
+    // `tests/lifecycle-keyboard-shortcuts.test.ts` of its own. Don't conflate
+    // the two on the strength of the filename.
     "src/app/lifecycle/palette.ts",
     "src/app/lifecycle/focus-refresh.ts",
     "src/app/lifecycle/hydrate-note-on-open.ts",
     "src/app/lifecycle/run-location-backfill.ts",
+    "src/app/lifecycle/keyboard-shortcuts.ts",
+    "src/app/lifecycle/drag-drop-import.ts",
+    "src/app/lifecycle/notes-endless-scroll.ts",
 
     // View modules with dedicated happy-dom tests. Each file below has
     // a `tests/<name>.test.ts` whose `// @vitest-environment happy-dom`

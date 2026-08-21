@@ -38,10 +38,6 @@ const DEFERRED_FROM_MUTATION: Readonly<Record<string, string>> = {
   "src/app/silent-capture-runner.ts": "background runner; needs a focused test first",
   "src/app/lifecycle/capture-import.ts": "only covered via the smoke test",
   "src/app/lifecycle/handle-new-note.ts": "only covered via the smoke test",
-  "src/app/lifecycle/keyboard-shortcuts.ts":
-    "tests/keyboard-shortcuts.test.ts covers src/lib/keyboard-shortcuts.ts, not this module",
-  "src/app/lifecycle/drag-drop-import.ts": "only covered via the smoke test",
-  "src/app/lifecycle/notes-endless-scroll.ts": "thin wiring over logic/endless-scroll",
   "src/app/view/render-app.ts": "largest untested surface; decision-heavy logic should move out first",
   "src/app/view/palette.ts": "lifecycle-palette.test.ts vi.mocks it — zero real coverage",
   "src/app/view/palette-types.ts": "type declarations only",
