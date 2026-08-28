@@ -46,9 +46,18 @@ const config = {
     "src/app/sync-helpers.ts",
     "src/app/render-helpers.ts",
 
-    // Lifecycle wiring. `capture-import` and `handle-new-note` are the two
-    // still deferred — both are async orchestration over the capture stack
-    // rather than DOM glue, and want their own batch.
+    // Lifecycle wiring — all nine modules are now in scope.
+    //
+    // 2026-08-20, second lifecycle batch: `capture-import` and
+    // `handle-new-note`, the two async-orchestration ones. `capture-import`
+    // is the fallback path for a bookmarklet capture (the fast path is
+    // `silent-capture-runner`), so it decides what the note looks like when
+    // the capture flow degrades — including the `?selection=` branch, whose
+    // own comment notes the selection would otherwise be silently dropped.
+    // `handle-new-note` is a fire-and-forget async IIFE with four bail-outs:
+    // the preference snapshot read before the first await, the purged-draft
+    // race, the no-op identity check on `applyFreshNoteDetails`, and the
+    // empty-draft gate that keeps a regretted `+ Add` off Drive.
     //
     // 2026-08-20: `keyboard-shortcuts`, `drag-drop-import` and
     // `notes-endless-scroll` promoted with focused suites. All three were
@@ -66,6 +75,8 @@ const config = {
     "src/app/lifecycle/keyboard-shortcuts.ts",
     "src/app/lifecycle/drag-drop-import.ts",
     "src/app/lifecycle/notes-endless-scroll.ts",
+    "src/app/lifecycle/capture-import.ts",
+    "src/app/lifecycle/handle-new-note.ts",
 
     // View modules with dedicated happy-dom tests. Each file below has
     // a `tests/<name>.test.ts` whose `// @vitest-environment happy-dom`
