@@ -107,6 +107,17 @@ const config = {
     //   runs: a 2026-08-17 measurement put it at 0.00 % with all 166 mutants
     //   NoCoverage. "A test imports it" is not the promotion bar — check for
     //   `vi.mock` first.
+    // 2026-08-20, last one in: `render-app.ts` (939). The config note used to
+    // say "decision-heavy logic should move out first". Having read it: it is
+    // a *router*, not a god function — twelve branches on `activeMenuItem`,
+    // each delegating to a page builder that already has its own suite, plus
+    // four derivations at the top and a `finalize()` tail. The derivations
+    // (`personaOptions`, `autoTagLookup`, `availableTagSuggestions`,
+    // `topbarNote`/`syncCrumb`) are still the part worth extracting, and the
+    // suite is written through the public entry point precisely so that an
+    // extraction does not invalidate it: it asserts which page mounted, the
+    // append order, and the derived *effects*, never an internal.
+    "src/app/view/render-app.ts",
     "src/app/view/chrome/app-fab.ts",
     "src/app/view/chrome/mobile-nav.ts",
     // 2026-08-19: `tag-filter-bar.ts` and `capture-page.ts` promoted with
