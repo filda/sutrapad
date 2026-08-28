@@ -29,14 +29,23 @@ const config = {
     // `tests/state-store.test.ts` on 2026-08-19 — route/preference seeding,
     // the workspace→indexes subscription, every persist subscriber, dispose,
     // and the `renderingAtoms` contract — which is what promoted it out of
-    // `DEFERRED_FROM_MUTATION`. Of its siblings only `silent-capture-runner.ts`
-    // is still smoke-test-only. `render-callbacks.ts` followed
+    // `DEFERRED_FROM_MUTATION`. Its last smoke-test-only sibling,
+    // `silent-capture-runner.ts`, joined on 2026-08-20 (see below). `render-callbacks.ts` followed
     // on 2026-08-19 with `tests/render-callbacks.test.ts` — the callback bag
     // is a pure function of its 35 injected callbacks, so every handler is
     // reachable with spies; the `replace*` fakes apply the updater they get
     // so the writer closures are asserted too, not just call counts.
     "src/app/state-store.ts",
     "src/app/render-callbacks.ts",
+    // 2026-08-20: `silent-capture-runner.ts` promoted — 552 lines that had
+    // never executed, because `main.ts` only loads it for `?silent=1` and the
+    // smoke test never gets there. It is the bookmarklet path where the only
+    // two outcomes are "the note is on Drive" or "the capture is gone", so
+    // the buffer flow (silent refresh fails on iOS Safari → stash the URL in
+    // sessionStorage → one interactive tap → save) and its retry loop are
+    // what the suite protects. `GoogleAuthService` / `GoogleDriveStore` are
+    // mocked in the test; the URL parsers and `createNote` are real.
+    "src/app/silent-capture-runner.ts",
     // `sync-helpers.ts` / `render-helpers.ts` promoted the same day. Both were
     // already executed indirectly by `render-callbacks.test.ts` (URL writes,
     // focus-preserving renders); the dedicated suites add the branches no

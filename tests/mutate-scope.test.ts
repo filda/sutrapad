@@ -35,7 +35,6 @@ const DEFERRED_FROM_MUTATION: Readonly<Record<string, string>> = {
   "src/main.ts": "bootstrap entry point; no seams to assert against yet",
   "src/types.ts": "type declarations only",
   "src/fonts.ts": "static font registration",
-  "src/app/silent-capture-runner.ts": "background runner; needs a focused test first",
   "src/app/view/render-app.ts": "largest untested surface; decision-heavy logic should move out first",
   "src/app/view/palette.ts": "lifecycle-palette.test.ts vi.mocks it — zero real coverage",
   "src/app/view/palette-types.ts": "type declarations only",
