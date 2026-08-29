@@ -53,12 +53,17 @@ export interface TagFilterBarOptions {
 
 /**
  * Suggestion shown in the dropdown — either a tag entry (typed or recent) or
- * a synthetic "empty" / "hint" row. `row` is rendered as a clickable option
- * only when `kind: "tag"`.
+ * the label above a group of them. Only a `kind: "tag"` row is rendered as a
+ * clickable option.
+ *
+ * The prototype also had a synthetic `kind: "empty"` row carrying a
+ * "No tag matches …" message. It was removed on 2026-08-29: nothing ever
+ * produced one, because a miss makes `computeRows` return `[]` and the
+ * `rows.length === 0` branch closes the dropdown before any row is rendered.
+ * Closing is what ships, and it is what the suite pins.
  */
 type SuggestionRow =
   | { kind: "tag"; entry: SutraPadTagEntry; group: "suggestion" | "recent" | "popular" }
-  | { kind: "empty"; query: string }
   | { kind: "group-label"; label: string };
 
 /**
@@ -174,17 +179,6 @@ export function buildTagFilterBar({
       return;
     }
 
-    if (rows.every((row) => row.kind === "empty")) {
-      const empty = rows[0] as Extract<SuggestionRow, { kind: "empty" }>;
-      const node = document.createElement("div");
-      node.className = "tfb-empty";
-      node.textContent = `No tag matches "${empty.query}"`;
-      dropdown.append(node);
-      input.setAttribute("aria-expanded", "true");
-      dropdown.hidden = false;
-      return;
-    }
-
     let tagIndex = 0;
     for (const row of rows) {
       if (row.kind === "group-label") {
@@ -194,7 +188,6 @@ export function buildTagFilterBar({
         dropdown.append(label);
         continue;
       }
-      if (row.kind === "empty") continue;
 
       const option = document.createElement("button");
       option.type = "button";

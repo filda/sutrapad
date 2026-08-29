@@ -112,12 +112,21 @@ export interface NotebookPersonaOptions {
   allNotesAutoTags?: ReadonlyArray<readonly string[]>;
 }
 
+/**
+ * The paper variants `pickWhenBucket` can actually return.
+ *
+ * A `"weekday"` member was removed on 2026-08-29 together with its palette and
+ * label. It was unreachable: `pickWhenBucket` handles night / morning /
+ * evening first, then weekend, and every remaining case — a weekday afternoon
+ * — falls through to the seasonal branch, whose `winter` arm is the total
+ * else. Nothing could ever have been papered "Weekday paper". If a weekday
+ * variant is wanted, it has to be picked *before* the seasonal fallback.
+ */
 type WhenBucket =
   | "morning"
   | "evening"
   | "night"
   | "weekend"
-  | "weekday"
   | "spring"
   | "summer"
   | "autumn"
@@ -129,7 +138,6 @@ const PAPERS: Record<WhenBucket, { light: NotebookPersonaPaper; dark: NotebookPe
   evening: { light: { bg: "#f4e2c7", ink: "#4a321e" }, dark: { bg: "#2b2015", ink: "#ebc891" } },
   night: { light: { bg: "#e8e6ea", ink: "#22242b" }, dark: { bg: "#1a1b22", ink: "#cdd2de" } },
   weekend: { light: { bg: "#f6e6d5", ink: "#3e2919" }, dark: { bg: "#2d2016", ink: "#f0cfa3" } },
-  weekday: { light: { bg: "#f1ebdd", ink: "#2c2620" }, dark: { bg: "#23201a", ink: "#d9cfb8" } },
   spring: { light: { bg: "#eef0dc", ink: "#2e3520" }, dark: { bg: "#1d211a", ink: "#c9d6b0" } },
   summer: { light: { bg: "#f8ead0", ink: "#3d2a17" }, dark: { bg: "#2a1f14", ink: "#ead09a" } },
   autumn: { light: { bg: "#f0d9c0", ink: "#3a2414" }, dark: { bg: "#2a1d14", ink: "#e0b88f" } },
@@ -142,7 +150,6 @@ const PAPER_LABELS: Record<WhenBucket, string> = {
   evening: "Evening paper",
   night: "Midnight paper",
   weekend: "Weekend paper",
-  weekday: "Weekday paper",
   spring: "Spring paper",
   summer: "Summer paper",
   autumn: "Autumn paper",

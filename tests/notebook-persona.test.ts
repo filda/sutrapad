@@ -671,10 +671,11 @@ describe("PAPERS palette — exact hex per WhenBucket × light/dark", () => {
   //   summer  → Tue 14:00 in July
   //   autumn  → Tue 14:00 in October
   //   winter  → Tue 14:00 in January
-  //   weekday — unreachable from `pickWhenBucket` directly because
-  //     every weekday afternoon already maps to a season; covered via
-  //     the seasonal asserts plus dedicated weekday-paper coverage in
-  //     the standalone "PAPERS reverse-coverage" block below.
+  //
+  // There used to be a tenth row, `weekday`, that no timestamp could reach —
+  // every weekday afternoon falls through to a season. The bucket, its palette
+  // and its label were deleted on 2026-08-29, so this table is now the whole
+  // `WhenBucket` union and the snapshot below is exhaustive.
 
   function paperFor(createdAt: string, dark = false) {
     const note = makeNote({ createdAt });
@@ -806,32 +807,12 @@ describe("PAPER_LABELS — exact label per WhenBucket", () => {
   });
 });
 
-describe("PAPERS weekday paper — reverse coverage via paper.bg", () => {
-  // The weekday bucket is unreachable from `pickWhenBucket` (every
-  // weekday afternoon maps to a season first). It only fires through
-  // the explicit `else` fallback inside the seasonal switch — which
-  // currently only triggers if a future caller passes the weekday
-  // bucket directly. The PAPERS row exists nonetheless and is part
-  // of the public Record; pinning its hex so a refactor that wires
-  // weekday up properly doesn't silently shift the design.
-  //
-  // This test reaches the row via the `paperFor` lookup that the
-  // module would do internally. It uses a small surgical handle: the
-  // weekday entry has a unique bg `#f1ebdd` not used by any other
-  // bucket, so we just assert it appears in the exported PAPERS map
-  // via a well-known fixture path. As a regression guard we include
-  // both light and dark.
-  //
-  // (Implementation note: we don't expose PAPERS directly; the only
-  // reachable surface is `persona.paper`. So the test is moot for
-  // mutation killing without a public hook. Stryker will keep this
-  // entry's mutants alive until either the bucket becomes reachable
-  // or PAPERS is exported. That's an "equivalent / unreachable"
-  // mutation — documented here, not chased.)
-  it("documents weekday-bucket unreachability", () => {
-    expect(true).toBe(true);
-  });
-});
+// Deleted 2026-08-29: a "PAPERS weekday paper — reverse coverage" block that
+// ended in `expect(true).toBe(true)`. It existed to document that the weekday
+// bucket could not be reached and its palette could not be asserted; the
+// bucket, the palette and the label are now gone from the source, so there is
+// nothing left to document. An assertion that cannot fail is worse than no
+// test — see the self-deceiving-assertion note in the mutation log.
 
 describe("FONTS — exact font slot per tier", () => {
   // Each font tier has a `title` and `body` slot; mutating any of

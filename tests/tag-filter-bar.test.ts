@@ -19,18 +19,18 @@
 // caret, and a suggestion `mousedown` must not blur the input before the
 // commit lands.
 //
-// Two groups of survivors in the mutation report are not gaps:
+// The dead-code group the mutation report used to flag here is gone: the
+// `.tfb-empty` / "No tag matches …" branch was **deleted on 2026-08-29**, with
+// the `kind: "empty"` variant of `SuggestionRow` and the `.tfb-empty` CSS rule.
+// It could never run — `computeRows` only ever produced `kind: "tag"` and
+// `kind: "group-label"` rows, and a miss yields `[]`, which the
+// `rows.length === 0` branch catches first, so nothing could make
+// `rows.every(row => row.kind === "empty")` true with rows present. Ten
+// unkillable mutants went with it, and "closes the dropdown when nothing
+// matches" below is now the whole story rather than a consolation prize.
 //
-//   - **Dead code.** The `.tfb-empty` / "No tag matches …" branch can never
-//     run. `computeRows` only ever produces `kind: "tag"` and
-//     `kind: "group-label"` rows — a miss yields `[]`, which the
-//     `rows.length === 0` branch above catches first — so nothing can make
-//     `rows.every(row => row.kind === "empty")` true with rows present. The
-//     `kind: "empty"` variant of `SuggestionRow` has no producer either.
-//     Worth a decision: wire it up (the module header promises this state) or
-//     delete the branch and the variant. Until then its mutants are
-//     unkillable, and the "closes the dropdown when nothing matches" test
-//     below pins what actually ships.
+// One group of survivors that is still not a gap:
+//
 //   - **Unreachable clamp.** `if (activeIdx >= suggestions.length) activeIdx = 0`
 //     (4 mutants). Every path that can raise `activeIdx` — arrows, hover — is
 //     bounded by the current `suggestions.length`, and the two paths that
@@ -382,20 +382,19 @@ describe("buildTagFilterBar typed query", () => {
   });
 
   it("closes the dropdown when nothing matches", () => {
-    // NB this is the *actual* behaviour, and it differs from the prototype the
-    // module's header describes: the `.tfb-empty` "No tag matches …" row can
-    // never render, because nothing ever produces a `kind: "empty"` row —
-    // `computeRows` maps ranked hits to `kind: "tag"` and returns `[]` on a
-    // miss, which the `rows.length === 0` branch above catches first. Pinning
-    // what ships rather than what the comment promises; the dead branch is
-    // flagged in the mutation notes as code to either wire up or delete.
+    // A miss makes `computeRows` return `[]`, and an empty row set closes the
+    // strip rather than announcing the miss. The prototype had a "No tag
+    // matches …" row here; it was never reachable and was deleted, so this is
+    // the whole behaviour. `aria-expanded` has to come back to "false" with
+    // it — a combobox that stays expanded over an empty listbox is what a
+    // screen reader would read as "suggestions available".
     const { type, dropdown, input, options } = mount();
 
     type("qqq");
 
     expect(dropdown.hidden).toBe(true);
     expect(input.getAttribute("aria-expanded")).toBe("false");
-    expect(dropdown.querySelector(".tfb-empty")).toBeNull();
+    expect(dropdown.childElementCount).toBe(0);
     expect(options()).toEqual([]);
   });
 
@@ -538,6 +537,21 @@ describe("buildTagFilterBar keyboard contract", () => {
     const commit = press("Tab");
     expect(commit.defaultPrevented).toBe(true);
     expect(handlers.onApplyFilter).toHaveBeenCalledExactlyOnceWith("praha");
+  });
+
+  it("re-ranks the dropdown against the filled-in value on preview", () => {
+    // The preview writes the completion into the input, and the dropdown has to
+    // follow: leave it showing the old, broader row set and the second Tab
+    // commits against a stale `suggestions` array. "pr" matches both praha and
+    // prace, so the narrowing is visible; the existing preview test can't see
+    // it because praha is row 0 either way.
+    const { type, press, optionNames } = mount();
+    type("pr");
+    expect(optionNames()).toEqual(["praha", "prace"]);
+
+    press("Tab");
+
+    expect(optionNames()).toEqual(["praha"]);
   });
 
   it("lets Tab move focus when the input is empty", () => {
