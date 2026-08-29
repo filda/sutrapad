@@ -560,7 +560,13 @@ export function deriveNotebookPersona(
     options.hasOpenTask ?? OPEN_TASK_PATTERN.test(note.body);
   const facets = extractFacets(note, now, options.autoTags);
   const whenBucket = pickWhenBucket(note.createdAt);
-  const paperVariant = PAPERS[whenBucket] ?? PAPERS.default;
+  // Both tables are `Record<WhenBucket, …>`, so every bucket `pickWhenBucket`
+  // can return has a row and the lookups are total. A `?? PAPERS.default`
+  // guard used to sit on the first one; it was removed on 2026-08-29 because
+  // it could not run, and because the union already carries the fallback —
+  // an unparseable `createdAt` returns the `"default"` bucket, which has its
+  // own row. `PAPER_LABELS` never had the guard, which is the tell.
+  const paperVariant = PAPERS[whenBucket];
   const paper = paperVariant[dark ? "dark" : "light"];
   const paperName = PAPER_LABELS[whenBucket];
   const saturated = SATURATED.has(whenBucket);

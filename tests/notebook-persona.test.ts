@@ -772,9 +772,10 @@ describe("PAPERS palette — exact hex per WhenBucket × light/dark", () => {
   });
 
   it("default paper light + dark (unparseable timestamp)", () => {
-    // Unparseable createdAt routes pickWhenBucket → "default", which
-    // is the only way to hit the fallback PAPER row from the public
-    // API.
+    // Unparseable createdAt routes pickWhenBucket → "default", which is the
+    // only way to reach that PAPERS row from the public API — and, since the
+    // `?? PAPERS.default` guard was deleted on 2026-08-29, the only thing
+    // standing between a garbage timestamp and an undefined paper.
     expect(paperFor("not-a-date", false)).toEqual({
       bg: "#fbf7ef",
       ink: "#2b2520",
