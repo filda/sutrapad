@@ -4,6 +4,7 @@ import {
   runWorkspaceRestoreAfterSignIn,
   runWorkspaceSave,
 } from "../src/app/session/workspace-sync";
+import type { SyncState } from "../src/app/session/workspace-sync";
 import type { SutraPadWorkspace } from "../src/types";
 
 function makeWorkspace(activeNoteId = "note-a"): SutraPadWorkspace {
@@ -347,5 +348,197 @@ describe("runWorkspaceRestoreAfterSignIn effect contract", () => {
     });
 
     expect(setLastError).toHaveBeenLastCalledWith("Loading from Google Drive failed.");
+  });
+});
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// StrykerJS 10 added a mutator that deletes a call used as a statement, and it
+// found seven `effects.render()` calls plus one `persistLocalWorkspace` in this
+// module that no test was holding down: every suite above passes
+// `render: () => undefined`, so the whole flow could stop repainting and stay
+// green.
+//
+// A call count would close the mutants and say nothing. Each render is a
+// *moment* — the frame the user is left looking at — so the harness records
+// what the UI would be showing at each repaint (`syncState | note ids | error
+// banner`) and the tests assert that filmstrip as one array. Deleting any one
+// render drops exactly one frame, and the array names which one went missing.
+
+/** The note ids a frame would be showing, in the order they render. */
+function idsOf(current: SutraPadWorkspace): string {
+  return current.notes.map((entry) => entry.id).join(",");
+}
+
+interface SyncFilmstrip {
+  frames: string[];
+  persisted: SutraPadWorkspace[];
+  current: SutraPadWorkspace;
+  syncState: SyncState;
+  lastError: string;
+}
+
+function makeFilmstrip(initial: SutraPadWorkspace): {
+  state: SyncFilmstrip;
+  bag: {
+    setWorkspace: (next: SutraPadWorkspace) => void;
+    persistLocalWorkspace: (next: SutraPadWorkspace) => void;
+    setSyncState: (next: SyncState) => void;
+    setLastError: (message: string) => void;
+    render: () => void;
+  };
+} {
+  const state: SyncFilmstrip = {
+    frames: [],
+    persisted: [],
+    current: initial,
+    syncState: "idle",
+    lastError: "",
+  };
+  return {
+    state,
+    bag: {
+      setWorkspace: (next) => {
+        state.current = next;
+      },
+      persistLocalWorkspace: (next) => {
+        state.persisted.push(next);
+      },
+      setSyncState: (next) => {
+        state.syncState = next;
+      },
+      setLastError: (message) => {
+        state.lastError = message;
+      },
+      render: () => {
+        state.frames.push(`${state.syncState}|${idsOf(state.current)}|${state.lastError}`);
+      },
+    },
+  };
+}
+
+/**
+ * A one-note workspace. `updatedAt` is explicit because the merged notebook is
+ * sorted newest-first, and a frame that reads `local,remote` should say so
+ * because of the timestamps rather than because of a tie-break.
+ */
+function oneNote(id: string, updatedAt = "2026-04-25T10:00:00.000Z"): SutraPadWorkspace {
+  return {
+    notes: [
+      {
+        id,
+        title: id,
+        body: id,
+        urls: [],
+        tags: [],
+        createdAt: updatedAt,
+        updatedAt,
+      },
+    ],
+    activeNoteId: id,
+  };
+}
+
+describe("runWorkspaceLoad repaints", () => {
+  it("paints the spinner over the old notebook, then the loaded one", async () => {
+    // Two frames, and the first one matters as much as the second: it is what
+    // puts the notebook into "loading" while the user's existing notes are
+    // still on screen. Drop it and the UI sits on a stale idle state for the
+    // whole round trip, then snaps.
+    const { state, bag } = makeFilmstrip(oneNote("local"));
+
+    await runWorkspaceLoad({
+      loadRemoteWorkspace: () => Promise.resolve(oneNote("remote")),
+      ...bag,
+    });
+
+    expect(state.frames).toEqual(["loading|local|", "idle|remote|"]);
+  });
+
+  it("paints the error banner over the notebook the user still has", async () => {
+    // The failure frame must show the *local* notes — a failed load does not
+    // replace them — with the message beside them.
+    const { state, bag } = makeFilmstrip(oneNote("local"));
+
+    await runWorkspaceLoad({
+      loadRemoteWorkspace: () => Promise.reject(new Error("Drive said no")),
+      ...bag,
+    });
+
+    expect(state.frames).toEqual(["loading|local|", "error|local|Drive said no"]);
+  });
+});
+
+describe("runWorkspaceRestoreAfterSignIn repaints", () => {
+  it("paints loading, then saving, then the merged notebook", async () => {
+    // Three frames when the merge has something to push. The middle one is the
+    // only feedback that sign-in is uploading; without it the notebook appears
+    // to finish while a write is still in flight.
+    const local = oneNote("local", "2026-04-26T10:00:00.000Z");
+    const { state, bag } = makeFilmstrip(local);
+
+    await runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () => Promise.resolve(oneNote("remote")),
+      saveRemoteWorkspace: () => Promise.resolve(),
+      getWorkspace: () => local,
+      ...bag,
+    });
+
+    expect(state.frames).toEqual([
+      "loading|local|",
+      "saving|local,remote|",
+      "idle|local,remote|",
+    ]);
+  });
+
+  it("persists exactly the merged workspace it committed", async () => {
+    // `persistLocalWorkspace` is the local-storage write. Delete it and the
+    // merge survives only in memory: the next cold start silently reverts to
+    // the pre-sign-in notebook.
+    const local = oneNote("local", "2026-04-26T10:00:00.000Z");
+    const { state, bag } = makeFilmstrip(local);
+
+    await runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () => Promise.resolve(oneNote("remote")),
+      saveRemoteWorkspace: () => Promise.resolve(),
+      getWorkspace: () => local,
+      ...bag,
+    });
+
+    const persistedIds = state.persisted.map((written) => idsOf(written));
+    expect(persistedIds).toEqual(["local,remote"]);
+    expect(state.persisted[0]).toBe(state.current);
+  });
+
+  it("skips the saving frame when the merge produced nothing to push", async () => {
+    // Same flow, two frames instead of three. This is the observable half of
+    // the equality check: no upload *and* no "saving" flash.
+    const local = oneNote("same");
+    const { state, bag } = makeFilmstrip(local);
+    const saveRemoteWorkspace = vi.fn().mockResolvedValue(undefined);
+
+    await runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () => Promise.resolve(oneNote("same")),
+      saveRemoteWorkspace,
+      getWorkspace: () => local,
+      ...bag,
+    });
+
+    expect(state.frames).toEqual(["loading|same|", "idle|same|"]);
+    expect(saveRemoteWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("paints the error banner when the merge never got its remote", async () => {
+    const local = oneNote("local");
+    const { state, bag } = makeFilmstrip(local);
+
+    await runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () => Promise.reject(new Error("merge failed")),
+      saveRemoteWorkspace: () => Promise.resolve(),
+      getWorkspace: () => local,
+      ...bag,
+    });
+
+    expect(state.frames).toEqual(["loading|local|", "error|local|merge failed"]);
   });
 });

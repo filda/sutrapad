@@ -356,3 +356,188 @@ describe("runWorkspaceRefresh", () => {
     expect(h.setSyncState).toHaveBeenLastCalledWith("idle");
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// The same hole StrykerJS 10's statement-deletion mutator found in
+// `workspace-sync`: five calls here — the opening `render`, the closing one,
+// the error one, and `persistLocalWorkspace` + `render` inside
+// `applyAndCommit` — were removable with the suite above staying green,
+// because `render` was only ever a bare `vi.fn()` nobody looked at.
+//
+// Progressive refresh is *made of* its repaints — the whole reason this module
+// exists separately from `runWorkspaceLoad` is that the user sees the deletion
+// land before the bodies arrive. So the tests below record the filmstrip
+// (`syncState | note ids at that moment`) and assert it as one array. That is
+// also the only assertion shape that can tell "Phase 1 repainted" apart from
+// "Phase 2 repainted", since both are the same call on the same mock.
+
+function filmstripOf(h: RefreshHarness): string[] {
+  const frames: string[] = [];
+  h.render.mockImplementation(() => {
+    const syncState = h.setSyncState.mock.calls.at(-1)?.[0] ?? "idle";
+    const ids = h.state.workspace.notes.map((visible) => visible.id).join(",");
+    frames.push(`${syncState}|${ids}`);
+  });
+  return frames;
+}
+
+describe("runWorkspaceRefresh repaints", () => {
+  it("repaints once per phase that changed something", async () => {
+    // Device A deleted "gone" and added "b"; this device wakes up. Four
+    // frames, and each one is a promise this module makes:
+    //   1. the spinner goes on over what the user already had;
+    //   2. Phase 1 removes the deleted note after a single folder query,
+    //      before any JSON has been fetched;
+    //   3. Phase 2 brings the new note's body in;
+    //   4. the spinner comes off.
+    // Collapse any of them and the refresh still ends in the right state — it
+    // just stops being progressive, which is the entire point of the module.
+    const h = makeHarness(
+      workspace([
+        note("a", "alpha-old", "2026-05-01T10:00:00.000Z"),
+        note("gone", "deleted elsewhere", "2026-04-30T10:00:00.000Z"),
+      ]),
+    );
+    h.loadInventory.mockResolvedValue([
+      entry("a", "fa", "2026-05-02T10:00:00.000Z"),
+      entry("b", "fb", "2026-05-03T10:00:00.000Z"),
+    ]);
+    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
+      fileId === "fb"
+        ? note("b", "beta", "2026-05-03T10:00:00.000Z")
+        : note("a", "alpha-new", "2026-05-02T10:00:00.000Z"),
+    );
+    const frames = filmstripOf(h);
+
+    await runWorkspaceRefresh(effects(h));
+
+    expect(frames).toEqual([
+      "loading|a,gone",
+      "loading|a",
+      "loading|b,a",
+      "idle|b,a",
+    ]);
+  });
+
+  it("writes every committed workspace to local storage, and only those", async () => {
+    // `persistLocalWorkspace` is what makes a mid-refresh reload cheap. Delete
+    // it and each phase's merge lives in memory only, so closing the tab
+    // between Phase 2 and Phase 3 throws the refresh away.
+    const h = makeHarness(
+      workspace([
+        note("a", "alpha-old", "2026-05-01T10:00:00.000Z"),
+        note("gone", "deleted elsewhere", "2026-04-30T10:00:00.000Z"),
+      ]),
+    );
+    h.loadInventory.mockResolvedValue([
+      entry("a", "fa", "2026-05-02T10:00:00.000Z"),
+      entry("b", "fb", "2026-05-03T10:00:00.000Z"),
+    ]);
+    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
+      fileId === "fb"
+        ? note("b", "beta", "2026-05-03T10:00:00.000Z")
+        : note("a", "alpha-new", "2026-05-02T10:00:00.000Z"),
+    );
+
+    await runWorkspaceRefresh(effects(h));
+
+    const persisted = h.persistLocalWorkspace.mock.calls.map(([next]) => next);
+    const committed = h.setWorkspace.mock.calls.map(([next]) => next);
+    expect(persisted).toHaveLength(2);
+    // Identity, not shape: the workspace written to storage must be the one
+    // that went into the store, not a copy made somewhere along the way.
+    expect(persisted[0]).toBe(committed[0]);
+    expect(persisted[1]).toBe(committed[1]);
+  });
+
+  it("repaints only for the two state transitions when nothing changed", async () => {
+    // Toggle away and back with everything already in sync. Two frames, and
+    // the notebook never re-renders in between — the no-op guard in
+    // `applyAndCommit` is what keeps a focus event from being expensive.
+    const stable = note("a", "alpha", "2026-05-01T10:00:00.000Z");
+    const h = makeHarness(workspace([stable]));
+    h.loadInventory.mockResolvedValue([entry("a", "fa", "2026-05-01T10:00:00.000Z")]);
+    h.fetchNoteByFileId.mockResolvedValue(stable);
+    const frames = filmstripOf(h);
+
+    await runWorkspaceRefresh(effects(h));
+
+    expect(frames).toEqual(["loading|a", "idle|a"]);
+  });
+
+  it("repaints the error state over the notes the user still has", async () => {
+    // A refresh that never got its inventory must leave the local notebook
+    // alone and say so on screen; without the repaint the banner is set but
+    // never painted, so the spinner just spins forever.
+    const h = makeHarness(workspace([note("a", "alpha", "2026-05-01T10:00:00.000Z")]));
+    h.loadInventory.mockRejectedValue(new Error("folder query failed"));
+    const frames = filmstripOf(h);
+
+    await runWorkspaceRefresh(effects(h));
+
+    expect(frames).toEqual(["loading|a", "error|a"]);
+    expect(h.setLastError).toHaveBeenLastCalledWith("folder query failed");
+  });
+
+  it("keeps using batchSize for every catch-up batch, not the priority size", async () => {
+    // The existing firstBatchSize/batchSize test stops after two batches, and
+    // with 5 entries a "the first batch never ends" mutant (`isFirstBatch`
+    // never flipping to false) produces the same fetch boundaries. Six entries
+    // at 3 + 2 + 1 separate them: the priority size is used once and only once.
+    const h = makeHarness(workspace([]));
+    h.loadInventory.mockResolvedValue([
+      entry("n1", "f1", "2026-05-01T00:00:06.000Z"),
+      entry("n2", "f2", "2026-05-01T00:00:05.000Z"),
+      entry("n3", "f3", "2026-05-01T00:00:04.000Z"),
+      entry("n4", "f4", "2026-05-01T00:00:03.000Z"),
+      entry("n5", "f5", "2026-05-01T00:00:02.000Z"),
+      entry("n6", "f6", "2026-05-01T00:00:01.000Z"),
+    ]);
+    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
+      note(`n${fileId.slice(1)}`, "", "2026-05-01T00:00:00.000Z"),
+    );
+    const fetchedSoFar: number[] = [];
+    h.setWorkspace.mockImplementation((next: SutraPadWorkspace) => {
+      h.state.workspace = next;
+      fetchedSoFar.push(h.fetchNoteByFileId.mock.calls.length);
+    });
+
+    await runWorkspaceRefresh(effects(h), { firstBatchSize: 3, batchSize: 2 });
+
+    expect(fetchedSoFar).toEqual([3, 5, 6]);
+  });
+
+  it("merges once per batch and never takes a trailing empty pass", async () => {
+    // `applyAndCommit` re-reads the whole notebook and re-runs the merge, so a
+    // loop that runs one iteration past the end (`cursor <= length`) is
+    // invisible on screen but costs a full extra merge over every note on
+    // every focus event. Counting the reads is what makes that visible.
+    //
+    // The sizes have to divide the inventory *exactly* for that to be
+    // reachable: `cursor` advances by the batch size rather than by how many
+    // entries the slice actually held, so 6 entries at 3 + 2 leaves it on 7 and
+    // the off-by-one never fires. 3 + 3 lands it on 6.
+    const h = makeHarness(workspace([]));
+    h.loadInventory.mockResolvedValue([
+      entry("n1", "f1", "2026-05-01T00:00:06.000Z"),
+      entry("n2", "f2", "2026-05-01T00:00:05.000Z"),
+      entry("n3", "f3", "2026-05-01T00:00:04.000Z"),
+      entry("n4", "f4", "2026-05-01T00:00:03.000Z"),
+      entry("n5", "f5", "2026-05-01T00:00:02.000Z"),
+      entry("n6", "f6", "2026-05-01T00:00:01.000Z"),
+    ]);
+    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
+      note(`n${fileId.slice(1)}`, "", "2026-05-01T00:00:00.000Z"),
+    );
+    const getWorkspace = vi.fn(() => h.state.workspace);
+
+    await runWorkspaceRefresh(
+      { ...effects(h), getWorkspace },
+      { firstBatchSize: 3, batchSize: 3 },
+    );
+
+    // One read for the Phase 1 inventory commit, then one per batch (3, 3).
+    expect(getWorkspace).toHaveBeenCalledTimes(3);
+  });
+});
