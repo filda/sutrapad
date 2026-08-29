@@ -1653,3 +1653,279 @@ describe("deriveNotebookPersona: precomputed Phase 2 inputs", () => {
     expect(persona.stickers.some((s) => s.kind === "regular")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Gap-closing block, 2026-08-29. The first full re-baseline since the campaign
+// put this file at 89.3 % with 47 survivors — the largest single pocket left
+// in the repo, and a file the campaign never touched because the `src/lib/**`
+// glob had it in scope from day one. The blocks below close the killable ones.
+//
+// Everything here is deliberately deterministic: `pseudoRandom01` is FNV-1a
+// over `${note.id}:${salt}` quantised to 1/10000, so a note id *is* the dice
+// roll. The ids below were found by brute force to land exactly on a patina
+// threshold — the fixture "exactly at the boundary" that a `<` → `<=` mutant
+// needs, and the one shape a random id can never produce.
+// ---------------------------------------------------------------------------
+
+/** Same clock as NOW, formatted for a note that was created and never edited. */
+const FRESH = "2026-04-21T12:00:00.000Z";
+
+/** `hours` of edit span after FRESH — drives `editWear` (80 h = fully worn). */
+const spanFrom = (hours: number): string =>
+  new Date(Date.parse(FRESH) + hours * 3_600_000).toISOString();
+
+describe("extractFacets first-value-wins", () => {
+  it("keeps the first location and ignores later ones", () => {
+    // `place === null` is a first-wins latch. Real captures only ever carry
+    // one `location:` tag, so the guard is only observable through an
+    // injected list — which is exactly how the Notes list feeds it at scale.
+    const persona = deriveNotebookPersona(makeNote({ id: "facet-loc" }), {
+      now: NOW,
+      autoTags: ["location:praha", "location:brno"],
+    });
+
+    // Density is picked from the place, and only "praha" is a home place, so
+    // the `away` sticker is the visible proof of which one won.
+    expect(persona.stickers.some((s) => s.kind === "away")).toBe(false);
+  });
+
+  it("keeps the first source and ignores later ones", () => {
+    const persona = deriveNotebookPersona(makeNote({ id: "facet-src" }), {
+      now: NOW,
+      autoTags: ["source:text-capture", "source:url-capture"],
+    });
+
+    // text-capture → handwritten + the voice sticker; url-capture → mono and
+    // no voice. The first one has to win.
+    expect(persona.fontTier).toBe("handwritten");
+    expect(persona.stickers.some((s) => s.kind === "voice")).toBe(true);
+  });
+
+  it("never adopts a non-source facet as the source", () => {
+    // `prefix === "source" && source === null` — an `||` here would let the
+    // first auto-tag of any kind become the source, because `source` starts
+    // out null. A `date:` tag would then read as a capture source.
+    const persona = deriveNotebookPersona(makeNote({ id: "facet-other" }), {
+      now: NOW,
+      autoTags: ["date:today", "year:2026"],
+    });
+
+    expect(persona.fontTier).toBe("default");
+    expect(persona.stickers.some((s) => s.kind === "voice")).toBe(false);
+  });
+});
+
+describe("density place hints", () => {
+  it("reads the whole park vocabulary, not just the first few words", () => {
+    // The alternation is one regex, so a mutant that truncates it still
+    // matches `park` and silently drops `promenade` / `garden`.
+    const park = (place: string) =>
+      deriveNotebookPersona(makeNote({ id: `d-${place}` }), {
+        now: NOW,
+        autoTags: [`location:${place}`],
+      }).density;
+
+    const parkDensity = park("park-stromovka");
+    expect(park("botanical-garden")).toEqual(parkDensity);
+    expect(park("river-promenade")).toEqual(parkDensity);
+    expect(park("sady-svatopluka")).toEqual(parkDensity);
+    // And a place matching none of the hints keeps the default density.
+    expect(park("nowhere-at-all")).not.toEqual(parkDensity);
+  });
+});
+
+describe("one-shot sticker with unusable timestamps", () => {
+  it("needs both stamps to parse, not just to be present", () => {
+    // `!createdAt || !updatedAt` only catches *empty* stamps. A garbage
+    // string survives it and reaches the `Number.isFinite` pair — swapping
+    // that `||` for `&&` lets `deltaMinutes` be NaN, and `NaN < 0` /
+    // `NaN > 10` are both false, so the note would collect a "one-shot"
+    // sticker it never earned.
+    const persona = deriveNotebookPersona(
+      makeNote({ id: "os-bad", createdAt: FRESH, updatedAt: "not a date" }),
+      { now: NOW },
+    );
+
+    expect(persona.stickers.some((s) => s.kind === "one-shot")).toBe(false);
+  });
+});
+
+describe("regular sticker counts only location facets", () => {
+  it("ignores a same-valued tag from another namespace", () => {
+    // `prefix === "location"` is what stops a `mood:praha` (or any other
+    // facet that happens to share the value) from being counted as another
+    // visit to the same place.
+    const others = Array.from({ length: 8 }, (_, index) =>
+      makeNote({ id: `other-${index}` }),
+    );
+    const persona = deriveNotebookPersona(makeNote({ id: "reg-subject" }), {
+      now: NOW,
+      allNotes: others,
+      autoTags: ["location:praha"],
+      allNotesAutoTags: others.map(() => ["mood:praha", "year:2026"]),
+    });
+
+    expect(persona.stickers.some((s) => s.kind === "regular")).toBe(false);
+  });
+});
+
+describe("computeWear", () => {
+  it("stays finite when only one timestamp parses", () => {
+    // The `&&` pair guards `spanHours`; an `||` there lets a NaN through and
+    // every downstream style value (`--nc-wear`, the patina rolls) becomes
+    // NaN, which CSS drops silently.
+    const persona = deriveNotebookPersona(
+      makeNote({ id: "wear-nan", createdAt: FRESH, updatedAt: "not a date" }),
+      { now: NOW },
+    );
+
+    expect(Number.isFinite(persona.wear)).toBe(true);
+    expect(persona.wear).toBeGreaterThanOrEqual(0);
+    expect(persona.wear).toBeLessThanOrEqual(1);
+  });
+
+  it("treats an hour of editing as an hour, not as a full life", () => {
+    // `spanHours` divides the span by an hour in milliseconds and then by 80.
+    // Every arithmetic mutant on that chain (`/` → `*`, or a mangled
+    // `1000 * 60 * 60`) inflates one hour into a fully worn note.
+    const persona = deriveNotebookPersona(
+      makeNote({ id: "wear-1h", createdAt: FRESH, updatedAt: spanFrom(1) }),
+      { now: new Date(FRESH) },
+    );
+
+    // Age contributes nothing (created "now"), so this is jitter plus 1/80th
+    // of the edit weight — nowhere near the 0.4 a full span would add.
+    expect(persona.wear).toBeLessThan(0.2);
+  });
+
+  it("weights age at 0.6 of the total, not more", () => {
+    // A note as old as the 180-day ceiling with no edit span: age alone must
+    // not be able to max the bar out.
+    const created = new Date(Date.parse(FRESH) - 400 * 86_400_000).toISOString();
+    const persona = deriveNotebookPersona(
+      makeNote({ id: "wear-old", createdAt: created, updatedAt: created }),
+      { now: new Date(FRESH) },
+    );
+
+    expect(persona.wear).toBeGreaterThan(0.6);
+    expect(persona.wear).toBeLessThan(0.8);
+  });
+
+  it("weights edit span at 0.4 of the total, not more", () => {
+    // The mirror case: a brand-new note edited across the full 80-hour span.
+    const persona = deriveNotebookPersona(
+      makeNote({ id: "wear-span", createdAt: FRESH, updatedAt: spanFrom(80) }),
+      { now: new Date(FRESH) },
+    );
+
+    expect(persona.wear).toBeGreaterThan(0.4);
+    expect(persona.wear).toBeLessThan(0.6);
+  });
+});
+
+describe("patina thresholds are exclusive", () => {
+  // Each id below rolls *exactly* the threshold for its rule. `<` and `<=`
+  // (or `>` and `>=`) agree everywhere else, so this is the only fixture
+  // that separates them.
+
+  it("drops the highlight for a roll of exactly 0.4", () => {
+    const persona = deriveNotebookPersona(
+      makeNote({ id: "n9972", tags: ["poetry"] }),
+      { now: NOW },
+    );
+
+    expect(persona.patina).not.toContain("highlight");
+  });
+
+  it("drops the washi for a roll of exactly 0.18", () => {
+    const persona = deriveNotebookPersona(makeNote({ id: "n5952" }), { now: NOW });
+
+    expect(persona.patina).not.toContain("washi");
+  });
+
+  it("raises the washi ceiling for a saturated paper, not lowers it", () => {
+    // `0.18 + (saturated ? 0.1 : 0)`. The boost is only observable on a
+    // weekend/summer note whose roll sits in the 0.18–0.28 band: `w30` rolls
+    // 0.2597, so it gets tape on a Saturday and none on a Tuesday. A `-`
+    // there would quietly make the decorated buckets the *least* decorated.
+    // 2026-04-25 is a Saturday; 14:00 misses the night/morning/evening
+    // windows, so the bucket falls through to `weekend`.
+    const saturated = deriveNotebookPersona(
+      makeNote({
+        id: "w30",
+        createdAt: "2026-04-25T14:00:00",
+        updatedAt: "2026-04-25T14:00:00",
+      }),
+      { now: new Date("2026-04-25T14:00:00") },
+    );
+    const plain = deriveNotebookPersona(
+      makeNote({
+        id: "w30",
+        createdAt: "2026-04-21T14:00:00",
+        updatedAt: "2026-04-21T14:00:00",
+      }),
+      { now: new Date("2026-04-21T14:00:00") },
+    );
+
+    expect(saturated.paperName).toBe("Weekend paper");
+    expect(saturated.patina).toContain("washi");
+    expect(plain.patina).not.toContain("washi");
+  });
+
+  it("drops the date-stamp for a roll of exactly 0.35", () => {
+    const persona = deriveNotebookPersona(
+      makeNote({ id: "n2907", tags: ["reading"] }),
+      { now: NOW },
+    );
+
+    expect(persona.patina).not.toContain("date-stamp");
+  });
+
+  it("drops the pin for a roll of exactly 0.22", () => {
+    const persona = deriveNotebookPersona(makeNote({ id: "n16966" }), {
+      now: NOW,
+      hasOpenTask: true,
+    });
+
+    expect(persona.patina).not.toContain("pin");
+  });
+});
+
+describe("patina probability scales with wear", () => {
+  it("folds the corner of a worn note and leaves a fresh one flat", () => {
+    // `0.3 + wear * 0.4`. `n4` rolls 0.4422, which sits above the fresh
+    // note's threshold and below the worn one's — so the same id decides
+    // differently either side, which is what the `+` and the `* 0.4` are for.
+    const created = new Date(Date.parse(FRESH) - 400 * 86_400_000).toISOString();
+    const worn = deriveNotebookPersona(
+      makeNote({ id: "n4", createdAt: created, updatedAt: created }),
+      { now: new Date(FRESH), hasOpenTask: false },
+    );
+    const fresh = deriveNotebookPersona(
+      makeNote({ id: "n4", createdAt: FRESH, updatedAt: spanFrom(20) }),
+      { now: new Date(FRESH), hasOpenTask: false },
+    );
+
+    expect(worn.patina).toContain("folded-corner");
+    expect(fresh.patina).not.toContain("folded-corner");
+  });
+
+  it("marks a worn handwritten note with pencil and leaves a newer one clean", () => {
+    // `0.3 + wear * 0.5`, and only on the handwritten tier — the place hint
+    // is what puts it there.
+    const created = new Date(Date.parse(FRESH) - 400 * 86_400_000).toISOString();
+    const opts = { autoTags: ["location:park-stromovka"], hasOpenTask: false };
+    const worn = deriveNotebookPersona(
+      makeNote({ id: "n12", createdAt: created, updatedAt: spanFrom(80) }),
+      { ...opts, now: new Date(FRESH) },
+    );
+    const newer = deriveNotebookPersona(
+      makeNote({ id: "n12", createdAt: FRESH, updatedAt: spanFrom(32) }),
+      { ...opts, now: new Date(FRESH) },
+    );
+
+    expect(worn.fontTier).toBe("handwritten");
+    expect(worn.patina).toContain("pencil-marks");
+    expect(newer.patina).not.toContain("pencil-marks");
+  });
+});

@@ -30,14 +30,14 @@ const config = {
     // the workspace→indexes subscription, every persist subscriber, dispose,
     // and the `renderingAtoms` contract — which is what promoted it out of
     // `DEFERRED_FROM_MUTATION`. Its last smoke-test-only sibling,
-    // `silent-capture-runner.ts`, joined on 2026-08-20 (see below). `render-callbacks.ts` followed
+    // `silent-capture-runner.ts`, joined on 2026-08-28 (see below). `render-callbacks.ts` followed
     // on 2026-08-19 with `tests/render-callbacks.test.ts` — the callback bag
     // is a pure function of its 35 injected callbacks, so every handler is
     // reachable with spies; the `replace*` fakes apply the updater they get
     // so the writer closures are asserted too, not just call counts.
     "src/app/state-store.ts",
     "src/app/render-callbacks.ts",
-    // 2026-08-20: `silent-capture-runner.ts` promoted — 552 lines that had
+    // 2026-08-28: `silent-capture-runner.ts` promoted — 552 lines that had
     // never executed, because `main.ts` only loads it for `?silent=1` and the
     // smoke test never gets there. It is the bookmarklet path where the only
     // two outcomes are "the note is on Drive" or "the capture is gone", so
@@ -57,7 +57,7 @@ const config = {
 
     // Lifecycle wiring — all nine modules are now in scope.
     //
-    // 2026-08-20, second lifecycle batch: `capture-import` and
+    // 2026-08-28, second lifecycle batch: `capture-import` and
     // `handle-new-note`, the two async-orchestration ones. `capture-import`
     // is the fallback path for a bookmarklet capture (the fast path is
     // `silent-capture-runner`), so it decides what the note looks like when
@@ -68,7 +68,7 @@ const config = {
     // race, the no-op identity check on `applyFreshNoteDetails`, and the
     // empty-draft gate that keeps a regretted `+ Add` off Drive.
     //
-    // 2026-08-20: `keyboard-shortcuts`, `drag-drop-import` and
+    // 2026-08-22: `keyboard-shortcuts`, `drag-drop-import` and
     // `notes-endless-scroll` promoted with focused suites. All three were
     // "only covered via the smoke test", which for the drop importer meant
     // literally nothing but its two `addEventListener` calls had ever run —
@@ -107,16 +107,17 @@ const config = {
     //   runs: a 2026-08-17 measurement put it at 0.00 % with all 166 mutants
     //   NoCoverage. "A test imports it" is not the promotion bar — check for
     //   `vi.mock` first.
-    // 2026-08-20, last one in: `render-app.ts` (939). The config note used to
+    // 2026-08-28, last one in: `render-app.ts` (939). The config note used to
     // say "decision-heavy logic should move out first". Having read it: it is
     // a *router*, not a god function — twelve branches on `activeMenuItem`,
     // each delegating to a page builder that already has its own suite, plus
-    // four derivations at the top and a `finalize()` tail. The derivations
-    // (`personaOptions`, `autoTagLookup`, `availableTagSuggestions`,
-    // `topbarNote`/`syncCrumb`) are still the part worth extracting, and the
-    // suite is written through the public entry point precisely so that an
-    // extraction does not invalidate it: it asserts which page mounted, the
-    // append order, and the derived *effects*, never an internal.
+    // four derivations at the top and a `finalize()` tail. Three of the four
+    // (`personaOptions`, `autoTagLookup`, `topbarNote`/`syncCrumb`) were
+    // extracted on 2026-08-29 into `logic/render-derivations.ts`, which the
+    // `src/app/logic/**` glob above already covers. `availableTagSuggestions`
+    // stayed put: it is a bare `buildTagIndex(workspace).tags` at both call
+    // sites. The suite was written through the public entry point precisely
+    // so the extraction could not invalidate it — and it passed unchanged.
     "src/app/view/render-app.ts",
     "src/app/view/chrome/app-fab.ts",
     "src/app/view/chrome/mobile-nav.ts",
@@ -155,7 +156,7 @@ const config = {
     // "Reloading…" button.
     "src/app/view/shared/editor-sidebar.ts",
     "src/app/view/update-notification.ts",
-    // 2026-08-20, last of the batch: the four static copy pages. Copy pages
+    // 2026-08-22, last of the batch: the four static copy pages. Copy pages
     // look like the least valuable thing to measure and are close to the
     // opposite — they have almost no branches, so nearly every mutant is a
     // *string*, which means the score answers "is the shipped wording
@@ -245,27 +246,62 @@ const config = {
     // The day's other work: eight previously unmeasured modules promoted into
     // scope with dedicated suites (state-store, render-callbacks,
     // sync-helpers, render-helpers, tag-filter-bar, capture-page, tags-page,
-    // empty-state) and capture-context lifted 84.7 → 96.1. Scope is 117 files.
+    // empty-state) and capture-context lifted 84.7 → 96.1. Scope was 117 files.
     //
-    // Composite overall: **93.9 %**. That number is arithmetic — the
-    // 2026-08-17 full run plus every focused re-measurement since, not a fresh
-    // end-to-end run. The method is trustworthy: the 2026-08-18 nightly
-    // reported 92.18 % against a 92.20 % estimate for the same commit. The
-    // nightly `Daily Mutation Testing` workflow stays the confirmation; if it
-    // reports materially lower, walk `break` back rather than leaving CI red.
+    // --- Ratcheted again 2026-08-29 (fourth pass), 88/90/92 → 90/92/94. ---
     //
-    // `break: 88` keeps ~6 pp of headroom (run-to-run drift is well under
-    // 1 pp). `low: 90` puts a yellow warning just below the current level,
-    // `high: 92` stays reachable without being permanent-green.
+    // Two conditions the previous note set are both met.
     //
-    // Next ratchet wants the two remaining 80–85 % files (workspace-io 81.3,
-    // note-primary-url 83.3) and the last big unmeasured modules
-    // (`view/render-app.ts` 939 LOC, `silent-capture-runner.ts` 552) — the
-    // latter will *lower* the overall when promoted, so ratchet after that,
-    // not before. See `project_sutrapad_mutation_2026_08.md` (auto-memory).
-    high: 92,
-    low: 90,
-    break: 88,
+    // **The promotion campaign is finished.** Every module in `src/` that is
+    // not on the permanent-exclusion list is measured — 139 files, up from
+    // 117. The last two holdouts went in the same day and neither dragged the
+    // overall down, which was the specific fear that blocked this ratchet:
+    // `render-app` 97.5 % and `silent-capture-runner` 99.4 %. Three of
+    // `render-app`'s derivations then moved to `logic/render-derivations.ts`
+    // (100 %), which its suite proved behaviour-preserving by passing
+    // unchanged.
+    //
+    // **Measured, not estimated: 95.07 %** (8 357 / 8 790, 138 scored files).
+    // A full local run on 2026-08-29 reproduced the nightly's 95.07 % to the
+    // mutant, so this is now a real baseline rather than a running total.
+    //
+    // The running total it replaces said 94.66 %, and being 0.41 pp *pessi-
+    // mistic* is the interesting part. A per-file diff against the fresh run
+    // showed 25 of the 26 scores recorded during the campaign were exact
+    // (only `home-page` was off, by one mutant). The drift was entirely in
+    // the part of the composite that was **inherited from the 2026-08-17 run
+    // and never re-measured** — nine days and forty commits of test-writing
+    // later, that block no longer described the code. An arithmetic composite
+    // is reliable for the files you measure and rots silently everywhere
+    // else, so: **after a campaign, re-baseline with a full run.** ~2 h here,
+    // ~40 min on a CI runner.
+    //
+    // `break: 90` keeps ~4.7 pp of headroom (run-to-run drift is well under
+    // 1 pp, and there is no longer an unmeasured module that could arrive and
+    // move the number). `low: 92` puts a yellow warning just below the current
+    // level; `high: 94` sits a hair under it, so green means "still where we
+    // left it" rather than being permanently lit.
+    //
+    // **If a nightly comes back red** (standing instruction, Filip 2026-08-29):
+    // loosen by ONE notch — back to 88/90/92 — rather than abandoning the
+    // ratchet. The estimate has never been off by more than 0.02 pp, so a red
+    // run means the arithmetic drifted somewhere specific; one notch buys room
+    // to find where without leaving CI red in the meantime.
+    //
+    // Next ratchet has no unmeasured modules left to wait for. The fresh
+    // baseline also corrected where the remaining work is: 68 of 138 files
+    // are at 100 %, only one is under 85 %, and **433 not-killed mutants sit
+    // overwhelmingly in `lib/` files that have been in scope since day one
+    // and never had a focused pass** — `notebook-persona` (47 left, 89.3 %),
+    // `notebook` (42, 88.0 %), `logic/tag-aliases` (33, 85.0 %), `auto-tags`
+    // (22, 91.5 %), `detect-kind` (19, 86.7 %). Those five hold 163. The
+    // low-percentage files the old note pointed at are small change by
+    // comparison (`visible-tag-classes` 81.0 % is 4 mutants, all equivalent;
+    // `tag-filter-bar` is 16). Percentage is a bad ranking here — sort by
+    // absolute survivors. See `project_sutrapad_mutation_2026_08.md`.
+    high: 94,
+    low: 92,
+    break: 90,
   },
   vitest: {
     configFile: "vitest.config.ts",

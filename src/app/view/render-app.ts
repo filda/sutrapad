@@ -1,13 +1,12 @@
 import type { MenuItemId } from "../logic/menu";
 import {
-  isDarkThemeId,
-  resolveThemeId,
-  type ThemeChoice,
-} from "../logic/theme";
-import {
-  isPersonaEnabled,
-  type PersonaPreference,
-} from "../logic/persona";
+  buildAutoTagLookup,
+  deriveRenderPersonaOptions,
+  deriveSyncCrumb,
+  deriveTopbarNote,
+} from "../logic/render-derivations";
+import type { ThemeChoice } from "../logic/theme";
+import type { PersonaPreference } from "../logic/persona";
 import type { CaptureLocationPreference } from "../logic/capture-location";
 import type { TagClassId } from "../logic/tag-class";
 import { suggestTagAliases } from "../logic/tag-aliases";
@@ -24,8 +23,7 @@ import {
   deriveNotebookPersona,
   type NotebookPersona,
 } from "../../lib/notebook-persona";
-import { buildCombinedTagIndex, buildTagIndex } from "../../lib/notebook";
-import { buildTaskFacetByNoteId } from "../../lib/tasks";
+import { buildTagIndex } from "../../lib/notebook";
 import { createOgImageResolver } from "../logic/og-image-resolver";
 import type { LexiconStore } from "../../services/drive/lexicon-store";
 import { pickNoteThumbSeed } from "../logic/link-thumb-seed";
@@ -37,7 +35,6 @@ import { buildHomePage } from "./pages/home-page";
 import { buildCapturePage } from "./pages/capture-page";
 import { buildTagsPage } from "./pages/tags-page";
 import { buildLinksPage } from "./pages/links-page";
-import { documentFromSummary } from "../../lib/note-card-meta";
 import type { LinksViewMode } from "../logic/links-view";
 import { buildTasksPage } from "./pages/tasks-page";
 import { buildNotesPanel, type NotesPanelOptions } from "./pages/notes-page";
@@ -57,7 +54,6 @@ import { requiresLocationConsent } from "../logic/capture-location";
 import { buildEditorSidebar } from "./shared/editor-sidebar";
 import { buildLinkThumb } from "./shared/link-thumb";
 import { applyPersonaStyles } from "./shared/persona-decor";
-import { formatLastChange } from "../logic/editor-sync-crumb";
 import type { SyncState } from "../session/workspace-sync";
 import {
   buildHomeHintContext,
@@ -355,36 +351,18 @@ export function renderAppPage({
   const isNoteDetailRoute = activeMenuItem === "notes" && detailNoteId !== null;
   root.classList.toggle("app--note-detail", isNoteDetailRoute);
 
-  // Persona decoration only runs when the user opted in *and* we have a
-  // concrete dark/light answer to feed the paper-palette chooser. `auto`
-  // themes resolve here so a system light/dark switch during a session flips
-  // the card paper variants on the next re-render without a reload.
-  const personaOptions = isPersonaEnabled(personaPreference)
-    ? {
-        // Persona recurrence stickers (regular / first-of-kind) read only tags
-        // + place/source facets, so body-less docs rebuilt from the resident
-        // summaries drive them identically — and keep working once
-        // `loadWorkspace` stops holding note bodies (Phase 2 step 3e).
-        allNotes: noteSummaries.map((summary) => documentFromSummary(summary)),
-        dark: isDarkThemeId(resolveThemeId(currentTheme)),
-      }
-    : undefined;
+  // The four value derivations live in `logic/render-derivations` — see that
+  // module's header for why. Each is documented there; this function is a
+  // router and keeps only the routing.
+  const personaOptions = deriveRenderPersonaOptions({
+    personaPreference,
+    currentTheme,
+    noteSummaries,
+  });
 
-  // Auto-tag lookup is also consumed below by the editor-card on the detail
-  // route, but the topbar needs it for chip styling too, so we build it once
-  // at the top of the render pass and hand both surfaces the same Set.
-  // `taskFacetByNoteId` corrects the `tasks:*` facet for placeholder notes
-  // (Phase 2 notes-scaling) — see `buildTaskFacetByNoteId`'s doc.
-  const autoTagLookup = new Set(
-    buildCombinedTagIndex(
-      workspace,
-      new Date(),
-      undefined,
-      buildTaskFacetByNoteId(taskIndex),
-    ).tags
-      .filter((entry) => entry.kind === "auto")
-      .map((entry) => entry.tag),
-  );
+  // Built once per pass and handed to both the topbar (chip styling) and the
+  // editor card, so the same tag cannot render two ways on one screen.
+  const autoTagLookup = buildAutoTagLookup(workspace, taskIndex);
 
   // Tag index for the topbar typeahead. Only the user-authored tags end up in
   // `buildTagIndex` — auto-tags don't need to appear in the filter dropdown
@@ -624,14 +602,8 @@ export function renderAppPage({
     return;
   }
 
-  // The topbar's right-edge crumb carries "synced HH:mm" (or, for a
-  // signed-out user, "local · HH:mm"); on cross-day edits the date is
-  // appended. Suppressed in the filter-miss state because there is no
-  // single note whose last-edit time would be meaningful.
-  const topbarNote = note ?? (selectedTagFilters.length > 0 ? null : currentNote);
-  const syncCrumb = topbarNote
-    ? formatLastChange(topbarNote.updatedAt, { signedIn: profile !== null })
-    : null;
+  const topbarNote = deriveTopbarNote({ note, currentNote, selectedTagFilters });
+  const syncCrumb = deriveSyncCrumb(topbarNote, profile);
 
   appendNoteDetailPage(page, {
     topbarNote,

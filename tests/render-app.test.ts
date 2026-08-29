@@ -1,19 +1,19 @@
 // @vitest-environment happy-dom
 //
-// First focused test for `src/app/view/render-app.ts` — the last module
-// outside the mutation scope, and the one the config note has been warning
+// Focused test for `src/app/view/render-app.ts` — the last module brought
+// into the mutation scope, and the one the config note had been warning
 // about: "largest untested surface; decision-heavy logic should move out
 // first."
 //
-// Having now read it: it is a **router**, not a god function. Twelve branches
-// on `activeMenuItem`, each delegating to a page builder that already has its
-// own suite, plus four derivations at the top and a `finalize()` tail. The
-// "decision-heavy logic" worth extracting is those derivations — and pinning
-// them *through the public entry point* is what makes extracting them safe.
-// A test that asserts "the Tags page rendered and the FAB is last" survives a
-// refactor that moves `personaOptions` into its own module; a test written
-// against the internals would not. So this suite deliberately asserts only
-// what `renderAppPage` itself decides:
+// On reading it, that turned out to describe a **router**, not a god
+// function. Twelve branches on `activeMenuItem`, each delegating to a page
+// builder that already has its own suite, plus four derivations at the top
+// and a `finalize()` tail. The derivations *were* the decision-heavy part,
+// and they have since moved to `logic/render-derivations` (with their own
+// suite) — **this file did not change across that extraction**, which is what
+// proved the move behaviour-preserving. That was the point of writing it this
+// way: it asserts only what `renderAppPage` itself decides, through the
+// public entry point, never an internal.
 //
 //   - **which page is mounted, and its wrapper class.** `page--wide` is on
 //     five routes and off the other seven; getting it wrong reflows the
@@ -27,12 +27,14 @@
 //     z-index war. Each is a comment in the source and none was asserted.
 //   - **`root.innerHTML = ""` first.** Every render is a full rebuild; a
 //     mutant that drops it doubles the whole app on the second pass.
-//   - **the derivations.** `personaOptions` (opt-in *and* a resolved
-//     dark/light answer), `autoTagLookup` (auto tags only, shared by the
-//     topbar and the editor), `availableTagSuggestions` (user tags only —
-//     auto tags must not reach the typeahead), and `topbarNote` /
-//     `syncCrumb`, whose `note ?? (filters ? null : currentNote)` is three
-//     distinct states.
+//   - **the derivations, through their effects.** `personaOptions` (opt-in
+//     *and* a resolved dark/light answer), `autoTagLookup` (auto tags only,
+//     shared by the topbar and the editor), `availableTagSuggestions` (user
+//     tags only — auto tags must not reach the typeahead), and `topbarNote` /
+//     `syncCrumb`, whose three states the crumb makes visible. The functions
+//     themselves are unit-tested in `tests/render-derivations.test.ts`; what
+//     is asserted here is that the router still calls them and threads the
+//     results to the right surfaces.
 //   - **the detail route's own layout**: the hero only when there is a note,
 //     the sidebar suppressed on a filter miss, and the consent card's
 //     three-way state.
