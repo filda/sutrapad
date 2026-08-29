@@ -48,7 +48,7 @@
       "groupName": "fontsource"
     },
     {
-      "description": "TypeScript stays on 6.x — StrykerJS (checked up to 10.0.0) needs the legacy ts.parseConfigFileTextToJson API that TypeScript 7 removed, and the breakage only shows up in the mutation workflow, not in npm run check",
+      "description": "TypeScript stays on 6.x. Re-checked 2026-08-29 against typescript@7.0.2 and @stryker-mutator/typescript-checker@10.0.0: this is structural, not a version lag. The 7.x package is the native port — its main entry (lib/version.cjs) exports only `version` and `versionMajorMinor`, and the whole classic compiler API moved behind ./unstable/*. The checker calls ts.parseConfigFileTextToJson, ts.createSolutionBuilderWithWatch and ts.createEmitAndSemanticDiagnosticsBuilderProgram, none of which exist any more; its own guardTSVersion only asserts >=3.6, so it starts up happily and dies later. That is why the breakage shows up in the mutation workflow and not in npm run check. Lift this pin only once StrykerJS ships a checker written against the ./unstable API",
       "matchPackageNames": ["typescript"],
       "allowedVersions": "<7"
     },

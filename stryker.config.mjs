@@ -299,6 +299,45 @@ const config = {
     // comparison (`visible-tag-classes` 81.0 % is 4 mutants, all equivalent;
     // `tag-filter-bar` is 16). Percentage is a bad ranking here — sort by
     // absolute survivors. See `project_sutrapad_mutation_2026_08.md`.
+    //
+    // --- StrykerJS 9.6.1 → 10.0.0, 2026-08-29. Thresholds unchanged. ---
+    //
+    // 10.0.0's only documented breaking change is Node ≥ 22 (CI is already on
+    // 22). The one that actually matters here is not documented as a break: a
+    // new **`CallExpression` mutator, enabled by default**, which deletes a
+    // call used as a statement (`el.append(x);` → `;`) and drops a
+    // `throw new X()`. That is a change to the denominator, so it was measured
+    // before adopting rather than explained afterwards:
+    //
+    //   - **+1 435 scored mutants** (1 540 generated, 105 CompileError) on top
+    //     of 8 790. Every one is an `emptyStatement` replacement — deleting a
+    //     statement always type-checks, so unlike most new mutants these do
+    //     *not* get absorbed by the TypeScript checker.
+    //   - **1 365 of them are already killed — 95.12 %**, which is the rate the
+    //     suite kills everything else at.
+    //   - Non-`CallExpression` mutants move by **−7** across the whole scope
+    //     (babel 8; nothing behavioural).
+    //
+    // So the composite goes 95.35 % → **≈95.31 % (9 746 / 10 225)**: four
+    // hundredths of a point for 1 435 more mutants of real signal. No reason
+    // to set `excludedMutations: ["CallExpression"]`, and the 90/92/94 ratchet
+    // holds untouched.
+    //
+    // Measured with a probe run that excluded the other sixteen mutators, so
+    // it cost 22 min rather than a second full baseline. The estimate above is
+    // arithmetic and inherits the caveat two paragraphs up: **the next nightly
+    // is the first true 10.0.0 baseline** — record what it prints, and note
+    // that `reports/mutation/2026-08-29/mutation.json` is no longer directly
+    // diffable against it, by design.
+    //
+    // The 70 new not-killed mutants are a backlog, not noise. The standout is
+    // a cluster of **13 deletable `effects.render()` calls** in
+    // `session/workspace-sync.ts` (8) and `session/workspace-refresh.ts` (5):
+    // the sync path can be made to skip re-rendering and no test notices.
+    // Then five `rememberDriveIds(...)` in `session/workspace-io.ts`,
+    // `lifecycle/palette.ts` L115-119 (an entire uncovered branch), and a
+    // scattering of `event.preventDefault()` and `setAttribute("aria-…")`
+    // calls that no assertion looks at.
     high: 94,
     low: 92,
     break: 90,

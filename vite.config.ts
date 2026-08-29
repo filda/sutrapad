@@ -6,7 +6,7 @@ import { defineConfig, loadEnv, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { FontaineTransform } from "fontaine";
 
-import { buildPwaManifest } from "./src/lib/pwa-manifest";
+import { buildPwaManifest } from "./src/lib/pwa-manifest.ts";
 
 /**
  * Strip legacy `.woff` fallback entries from `@fontsource*` CSS at transform
