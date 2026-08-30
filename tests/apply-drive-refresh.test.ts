@@ -411,3 +411,81 @@ describe("applyDriveRefresh", () => {
     expect(next.activeNoteId).toBe("draft");
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// Three survivors the triage (`docs/mutation-survivor-triage.md`) traced to
+// this function. All three sit on paths the suite above exercises for their
+// *happy* outcome without pinning the bookkeeping that produces it, so each
+// call can be deleted and the assertions still hold.
+
+describe("applyDriveRefresh: the bookkeeping the suite did not pin", () => {
+  it("keeps a local-only note that Drive has never been told about", () => {
+    // The `kept.push(note)` inside the preserve branch. Delete it and a note
+    // the user is typing into right now vanishes on the next focus refresh,
+    // because Drive has not been told its id exists yet and the inventory
+    // therefore does not list it.
+    //
+    // `gone` is here to make the refresh mutate. Without it nothing changes,
+    // the no-op short-circuit returns `local` by reference, and `kept` — the
+    // array the deletion empties — is never read. A fixture that only
+    // preserves cannot see a preserve bug.
+    const local = workspace([
+      note("a", "alpha", "2026-05-01T10:00:00.000Z"),
+      note("draft", "rozepsané", "2026-05-01T11:00:00.000Z"),
+      note("gone", "smazané jinde", "2026-04-30T10:00:00.000Z"),
+    ]);
+
+    const next = applyDriveRefresh(local, [], [{ noteId: "a" }], new Set(["a", "gone"]));
+
+    expect(next.notes.map((entry) => entry.id)).toEqual(["draft", "a"]);
+  });
+
+  it("appends a fetched note once even when the batch repeats it", () => {
+    // `keptIds.add` in the append loop is what makes the `keptIds.has` guard
+    // above it mean anything. Without it a batch that carries the same note
+    // twice — which a retried fetch produces — appends it twice, and the
+    // notebook shows a duplicate until the next full load.
+    const local = workspace([note("a", "alpha", "2026-05-01T10:00:00.000Z")]);
+    const fresh = note("b", "beta", "2026-05-02T10:00:00.000Z");
+
+    const next = applyDriveRefresh(
+      local,
+      [fresh, fresh],
+      [{ noteId: "a" }, { noteId: "b" }],
+      new Set(["a", "b"]),
+    );
+
+    expect(next.notes.map((entry) => entry.id)).toEqual(["b", "a"]);
+  });
+
+  it("promotes a note to active when the workspace had none", () => {
+    // The `kept.length === 0` half of the no-op short-circuit. Nothing about
+    // the notes changed here, so `mutated` is false — but the workspace had
+    // no active note and now there is one to promote, which is a real change
+    // and must not be short-circuited away.
+    const local = workspace(
+      [note("a", "alpha", "2026-05-01T10:00:00.000Z")],
+      null,
+    );
+
+    const next = applyDriveRefresh(
+      local,
+      [],
+      [{ noteId: "a" }],
+      new Set(["a"]),
+    );
+
+    expect(next).not.toBe(local);
+    expect(next.activeNoteId).toBe("a");
+  });
+
+  it("does short-circuit when there is genuinely nothing to do", () => {
+    // The other side of the same guard: an empty workspace with no active
+    // note has nothing to promote, so the identical-reference return stands
+    // and the orchestrator skips its render.
+    const local = workspace([], null);
+
+    expect(applyDriveRefresh(local, [], [], new Set())).toBe(local);
+  });
+});

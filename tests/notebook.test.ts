@@ -10,6 +10,7 @@ import {
   collectAllTagsForNote,
   createCapturedNoteWorkspace,
   createNewNoteWorkspace,
+  createNote,
   createNotesWorkspace,
   createTextNoteWorkspace,
   createWorkspace,
@@ -23,6 +24,7 @@ import {
   mergeHashtagsIntoTags,
   mergeWorkspaces,
   sortNotes,
+  TRACKING_QUERY_PARAMS,
   stripEmptyDraftNotes,
   upsertNote,
 } from "../src/lib/notebook";
@@ -1683,5 +1685,313 @@ describe("createNotesWorkspace", () => {
     const result = createNotesWorkspace(workspace, imported);
     expect(result.notes).toHaveLength(1);
     expect(result.notes[0].title).toBe("fresh");
+  });
+});
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// The triage (`docs/mutation-survivor-triage.md`) put 38 killable survivors in
+// this file, and 28 of them are two tables: the tracking-parameter blocklist
+// and `areWorkspacesEqual`'s per-field comparison chain. Both survive for the
+// same reason — the suite above asserts a *representative* entry and trusts
+// the rest, so any single entry can be blanked or any single field comparison
+// forced true and nothing fails. Recipe #27: a table is one `it.each`.
+
+/**
+ * The blocklist, written out again rather than imported.
+ *
+ * This has to be a literal. Iterating `TRACKING_QUERY_PARAMS` to test itself
+ * would pass no matter what the set contained — including a mutant that
+ * replaced an entry with `""` — which is the self-deceiving shape the mutation
+ * log warns about. Two independent claims are made below: that the set holds
+ * exactly these names, and that each one is actually stripped.
+ */
+const EXPECTED_TRACKING_PARAMS = [
+  "gclid",
+  "gclsrc",
+  "dclid",
+  "fbclid",
+  "msclkid",
+  "yclid",
+  "mc_cid",
+  "mc_eid",
+  "_hsenc",
+  "_hsmi",
+  "__hstc",
+  "__hssc",
+  "__hsfp",
+  "igshid",
+  "si",
+  "dop_ab_variant",
+  "dop_source_zone_name",
+  "dop_source_id",
+  "dop_req_id",
+];
+
+describe("TRACKING_QUERY_PARAMS", () => {
+  it("holds exactly the documented names", () => {
+    expect([...TRACKING_QUERY_PARAMS].toSorted()).toEqual(
+      EXPECTED_TRACKING_PARAMS.toSorted(),
+    );
+  });
+
+  it.each(EXPECTED_TRACKING_PARAMS)("strips %s", (param) => {
+    const stripped = canonicalizeUrl(
+      `https://example.com/a?${param}=x&keep=1`,
+    );
+
+    expect(stripped).toBe("https://example.com/a?keep=1");
+  });
+
+  it("strips any utm_ parameter by prefix, not by name", () => {
+    // The prefix rule is why the list carries no `utm_*` entries. A campaign
+    // parameter nobody has heard of still has to go.
+    expect(canonicalizeUrl("https://example.com/a?utm_wildcard=x&keep=1")).toBe(
+      "https://example.com/a?keep=1",
+    );
+  });
+
+  it("keeps a parameter that merely looks like tracking", () => {
+    // The other half of the contract: `sid` is not `si`, and stripping by
+    // substring rather than by exact name would eat real query state.
+    expect(canonicalizeUrl("https://example.com/a?sid=7&gclid_x=1")).toBe(
+      "https://example.com/a?sid=7&gclid_x=1",
+    );
+  });
+});
+
+describe("areWorkspacesEqual: every compared field", () => {
+  const baseNotes = (): SutraPadDocument[] => [
+    makeNote({
+      id: "a",
+      updatedAt: "2026-05-01T10:00:00.000Z",
+      title: "A",
+      body: "alpha",
+      urls: ["https://a.example"],
+      tags: ["x"],
+      location: "Praha",
+      coordinates: { latitude: 50.1, longitude: 14.4 },
+    }),
+    makeNote({
+      id: "b",
+      updatedAt: "2026-05-02T10:00:00.000Z",
+      title: "B",
+      body: "beta",
+      urls: ["https://b.example"],
+      tags: ["y"],
+      location: "Brno",
+      coordinates: { latitude: 49.2, longitude: 16.6 },
+    }),
+  ];
+
+  // Each case changes exactly one field on the *second* note. The second one
+  // matters: with only the first note differing, `every` → `some` still
+  // returns false and the mutant would survive.
+  const CASES: Array<{ field: string; change: Partial<SutraPadDocument> }> = [
+    { field: "id", change: { id: "b2" } },
+    { field: "title", change: { title: "B!" } },
+    { field: "body", change: { body: "beta!" } },
+    // The *right* side has to be the longer one. With left longer, the
+    // `urls.every(…)` that follows compares against `undefined` and returns
+    // false on its own, so the length check never gets to matter.
+    { field: "urls length", change: { urls: ["https://b.example", "https://c.example"] } },
+    { field: "urls content", change: { urls: ["https://other.example"] } },
+    { field: "tags length", change: { tags: ["y", "z"] } },
+    { field: "tags content", change: { tags: ["z"] } },
+    { field: "location", change: { location: "Ostrava" } },
+    { field: "latitude", change: { coordinates: { latitude: 0, longitude: 16.6 } } },
+    { field: "longitude", change: { coordinates: { latitude: 49.2, longitude: 0 } } },
+    { field: "createdAt", change: { createdAt: "2020-01-01T00:00:00.000Z" } },
+    { field: "updatedAt", change: { updatedAt: "2027-05-02T10:00:00.000Z" } },
+    {
+      field: "captureContext",
+      change: { captureContext: { source: "url-capture" } },
+    },
+  ];
+
+  it("returns true for two structurally identical workspaces", () => {
+    expect(
+      areWorkspacesEqual(
+        { notes: baseNotes(), activeNoteId: "a" },
+        { notes: baseNotes(), activeNoteId: "a" },
+      ),
+    ).toBe(true);
+  });
+
+  it.each(CASES)("is false when $field differs", ({ change }) => {
+    const right = baseNotes();
+    right[1] = { ...right[1], ...change };
+
+    expect(
+      areWorkspacesEqual(
+        { notes: baseNotes(), activeNoteId: "a" },
+        { notes: right, activeNoteId: "a" },
+      ),
+    ).toBe(false);
+  });
+
+  it("is false when the note counts differ", () => {
+    expect(
+      areWorkspacesEqual(
+        { notes: baseNotes(), activeNoteId: "a" },
+        { notes: [baseNotes()[0]], activeNoteId: "a" },
+      ),
+    ).toBe(false);
+  });
+
+  it("is false when only the active note differs", () => {
+    expect(
+      areWorkspacesEqual(
+        { notes: baseNotes(), activeNoteId: "a" },
+        { notes: baseNotes(), activeNoteId: "b" },
+      ),
+    ).toBe(false);
+  });
+
+  it("ignores the order the notes arrive in", () => {
+    // The comparison sorts by id first, so a workspace loaded from Drive in a
+    // different order is still equal — that is what stops a no-op refresh from
+    // registering as a change.
+    const reversed = baseNotes().toReversed();
+
+    expect(
+      areWorkspacesEqual(
+        { notes: baseNotes(), activeNoteId: "a" },
+        { notes: reversed, activeNoteId: "a" },
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("mergeWorkspaces: the ten merge-path gaps", () => {
+  const older = "2026-05-01T10:00:00.000Z";
+  const newer = "2026-05-02T10:00:00.000Z";
+
+  it("keeps the remote version when the remote one is newer", () => {
+    // Iteration is remote-then-local, and the `>=` lets a local edit win a
+    // tie. Force the guard true and local wins *every* time, which silently
+    // reverts a note edited on another device to whatever this device last
+    // had — the exact bug the comparison exists to prevent.
+    const local = {
+      notes: [makeNote({ id: "x", updatedAt: older, body: "local" })],
+      activeNoteId: "x",
+    };
+    const remote = {
+      notes: [makeNote({ id: "x", updatedAt: newer, body: "remote" })],
+      activeNoteId: "x",
+    };
+
+    expect(mergeWorkspaces(local, remote).notes[0].body).toBe("remote");
+  });
+
+  it("still lets the local version win a tie", () => {
+    // The other half of `>=`: same timestamp, local wins because the user's
+    // unsynced keystroke is the more valuable side of a collision.
+    const local = {
+      notes: [makeNote({ id: "x", updatedAt: newer, body: "local" })],
+      activeNoteId: "x",
+    };
+    const remote = {
+      notes: [makeNote({ id: "x", updatedAt: newer, body: "remote" })],
+      activeNoteId: "x",
+    };
+
+    expect(mergeWorkspaces(local, remote).notes[0].body).toBe("local");
+  });
+
+  it("falls back to the remote active note when the local one is gone", () => {
+    // The remote branch of the `activeNoteId` ladder. It has to be a note
+    // that is *not* first in the sorted list, or the final `notes[0]?.id`
+    // fallback would produce the same answer and the branch could be deleted.
+    const local = {
+      notes: [makeNote({ id: "a", updatedAt: newer })],
+      activeNoteId: null,
+    };
+    const remote = {
+      notes: [
+        makeNote({ id: "a", updatedAt: newer }),
+        makeNote({ id: "b", updatedAt: older }),
+      ],
+      activeNoteId: "b",
+    };
+
+    const merged = mergeWorkspaces(local, remote);
+
+    expect(merged.notes[0].id).toBe("a");
+    expect(merged.activeNoteId).toBe("b");
+  });
+
+  it("returns a null active note when both sides are empty", () => {
+    // Two empty workspaces merge to an empty one, and the optional chain on
+    // `notes[0]?.id` is the only thing between that and a TypeError.
+    expect(
+      mergeWorkspaces(
+        { notes: [], activeNoteId: null },
+        { notes: [], activeNoteId: null },
+      ),
+    ).toEqual({ notes: [], activeNoteId: null });
+  });
+});
+
+describe("the remaining notebook gaps", () => {
+  it("is not pristine when the single note carries a real title", () => {
+    // Pristine means "the starter note, untouched". A user who renamed the
+    // note but has not typed a body yet has a notebook worth keeping, and
+    // `mergeWorkspaces` would otherwise discard it wholesale in favour of the
+    // remote side.
+    const renamed = {
+      notes: [makeNote({ id: "a", updatedAt: "2026-05-01T10:00:00.000Z", title: "Moje", body: "" })],
+      activeNoteId: "a",
+    };
+
+    expect(isPristineWorkspace(renamed)).toBe(false);
+  });
+
+  it("gives a new note an empty urls array", () => {
+    expect(createNote("Title").urls).toEqual([]);
+  });
+
+  it("does not re-add a hashtag the note already carries", () => {
+    // `seen` is seeded from the existing tags, and that seeding is the live
+    // half of the dedup. (The `seen.add` inside the loop is not:
+    // `extractHashtagsFromText` dedupes with a `seen` set of its own, so a
+    // repeated hashtag in the body never reaches this loop twice. Recorded as
+    // an inert line in the triage document rather than tested.)
+    expect(mergeHashtagsIntoTags(["praha"], "#praha ráno a #brno večer")).toEqual([
+      "praha",
+      "brno",
+    ]);
+  });
+
+  it("extracts plain http URLs, not only https", () => {
+    // Intranet and legacy links are still links.
+    expect(extractUrlsFromText("viz http://interni.example/a")).toEqual([
+      "http://interni.example/a",
+    ]);
+  });
+
+  it("dates the combined index from the injected clock, not the wall clock", () => {
+    // Both `now` and `savedAt` are injectable so a caller can build an index
+    // for a moment other than this one. `??` handed the caller's value
+    // through; anything that reaches for `new Date()` instead makes the
+    // index disagree with the render it was built for.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2027-01-01T00:00:00.000Z"));
+    try {
+      const workspace = {
+        notes: [makeNote({ id: "a", updatedAt: "2026-05-01T10:00:00.000Z" })],
+        activeNoteId: "a",
+      };
+
+      const index = buildAvailableCombinedTagIndex(workspace, [], "all", {
+        now: new Date("2026-05-01T12:00:00.000Z"),
+        savedAt: "2026-05-01T12:00:00.000Z",
+      });
+
+      expect(index.savedAt).toBe("2026-05-01T12:00:00.000Z");
+      expect(index.tags.map((entry) => entry.tag)).toContain("date:today");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
