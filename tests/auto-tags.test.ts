@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deriveAutoTags } from "../src/lib/auto-tags";
-import type { SutraPadDocument } from "../src/types";
+import type { SutraPadCaptureContext, SutraPadDocument } from "../src/types";
 
 function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
   return {
@@ -599,5 +599,274 @@ describe("deriveAutoTags: robustness", () => {
     });
 
     expect(deriveAutoTags(note, NOW)).toEqual(deriveAutoTags(note, NOW));
+  });
+});
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// The triage in `docs/mutation-survivor-triage.md` found this file to be the
+// one of the four unfocused `lib/` modules where almost every survivor is a
+// real gap: 20 of 22, with no equivalence subtleties anywhere. Two patterns
+// account for all of them, and both are visible in the suite above.
+//
+//   1. **Every threshold is exercised from the middle of its band.** 25 °C for
+//      "warm", 10 °C for "cool", 40 km/h for "windy", 0.02 and 0.95 for the
+//      scroll ends. A fixture in the middle cannot tell `>=` from `>`; only a
+//      fixture *on* the edge can.
+//   2. **Every branch is asserted when it fires, never when it must not.**
+//      `battery:charging` is checked with `charging: true` and nowhere with
+//      `false`, so `if (battery.charging === true)` can be forced to `true`
+//      and no test notices.
+//
+// The two survivors that are *not* gaps are the pair of quantifier mutants on
+// `slugifyTagValue`'s `/^-+|-+$/gu`. They look killable and are not: the
+// `replaceAll(/[^\p{L}\p{N}]+/gu, "-")` one line above collapses every run of
+// non-alphanumerics into a *single* dash, so two adjacent dashes never reach
+// the trim and `-+` can never behave differently from `-`. The replacement
+// string is killable, though — see the last test here.
+
+interface EdgeCase {
+  label: string;
+  captureContext: SutraPadCaptureContext;
+  /** Tag the real code emits for this fixture. */
+  present: string;
+  /** Tag the off-by-one mutant would emit instead. */
+  absent: string;
+}
+
+const EDGE_CASES: EdgeCase[] = [
+  {
+    label: "20 °C is warm, not cool",
+    captureContext: {
+      source: "new-note",
+      weather: { temperatureC: 20, source: "open-meteo" },
+    },
+    present: "weather:warm",
+    absent: "weather:cool",
+  },
+  {
+    label: "5 °C is cool, not cold",
+    captureContext: {
+      source: "new-note",
+      weather: { temperatureC: 5, source: "open-meteo" },
+    },
+    present: "weather:cool",
+    absent: "weather:cold",
+  },
+  {
+    label: "0.1 scroll progress is middle, not top",
+    captureContext: { source: "url-capture", scroll: { progress: 0.1 } },
+    present: "scroll:middle",
+    absent: "scroll:top",
+  },
+  {
+    label: "0.8 scroll progress is middle, not bottom",
+    captureContext: { source: "url-capture", scroll: { progress: 0.8 } },
+    present: "scroll:middle",
+    absent: "scroll:bottom",
+  },
+];
+
+describe("deriveAutoTags: threshold edges", () => {
+  it.each(EDGE_CASES)("$label", ({ captureContext, present, absent }) => {
+    const tags = deriveAutoTags(makeNote({ captureContext }), NOW);
+
+    expect(tags).toContain(present);
+    expect(tags).not.toContain(absent);
+  });
+
+  it("25 km/h is windy and 24 km/h is not", () => {
+    // The threshold is inclusive, and the band below it has to be checked too:
+    // without the 24 fixture, `windSpeedKmh >= 25` could be forced to `true`
+    // and every note would blow a gale.
+    const atEdge = deriveAutoTags(
+      makeNote({
+        captureContext: {
+          source: "new-note",
+          weather: { windSpeedKmh: 25, source: "open-meteo" },
+        },
+      }),
+      NOW,
+    );
+    const belowEdge = deriveAutoTags(
+      makeNote({
+        captureContext: {
+          source: "new-note",
+          weather: { windSpeedKmh: 24, source: "open-meteo" },
+        },
+      }),
+      NOW,
+    );
+
+    expect(atEdge).toContain("weather:windy");
+    expect(belowEdge).not.toContain("weather:windy");
+  });
+
+  it("20 % battery is low and 21 % is not", () => {
+    const atEdge = deriveAutoTags(
+      makeNote({
+        captureContext: { source: "new-note", battery: { levelPercent: 20 } },
+      }),
+      NOW,
+    );
+    const aboveEdge = deriveAutoTags(
+      makeNote({
+        captureContext: { source: "new-note", battery: { levelPercent: 21 } },
+      }),
+      NOW,
+    );
+
+    expect(atEdge).toContain("battery:low");
+    expect(aboveEdge).not.toContain("battery:low");
+  });
+
+  it("stops mapping WMO codes above 99", () => {
+    // 95–99 is the thunderstorm band and the last one in the table. A code
+    // outside the WMO range must fall through to "no condition tag" rather
+    // than being swept into thunder by an unbounded upper edge.
+    const tags = deriveAutoTags(
+      makeNote({
+        captureContext: {
+          source: "new-note",
+          weather: { weatherCode: 100, source: "open-meteo" },
+        },
+      }),
+      NOW,
+    );
+
+    expect(tags.filter((tag) => tag.startsWith("weather:"))).toEqual([]);
+  });
+});
+
+describe("deriveAutoTags: branches that must stay quiet", () => {
+  it("does not report offline for an online capture", () => {
+    const tags = deriveAutoTags(
+      makeNote({
+        captureContext: { source: "url-capture", network: { online: true } },
+      }),
+      NOW,
+    );
+
+    expect(tags).toContain("network:online");
+    expect(tags).not.toContain("network:offline");
+  });
+
+  it("does not report save-data when the flag is off", () => {
+    const tags = deriveAutoTags(
+      makeNote({
+        captureContext: {
+          source: "url-capture",
+          network: { online: true, saveData: false },
+        },
+      }),
+      NOW,
+    );
+
+    expect(tags).not.toContain("network:save-data");
+  });
+
+  it("does not report charging for a battery that is discharging", () => {
+    const tags = deriveAutoTags(
+      makeNote({
+        captureContext: {
+          source: "new-note",
+          battery: { charging: false, levelPercent: 80 },
+        },
+      }),
+      NOW,
+    );
+
+    expect(tags).not.toContain("battery:charging");
+    expect(tags).not.toContain("battery:low");
+  });
+
+  it("does not report a low battery when the level is unknown", () => {
+    // `charging` alone is a valid snapshot — the Battery API can report the
+    // charging state without a level. The `typeof … === "number"` half of the
+    // guard is what keeps `undefined <= 20` from being asked.
+    const tags = deriveAutoTags(
+      makeNote({
+        captureContext: { source: "new-note", battery: { charging: true } },
+      }),
+      NOW,
+    );
+
+    expect(tags).toContain("battery:charging");
+    expect(tags).not.toContain("battery:low");
+  });
+
+  it("tags a daytime capture as weather:day", () => {
+    // The suite above only ever asserts the night side, so the day branch
+    // could be switched off entirely without a failure.
+    const tags = deriveAutoTags(
+      makeNote({
+        captureContext: {
+          source: "url-capture",
+          weather: { isDay: true, source: "open-meteo" },
+        },
+      }),
+      NOW,
+    );
+
+    expect(tags).toContain("weather:day");
+    expect(tags).not.toContain("weather:night");
+  });
+});
+
+describe("deriveAutoTags: slugs that collapse to nothing", () => {
+  it("emits no author chip when the author slugifies to an empty string", () => {
+    // A page whose author meta is punctuation ("---", "•", an em-dash) is not
+    // an author. Without the `if (slug)` guard the note would carry a bare
+    // `author:` chip that filters to nothing and reads as a bug.
+    const tags = deriveAutoTags(
+      makeNote({
+        captureContext: { source: "url-capture", page: { author: "---" } },
+      }),
+      NOW,
+    );
+
+    expect(tags.some((tag) => tag.startsWith("author:"))).toBe(false);
+  });
+
+  it("emits no location chip when the location slugifies to an empty string", () => {
+    const tags = deriveAutoTags(makeNote({ location: "!!!" }), NOW);
+
+    expect(tags.some((tag) => tag.startsWith("location:"))).toBe(false);
+  });
+
+  it("trims the dashes that punctuation leaves at both ends of a slug", () => {
+    // `slugifyTagValue` turns every run of non-alphanumerics into one dash,
+    // which leaves a stray dash at each end when the value starts or ends with
+    // punctuation. Asserting the exact slug pins the trim; a fixture without
+    // leading/trailing punctuation cannot see it.
+    const tags = deriveAutoTags(
+      makeNote({
+        captureContext: {
+          source: "url-capture",
+          page: { author: " — Filip Šubr — " },
+        },
+      }),
+      NOW,
+    );
+
+    expect(tags).toContain("author:filip-šubr");
+  });
+});
+
+describe("deriveAutoTags: a note from the future", () => {
+  it("gives a note created after now neither this-week nor this-month", () => {
+    // Clock skew across devices is real: a note synced from a machine running
+    // fast arrives with a `createdAt` in our future, and `dayDelta` goes
+    // negative. "This week" is a *rolling window backwards*, so a negative
+    // delta belongs outside it — without the `>= 0` half of each guard,
+    // `dayDelta < 7` would happily accept −3.
+    const tags = deriveAutoTags(
+      makeNote({ createdAt: "2026-04-24T12:00:00.000Z" }),
+      NOW,
+    );
+
+    expect(tags).not.toContain("date:this-week");
+    expect(tags).not.toContain("date:this-month");
+    expect(tags).toContain("year:2026");
   });
 });
