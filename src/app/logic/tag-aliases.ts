@@ -276,10 +276,17 @@ export function suggestTagAliases(
     // dismissed, filter it out even though it reached the cluster through
     // a third party. Dropping the whole cluster would lose legitimate
     // merges; dropping just the dismissed aliases keeps the rest.
+    //
+    // This cannot empty the list, which is why there is no guard for that case
+    // — there was one until 2026-08-29 and it was unreachable. Emptying it
+    // would mean every alias is dismissed against the canonical, and each of
+    // those dismissals is exactly what stops the canonical from joining the
+    // cluster in the first place: the pair is skipped above, before it can
+    // union. A canonical that is in a cluster got there through some
+    // undismissed pair, and that partner always survives this filter.
     const aliases = rawAliases.filter(
       (alias) => !dismissed.has(dismissedPairKey(canonical, alias)),
     );
-    if (aliases.length === 0) continue;
 
     // Co-occurrence is computed over the _surviving_ cluster — if the
     // only shared note was between the canonical and a dismissed alias,
@@ -350,13 +357,15 @@ export function loadDismissedTagAliases(
 ): Set<string> {
   const raw = storage.getItem(STORAGE_KEY);
   if (raw === null) return new Set();
-  const trimmed = raw.trim();
-  if (trimmed === "") return new Set();
+  // No outer `trim()` and no empty-string early return: both were subsumed by
+  // the per-part `trim()` plus the `includes("|")` filter below, which discards
+  // empty and whitespace-only parts anyway. Removed 2026-08-29 — a `""` or
+  // `"   "` slot still yields an empty set, by the same path as a corrupt one.
   return new Set(
-    trimmed
+    raw
       .split(",")
       .map((part) => part.trim())
-      .filter((part) => part.length > 0 && part.includes("|")),
+      .filter((part) => part.includes("|")),
   );
 }
 

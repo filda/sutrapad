@@ -412,17 +412,31 @@ export function buildLinkIndex(
     right.updatedAt.localeCompare(left.updatedAt),
   );
 
-  const noteIdsByUrl = new Map<string, string[]>();
-  const latestUpdatedAtByUrl = new Map<string, string>();
+  // One entry per URL, both fields together. Notes are visited newest-first,
+  // so the first note to claim a URL is by construction its most recent one:
+  // `latestUpdatedAt` is written when the entry is created and never needs
+  // re-comparing.
+  //
+  // Simplified 2026-08-29. This used to be two parallel maps, and the loop
+  // carried a `note.updatedAt.localeCompare(previousLatest) > 0` check that
+  // could not fire over a pre-sorted list — a guard that had outlived its
+  // input. Reading the second map back out then needed a `?? ""` fallback that
+  // existed only to satisfy `Map.get`'s type; the two maps were filled in
+  // lockstep and could not disagree.
+  const linksByUrl = new Map<
+    string,
+    { noteIds: string[]; latestUpdatedAt: string }
+  >();
 
   for (const note of notesSortedByRecency) {
     for (const url of note.urls) {
-      const existingNoteIds = noteIdsByUrl.get(url) ?? [];
-      noteIdsByUrl.set(url, [...existingNoteIds, note.id]);
-
-      const previousLatest = latestUpdatedAtByUrl.get(url);
-      if (!previousLatest || note.updatedAt.localeCompare(previousLatest) > 0) {
-        latestUpdatedAtByUrl.set(url, note.updatedAt);
+      const existing = linksByUrl.get(url);
+      if (existing) existing.noteIds.push(note.id);
+      else {
+        linksByUrl.set(url, {
+          noteIds: [note.id],
+          latestUpdatedAt: note.updatedAt,
+        });
       }
     }
   }
@@ -430,12 +444,12 @@ export function buildLinkIndex(
   return {
     version: 1,
     savedAt,
-    links: [...noteIdsByUrl.entries()]
-      .map(([url, noteIds]) => ({
+    links: [...linksByUrl.entries()]
+      .map(([url, { noteIds, latestUpdatedAt }]) => ({
         url,
         noteIds,
         count: noteIds.length,
-        latestUpdatedAt: latestUpdatedAtByUrl.get(url) ?? "",
+        latestUpdatedAt,
       }))
       .toSorted(
         (left, right) =>
@@ -937,9 +951,12 @@ export function stripEmptyDraftNotes(
 ): SutraPadWorkspace {
   const kept = workspace.notes.filter((note) => !isEmptyDraftNote(note));
   if (kept.length === workspace.notes.length) return workspace;
-  const activeStillLives =
-    workspace.activeNoteId !== null &&
-    kept.some((note) => note.id === workspace.activeNoteId);
+  // No `activeNoteId !== null` guard: a null active id simply matches no note,
+  // and `some` already returns false for it. (The guard was here until
+  // 2026-08-29 and was subsumed by the line it guarded.)
+  const activeStillLives = kept.some(
+    (note) => note.id === workspace.activeNoteId,
+  );
   return {
     notes: kept,
     activeNoteId: activeStillLives ? workspace.activeNoteId : null,

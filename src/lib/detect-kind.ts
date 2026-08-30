@@ -86,10 +86,14 @@ const OPENING_QUOTE_CHARS = /^[\u00AB\u201E\u201C\u2018]/u;
 /** Matches a blockquote-style opener anywhere in the body. */
 const BLOCKQUOTE_LINE = /^>\s+/mu;
 
+// The three helpers below take **already-trimmed, non-empty** text. `detectKind`
+// trims once at the top and returns early on empty, and it is their only
+// caller, so each of them used to re-trim and re-check for empty — six guards
+// that could never fire. Removed 2026-08-29; if a second caller ever appears,
+// it trims first.
+
 function countWords(text: string): number {
-  const trimmed = text.trim();
-  if (trimmed === "") return 0;
-  return trimmed.split(/\s+/u).length;
+  return text.split(/\s+/u).length;
 }
 
 function splitNonEmptyLines(text: string): readonly string[] {
@@ -97,17 +101,16 @@ function splitNonEmptyLines(text: string): readonly string[] {
 }
 
 function isPureUrl(body: string): boolean {
-  const trimmed = body.trim();
-  if (trimmed === "") return false;
-  // `trim` + `\S+` check catches trailing whitespace / newline that users
-  // commonly leave after pasting a URL from the address bar.
-  if (/\s/u.test(trimmed)) return false;
+  // The `\s` check catches the *interior* whitespace of a body that is a URL
+  // plus prose; the caller has already removed the leading and trailing
+  // whitespace users leave after pasting from the address bar.
+  if (/\s/u.test(body)) return false;
   // Reset `lastIndex` because the module-level regex has /g — without a
   // fresh match call it would return stale state across invocations.
-  const matches = trimmed.match(URL_PATTERN);
+  const matches = body.match(URL_PATTERN);
   if (matches === null) return false;
   // A pure-URL body is a single URL that spans the whole trimmed input.
-  return matches.length === 1 && matches[0] === trimmed;
+  return matches.length === 1 && matches[0] === body;
 }
 
 function countUrls(body: string): number {
@@ -127,9 +130,7 @@ function countTaskLines(body: string): { tasks: number; nonEmpty: number } {
 }
 
 function startsWithQuote(body: string): boolean {
-  const trimmed = body.trimStart();
-  if (trimmed === "") return false;
-  return OPENING_QUOTE_CHARS.test(trimmed) || BLOCKQUOTE_LINE.test(trimmed);
+  return OPENING_QUOTE_CHARS.test(body) || BLOCKQUOTE_LINE.test(body);
 }
 
 /**
