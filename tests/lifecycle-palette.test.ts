@@ -28,7 +28,11 @@ import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 type MountPaletteOptions = {
   groups: unknown;
   selectedTagFilters: string[];
-  onSelectEntry: (entry: { payload: { kind: "tag"; tag: string } }) => void;
+  onSelectEntry: (entry: {
+    payload:
+      | { kind: "tag"; tag: string }
+      | { kind: "note"; noteId: string };
+  }) => void;
   onClose: () => void;
 };
 let lastMount: MountPaletteOptions | null = null;
@@ -78,18 +82,35 @@ function setup(activeMenuItem: MenuItemId, initialFilters: string[] = []) {
   let workspace: SutraPadWorkspace = { notes: [note], activeNoteId: note.id };
   let filters = [...initialFilters];
 
+  // Effect log. Each entry names the effect and the value it carried, so a
+  // test can assert the *sequence* rather than a set of call counts — the
+  // only shape that notices when one call in a run of five is deleted.
+  const calls: string[] = [];
+
   const setWorkspace = vi.fn((next: SutraPadWorkspace) => {
     workspace = next;
+    calls.push(`setWorkspace:${String(next.activeNoteId)}`);
   });
-  const setActiveMenuItem = vi.fn();
-  const setDetailNoteId = vi.fn();
+  const setActiveMenuItem = vi.fn((next: MenuItemId) => {
+    calls.push(`menu:${next}`);
+  });
+  const setDetailNoteId = vi.fn((next: string | null) => {
+    calls.push(`detail:${String(next)}`);
+  });
   const getActiveMenuItem = vi.fn(() => activeMenuItem);
   const setSelectedTagFilters = vi.fn((next: string[]) => {
     filters = next;
+    calls.push(`filters:${next.join(",")}`);
   });
-  const persistWorkspace = vi.fn();
-  const purgeEmptyDraftNotes = vi.fn();
-  const render = vi.fn();
+  const persistWorkspace = vi.fn((next: SutraPadWorkspace) => {
+    calls.push(`persist:${String(next.activeNoteId)}`);
+  });
+  const purgeEmptyDraftNotes = vi.fn(() => {
+    calls.push("purge");
+  });
+  const render = vi.fn(() => {
+    calls.push("render");
+  });
 
   const access = wirePaletteAccess({
     host: document.body,
@@ -110,6 +131,8 @@ function setup(activeMenuItem: MenuItemId, initialFilters: string[] = []) {
 
   return {
     access,
+    calls,
+    setWorkspace,
     setActiveMenuItem,
     setDetailNoteId,
     setSelectedTagFilters,
@@ -117,6 +140,7 @@ function setup(activeMenuItem: MenuItemId, initialFilters: string[] = []) {
     purgeEmptyDraftNotes,
     render,
     getFilters: () => filters,
+    getWorkspace: () => workspace,
   };
 }
 
@@ -339,5 +363,100 @@ describe("wirePaletteAccess lifecycle", () => {
     expect(lastDestroy).not.toHaveBeenCalled();
     wired.access.dispose();
     expect(lastDestroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// Seven statement-deletion survivors, and five of them are a single branch the
+// suite above never enters: picking a **note** entry. Everything here drove
+// `onSelectEntry` with a tag payload, so the whole note-navigation path — five
+// consecutive effect calls — could be deleted line by line without a failure.
+//
+// The order matters as much as the calls. `setWorkspace` then
+// `persistWorkspace` then the routing pair then `render` is what puts the note
+// on screen *and* on disk; a render that lands before the workspace is set
+// paints the previous note. So these assert the effect log as one array
+// (recipe #30/#39) rather than counting spies.
+
+describe("wirePaletteAccess: picking a note entry", () => {
+  it("selects the note, persists it, routes to Notes and repaints — in that order", () => {
+    const wired = setup("home");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", cancelable: true }));
+    lastMount?.onSelectEntry({ payload: { kind: "note", noteId: "n1" } });
+
+    expect(wired.calls).toEqual([
+      "purge",
+      "setWorkspace:n1",
+      "persist:n1",
+      "menu:notes",
+      "detail:n1",
+      "render",
+    ]);
+  });
+
+  it("hands the same workspace object to the store and to the persister", () => {
+    // Two calls, one value. If they diverge the note shown and the note saved
+    // are different, and the next cold start silently reverts the selection.
+    const wired = setup("home");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", cancelable: true }));
+    lastMount?.onSelectEntry({ payload: { kind: "note", noteId: "n1" } });
+
+    const stored = wired.setWorkspace.mock.calls[0]?.[0];
+    const persisted = wired.persistWorkspace.mock.calls[0]?.[0];
+
+    expect(stored).toBe(persisted);
+    expect(stored?.activeNoteId).toBe("n1");
+  });
+
+  it("does not touch the tag filters when a note was picked", () => {
+    // The note branch returns early. Without that return the tag-toggle path
+    // below would run too, with `entry.payload.tag` undefined.
+    const wired = setup("notes", ["work"]);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", cancelable: true }));
+    lastMount?.onSelectEntry({ payload: { kind: "note", noteId: "n1" } });
+
+    expect(wired.setSelectedTagFilters).not.toHaveBeenCalled();
+    expect(wired.getFilters()).toEqual(["work"]);
+  });
+});
+
+describe("wirePaletteAccess: the two remaining wiring gaps", () => {
+  it("commits the reconciled workspace after a tag pick", () => {
+    // `applyVisibleActiveNoteSelection` decides which note stays active once
+    // the filter narrows the list. Its result has to reach the store — drop
+    // the `setWorkspace` and the filter applies while the editor keeps
+    // showing a note the list no longer contains.
+    const wired = setup("notes");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/", cancelable: true }));
+    lastMount?.onSelectEntry({ payload: { kind: "tag", tag: "work" } });
+
+    expect(wired.setWorkspace).toHaveBeenCalledTimes(1);
+    expect(wired.getWorkspace().notes.map((entry) => entry.id)).toEqual(["n1"]);
+    expect(wired.calls.at(-1)).toBe("render");
+  });
+
+  it("swallows the slash so it never reaches the page", () => {
+    // `/` is a printable character. Without `preventDefault` the keystroke
+    // opens the palette *and* types a slash into whatever had focus.
+    setup("home");
+    const event = new KeyboardEvent("keydown", { key: "/", cancelable: true });
+
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(mountCount).toBe(1);
+  });
+
+  it("leaves a modified slash alone", () => {
+    // The other half: Ctrl+/ and Cmd+/ belong to the browser and to code
+    // editors, so the handler must not claim them.
+    setup("home");
+    const event = new KeyboardEvent("keydown", { key: "/", ctrlKey: true, cancelable: true });
+
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(mountCount).toBe(0);
   });
 });
