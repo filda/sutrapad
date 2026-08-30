@@ -625,3 +625,97 @@ describe("buildReason output discrimination", () => {
     expect(suggestions[0].reason).toBe("Near-identical spelling");
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// The last five killable survivors in this file. The triage
+// (`docs/mutation-survivor-triage.md`) classified 32 of its 37 as equivalent —
+// this is a small algorithm wrapped in guards that are each subsumed by
+// something downstream — so these five are the whole remaining surface, and
+// every one of them needs a *shaped* fixture rather than a bigger one.
+
+describe("suggestTagAliases: the shaped fixtures", () => {
+  it("accepts a pair sitting exactly on the relative-distance limit", () => {
+    // `distance / longerLen > maxRel` rejects; the edge itself is accepted.
+    // With the default 0.34 the boundary is unreachable — distance is capped
+    // at 2, so the ratio can never land exactly on 0.34 — which is why this
+    // has to go through the caller option. One edit over two characters is
+    // 0.5 on the nose.
+    const pair = index([entry("ab", ["n1", "n2", "n3"]), entry("ac", ["n1", "n2"])]);
+
+    const atLimit = suggestTagAliases(pair, { maxRelativeDistance: 0.5 });
+    const underDefault = suggestTagAliases(pair);
+
+    expect(atLimit).toHaveLength(1);
+    expect(atLimit[0]).toMatchObject({ canonical: "ab", aliases: ["ac"] });
+    // The same pair at the shipped default is too far apart to suggest, which
+    // is what makes the option — and this boundary — mean something.
+    expect(underDefault).toEqual([]);
+  });
+
+  it("keeps a star-shaped cluster whole", () => {
+    // `UnionFind.add` seeds a tag as its own parent *only if it is not already
+    // in the map*. Drop the `!` and `add` starts clobbering: a tag already
+    // pointing at a cluster root gets reset to itself and the link is lost.
+    //
+    // The shape matters. In a transitive *chain* (a~b, b~c, a~c) the extra
+    // pairs re-link whatever the clobber broke, and the mutant survives. It
+    // shows up only in a *star*: `a` matches both `b` and `c`, `b` and `c` do
+    // not match each other, so `a` is passed to `union()` twice and the second
+    // call is the one that would wipe the first.
+    //
+    // Distances: a–b and a–c are 2 over 8 characters (0.25, inside both
+    // limits); b–c is 4 and matches nothing.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("aaaaaaaa", ["n1", "n2", "n3", "n4"]),
+        entry("aaaaaaxy", ["n1", "n2", "n3"]),
+        entry("xyaaaaaa", ["n1", "n2"]),
+      ]),
+    );
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].aliases).toEqual(["aaaaaaxy", "xyaaaaaa"]);
+  });
+
+  it("does not let a dismissed pair drag a third tag into the cluster", () => {
+    // Skipping the dismissed pair before it unions is not the same as
+    // filtering it out afterwards: `kolo` reaches this cluster *only* through
+    // its pair with `kola`, and that pair is dismissed. `kolo`–`kala` is 2
+    // edits over 4 characters (0.5, past the 0.34 default) so it cannot get in
+    // any other way.
+    //
+    // Without the skip, `kolo` joins and — being the most-used tag — takes
+    // over as canonical, so the user is offered a merge into the very tag they
+    // dismissed.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("kolo", ["n1", "n2", "n3", "n4"]),
+        entry("kola", ["n1", "n2", "n3"]),
+        entry("kala", ["n1", "n2"]),
+      ]),
+      { dismissed: new Set([dismissedPairKey("kolo", "kola")]) },
+    );
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]).toMatchObject({ canonical: "kola", aliases: ["kala"] });
+  });
+
+  it("finds co-occurrence between the second and third cluster members", () => {
+    // `clusterCoOccurs` walks the cluster accumulating note ids, and the
+    // accumulation is the point: without it every member is only ever compared
+    // against the *first* one's notes. Here `cafe` shares nothing with either
+    // of the others, and the shared note (`b3`) sits between `café` and
+    // `cafee` — invisible to a first-member-only comparison.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("cafe", ["a1", "a2", "a3", "a4"]),
+        entry("café", ["b1", "b2", "b3"]),
+        entry("cafee", ["b3", "c1"]),
+      ]),
+    );
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0].reason).toContain("used together on at least one note");
+  });
+});

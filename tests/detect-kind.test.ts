@@ -467,3 +467,35 @@ describe("detectKind — quote anchoring", () => {
     expect(detect("2 > 1 holds true")).not.toBe("quote");
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// The last two killable survivors. Both are regex quantifiers, and both are
+// killable only because something has to match *immediately after* them — the
+// triage's rule 43. The quantifiers at the end of a pattern (`\]\s+` in
+// `TASK_LINE`, `/^>\s+/` in `BLOCKQUOTE_LINE`) are equivalent under `.test()`
+// and are deliberately not chased here.
+
+describe("detectKind: the regex quantifiers that do carry weight", () => {
+  it("counts a task line with extra space between the bullet and the box", () => {
+    // `TASK_LINE` is `…(?:[-*+]|\d+\.)\s+\[[ xX]\]…` and the `\s+` is followed
+    // by a literal `[`. With one space the quantifier is indistinguishable
+    // from `\s`; with two, only `\s+` can still reach the bracket. Markdown
+    // writers align checkboxes like this all the time.
+    expect(detectKind({ title: "", body: "-  [ ] jedna\n-  [ ] dva" })).toBe("tasks");
+    expect(detectKind({ title: "", body: "1.  [x] jedna\n2.  [x] dva" })).toBe("tasks");
+  });
+
+  it("treats a multi-label bare domain as a whole link", () => {
+    // `URL_PATTERN`'s bare-domain arm is `\b[a-z0-9][a-z0-9-]*(?:\.[…])+\/…`,
+    // and the `+` is what lets it span more than one dot. Without it the match
+    // starts at the *last* label — `rust-lang.org/book` instead of the whole
+    // string — and `isPureUrl`'s "the match covers the entire body" check
+    // fails, so a pasted docs link stops being classified as one.
+    //
+    // A single-label domain cannot see this: `example.com/path` matches whole
+    // either way.
+    expect(detectKind({ title: "", body: "docs.rust-lang.org/book" })).toBe("link");
+    expect(detectKind({ title: "", body: "a.b.c.example.com/x" })).toBe("link");
+  });
+});
