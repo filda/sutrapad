@@ -257,3 +257,64 @@ describe("handleImportDrop", () => {
     expect(result).toBeNull();
   });
 });
+
+function fnPayload(props: Record<string, unknown>): unknown {
+  return Object.assign(function payload() {}, props);
+}
+
+describe("toImportedNote defensive fields", () => {
+  it("generates an id when the imported one is an empty string", () => {
+    // `isNonEmptyString` — the suite feeds a real id or omits the key, so
+    // `value.length > 0` never has to reject a present-but-blank id. An
+    // empty id would collide with every other empty id on re-import.
+    const note = toImportedNote({ id: "", title: "Kept" });
+    expect(note?.id).not.toBe("");
+    expect(note?.id).toMatch(/[0-9a-f-]{36}/u);
+  });
+
+  it("rejects a function payload", () => {
+    // `typeof raw !== "object"` — the null half of the guard catches null,
+    // and every primitive falls through to the "nothing worth importing"
+    // exit anyway. A function is the one non-object that carries fields.
+    expect(toImportedNote(fnPayload({ title: "Leaked", body: "text" }))).toBeNull();
+  });
+
+  it("imports a note that has a title but no body", () => {
+    // The guard is `body.trim().length === 0 && rawTitle.length === 0` — an
+    // `&&`, so a titled-but-bodyless note must survive. Dropping the second
+    // half silently discards every title-only note in an export.
+    const note = toImportedNote({ title: "Only a title", body: "   " });
+    expect(note?.title).toBe("Only a title");
+    expect(note?.body).toBe("   ");
+  });
+
+  it("falls back to an empty tag list when `tags` is not an array", () => {
+    expect(toImportedNote({ title: "x", tags: "urgent" })?.tags).toEqual([]);
+    expect(toImportedNote({ title: "x", tags: 42 })?.tags).toEqual([]);
+  });
+});
+
+describe("dropSourceFromDataTransfer text fallback", () => {
+  it("falls back to text/plain when there is no uri-list", () => {
+    const dataTransfer = {
+      files: [],
+      getData: (type: string) => (type === "text/plain" ? "https://example.com/x" : ""),
+    } as unknown as DataTransfer;
+
+    expect(dropSourceFromDataTransfer(dataTransfer).getText()).toBe(
+      "https://example.com/x",
+    );
+  });
+
+  it("prefers text/uri-list over text/plain", () => {
+    const dataTransfer = {
+      files: [],
+      getData: (type: string) =>
+        type === "text/uri-list" ? "https://uri.example/a" : "https://plain.example/b",
+    } as unknown as DataTransfer;
+
+    expect(dropSourceFromDataTransfer(dataTransfer).getText()).toBe(
+      "https://uri.example/a",
+    );
+  });
+});

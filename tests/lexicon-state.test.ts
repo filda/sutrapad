@@ -187,3 +187,53 @@ describe("isEmptyState", () => {
     expect(isEmptyState(state)).toBe(false);
   });
 });
+
+describe("lexicon builder state — the paths the suite drives one-sided", () => {
+  it("keeps the other rejected forms when one is rehabilitated by mapping", () => {
+    // `rejectedForms.filter(entry => entry !== form)` — the suite only ever
+    // rejects one form and then maps that same one, so a filter that dropped
+    // EVERYTHING would look identical to one that dropped the right entry.
+    let state = createEmptyBuilderState();
+    state = rejectForm(state, "bagr");
+    state = rejectForm(state, "kbelik");
+    expect(state.rejectedForms).toEqual(["bagr", "kbelik"]);
+
+    state = mapForm(state, "bagr", "bagr");
+    expect(state.rejectedForms).toEqual(["kbelik"]);
+  });
+
+  it("leaves the rejected list untouched when the mapped form was never rejected", () => {
+    let state = rejectForm(createEmptyBuilderState(), "bagr");
+    state = mapForm(state, "praze", "praha");
+    expect(state.rejectedForms).toEqual(["bagr"]);
+  });
+
+  it("keeps the other candidates when the mapped form is not a candidate", () => {
+    // `removeCandidate`'s `return { ...candidates }` early arm. Mapping a form
+    // that never appeared in an import must not empty the review queue.
+    let state = mergeImport(createEmptyBuilderState(), "praze praze bagr bagr");
+    const before = listCandidates(state).map((c) => c.form);
+    expect(before.length).toBeGreaterThan(0);
+
+    state = mapForm(state, "nikdy-neviděno", "cokoliv");
+    expect(listCandidates(state).map((c) => c.form)).toEqual(before);
+  });
+
+  it("orders candidates by descending count, highest first", () => {
+    // `right.count - left.count`, and the INPUT ORDER decides whether any
+    // fixture can see it. `Object.entries` preserves insertion order, so the
+    // low-count form has to be merged FIRST — only then does the sort have to
+    // move something. Seeded the other way round, the mutated comparator
+    // (`+`, always positive here) leaves the already-correct order alone and
+    // is indistinguishable: with two elements the sort only ever asks
+    // `compare(later, earlier)`, and both versions answer "after".
+    let state = createEmptyBuilderState();
+    state = mergeImport(state, "brne");
+    state = mergeImport(state, "praze praze praze praze praze");
+
+    expect(listCandidates(state).map((c) => [c.form, c.count])).toEqual([
+      ["praze", 5],
+      ["brne", 1],
+    ]);
+  });
+});

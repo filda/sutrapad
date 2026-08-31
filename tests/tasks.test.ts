@@ -480,3 +480,34 @@ describe("buildTaskFacetByNoteId", () => {
     expect(map.get("done-note")).toBe("done");
   });
 });
+
+describe("task parsing and CRLF line endings", () => {
+  // `TASK_LINE_REGEX` ends `(.*)$`, and `.` does not match `\r`. On a body
+  // with Windows line endings the split on "\n" leaves a trailing `\r` on
+  // every line, `(.*)` stops before it, and `$` then fails the whole match —
+  // so a CRLF note yields NO tasks at all. Every existing fixture is authored
+  // with "\n", which is why the anchor could be dropped unnoticed.
+  //
+  // This test pins the CURRENT behaviour, not the desired one. See the source
+  // finding in docs/mutation-survivor-triage.md: `drop-import` does not
+  // normalise line endings, so a Windows-authored export reaches this parser
+  // as-is and its checkboxes go missing.
+  it("parses tasks from a body with LF line endings", () => {
+    const note = makeNote({
+      id: "lf",
+      updatedAt: "2026-04-20T10:00:00.000Z",
+      body: "- [ ] buy milk\n- [x] call Jan",
+    });
+    expect(countTasksInNote(note)).toEqual({ open: 1, done: 1 });
+  });
+
+  it("finds no tasks in the same body with CRLF line endings", () => {
+    const note = makeNote({
+      id: "crlf",
+      updatedAt: "2026-04-20T10:00:00.000Z",
+      body: "- [ ] buy milk\r\n- [x] call Jan",
+    });
+    // The last line has no trailing \r, so only it survives the anchor.
+    expect(countTasksInNote(note)).toEqual({ open: 0, done: 1 });
+  });
+});
