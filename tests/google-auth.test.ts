@@ -299,6 +299,12 @@ describe("GoogleAuthService.refreshSession coalescing", () => {
     // in-memory token AND the persisted hints (so the failed account
     // doesn't auto-prefill the next sign-in attempt).
     const { pendingRequests } = setupGoogleIdentityHarness();
+    // Seed the hints as a previous successful sign-in would have. Without
+    // this the assertions below read `null` from keys that were never
+    // written, and pass whether or not `clearSignedInHints()` runs — the
+    // self-deceiving shape the mutation log warns about. It shipped here.
+    localStorage.setItem("sutrapad-user-email-hint", "stale@example.com");
+    localStorage.setItem("sutrapad-is-logged-in", "true");
     // Override the fetch stub so userinfo throws.
     vi.stubGlobal(
       "fetch",

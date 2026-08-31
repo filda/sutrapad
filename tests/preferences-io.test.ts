@@ -357,3 +357,32 @@ describe("createPreferencesIO size-guard + logging contract", () => {
     warn.mockRestore();
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("createPreferencesIO.loadPreferences cancels a pending save", () => {
+  it("leaves no timer armed once the Drive blob has been applied", async () => {
+    // The load takes ownership of the atom, so a debounce armed before it must
+    // not survive: whatever the user's earlier edit was, Drive's copy is now
+    // the truth and the pending push would be racing it with stale bytes.
+    //
+    // Asserted as "no timer is left pending" rather than "no save happened",
+    // because the clean-snapshot guard in `flushSave` would swallow the push
+    // anyway in the common case — an assertion that never fails. What the
+    // cancel actually promises is that the work is *gone*, not that it would
+    // have been harmless.
+    const h = harness({ dismissed: new Set(["x|y"]) });
+    h.fake.loadPreferences.mockResolvedValue({
+      version: 1,
+      savedAt: "2026-05-01T00:00:00.000Z",
+      dismissedTagAliases: ["a|b"],
+    });
+
+    h.io.schedulePreferencesSave();
+    expect(vi.getTimerCount()).toBe(1);
+
+    await h.io.loadPreferences();
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

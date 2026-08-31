@@ -842,3 +842,130 @@ describe("createWorkspaceIO known-Drive-id bookkeeping", () => {
     expect(local.notes.map((note) => note.id)).toEqual(["local-only"]);
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// `rememberDriveIds` folds ids into a closure-private set that
+// `applyDriveRefresh` reads to tell **"deleted on another device"** apart from
+// **"never pushed from this device"**. A note missing from the inventory is
+// dropped when its id is known and preserved when it is not — so every write
+// path that learns a new id has to register it, or the next cross-device
+// refresh resurrects notes the user deleted elsewhere.
+//
+// The set is not reachable from outside, and that is fine: the *behaviour* is
+// the contract. Each test below teaches the IO layer an id through one write
+// path, then runs a refresh whose inventory omits it, and asserts the note is
+// dropped. Delete the corresponding `rememberDriveIds` and the note survives.
+//
+// (The two single-note calls — `fetchNoteBody` and the refresh's own
+// `fetchNoteByFileId` — are *not* tested, because they cannot change the set:
+// a placeholder exists only because `loadWorkspace` already saw the note, and
+// a refresh fetch targets an id the inventory call just registered. They are
+// on the equivalents list in `docs/mutation-survivor-triage.md`.)
+
+/** Runs one refresh over `local` with the given inventory, returns the IO. */
+function ioOver(
+  h: IOHarness,
+  getWorkspace: () => SutraPadWorkspace,
+): ReturnType<typeof createWorkspaceIO> {
+  return createWorkspaceIO({
+    getStore: h.getStore,
+    retryContext: {
+      refreshSession: h.refreshSession,
+      onProfileRefreshed: h.onProfileRefreshed,
+    },
+    getWorkspace,
+    setWorkspace: h.setWorkspace,
+    persistLocalWorkspace: h.persistLocalWorkspace,
+    setSyncState: h.setSyncState,
+    setLastError: h.setLastError,
+    render: h.render,
+    refreshStatus: h.refreshStatus,
+    cancelAutoSave: h.cancelAutoSave,
+  });
+}
+
+/** Ids of the last workspace handed to `setWorkspace`, or null if never. */
+function lastCommittedIds(h: IOHarness): string[] | null {
+  const calls = h.setWorkspace.mock.calls;
+  const last = calls.at(-1)?.[0] as SutraPadWorkspace | undefined;
+  return last ? last.notes.map((entry) => entry.id) : null;
+}
+
+describe("createWorkspaceIO: ids learned from Drive are remembered", () => {
+  it("remembers every id the inventory listed, even when the refresh then fails", async () => {
+    // Registering ids at *inventory* time rather than per fetched body is
+    // what makes a half-finished refresh still count as knowledge. Here the
+    // folder query lists n1 and n2; n1's body arrives, n2's fetch blows up and
+    // takes the pass down with it.
+    //
+    // A fixture where both fetches succeed proves nothing: the per-body
+    // `rememberDriveIds` inside `fetchNoteByFileId` registers the same two ids
+    // a moment later, so the inventory call looks redundant. It is only the
+    // failure path that separates them — and that is the path where getting it
+    // wrong resurrects a note the user deleted on another device.
+    const h = makeHarness();
+    const local = makeWorkspace([realNote("n1"), realNote("n2")]);
+    h.store.fetchNoteByFileId.mockImplementation((fileId: string) =>
+      fileId === "f1"
+        ? Promise.resolve(realNote("n1"))
+        : Promise.reject(new Error("drive said no")),
+    );
+    const io = ioOver(h, () => local);
+
+    h.store.loadNoteInventory.mockResolvedValue([
+      { noteId: "n1", fileId: "f1", modifiedTime: "2026-04-26T08:00:00.000Z" },
+      { noteId: "n2", fileId: "f2", modifiedTime: "2026-04-26T09:00:00.000Z" },
+    ]);
+
+    await io.refreshWorkspace();
+    expect(h.setSyncState).toHaveBeenLastCalledWith("error");
+
+    h.setWorkspace.mockClear();
+    h.store.loadNoteInventory.mockResolvedValue([]);
+    await io.refreshWorkspace();
+
+    // Both are known to have existed on Drive, so an inventory that lists
+    // neither means both were deleted elsewhere.
+    expect(lastCommittedIds(h)).toEqual([]);
+  });
+
+  it("drops a note this device saved once Drive stops listing it", async () => {
+    // A note created here and pushed by `saveWorkspace` is confirmed on Drive
+    // from that moment. Without the id being registered at save time, deleting
+    // it on another device would leave it stranded here forever.
+    const h = makeHarness();
+    const local = makeWorkspace([realNote("n1")]);
+    const io = ioOver(h, () => local);
+
+    await io.saveWorkspace("interactive");
+
+    h.setWorkspace.mockClear();
+    h.store.loadNoteInventory.mockResolvedValue([]);
+    await io.refreshWorkspace();
+
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+    expect(lastCommittedIds(h)).toEqual([]);
+  });
+
+  it("drops a note the sign-in merge pushed once Drive stops listing it", async () => {
+    // The restore-after-sign-in path has its own save closure, and it needed
+    // its own `rememberDriveIds` — the ids it pushes are exactly the local
+    // notes Drive had never seen, which is the population most at risk of
+    // being misread as "never pushed" on the next refresh.
+    const h = makeHarness();
+    const local = makeWorkspace([realNote("n1")]);
+    // Remote is empty, so the merge is local-only and has something to push.
+    h.store.loadWorkspace.mockResolvedValue(makeWorkspace([]));
+    const io = ioOver(h, () => local);
+
+    await io.restoreWorkspaceAfterSignIn();
+
+    h.setWorkspace.mockClear();
+    h.store.loadNoteInventory.mockResolvedValue([]);
+    await io.refreshWorkspace();
+
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+    expect(lastCommittedIds(h)).toEqual([]);
+  });
+});

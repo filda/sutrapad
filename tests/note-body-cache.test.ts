@@ -94,3 +94,33 @@ describe("createNoteBodyCache", () => {
     expect(DEFAULT_NOTE_BODY_CACHE_CAPACITY).toBeGreaterThan(1);
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("createNoteBodyCache: the touch in set()", () => {
+  it("re-setting an existing id moves it to the MRU end", () => {
+    // `set` deletes before inserting because `Map.set` on an existing key
+    // updates the value **without moving the key** — insertion order is fixed
+    // at first insert. Drop the delete and a refreshed body keeps its old
+    // position, so the note the user just re-hydrated is the next one evicted.
+    //
+    // The existing "re-setting an existing id refreshes recency" test cannot
+    // see this: it calls `cache.get("a")` to check the new body, and `get`
+    // performs its own touch, which restores the recency the missing delete
+    // failed to give. Presence is checked with `has` here for exactly that
+    // reason — it is the one accessor documented not to change recency.
+    const cache = createNoteBodyCache(2);
+    cache.set("a", doc("a"));
+    cache.set("b", doc("b"));
+    cache.set("a", { ...doc("a"), body: "updated" });
+
+    cache.set("c", doc("c"));
+
+    expect(cache.has("a")).toBe(true);
+    expect(cache.has("b")).toBe(false);
+    expect(cache.has("c")).toBe(true);
+    // Read the refreshed body only after the eviction has been asserted, so
+    // this `get` cannot prop up the recency the assertions above depend on.
+    expect(cache.get("a")?.body).toBe("updated");
+  });
+});
