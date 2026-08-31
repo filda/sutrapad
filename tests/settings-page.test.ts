@@ -609,3 +609,32 @@ describe("buildSettingsPage — radio semantics and wrapper structure", () => {
     expect(button?.className).toBe("button settings-backup-action-button");
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("buildSettingsPage: appends nobody was counting", () => {
+  it("carries the microphone consent card inside the privacy card", () => {
+    // The consent card is how the user grants or revokes dictation access.
+    // Dropping the append leaves the privacy card with only the location
+    // toggle and no way to reach the microphone setting at all.
+    const page = buildSettingsPage(baseOptions());
+
+    expect(page.querySelector(".settings-card-microphone")).not.toBeNull();
+  });
+
+  it("shows the alias tag itself on every hygiene row", () => {
+    // The row offers "merge" and "dismiss" for a suggested duplicate. Without
+    // the pill the user is asked to merge a tag the row never names.
+    const page = buildSettingsPage(
+      baseOptions({
+        tagAliasSuggestions: [
+          { canonical: "praha", aliases: ["prahaa"], reason: "Near-identical spelling" },
+        ],
+      }),
+    );
+
+    const row = page.querySelector<HTMLElement>(".hygiene-alias-row");
+    if (row === null) throw new Error("expected .hygiene-alias-row");
+    expect(row.querySelector(".tag-pill")?.textContent).toContain("prahaa");
+  });
+});

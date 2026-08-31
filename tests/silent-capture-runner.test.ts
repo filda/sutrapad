@@ -601,6 +601,10 @@ describe("runSilentCapture save failure", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const failure = new Error("Drive 503");
     mocks.appendNoteToWorkspace.mockRejectedValue(failure);
+    // Seed the buffer. `beforeEach` clears sessionStorage, so without this the
+    // assertion below reads `null` from a key nobody ever wrote and passes
+    // whether or not the failure path clears it.
+    window.sessionStorage.setItem(PENDING_SAVE_KEY, CAPTURE);
 
     const result = await runSilentCapture({ currentUrl: CAPTURE });
 
@@ -820,5 +824,28 @@ describe("runSilentCapture retry loop", () => {
     await tap("Try again");
     await tap("Open SutraPad instead");
     await running;
+  });
+});
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("runSilentCapture: the splash clears its buttons before the tick", () => {
+  it("removes the interactive actions when the save lands", async () => {
+    // The buffer flow renders two buttons and then, once the tap-driven save
+    // succeeds, swaps the splash to its "Saved" state. Without
+    // `clearActionButtons()` the two buttons stay on screen underneath the
+    // green tick — a finished capture still offering "Authorize & save".
+    mocks.bootstrap.mockResolvedValue(null);
+    const running = runSilentCapture({ currentUrl: CAPTURE });
+    await vi.waitFor(() => expect(actions()).toHaveLength(2));
+
+    mocks.bootstrap.mockResolvedValue({ name: "Filip", email: "f@example.com", picture: "" });
+    await tap("Authorize & save");
+    await running;
+
+    expect(line("headline")).toBe("Saved to SutraPad");
+    // Exactly the one action the saved state offers — not the two the buffer
+    // flow had put there, still sitting underneath it.
+    expect(actions()).toEqual(["Close tab"]);
   });
 });

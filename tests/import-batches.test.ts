@@ -124,3 +124,38 @@ describe("runNoteImport", () => {
     expect(result).toEqual({ done: 0, failed: 0, total: 0 });
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("runNoteImport default sleep", () => {
+  it("uses a real timer when the caller supplies no sleep", async () => {
+    // Every test above injects `noSleep`, so the shipped `defaultSleep` — the
+    // one that actually paces the Drive uploads in production — had no
+    // coverage at all. Without its `setTimeout` the promise never settles and
+    // an import hangs forever after the first batch.
+    vi.useFakeTimers();
+    try {
+      const notes = [note("n0"), note("n1"), note("n2")];
+      const appendNote = vi.fn(() => Promise.resolve());
+
+      // No `sleep` override: the real one runs.
+      const running = runNoteImport({ notes, appendNote, batchSize: 2, delayMs: 50 });
+
+      // Flush microtasks by hand — `vi.waitFor` needs real time and does not
+      // mix with fake timers. Ten turns is plenty for one batch of awaits.
+      await Promise.all(Array.from({ length: 10 }, () => Promise.resolve()));
+
+      // First batch lands, then the import parks on the real timer.
+      expect(appendNote).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(50);
+      const result = await running;
+
+      expect(result.done).toBe(3);
+      expect(appendNote).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

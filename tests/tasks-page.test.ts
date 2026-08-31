@@ -1760,3 +1760,33 @@ describe("buildTasksPage tag filter", () => {
     expect(page.querySelector(".empty-state")).toBeNull();
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("buildTasksPage: two statement-deletion gaps", () => {
+  it("swallows the click on the one-thing source-note link", () => {
+    // The link is an `<a href="#">` used as a button — routing happens
+    // in-app. Letting the click through appends `#` to the URL and, worse,
+    // scrolls the page to the top mid-triage.
+    const note = makeNote({ id: "n1", title: "Praha", body: "- [ ] jedna" });
+    const page = buildPage(makeWorkspace([note]), [], { tasksOneThingKey: `${note.id}::0` });
+
+    const link = page.querySelector<HTMLAnchorElement>(".one-thing-meta a");
+    if (link === null) throw new Error("expected the one-thing source-note link");
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    link.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("puts the thumbnail first in every task card", () => {
+    // The thumb is the card's left rail; without it the grid column renders
+    // empty and the rhythm of the page breaks against the Notes grid.
+    const note = makeNote({ id: "n1", title: "Praha", body: "- [ ] jedna" });
+    const page = buildPage(makeWorkspace([note]));
+
+    const card = page.querySelector<HTMLElement>(".task-card");
+    if (card === null) throw new Error("expected .task-card");
+    expect(card.children[0]?.className.split(" ")[0]).toBe("link-thumb");
+  });
+});

@@ -277,3 +277,22 @@ describe("buildNotesPanel endless-scroll key", () => {
     expect(filtered.querySelectorAll(".note-list-item")).toHaveLength(INITIAL_LIMIT);
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("buildNotesPanel view-toggle glyphs", () => {
+  it("gives every view-toggle button its icon and accessible name", () => {
+    // The buttons carry no text — the glyph is the whole affordance and the
+    // aria-label is the whole accessible name. An empty button is a blank
+    // square with a tooltip.
+    const panel = buildNotesPanel(panelOptions(makeWorkspace(2)));
+    const buttons = [...panel.querySelectorAll<HTMLButtonElement>(".view-toggle-button")];
+
+    expect(buttons.length).toBeGreaterThan(1);
+    for (const button of buttons) {
+      expect(button.querySelector("svg")).not.toBeNull();
+      expect(button.getAttribute("aria-label")).toBeTruthy();
+      expect(button.textContent).toBe("");
+    }
+  });
+});

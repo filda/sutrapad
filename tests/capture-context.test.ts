@@ -1179,3 +1179,42 @@ describe("capture context assembly edges", () => {
     expect(context.locale).not.toBe("xx-XX");
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("motion sampling cleans up after itself", () => {
+  it("cancels the sampling window when the sample cap ends it early", async () => {
+    // `finish` runs on whichever comes first: the timeout, or the sample cap.
+    // When the cap wins the timer is still armed — and without the
+    // `clearTimeout` it fires later into an already-resolved promise. Nothing
+    // user-visible breaks, which is exactly why nobody noticed: on a page that
+    // captures repeatedly the timers just pile up.
+    //
+    // The assertion is on the injected window because the promise has already
+    // settled by then and there is no other observable. `removeEventListener`
+    // is asserted alongside it so this pins the whole teardown, not one call.
+    const cleared: unknown[] = [];
+    const removed: string[] = [];
+    const base = createMotionWindow(gravity(Array.from({ length: 40 }, () => 9.81)));
+    const currentWindow = {
+      ...base,
+      clearTimeout: ((handle: unknown) => {
+        cleared.push(handle);
+      }) as unknown as typeof clearTimeout,
+      removeEventListener: ((type: string) => {
+        removed.push(type);
+      }) as WindowLike["removeEventListener"],
+    } as WindowLike;
+
+    await resolveMotionStatus(currentWindow, MOBILE_NAV);
+
+    // The fake replays every event in one synchronous loop and ignores
+    // `removeEventListener`, so `finish` runs once per surplus event past the
+    // cap. That is a harness artifact, not a source bug — in a real DOM the
+    // removal stops the next one. What matters is that the teardown ran at
+    // all, with the handle the sampler was given.
+    expect(cleared.length).toBeGreaterThan(0);
+    expect(new Set(cleared)).toEqual(new Set([1]));
+    expect(new Set(removed)).toEqual(new Set(["devicemotion"]));
+  });
+});

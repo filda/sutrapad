@@ -2622,3 +2622,87 @@ describe("GoogleDriveStore.saveWorkspace note-file lookup by id", () => {
     );
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("GoogleDriveStore.saveWorkspace carries fileIds forward", () => {
+  it("re-uses each note's existing Drive fileId from the previous index", async () => {
+    // `createIndex` builds an id → previous-summary map and reads
+    // `previousById.get(note.id)?.fileId` for every note it writes. Lose the
+    // map and every note in the new index has `fileId: undefined`, so the next
+    // save cannot find the file it already owns and uploads a duplicate.
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const headFile = driveFile("hf", "sutrapad-head.json");
+    const indexFile = driveFile("if", "index-old.json");
+    const oldIndex: SutraPadIndex = {
+      version: 1,
+      updatedAt: "2026-04-30T11:00:00.000Z",
+      savedAt: "2026-04-30T11:00:00.000Z",
+      activeNoteId: "a",
+      notes: [
+        {
+          id: "a",
+          title: "A",
+          createdAt: "2026-04-30T11:00:00.000Z",
+          updatedAt: "2026-04-30T11:00:00.000Z",
+          fileId: "nf-existing",
+        },
+      ],
+    };
+    const head: SutraPadHead = {
+      version: 1,
+      activeIndexId: "if",
+      savedAt: "2026-04-30T11:00:00.000Z",
+    };
+    const indexBodies: Array<{ notes: Array<Record<string, unknown>> }> = [];
+
+    captureFetch(async (url, init) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'head'") && url.includes("q=")) return fileList([headFile]);
+      if (url.includes("/hf?alt=media")) return jsonResponse(head);
+      if (url.includes("/if?fields=")) return jsonResponse(indexFile);
+      if (url.includes("/if?alt=media")) return jsonResponse(oldIndex);
+      if (
+        url.includes("upload/drive/v3/files") &&
+        init?.body instanceof FormData
+      ) {
+        const body = init.body;
+        const meta = JSON.parse(await (body.get("metadata") as Blob).text()) as {
+          name: string;
+          appProperties: Record<string, string>;
+        };
+        if (meta.appProperties.kind === "index") {
+          indexBodies.push(
+            JSON.parse(await (body.get("file") as Blob).text()) as {
+              notes: Array<Record<string, unknown>>;
+            },
+          );
+        }
+        return jsonResponse(driveFile(`up-${meta.appProperties.kind}`, meta.name));
+      }
+      if (url.includes("?fields=")) return jsonResponse({ ...folder, parents: ["folder-1"] });
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    await store.saveWorkspace({
+      notes: [
+        {
+          id: "a",
+          title: "A",
+          body: "unchanged",
+          tags: [],
+          urls: [],
+          createdAt: "2026-04-30T11:00:00.000Z",
+          updatedAt: "2026-04-30T11:00:00.000Z",
+        },
+      ],
+      activeNoteId: "a",
+    });
+
+    expect(indexBodies).toHaveLength(1);
+    expect(indexBodies[0].notes[0].fileId).toBe("nf-existing");
+  });
+});

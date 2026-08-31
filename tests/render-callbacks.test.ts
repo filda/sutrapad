@@ -915,3 +915,58 @@ describe("createRenderCallbacks manual tags", () => {
     expect(h.spies.render).not.toHaveBeenCalled();
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// Four statement-deletion survivors. Three are a `setWorkspace` whose *result*
+// nobody checked — the suite asserts that the filter set and the route moved,
+// and stops there. The workspace commit is the other half: it is what keeps
+// the editor from showing a note the filtered list no longer contains.
+
+describe("createRenderCallbacks: the workspace commits", () => {
+  const twoNotes = (): SutraPadWorkspace => ({
+    notes: [
+      { ...makeNote(), id: "n-work", tags: ["work"] },
+      { ...makeNote(), id: "n-home", tags: ["home"] },
+    ],
+    activeNoteId: "n-home",
+  });
+
+  it("rebinds the active note when a note is opened", () => {
+    const h = harness();
+
+    h.callbacks.onSelectNote("n-1");
+
+    const committed = h.spies.setWorkspace.mock.calls.at(-1)?.[0] as SutraPadWorkspace;
+    expect(committed.activeNoteId).toBe("n-1");
+    // Same object to the store and to the persister, or the note on screen
+    // and the note on disk drift apart.
+    expect(h.spies.persistWorkspace).toHaveBeenCalledWith(committed);
+  });
+
+  it("moves the active note into view when a filter hides it", () => {
+    // `applyVisibleActiveNoteSelection` picks a still-visible note when the
+    // active one drops out of the filtered list. Without the commit the filter
+    // applies to the list while the editor keeps showing the hidden note.
+    const h = harness({ workspace: twoNotes() });
+
+    h.callbacks.onApplyTagFilter("work");
+
+    const committed = h.spies.setWorkspace.mock.calls.at(-1)?.[0] as SutraPadWorkspace;
+    expect(committed.activeNoteId).toBe("n-work");
+  });
+
+  it("commits the reconciliation again when a filter chip is removed", () => {
+    // Removing a filter widens the list, and the same reconciliation runs on
+    // the way back. Its own `setWorkspace` is a separate call site from the
+    // one above and survives separately.
+    const h = harness({ workspace: twoNotes(), selectedTagFilters: ["home"] });
+
+    h.callbacks.onRemoveSelectedFilter("home");
+
+    expect(h.spies.setSelectedTagFilters).toHaveBeenCalledWith([]);
+    expect(h.spies.setWorkspace).toHaveBeenCalledTimes(1);
+    const committed = h.spies.setWorkspace.mock.calls.at(-1)?.[0] as SutraPadWorkspace;
+    expect(committed.notes.map((entry) => entry.id)).toEqual(["n-work", "n-home"]);
+  });
+});
