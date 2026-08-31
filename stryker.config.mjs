@@ -338,9 +338,64 @@ const config = {
     // `lifecycle/palette.ts` L115-119 (an entire uncovered branch), and a
     // scattering of `event.preventDefault()` and `setAttribute("aria-…")`
     // calls that no assertion looks at.
-    high: 94,
-    low: 92,
-    break: 90,
+    //
+    // --- The first true 10.0.0 baseline: nightly 2026-08-31 11:47. ---
+    //
+    // **96.42 %** (9 253 / 9 597) — 9 224 killed, 29 timeout, 319 survived,
+    // 25 no-cov, 3 866 CompileError. `app` alone 96.71 % (6 760 / 6 990).
+    //
+    //                  | 08-29, 9.6.1 | 08-31, 10.0.0
+    //   score          |     95.07 %  |    96.42 %
+    //   denominator    |      8 790   |     9 597
+    //   NOT KILLED     |        433   |       344
+    //   timeout        |         26   |        29
+    //
+    // **The campaign absorbed an entire new mutator class and still cut the
+    // live count by 89.** That is the number to quote, not the score: 1 435
+    // scored mutants arrived with `CallExpression`, ~628 left through the
+    // dead-code deletions and the `render-derivations` extraction, so the
+    // denominator still grew by 807 — and 89 fewer mutants survive the larger
+    // one. A rising score over a shrinking denominator would be worth
+    // suspicion; this is the opposite.
+    //
+    // The projection two sections up said ≈95.31 %. It is 1.11 pp low, and
+    // **the gap is the campaign, not an error in the estimate** — it assumed
+    // nothing else changed, and in between came four rounds of dead-code
+    // deletion, the four `lib/` files, and most of the `CallExpression`
+    // close-out. The fourth ratchet's rule stands: an arithmetic composite is
+    // reliable for the files you measure and rots everywhere else. **Ratchet
+    // to measured numbers only.**
+    //
+    // **96.42 is a floor, not a level.** The nightly ran at 11:47 and the
+    // batches that landed later that day are not in it, the last
+    // `CallExpression` dozen included (+12 kills → 96.54 % on this
+    // denominator). **The first nightly holding the whole campaign is 09-01;
+    // set `low`/`high` from that one.**
+    //
+    // --- Ratcheted 2026-08-31 (fifth pass), 90/92/94 → 95/95/96. ---
+    //
+    // `break: 95`, up from 90. It keeps 1.42 pp of headroom over the measured
+    // floor — comfortably more than the historical drift (< 1 pp) and the
+    // timeout band below — while `break: 90` protected nothing at all. A
+    // 6.4 pp hole is not a ratchet; it is a formality that would let a whole
+    // regressed module through without turning CI red.
+    //
+    // `low: 95` sits on the break so anything that fails the build is also
+    // red in the report, and `high: 96` is the first round number under the
+    // measured floor. **Both are deliberately conservative for one night.**
+    // The honest ceiling for `high` is somewhere near 96.5, but that is the
+    // number the 09-01 nightly will state outright, and this file's own rule
+    // two paragraphs up is to ratchet to measured numbers only. Raise `high`
+    // then, not now.
+    //
+    // **0.30 pp of the score is asserted by a clock, not by a test** — 29
+    // timeouts booked as kills (29 / 9 597). On CI the count is stable across
+    // the upgrade (26 → 29), so these are most likely genuine non-termination
+    // rather than the timeout inflation the sandbox shows at concurrency 4;
+    // it is still the band inside which the number cannot be trusted.
+    high: 96,
+    low: 95,
+    break: 95,
   },
   vitest: {
     configFile: "vitest.config.ts",
