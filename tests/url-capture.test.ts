@@ -307,8 +307,12 @@ describe("url capture helpers", () => {
           text: () => '<html lang="en"><head><title> Loaded title </title></head></html>',
         })
         .mockResolvedValueOnce({
+          // The not-ok body deliberately DOES carry a title. With an empty
+          // <head> this assertion could not fail: `extractHtmlTitle` returns
+          // null on that body whether or not the `!response.ok` guard ran, so
+          // the guard was free to disappear unnoticed.
           ok: false,
-          text: () => '<html lang="en"><head></head></html>',
+          text: () => '<html lang="en"><head><title>404 Not Found</title></head></html>',
         }),
     );
 
@@ -721,5 +725,61 @@ describe("reverseGeocodeCoordinates", () => {
         string
       >,
     ).toEqual({ "50.075,14.438": "Prague" });
+  });
+});
+
+describe("url-capture parsing edge cases", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  // Every existing `extractHtmlLang` fixture puts `lang` LAST on the tag, so
+  // the trailing `[^>]*` never has to match anything and can be narrowed to
+  // `[>]*` unnoticed. A real document usually carries `dir`, `class` or
+  // `prefix` after it.
+  it.each([
+    ['<html lang="en" dir="ltr">', "en"],
+    ['<html lang="cs-CZ" class="no-js" data-theme="paper">', "cs-CZ"],
+    ["<html lang='de'dir='ltr'>", "de"],
+  ])("reads the lang when attributes follow it: %s", (html, expected) => {
+    expect(extractHtmlLang(html)).toBe(expected);
+  });
+
+  // Two separate contracts on the same loop, and they need different
+  // fixtures. The guard `candidate?.trim()` decides whether a blank-but-
+  // present field (Nominatim returns those for some administrative levels)
+  // falls through; the `return candidate.trim()` decides whether the winner
+  // is returned padded. A whitespace-only fixture only ever exercises the
+  // first — it never reaches the return at all.
+  it("skips whitespace-only address fields", () => {
+    expect(
+      derivePlaceLabel({ suburb: "   ", city_district: "\t\n", city: "Praha" }),
+    ).toBe("Praha");
+  });
+
+  it("trims the winning address field", () => {
+    expect(derivePlaceLabel({ suburb: "  ", city: "  Praha  " })).toBe("Praha");
+  });
+
+  it("returns null when every address field is whitespace-only", () => {
+    expect(derivePlaceLabel({ suburb: "  ", city: "\t", country: " " })).toBeNull();
+  });
+
+  it("returns null from reverseGeocodeCoordinates on a non-ok response", async () => {
+    // The failing response still carries a resolvable address, so the
+    // `!response.ok` guard is the only thing that can produce null here.
+    stubReverseGeocodeGlobals({
+      fetchImpl: () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ address: { city: "Prague" } }), {
+            status: 500,
+          }),
+        ),
+    });
+
+    await expect(
+      reverseGeocodeCoordinates({ latitude: 50.0755, longitude: 14.4378 }),
+    ).resolves.toBeNull();
   });
 });

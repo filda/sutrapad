@@ -553,3 +553,85 @@ describe("sanitizeCaptureContext boundary semantics", () => {
     ).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The `typeof raw !== "object"` half of every entry guard.
+//
+// Each sanitiser opens with `if (!raw || typeof raw !== "object") return
+// undefined;` and every existing "not an object" fixture above — `null`, `0`,
+// `""`, `false`, `"nope"`, `42`, `true` — is decided by the FIRST half or by
+// the field reads that follow it. Delete `typeof raw !== "object"` and all of
+// them still collapse to absent: a truthy primitive has none of the
+// whitelisted keys, so every field clamps to `undefined` and the snapshot is
+// dropped by its own `.some()` tail.
+//
+// A function is the one input that is truthy, is not an object, and can still
+// carry the whitelisted keys. It is what makes the second half of the guard
+// observable — and it is exactly what the file's "white-list known keys; drop
+// everything else" contract promises to refuse.
+// ---------------------------------------------------------------------------
+
+function noop(): undefined {
+  return undefined;
+}
+
+/** A truthy, non-object payload carrying whitelisted capture keys. */
+function fnPayload(props: Record<string, unknown>): unknown {
+  // `bind` gives each fixture its own function object, so assigning the
+  // payload keys onto one does not leak into the next.
+  return Object.assign(noop.bind(null), props);
+}
+
+describe("sanitizeCaptureContext entry guards reject truthy non-objects", () => {
+  it("drops a function payload at the top level", () => {
+    expect(
+      sanitizeCaptureContext(
+        fnPayload({ timezone: "Europe/Prague", locale: "cs-CZ" }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ["page", { title: "Leaked title" }],
+    ["screen", { viewportWidth: 800 }],
+    ["scroll", { x: 10 }],
+    ["network", { online: true }],
+    ["battery", { levelPercent: 50 }],
+    ["weather", { source: "open-meteo", temperatureC: 20 }],
+    ["experimental", { ambientLightLux: 100 }],
+    ["sensors", { motionStatus: "still" }],
+  ])("drops a function payload for `%s`", (key, props) => {
+    const result = sanitizeCaptureContext({ [key]: fnPayload(props) });
+    expect(result?.[key as keyof typeof result]).toBeUndefined();
+  });
+
+  it("keeps the rest of the payload when one snapshot is a function", () => {
+    // The guard must drop the offending field, not poison the whole capture.
+    expect(
+      sanitizeCaptureContext({
+        locale: "cs-CZ",
+        page: fnPayload({ title: "Leaked title" }),
+      }),
+    ).toEqual({ locale: "cs-CZ" });
+  });
+});
+
+describe("sanitizeCaptureContext keeps partially-populated snapshots", () => {
+  // `Object.values(result).some(v => v !== undefined)` — the `.some` is only
+  // distinguishable from `.every` when SOME but not ALL fields survive the
+  // clamps, and only on a snapshot with more than one field. The suite above
+  // drives scroll with all three fields or with none.
+  it("keeps a scroll snapshot carrying only `x`", () => {
+    expect(sanitizeCaptureContext({ scroll: { x: 10 } })?.scroll).toEqual({
+      x: 10,
+      y: undefined,
+      progress: undefined,
+    });
+  });
+
+  it("keeps a scroll snapshot carrying only `progress`", () => {
+    expect(
+      sanitizeCaptureContext({ scroll: { x: "junk", progress: 0.5 } })?.scroll,
+    ).toEqual({ x: undefined, y: undefined, progress: 0.5 });
+  });
+});

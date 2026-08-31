@@ -10,8 +10,10 @@ import {
   groupEnrichedTasksByNote,
   pickStalestOpenTask,
   taskKey,
+  TASKS_FILTER_IDS,
   WAITING_PERSON_REGEX,
   type EnrichedTask,
+  type TasksFilterId,
 } from "../src/app/logic/tasks-filter";
 import type {
   SutraPadDocument,
@@ -352,5 +354,80 @@ describe("groupEnrichedTasksByNote", () => {
 
   it("returns an empty array when there are no enriched tasks", () => {
     expect(groupEnrichedTasksByNote([])).toEqual([]);
+  });
+});
+
+describe("TASKS_FILTER_IDS", () => {
+  // Recipe #27: the expected list is written out literally rather than
+  // imported, so a chip silently disappearing from the exported array is a
+  // failing test and not a self-fulfilling one. The four ids are a semantic
+  // axis the Tasks page renders directly — see the module header.
+  const EXPECTED: readonly string[] = ["all", "recent", "stale", "waiting"];
+
+  it("holds exactly the four documented chips, in order", () => {
+    expect([...TASKS_FILTER_IDS]).toEqual(EXPECTED);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The `daysOld >= 3` staleness boundary.
+//
+// "Stale" is defined in four separate places — the counter, the filter, the
+// one-thing picker and the per-note group flag — and every existing fixture
+// sits at 0/1/4/10, comfortably inside a band. A fixture exactly ON 3 is what
+// tells `>= 3` from `> 3`, and each of the four sites needs its own.
+// ---------------------------------------------------------------------------
+describe("staleness boundary at exactly three days", () => {
+  const notes = [note("fresh", 0), note("edge", 3)];
+  const entries = [task("fresh", 0, "fresh one"), task("edge", 0, "edge one")];
+
+  it("counts a three-day-old open task as stale", () => {
+    const enriched = enrichTasks(entries, workspace(notes), NOW);
+    expect(enriched.map((e) => e.daysOld)).toEqual([0, 3]);
+    expect(computeTaskCounts(enriched, false).stale).toBe(1);
+  });
+
+  it("keeps a three-day-old task under the `stale` filter", () => {
+    const enriched = enrichTasks(entries, workspace(notes), NOW);
+    expect(
+      applyTaskFilter(enriched, "stale", false).map((e) => e.note.id),
+    ).toEqual(["edge"]);
+  });
+
+  it("promotes a three-day-old task over a fresher one as the one thing", () => {
+    // Without the boundary the picker finds nothing stale and falls back to
+    // the FIRST open task, which is the fresh one — so the two arms of
+    // `pickStalestOpenTask` return different notes here.
+    const enriched = enrichTasks(entries, workspace(notes), NOW);
+    expect(pickStalestOpenTask(enriched)?.note.id).toBe("edge");
+  });
+
+  it("flags a note group with a three-day-old open task as stale", () => {
+    const enriched = enrichTasks(entries, workspace(notes), NOW);
+    const groups = groupEnrichedTasksByNote(enriched);
+    expect(
+      groups.map((g) => [g.note.id, g.hasStaleOpen]),
+    ).toEqual([
+      ["fresh", false],
+      ["edge", true],
+    ]);
+  });
+});
+
+describe("applyTaskFilter fallback arm", () => {
+  // `default: return true` is unreachable through the typed API — all four
+  // `TasksFilterId` literals have their own case. It is a runtime net for a
+  // persisted preference that predates a chip rename, so the cast is the
+  // point of the test rather than a way around the types.
+  it("shows everything for an unrecognised filter id", () => {
+    const enriched = enrichTasks(
+      [task("a", 0, "open"), task("a", 1, "done", true)],
+      workspace([note("a", 0)]),
+      NOW,
+    );
+    const unknown = "archived" as TasksFilterId;
+    expect(applyTaskFilter(enriched, unknown, true)).toHaveLength(2);
+    // The show-done gate still runs ahead of the switch.
+    expect(applyTaskFilter(enriched, unknown, false)).toHaveLength(1);
   });
 });
