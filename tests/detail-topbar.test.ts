@@ -348,3 +348,73 @@ describe("buildDetailTopbar breadcrumb copy", () => {
     expect(seps.every((sep) => sep.textContent === "·")).toBe(true);
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("buildDetailTopbar breadcrumb separators", () => {
+  it("puts a separator between every pair of crumbs and nowhere else", () => {
+    // The row is built by alternating `appendCrumbSeparator` / `appendCrumb`,
+    // one conditional pair per optional stat. Assert the whole alternating
+    // sequence rather than the crumb texts: a missing separator leaves two
+    // crumbs jammed together ("12 words1 min read"), and a stray one leaves a
+    // dangling middle dot — neither shows up in a test that only reads the
+    // crumb labels.
+    const note = makeNote({
+      id: "n1",
+      title: "Hello",
+      body: "- [ ] one\n- [x] two\n\nhttps://example.com\n\n#praha",
+      tags: ["praha"],
+      urls: ["https://example.com"],
+    });
+
+    const handle = buildDetailTopbar({
+      note,
+      syncCrumb: "synced 22:00",
+      onBackToNotes: () => {},
+    });
+    const crumbs = handle.element.querySelector(".detail-breadcrumbs");
+    if (crumbs === null) throw new Error("expected .detail-breadcrumbs");
+
+    // `sep` / `crumb` rather than the raw className, because the trailing
+    // sync crumb carries an extra `crumb-sync` hook.
+    const shape = [...crumbs.children].map((el) =>
+      el.classList.contains("crumb-sep") ? "sep" : "crumb",
+    );
+
+    // Words, read time, tasks, links, tags and the sync crumb — six crumbs
+    // with a separator between each adjacent pair, and none at either end.
+    expect(shape).toEqual([
+      "crumb",
+      "sep",
+      "crumb",
+      "sep",
+      "crumb",
+      "sep",
+      "crumb",
+      "sep",
+      "crumb",
+      "sep",
+      "crumb",
+    ]);
+  });
+
+  it("drops the separator along with the crumb it precedes", () => {
+    // A note with no tasks, links or tags renders only the two unconditional
+    // crumbs plus the sync crumb. Each optional separator has to disappear
+    // with its own crumb, or the row trails a dot into empty space.
+    const note = makeNote({ id: "n1", title: "Hello", body: "just words" });
+
+    const handle = buildDetailTopbar({
+      note,
+      syncCrumb: "synced 22:00",
+      onBackToNotes: () => {},
+    });
+    const crumbs = handle.element.querySelector(".detail-breadcrumbs");
+
+    expect(
+      [...(crumbs?.children ?? [])].map((el) =>
+        el.classList.contains("crumb-sep") ? "sep" : "crumb",
+      ),
+    ).toEqual(["crumb", "sep", "crumb", "sep", "crumb"]);
+  });
+});

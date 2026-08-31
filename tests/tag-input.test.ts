@@ -954,3 +954,56 @@ describe("buildTagInput cheap-wins second pass", () => {
     }
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// Three statement-deletion survivors. All three are the *closing* side of the
+// suggestion list, which the suite above only ever opens.
+
+describe("buildTagInput: closing the suggestion list", () => {
+  it("collapses the combobox when the query matches nothing", () => {
+    // Two separate promises: the list is hidden, and `aria-expanded` comes
+    // back to "false". A combobox left expanded over an empty listbox is what
+    // a screen reader announces as "suggestions available" — the visual and
+    // the accessible state have to close together.
+    const { wrapper, input } = mount(makeNote());
+
+    input.value = "w";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    const list = wrapper.querySelector<HTMLElement>(".tag-suggestions");
+    expect(list?.hidden).toBe(false);
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+
+    input.value = "qqq";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(list?.hidden).toBe(true);
+    expect(input.getAttribute("aria-expanded")).toBe("false");
+    expect(list?.children).toHaveLength(0);
+  });
+
+  it("swallows the Enter that commits a tag", () => {
+    // Inside a form — or next to any default-submitting control — an
+    // unclaimed Enter navigates away mid-edit. The commit has to consume it.
+    const { input } = mount(makeNote());
+    input.value = "fresh";
+    const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+
+    input.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("swallows the comma that commits a tag", () => {
+    // Comma is a commit key too, and letting it through leaves the separator
+    // sitting in the input after the chip appears.
+    const { input, onAddTag } = mount(makeNote());
+    input.value = "fresh";
+    const event = new KeyboardEvent("keydown", { key: ",", bubbles: true, cancelable: true });
+
+    input.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onAddTag).toHaveBeenCalledWith("fresh");
+  });
+});

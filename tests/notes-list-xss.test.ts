@@ -177,6 +177,10 @@ describe("buildNotesList — XSS guards", () => {
     const chip = list.querySelector(".note-list-tasks");
     if (chip === null) throw new Error("expected .note-list-tasks");
     expect(chip.classList.contains("is-all-done")).toBe(true);
+    // The aria-label is the whole reason a screen reader can read this chip:
+    // the visible text is "2/2", which says nothing on its own. The test name
+    // has promised this assertion since it was written; it was missing.
+    expect(chip.getAttribute("aria-label")).toBe("2 tasks, all completed");
     // Chip carries exactly two children: the SVG icon (tone-dependent —
     // `check` for all-done, `checkbox` for open) and a `.note-list-tasks-count`
     // span with the textual count. Neither side should ever be a parsed HTML

@@ -277,3 +277,47 @@ describe("buildAccountBar menu open and close", () => {
     remove.mockRestore();
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("account-bar: Escape is consumed, not just handled", () => {
+  it("keeps the dismissing Escape from reaching the rest of the app", () => {
+    // The panel's Escape handler sits on `document`, and the app has its own
+    // Escape ladder above it (the tag-filter strip clears its query, then its
+    // filters). Without `stopPropagation` one keypress dismisses the account
+    // menu *and* wipes the user's active filters — two undo-able things for
+    // one keystroke, only one of which was asked for.
+    const onWindowEscape = vi.fn();
+    window.addEventListener("keydown", onWindowEscape);
+    try {
+      const { trigger } = mount(PROFILE);
+      clickOn(trigger as HTMLElement);
+      onWindowEscape.mockClear();
+
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+      expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+      expect(onWindowEscape).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", onWindowEscape);
+    }
+  });
+
+  it("lets other keys through to the app", () => {
+    // The counterpart: only Escape is claimed. A `/` while the menu happens to
+    // be open still has to reach the palette shortcut.
+    const onWindowKey = vi.fn();
+    window.addEventListener("keydown", onWindowKey);
+    try {
+      const { trigger } = mount(PROFILE);
+      clickOn(trigger as HTMLElement);
+      onWindowKey.mockClear();
+
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true }));
+
+      expect(onWindowKey).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener("keydown", onWindowKey);
+    }
+  });
+});

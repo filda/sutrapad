@@ -12,9 +12,10 @@
 //     surface the bare URL when a link has no source note)
 //   - dates render as `<time dateTime>` with the formatDate label
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildCardDate,
+  buildCardOpenButton,
   buildCardTitle,
 } from "../src/app/view/shared/card-header";
 
@@ -98,5 +99,30 @@ describe("buildCardDate", () => {
     const el = buildCardDate(iso, "note");
     expect(el.textContent).not.toBe("");
     expect(el.textContent).not.toBe(iso);
+  });
+});
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+
+describe("card-header: the open button does not bubble", () => {
+  it("keeps a click on the open button away from the card behind it", () => {
+    // The whole card is usually clickable, and the open button sits inside it.
+    // Without `stopPropagation` a single click fires both handlers — the card
+    // navigates and the button navigates, and whichever lands second wins.
+    const onOpen = vi.fn();
+    const onCardClick = vi.fn();
+
+    const button = buildCardOpenButton("Open Praha", onOpen);
+    const card = document.createElement("div");
+    card.addEventListener("click", onCardClick);
+    card.append(button);
+    document.body.append(card);
+
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onCardClick).not.toHaveBeenCalled();
+
+    card.remove();
   });
 });
