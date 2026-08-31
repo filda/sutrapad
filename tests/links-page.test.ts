@@ -972,3 +972,66 @@ describe("buildLinksPage list layout edges", () => {
     );
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// Four statement-deletion survivors, all of them an `append` whose *presence*
+// nobody asserts — the suite reads the nodes it expects and never counts what
+// the container actually holds.
+
+describe("buildLinksPage: the appends nobody was counting", () => {
+  it("keeps the view toolbar above the filter-miss empty state", () => {
+    // When a filter kills every link the page still has to offer the view
+    // toggle: the user's way out is either "Clear filter" or switching to a
+    // view where something shows. Dropping the toolbar leaves the empty state
+    // alone on the page with one escape instead of two.
+    const work = makeNote({ id: "w", tags: ["work"], urls: ["https://a.example"] });
+    const page = buildPage(makeWorkspace([work]), ["nic"]);
+
+    const shape = [...page.children].map((el) => el.className.split(" ")[0]);
+    expect(shape).toEqual(["page-header", "links-toolbar", "empty-state"]);
+    expect(page.querySelector(".view-toggle")).not.toBeNull();
+  });
+
+  it("gives every view-toggle button its icon", () => {
+    // The buttons carry no text — the icon *is* the label, with the accessible
+    // name supplied by aria-label. An empty button is a blank square.
+    const work = makeNote({ id: "w", tags: ["work"], urls: ["https://a.example"] });
+    const page = buildPage(makeWorkspace([work]));
+    const buttons = [...page.querySelectorAll<HTMLButtonElement>(".view-toggle-button")];
+
+    expect(buttons.length).toBeGreaterThan(1);
+    for (const button of buttons) {
+      expect(button.querySelector("svg")).not.toBeNull();
+      expect(button.getAttribute("aria-label")).toBeTruthy();
+    }
+  });
+
+  it("puts the thumbnail before the body in every link card", () => {
+    // Two appends in a row build the card, and the order is the layout: the
+    // thumb is the left rail, the body the right column. Losing the thumb
+    // leaves a card whose grid column is empty.
+    const work = makeNote({ id: "w", tags: ["work"], urls: ["https://a.example"] });
+    const page = buildPage(makeWorkspace([work]), [], { linksViewMode: "cards" });
+    const card = page.querySelector<HTMLElement>(".link-card");
+    if (card === null) throw new Error("expected .link-card");
+
+    const shape = [...card.children].map((el) => el.className.split(" ")[0]);
+    expect(shape.slice(0, 2)).toEqual(["link-thumb", "link-body"]);
+  });
+
+  it("makes the URL line a real link, opening safely in a new tab", () => {
+    // `applyLinkHref` is the one place that sets href + target + rel. Without
+    // it the URL renders as text that looks clickable and is not — and, worse,
+    // any future re-add without the rel would hand the opened page a live
+    // `window.opener`.
+    const work = makeNote({ id: "w", tags: ["work"], urls: ["https://a.example/x"] });
+    const page = buildPage(makeWorkspace([work]), [], { linksViewMode: "cards" });
+    const anchor = page.querySelector<HTMLAnchorElement>(".link-card-url");
+    if (anchor === null) throw new Error("expected .link-card-url");
+
+    expect(anchor.getAttribute("href")).toBe("https://a.example/x");
+    expect(anchor.target).toBe("_blank");
+    expect(anchor.rel).toBe("noreferrer noopener");
+  });
+});

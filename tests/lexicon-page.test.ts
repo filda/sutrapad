@@ -866,3 +866,92 @@ describe("buildLexiconPage typeahead keyboard details", () => {
     expect(page.querySelector<HTMLElement>(".lexicon-typeahead")?.hidden).toBe(true);
   });
 });
+
+// --- Gap-closing block, 2026-08-29 ------------------------------------------
+//
+// Five statement-deletion survivors. Four sit in the target typeahead, which
+// the suite above drives thoroughly for its *open* behaviour — the highlight,
+// the wrap, the filtering — and never for what a pick or a blank query leaves
+// behind.
+
+describe("buildLexiconPage typeahead: what a pick leaves behind", () => {
+  it("hands focus back to the target input after a click-pick", async () => {
+    // A click-pick moves focus to the list item; without the hand-back the
+    // user's next keystroke goes nowhere and the card looks frozen.
+    //
+    // Only the focus half is asserted. The `setSelectionRange(end, end)` right
+    // above it is environment-equivalent under happy-dom, which already moves
+    // the caret to the end when `.value` is assigned — see the note in
+    // `docs/mutation-survivor-triage.md`. It is kept in the source because
+    // real browsers are not all so obliging.
+    const { page } = await mountPage(builderWithTargets());
+    const input = getTargetInput(page);
+    typeInto(input, "br");
+
+    const elsewhere = document.createElement("input");
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    expect(document.activeElement).toBe(elsewhere);
+
+    suggestionItems(page)[0].dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+
+    expect(input.value).toBe("brno");
+    expect(document.activeElement).toBe(input);
+    elsewhere.remove();
+  });
+
+  it("closes the list when the query is cleared back to nothing", async () => {
+    // Distinct from "the query stops matching": an empty query returns early
+    // *before* the filter runs, so it needs its own close. Without it the
+    // stale list stays open over the action buttons the card shows below.
+    const { page } = await mountPage(builderWithTargets());
+    const input = getTargetInput(page);
+    typeInto(input, "br");
+    const list = page.querySelector<HTMLElement>(".lexicon-typeahead");
+    expect(list?.hidden).toBe(false);
+
+    typeInto(input, "   ");
+
+    // `close()` hides the list and drops the highlight; it deliberately does
+    // not clear the rendered items, so `hidden` is the assertion. Without the
+    // call the stale list stays open over the action buttons below the card.
+    expect(list?.hidden).toBe(true);
+  });
+
+  it("paints a re-mounted page immediately from the cached builder", async () => {
+    // The mount-time `rerender()` is the only thing that fills the body when
+    // no Drive load follows — and after the first visit there is no load: the
+    // builder is already in module state, so the `builder === null` guard
+    // skips it. Without the call the second visit to the Lexicon renders an
+    // empty shell until something else happens to trigger a repaint.
+    await mountPage(builderWithTargets());
+
+    const { buildLexiconPage } = await import("../src/app/view/pages/lexicon-page");
+    const second = buildLexiconPage({
+      profile: PROFILE,
+      getLexiconStore: () => makeStoreMock(),
+      onSignIn: vi.fn(),
+      onSelectMenuItem: vi.fn(),
+    });
+
+    // Synchronous: no await, no microtask flush — the content has to be there
+    // the moment the page is built.
+    expect(second.querySelector(".lexicon-candidate-card")).not.toBeNull();
+  });
+
+  it("swallows the Enter that picks a suggestion", async () => {
+    // Two Enters, two different jobs: the first fills the input from the
+    // highlighted suggestion, the second commits the mapping. Letting the
+    // first one through fires the parent's Enter→Map listener as well, so a
+    // single keypress both picks and commits.
+    const { page } = await mountPage(builderWithTargets());
+    const input = getTargetInput(page);
+    typeInto(input, "br");
+
+    const event = pressKey(input, "Enter");
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(input.value).toBe("brno");
+    expect(page.querySelector<HTMLElement>(".lexicon-typeahead")?.hidden).toBe(true);
+  });
+});
