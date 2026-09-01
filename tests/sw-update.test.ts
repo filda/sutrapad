@@ -83,6 +83,10 @@ describe("createUpdateCoordinator", () => {
 
     createUpdateCoordinator({ checkForUpdate, environment: env });
 
+    // Asserted against the literal, not against the constant: comparing the
+    // scheduled value to `DEFAULT_UPDATE_INTERVAL_MS` moves both sides of the
+    // assertion together, so any arithmetic change to the constant passes.
+    expect(env.scheduledIntervalMs()).toBe(3_600_000);
     expect(env.scheduledIntervalMs()).toBe(DEFAULT_UPDATE_INTERVAL_MS);
   });
 
@@ -268,5 +272,62 @@ describe("createBrowserUpdateEnvironment", () => {
 
     vi.stubGlobal("navigator", { onLine: true });
     expect(environment.isOnline()).toBe(true);
+  });
+});
+
+describe("DEFAULT_UPDATE_INTERVAL_MS", () => {
+  it("is one hour in milliseconds", () => {
+    expect(DEFAULT_UPDATE_INTERVAL_MS).toBe(3_600_000);
+  });
+});
+
+describe("update coordinator stop() is idempotent", () => {
+  it("clears the interval and unsubscribes only once", () => {
+    // `if (stopped) return;` — the suite calls stop() once, so a second run
+    // of the teardown is invisible. Against a real environment that is a
+    // double `clearInterval` and a double `removeEventListener`.
+    let clearCount = 0;
+    let unsubscribeCount = 0;
+    const environment: UpdateCoordinatorEnvironment = {
+      setInterval: () => 1,
+      clearInterval: () => {
+        clearCount += 1;
+      },
+      onVisibilityChange: () => () => {
+        unsubscribeCount += 1;
+      },
+      getVisibilityState: () => "visible",
+      isOnline: () => true,
+    };
+
+    const handle = createUpdateCoordinator({
+      checkForUpdate: vi.fn().mockResolvedValue(undefined),
+      environment,
+    });
+
+    handle.stop();
+    handle.stop();
+    handle.stop();
+
+    expect(clearCount).toBe(1);
+    expect(unsubscribeCount).toBe(1);
+  });
+});
+
+describe("createBrowserUpdateEnvironment without a navigator", () => {
+  it("reports online when `navigator` is not defined at all", () => {
+    // `typeof navigator === "undefined" ? true : …` — the true arm never runs
+    // in happy-dom or in Node 22, both of which define a global navigator.
+    // Stubbing it to `undefined` makes `typeof navigator` genuinely
+    // "undefined", which is the only way to reach the branch.
+    vi.stubGlobal("navigator", undefined);
+    expect(createBrowserUpdateEnvironment().isOnline()).toBe(true);
+  });
+
+  it("consults navigator.onLine when a navigator exists", () => {
+    vi.stubGlobal("navigator", { onLine: false });
+    expect(createBrowserUpdateEnvironment().isOnline()).toBe(false);
+    vi.stubGlobal("navigator", { onLine: true });
+    expect(createBrowserUpdateEnvironment().isOnline()).toBe(true);
   });
 });

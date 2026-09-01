@@ -653,3 +653,64 @@ describe("GoogleDriveClient.uploadJsonFile", () => {
     ).rejects.toThrow(/Failed to save data to Google Drive\./u);
   });
 });
+
+function paginationFileRecord(id: string) {
+  return {
+    id,
+    name: `${id}.json`,
+    mimeType: "application/json",
+    modifiedTime: "2026-04-20T10:00:00.000Z",
+  };
+}
+
+describe("GoogleDriveClient.findFiles pagination bounds", () => {
+  const fileRecord = paginationFileRecord;
+
+  it("sends no pageToken parameter on the first page", async () => {
+    // `pageToken === null ? "" : "&pageToken=…"` — the empty arm. A junk
+    // value here would be appended verbatim to the query string, and every
+    // existing assertion checks only that the URL *contains* its parts.
+    const { calls } = captureFetch(() => jsonResponse({ files: [] }));
+    const client = new GoogleDriveClient("tok");
+
+    await client.findFiles("name = 'index'", 5);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).not.toContain("pageToken");
+    expect(calls[0].url.endsWith("&pageSize=5")).toBe(true);
+  });
+
+  it("stops paging once the requested count is reached, even with a next page waiting", async () => {
+    // `collected.length < maxResults` — the loop must not ask for a page it
+    // has no room for. The fixture needs BOTH a full first page and a
+    // `nextPageToken`, or the `pageToken !== null` half of the condition
+    // ends the loop first and the bound is never consulted.
+    const { calls } = captureFetch((url) =>
+      url.includes("pageToken")
+        ? jsonResponse({ files: [fileRecord("c")], nextPageToken: null })
+        : jsonResponse({
+            files: [fileRecord("a"), fileRecord("b")],
+            nextPageToken: "page-2",
+          }),
+    );
+    const client = new GoogleDriveClient("tok");
+
+    const files = await client.findFiles("q", 2);
+    expect(files.map((f) => f.id)).toEqual(["a", "b"]);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("keeps paging while the requested count is not yet reached", async () => {
+    const { calls } = captureFetch((url) =>
+      url.includes("pageToken")
+        ? jsonResponse({ files: [fileRecord("c")], nextPageToken: null })
+        : jsonResponse({ files: [fileRecord("a")], nextPageToken: "page-2" }),
+    );
+    const client = new GoogleDriveClient("tok");
+
+    const files = await client.findFiles("q", 5);
+    expect(files.map((f) => f.id)).toEqual(["a", "c"]);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].url).toContain("pageToken=page-2");
+  });
+});
