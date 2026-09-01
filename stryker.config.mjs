@@ -366,11 +366,18 @@ const config = {
     // reliable for the files you measure and rots everywhere else. **Ratchet
     // to measured numbers only.**
     //
-    // **96.42 is a floor, not a level.** The nightly ran at 11:47 and the
-    // batches that landed later that day are not in it, the last
-    // `CallExpression` dozen included (+12 kills → 96.54 % on this
-    // denominator). **The first nightly holding the whole campaign is 09-01;
-    // set `low`/`high` from that one.**
+    // **96.42 is a floor, not a level — and how far below is not known.**
+    // The nightly measures what is on the REMOTE. Its 11:47 timestamp says
+    // when the job ran, not how much of the campaign it saw: that is set by
+    // the last push, and local commits are invisible to it. So the honest
+    // statement is "96.42 is the score of some pushed ancestor of the current
+    // work", not "the score as of this morning". Do not reconstruct the
+    // cutoff from the clock — a mistake made once here already.
+    //
+    // **The baseline to set `low`/`high` from is the first nightly AFTER the
+    // campaign is pushed.** Until then the gap between 96.42 and reality is
+    // whatever is sitting unpushed, which is a lower bound on the improvement,
+    // never an upper one — the remote can only be behind.
     //
     // --- Ratcheted 2026-08-31 (fifth pass), 90/92/94 → 95/95/96. ---
     //
@@ -382,11 +389,15 @@ const config = {
     //
     // `low: 95` sits on the break so anything that fails the build is also
     // red in the report, and `high: 96` is the first round number under the
-    // measured floor. **Both are deliberately conservative for one night.**
-    // The honest ceiling for `high` is somewhere near 96.5, but that is the
-    // number the 09-01 nightly will state outright, and this file's own rule
+    // measured floor. **Both are deliberately conservative.** The honest
+    // ceiling for `high` is higher — how much higher is exactly what the
+    // first post-push nightly will state outright — and this file's own rule
     // two paragraphs up is to ratchet to measured numbers only. Raise `high`
     // then, not now.
+    //
+    // Note the ratchet itself is unaffected by the push question. Every
+    // unpushed commit can only have raised the score, so 1.42 pp of headroom
+    // over 96.42 is if anything an understatement of the margin.
     //
     // **0.30 pp of the score is asserted by a clock, not by a test** — 29
     // timeouts booked as kills (29 / 9 597). On CI the count is stable across
