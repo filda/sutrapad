@@ -247,12 +247,18 @@ describe("buildAboutPage credits", () => {
     ]);
   });
 
-  it("opens every outbound credit in a new tab with noopener", () => {
+  it("opens every outbound credit in a new tab with noopener noreferrer", () => {
     const { page } = mount();
     const links = [...page.querySelectorAll<HTMLAnchorElement>("#credits a")];
 
     expect(links.every((link) => link.target === "_blank")).toBe(true);
-    expect(links.every((link) => link.rel === "noopener")).toBe(true);
+    // `noreferrer` as well as `noopener`, matching `site-footer` and
+    // `links-page`. These are `target="_blank"` links to third parties, and
+    // modern browsers imply `noopener` for those anyway — so `noreferrer`,
+    // which keeps the user's SutraPad URL out of the outbound `Referer`
+    // header, is the half actually doing work here. It was the only one of
+    // the three outbound-link sites missing it.
+    expect(links.every((link) => link.rel === "noopener noreferrer")).toBe(true);
     // Four credits plus the repo link in the source line below them.
     expect(links).toHaveLength(5);
   });

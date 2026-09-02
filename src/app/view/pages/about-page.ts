@@ -212,7 +212,7 @@ function buildCreditsSection(): HTMLElement {
     const a = document.createElement("a");
     a.href = item.href;
     a.target = "_blank";
-    a.rel = "noopener";
+    a.rel = "noopener noreferrer";
     a.textContent = item.label;
     li.append(a);
     if (item.note) {
@@ -234,7 +234,7 @@ function buildCreditsSection(): HTMLElement {
   const repoLink = document.createElement("a");
   repoLink.href = "https://github.com/filda/sutrapad";
   repoLink.target = "_blank";
-  repoLink.rel = "noopener";
+  repoLink.rel = "noopener noreferrer";
   repoLink.textContent = "github.com/filda/sutrapad";
   sourceLine.append(repoLink);
 

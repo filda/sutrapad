@@ -47,6 +47,7 @@ import {
   syncViewToLocation,
 } from "../src/app/sync-helpers";
 import type { SutraPadDocument, SutraPadWorkspace, UserProfile } from "../src/types";
+import { createWorkspace, stripEmptyDraftNotes } from "../src/lib/notebook";
 
 const BASE = "/";
 
@@ -516,5 +517,80 @@ describe("getAppStatusText", () => {
         new Date("2026-03-04T09:00:00.000Z"),
       ),
     );
+  });
+});
+
+describe("getAppStatusText on an empty workspace", () => {
+  // Regression: this used to throw `TypeError: Cannot read properties of
+  // undefined (reading 'updatedAt')`. The chain that reaches it starts from a
+  // fresh install —
+  //
+  //   createWorkspace()          → one note, and that note is an empty draft
+  //   stripEmptyDraftNotes(…)    → zero notes
+  //   render() → refreshStatus() → getAppStatusText(…)  → throw
+  //
+  // Both `purgeEmptyDraftNotes` call sites in
+  // `lifecycle/keyboard-shortcuts.ts` render immediately after purging, so
+  // pressing Escape on the detail route of a brand-new notebook, before
+  // typing anything, was enough.
+  const empty = { notes: [], activeNoteId: null };
+
+  it("reports the local notebook without a last-change stamp", () => {
+    expect(
+      getAppStatusText({
+        syncState: "idle",
+        lastError: "",
+        workspace: empty,
+        selectedTagFilters: [],
+        filterMode: "any",
+        profile: null,
+      }),
+    ).toBe("Editing local notebook.");
+  });
+
+  it("reports the synced notebook without a last-change stamp", () => {
+    expect(
+      getAppStatusText({
+        syncState: "idle",
+        lastError: "",
+        workspace: empty,
+        selectedTagFilters: [],
+        filterMode: "any",
+        profile: { name: "Filip", email: "f@example.com", picture: "" },
+      }),
+    ).toBe("Notebook synced from Drive.");
+  });
+
+  it("still reports sync state ahead of the empty check", () => {
+    for (const [syncState, expected] of [
+      ["loading", "Loading…"],
+      ["saving", "Saving…"],
+    ] as const) {
+      expect(
+        getAppStatusText({
+          syncState,
+          lastError: "",
+          workspace: empty,
+          selectedTagFilters: [],
+          filterMode: "any",
+          profile: null,
+        }),
+      ).toBe(expected);
+    }
+  });
+
+  it("survives the real fresh-install purge chain", () => {
+    const stripped = stripEmptyDraftNotes(createWorkspace());
+    expect(stripped.notes).toHaveLength(0);
+    expect(() =>
+      getAppStatusText({
+        syncState: "idle",
+        lastError: "",
+        workspace: stripped,
+        selectedTagFilters: [],
+        filterMode: "any",
+        profile: null,
+      }),
+    ).not.toThrow();
   });
 });

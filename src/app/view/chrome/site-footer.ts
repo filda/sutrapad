@@ -13,7 +13,7 @@
  *   └────────────────────────────────────────────────┘
  *
  * Internal links go through `onSelectMenuItem`; external links open a
- * new tab with `rel="noopener"`. The build stamp is appended to the
+ * new tab with `rel="noopener noreferrer"`. The build stamp is appended to the
  * base row rather than hanging off on its own — `formatBuildStamp` in
  * `app.ts` already produces a self-contained `version • commit •
  * timestamp` string we can drop in next to the copyright.

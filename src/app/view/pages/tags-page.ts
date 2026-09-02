@@ -630,7 +630,9 @@ export function buildTagsPage({
     const summary = document.createElement("p");
     summary.className = "tags-page-summary";
     const modePhrase = filterMode === "any" ? "any selected tag" : "every selected tag";
-    summary.textContent = `Showing ${filteredNotes.length} notebook${filteredNotes.length === 1 ? "" : "s"} that match ${modePhrase}.`;
+    summary.textContent = `Showing ${filteredNotes.length} notebook${
+      filteredNotes.length === 1 ? " that matches" : "s that match"
+    } ${modePhrase}.`;
     matches.append(summary);
   }
 

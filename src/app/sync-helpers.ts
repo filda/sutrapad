@@ -224,7 +224,18 @@ export function getAppStatusText({
       : "No notes match all selected tags.";
   }
 
+  // An empty workspace is a reachable state, not a defensive hypothetical:
+  // `createWorkspace()` seeds exactly one note and that note is an empty
+  // draft, so `stripEmptyDraftNotes` legitimately empties the notebook the
+  // first time a fresh user leaves the detail route without typing. Both
+  // purge call sites in `lifecycle/keyboard-shortcuts.ts` render immediately
+  // afterwards, and this function used to throw on `note.updatedAt` —
+  // `getCurrentWorkspaceNote` returns `notes[0]`, which is `undefined` there
+  // despite the non-nullable return type it declares.
   const note = displayedNote ?? getCurrentWorkspaceNote(workspace);
+  if (!note) {
+    return profile ? "Notebook synced from Drive." : "Editing local notebook.";
+  }
   return profile
     ? `Notebook synced from Drive. Last change: ${formatDate(note.updatedAt)}`
     : `Editing local notebook. Last change: ${formatDate(note.updatedAt)}`;

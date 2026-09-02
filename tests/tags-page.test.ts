@@ -28,11 +28,11 @@
 // through with an empty query leaves `needle === ""`, and every string
 // `.includes("")`, so the fast path and the slow path agree.
 //
-// One copy bug is pinned rather than fixed: the match summary reads
-// "Showing 1 notebook that match …" — the plural `s` on "notebook" is
-// conditional but the verb is not. Flagged to Filip; the test asserts what
-// ships so a deliberate fix shows up as a failing expectation, not a silent
-// drift.
+// The copy bug this file used to pin is FIXED (2026-08-31): the match summary
+// read "Showing 1 notebook that match …" — the plural `s` on "notebook" was
+// conditional but the verb was not. The pin worked exactly as intended: the
+// fix arrived as three failing expectations rather than as silent drift, so
+// the singular and plural phrasings are both asserted below.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildTagsPage, type TagsPageOptions } from "../src/app/view/pages/tags-page";
@@ -522,7 +522,7 @@ describe("buildTagsPage selection states", () => {
     // the verb is not, so the singular sentence is ungrammatical. Pinned as-is
     // and flagged rather than silently corrected — it is a copy decision.
     expect(text(".tags-page-summary")).toBe(
-      "Showing 1 notebook that match any selected tag.",
+      "Showing 1 notebook that matches any selected tag.",
     );
   });
 
@@ -532,7 +532,7 @@ describe("buildTagsPage selection states", () => {
     const { text } = mount({ selectedTagFilters: ["praha", "kava"], filterMode: "all" });
 
     expect(text(".tags-page-summary")).toBe(
-      "Showing 1 notebook that match every selected tag.",
+      "Showing 1 notebook that matches every selected tag.",
     );
   });
 
