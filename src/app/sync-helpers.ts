@@ -42,9 +42,22 @@ import type { SyncState } from "./session/workspace-sync";
  * pick a "currently displayed" note even before the route logic has
  * resolved which one should actually be focused.
  */
+/**
+ * The note the workspace currently points at: the active one, or the first
+ * one as a fallback.
+ *
+ * **Returns `undefined` on an empty workspace, and that is a reachable
+ * state** — `stripEmptyDraftNotes` deliberately produces it (the note
+ * `createWorkspace()` seeds is itself an empty draft), and nothing re-seeds
+ * afterwards. This used to be typed `SutraPadDocument`, which was a lie
+ * `notes[0]` could not keep; `noUncheckedIndexedAccess` is off, so
+ * TypeScript accepted it and `getAppStatusText` shipped a crash on the first
+ * Escape of a brand-new notebook. Every caller now handles the absence
+ * explicitly. See docs/mutation-survivor-triage.md.
+ */
 export function getCurrentWorkspaceNote(
   workspace: SutraPadWorkspace,
-): SutraPadDocument {
+): SutraPadDocument | undefined {
   const note = workspace.notes.find((entry) => entry.id === workspace.activeNoteId);
   return note ?? workspace.notes[0];
 }

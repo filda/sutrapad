@@ -793,3 +793,50 @@ describe("renderAppPage settings", () => {
     expect(hidden.querySelectorAll(".hygiene-alias-list")).toHaveLength(0);
   });
 });
+
+describe("renderAppPage with an empty workspace", () => {
+  // `currentNote` is `SutraPadDocument | null` on the render bag because an
+  // empty workspace is reachable: `stripEmptyDraftNotes` produces it (the note
+  // `createWorkspace()` seeds is itself an empty draft) and nothing re-seeds.
+  // The detail branch needs a note, so a null one routes to the notes panel
+  // and its empty state instead of building an editor around nothing.
+  const emptyWorkspace = { notes: [], activeNoteId: null } as SutraPadWorkspace;
+
+  it("renders the notes panel rather than the editor", () => {
+    const { root } = render({
+      workspace: emptyWorkspace,
+      note: null,
+      currentNote: null,
+      detailNoteId: null,
+    });
+
+    expect(page(root)?.querySelector(".notes-panel")).not.toBeNull();
+    expect(page(root)?.querySelector(".editor-card")).toBeNull();
+  });
+
+  it("routes to the notes panel even when a detail note is still pinned", () => {
+    // The purge in app.ts clears `detailNoteId` when the pinned draft goes, so
+    // this pairing should not occur — but it is the combination that would
+    // have built a detail page around a missing note, so it is asserted.
+    const { root } = render({
+      workspace: emptyWorkspace,
+      note: null,
+      currentNote: null,
+      detailNoteId: "n-gone",
+    });
+
+    expect(page(root)?.querySelector(".notes-panel")).not.toBeNull();
+    expect(page(root)?.querySelector(".editor-card")).toBeNull();
+  });
+
+  it("does not throw", () => {
+    expect(() =>
+      render({
+        workspace: emptyWorkspace,
+        note: null,
+        currentNote: null,
+        detailNoteId: null,
+      }),
+    ).not.toThrow();
+  });
+});

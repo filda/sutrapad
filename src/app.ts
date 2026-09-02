@@ -500,8 +500,11 @@ export function createApp(root: HTMLElement): void {
     // list / other pages, the selector returns null and the patch is a
     // no-op. Mirrors the sync-pill in-place patching pattern above.
     const syncCrumb = root.querySelector(".crumb-sync");
-    if (syncCrumb instanceof HTMLElement) {
-      const activeNote = getCurrentWorkspaceNote(workspace);
+    const activeNote = getCurrentWorkspaceNote(workspace);
+    // An empty workspace has no crumb to patch either, so this is belt and
+    // braces — but the note is genuinely optional now, and reading
+    // `.updatedAt` off it unconditionally is how the status-bar crash shipped.
+    if (syncCrumb instanceof HTMLElement && activeNote) {
       syncCrumb.textContent = formatLastChange(activeNote.updatedAt, {
         signedIn: profile !== null,
       });
@@ -685,7 +688,7 @@ export function createApp(root: HTMLElement): void {
         selectedTagFilters,
         filterMode,
         note: displayedNote,
-        currentNote: detailNote ?? currentNote,
+        currentNote: detailNote ?? currentNote ?? null,
         syncState,
         statusText: getAppStatusText({
           syncState,

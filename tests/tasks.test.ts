@@ -534,3 +534,44 @@ describe("task parsing and CRLF line endings", () => {
     ]);
   });
 });
+
+describe("toggleTaskInBody on a legacy CRLF body", () => {
+  // Source finding 11, second half. `parseTasksFromNote` shows the tasks of an
+  // already-stored CRLF note, so those checkboxes are visible — and before
+  // this, ticking one did nothing at all, because the line still carried a
+  // `\r` and failed `TASK_LINE_REGEX`. The toggle normalises the whole body to
+  // LF on its first use: the deliberate choice, since the user is editing the
+  // note at that moment and it repairs the note permanently.
+  it("ticks a task and rewrites the body to LF", () => {
+    expect(toggleTaskInBody("- [ ] one\r\n- [ ] two", 0)).toBe(
+      "- [x] one\n- [ ] two",
+    );
+  });
+
+  it("unticks a done task in a CRLF body", () => {
+    expect(toggleTaskInBody("- [x] one\r\n- [ ] two", 0)).toBe(
+      "- [ ] one\n- [ ] two",
+    );
+  });
+
+  it("normalises the body even when the index is out of range", () => {
+    // The early return has to normalise too, or a no-op toggle would hand back
+    // a CRLF body while a successful one hands back LF — two shapes for the
+    // same note depending on where the user clicked.
+    expect(toggleTaskInBody("- [ ] one\r\n- [ ] two", 99)).toBe(
+      "- [ ] one\n- [ ] two",
+    );
+  });
+
+  it("leaves an LF body byte-identical", () => {
+    const body = "- [ ] one\n- [ ] two";
+    expect(toggleTaskInBody(body, 99)).toBe(body);
+    expect(toggleTaskInBody(body, 1)).toBe("- [ ] one\n- [x] two");
+  });
+
+  it("preserves the open bracket style it found", () => {
+    expect(toggleTaskInBody("- [x] one\r\n[] two", 1)).toBe(
+      "- [x] one\n[x] two",
+    );
+  });
+});

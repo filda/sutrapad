@@ -83,20 +83,27 @@ describe("getCurrentWorkspaceNote", () => {
   it("returns the active note", () => {
     const workspace = workspaceOf([makeNote({ id: "n-1" }), makeNote({ id: "n-2" })], "n-2");
 
-    expect(getCurrentWorkspaceNote(workspace).id).toBe("n-2");
+    expect(getCurrentWorkspaceNote(workspace)?.id).toBe("n-2");
   });
 
   it("falls back to the first note when the active id is stale", () => {
     // Happens after a refresh drops the note that was open.
     const workspace = workspaceOf([makeNote({ id: "n-1" }), makeNote({ id: "n-2" })], "gone");
 
-    expect(getCurrentWorkspaceNote(workspace).id).toBe("n-1");
+    expect(getCurrentWorkspaceNote(workspace)?.id).toBe("n-1");
   });
 
   it("falls back to the first note when nothing is active", () => {
     const workspace = workspaceOf([makeNote({ id: "n-1" })], null);
 
-    expect(getCurrentWorkspaceNote(workspace).id).toBe("n-1");
+    expect(getCurrentWorkspaceNote(workspace)?.id).toBe("n-1");
+  });
+
+  it("returns undefined for an empty workspace", () => {
+    // The reason the return type is `| undefined`: `notes[0]` on an empty
+    // workspace, which `stripEmptyDraftNotes` legitimately produces.
+    expect(getCurrentWorkspaceNote({ notes: [], activeNoteId: null })).toBeUndefined();
+    expect(getCurrentWorkspaceNote({ notes: [], activeNoteId: "gone" })).toBeUndefined();
   });
 });
 

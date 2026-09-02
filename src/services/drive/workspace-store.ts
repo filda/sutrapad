@@ -160,24 +160,29 @@ function createEmptyWorkspace(): SutraPadWorkspace {
   };
 }
 
+/**
+ * Builds the index envelope — everything except `notes`.
+ *
+ * **The caller owns `notes`.** `saveWorkspace` finishes with
+ * `{ ...nextIndex, notes: savedNotes }`, so any `notes` array built here
+ * would be computed and thrown away. It used to build one: a
+ * `previousById` map over `existingIndex.notes` plus a per-note projection
+ * to recover each `fileId` — O(n) over the whole workspace, on every save,
+ * discarded. The fileIds that actually ship come from
+ * `existingSummaryById`, built in `saveWorkspace` for exactly this purpose
+ * and whose own comment already said "same lookup table as `createIndex`
+ * builds internally".
+ *
+ * Two maps meaning the same thing, one of them dead. Removed 2026-08-31
+ * (mutation-testing source finding 8) — the `Omit` in the return type is
+ * what keeps it removed, since `nextIndex.notes` is now a type error rather
+ * than a silently-ignored value.
+ */
 function createIndex(
   workspace: SutraPadWorkspace,
-  existingIndex?: SutraPadIndex | null,
   previousIndexId?: string,
-): SutraPadIndex {
+): Omit<SutraPadIndex, "notes"> {
   const savedAt = new Date().toISOString();
-
-  // Build an id → previous-summary lookup once instead of `.find()`-ing
-  // through `existingIndex.notes` for every note in the new workspace.
-  // The old shape was O(N×M) where both N (current notes) and M
-  // (previous notes) grow without bound — once a workspace has a few
-  // hundred notes the save path was visibly worse than the load path.
-  const previousById = new Map<string, SutraPadNoteSummary>();
-  if (existingIndex) {
-    for (const entry of existingIndex.notes) {
-      previousById.set(entry.id, entry);
-    }
-  }
 
   return {
     version: 1,
@@ -185,13 +190,6 @@ function createIndex(
     savedAt,
     previousIndexId,
     activeNoteId: workspace.activeNoteId,
-    notes: workspace.notes.map((note) => ({
-      id: note.id,
-      title: note.title,
-      createdAt: note.createdAt,
-      updatedAt: note.updatedAt,
-      fileId: previousById.get(note.id)?.fileId,
-    })),
   };
 }
 
@@ -718,7 +716,7 @@ export class GoogleDriveStore {
       ? await this.#client.fetchJsonFile<SutraPadIndex>(existingIndexFile.id)
       : null;
 
-    const nextIndex = createIndex(workspace, existingIndex, existingIndexFile?.id);
+    const nextIndex = createIndex(workspace, existingIndexFile?.id);
 
     // Same lookup table as `createIndex` builds internally — the
     // savedNotes loop below also needs id → existing summary

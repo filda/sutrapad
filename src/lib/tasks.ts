@@ -4,6 +4,7 @@ import type {
   SutraPadTaskIndex,
   SutraPadWorkspace,
 } from "../types";
+import { normalizeLineEndings } from "./normalize-line-endings";
 
 /**
  * Task-parsing module. Kept separate from `notebook.ts` so helpers that want
@@ -197,8 +198,17 @@ export function buildTaskFacetByNoteId(
  * writes `[x]`.
  */
 export function toggleTaskInBody(body: string, lineIndex: number): string {
-  const lines = body.split("\n");
-  if (lineIndex < 0 || lineIndex >= lines.length) return body;
+  // Normalise before splitting, not after: on a note stored from a pre-2026-08-31
+  // Windows import the body still carries CRLF, `parseTasksFromNote` now shows
+  // its tasks (it splits on `/\r?\n/`), and without this the ticked line would
+  // fail `TASK_LINE_REGEX` and the toggle would silently do nothing — visible
+  // checkboxes that refuse to tick. Normalising here rewrites the whole body to
+  // LF on the first toggle, which is the deliberate choice (source finding 11):
+  // the user is editing the note at that moment anyway, and it fixes the note
+  // permanently rather than carrying the tolerance through every future
+  // split/rejoin. New notes are already LF, so this is a no-op for them.
+  const lines = normalizeLineEndings(body).split("\n");
+  if (lineIndex < 0 || lineIndex >= lines.length) return normalizeLineEndings(body);
 
   const line = lines[lineIndex];
   const match = TASK_LINE_REGEX.exec(line);

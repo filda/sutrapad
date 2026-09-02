@@ -66,7 +66,16 @@ import {
 // in EditorCardOptions for the title/body callbacks, but declares the
 // surrounding plumbing (sync state for the chrome sync-pill, tag
 // callbacks for the sidebar) inline below.
-interface RenderAppOptions extends EditorCardOptions, NotesPanelOptions {
+/**
+ * `currentNote` is overridden off `EditorCardOptions` to allow `null`: the
+ * editor card always has a note, but a render pass does not — an empty
+ * workspace is reachable (`stripEmptyDraftNotes` produces it) and routes to
+ * the notes panel's empty state rather than to the editor.
+ */
+interface RenderAppOptions
+  extends Omit<EditorCardOptions, "currentNote">,
+    NotesPanelOptions {
+  currentNote: SutraPadDocument | null;
   root: HTMLElement;
   /**
    * Full workspace — the render pass walks `workspace.notes` for the tag
@@ -583,7 +592,11 @@ export function renderAppPage({
     return;
   }
 
-  if (detailNoteId === null) {
+  // `currentNote === null` means the workspace holds no notes at all. There
+  // is nothing to edit, so it takes the same path as "no note is pinned" and
+  // the panel renders its own empty state. Narrowing here is also what keeps
+  // `appendNoteDetailPage` honestly non-null below.
+  if (detailNoteId === null || currentNote === null) {
     page.classList.add("page--wide");
     page.append(
       buildNotesPanel({

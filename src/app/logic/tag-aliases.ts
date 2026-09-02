@@ -314,6 +314,21 @@ export function suggestTagAliases(
   return suggestions;
 }
 
+/**
+ * Do the tags in this cluster ever appear on the same note?
+ *
+ * **The `< 2` guard is unreachable and stays anyway** (decision, 2026-08-31).
+ * Every caller builds `entries` from a cluster that already has a canonical
+ * plus at least one alias, so the length is always >= 2 — which is why both
+ * mutants on this line survive and no fixture can kill them.
+ *
+ * It is kept because removing it does not simplify anything: the line below
+ * reads `entries[0].noteIds`, so without the guard an empty array throws
+ * instead of answering `false`. Paying two unkillable mutants for a function
+ * that cannot be made to explode is the same trade as the `nonEmpty > 0`
+ * guard in `lib/detect-kind.ts` — see docs/mutation-survivor-triage.md,
+ * source finding 5.
+ */
 function clusterCoOccurs(entries: readonly SutraPadTagEntry[]): boolean {
   if (entries.length < 2) return false;
   const accumulator = new Set(entries[0].noteIds);

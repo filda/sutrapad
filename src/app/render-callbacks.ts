@@ -575,7 +575,10 @@ export function createRenderCallbacks({
     },
     onAddTag: (value: string) => {
       const tag = value.trim().toLowerCase();
-      if (!tag || getCurrentWorkspaceNote(getWorkspace()).tags.includes(tag)) return;
+      // No note means nothing to tag. Previously this read `.tags` off a
+      // value typed as always-present; on an empty workspace it is undefined.
+      const taggedNote = getCurrentWorkspaceNote(getWorkspace());
+      if (!tag || !taggedNote || taggedNote.tags.includes(tag)) return;
       replaceCurrentNote((currentWorkspaceNote) => ({
         ...currentWorkspaceNote,
         tags: [...currentWorkspaceNote.tags, tag],
