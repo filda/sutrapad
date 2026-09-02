@@ -318,3 +318,26 @@ describe("dropSourceFromDataTransfer text fallback", () => {
     );
   });
 });
+
+describe("toImportedNote line endings", () => {
+  // Source finding 11: a Windows-authored export arrives with CRLF, which is
+  // invisible in the rendered note and breaks every line-anchored parse of
+  // the body — most visibly the task checkboxes, which vanished entirely.
+  it("normalises CRLF in an imported body", () => {
+    expect(
+      toImportedNote({ title: "t", body: "- [ ] one\r\n- [x] two" })?.body,
+    ).toBe("- [ ] one\n- [x] two");
+  });
+
+  it("normalises lone CR in an imported body", () => {
+    expect(toImportedNote({ title: "t", body: "one\rtwo" })?.body).toBe(
+      "one\ntwo",
+    );
+  });
+
+  it("leaves an LF body untouched", () => {
+    expect(toImportedNote({ title: "t", body: "one\ntwo" })?.body).toBe(
+      "one\ntwo",
+    );
+  });
+});

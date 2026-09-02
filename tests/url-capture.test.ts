@@ -783,3 +783,23 @@ describe("url-capture parsing edge cases", () => {
     ).resolves.toBeNull();
   });
 });
+
+describe("readNoteCapture line endings", () => {
+  // `?note=` is pasted from wherever the user copied it, including native
+  // Windows applications. Source finding 11.
+  it("normalises CRLF in a captured note", () => {
+    expect(
+      readNoteCapture(
+        `https://filda.github.io/sutrapad/?note=${encodeURIComponent("- [ ] one\r\n- [x] two")}`,
+      ),
+    ).toEqual({ note: "- [ ] one\n- [x] two" });
+  });
+
+  it("normalises lone CR in a captured note", () => {
+    expect(
+      readNoteCapture(
+        `https://filda.github.io/sutrapad/?note=${encodeURIComponent("one\rtwo")}`,
+      ),
+    ).toEqual({ note: "one\ntwo" });
+  });
+});

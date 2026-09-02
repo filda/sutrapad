@@ -104,7 +104,11 @@ function clampString(value: unknown, budget: number): string | undefined {
   if (trimmed === "") return undefined;
   // Slice on the original (pre-trim) length isn't right — we want the
   // visual content to be <= budget. Use the trimmed string.
-  return trimmed.length <= budget ? trimmed : trimmed.slice(0, budget);
+  //
+  // No length guard: `slice` already returns the whole string when it fits,
+  // so the conditional form only added two equivalent mutants. Same call as
+  // `clampLength` in `lib/url-capture.ts`, which carries the same note.
+  return trimmed.slice(0, budget);
 }
 
 /**

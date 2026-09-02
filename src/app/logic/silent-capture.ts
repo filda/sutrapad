@@ -18,6 +18,7 @@
  */
 
 import { CAPTURE_TEXT_MAX } from "../../lib/url-capture";
+import { normalizeLineEndings } from "../../lib/normalize-line-endings";
 
 /**
  * Sentinel param the bookmarklet sets when it expects the page to run
@@ -73,7 +74,7 @@ export function extractSelectionFromUrl(url: string): string | null {
   // could pre-select megabytes of text to bloat the saved note. `slice` is a
   // no-op when it already fits. Shares the free-text budget with `?note=` /
   // `?title=` (`url-capture.ts`).
-  return raw.slice(0, CAPTURE_TEXT_MAX);
+  return normalizeLineEndings(raw.slice(0, CAPTURE_TEXT_MAX));
 }
 
 /**

@@ -8,6 +8,7 @@
  * into the Drive folder by another app.
  */
 import { extractUrlsFromText } from "../../lib/notebook";
+import { normalizeLineEndings } from "../../lib/normalize-line-endings";
 import { httpUrlOrNull } from "../../lib/safe-url";
 import type { SutraPadDocument } from "../../types";
 import type { NoteImportProgress } from "./import-batches";
@@ -38,7 +39,11 @@ export function toImportedNote(raw: unknown): SutraPadDocument | null {
   if (typeof raw !== "object" || raw === null) return null;
   const record = raw as Record<string, unknown>;
 
-  const body = typeof record.body === "string" ? record.body : "";
+  // Imported files are authored elsewhere — a Windows-authored export
+  // arrives with CRLF endings, which are invisible in the rendered note and
+  // break every line-anchored parse of the body.
+  const body =
+    typeof record.body === "string" ? normalizeLineEndings(record.body) : "";
   const rawTitle = typeof record.title === "string" ? record.title.trim() : "";
   if (body.trim().length === 0 && rawTitle.length === 0) return null;
 

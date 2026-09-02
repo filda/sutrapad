@@ -2,6 +2,7 @@ import type { SutraPadCaptureContext } from "../types";
 import { sanitizeCaptureContext } from "./capture-context-sanitize";
 import { safeFetch } from "./safe-fetch";
 import { httpUrlOrNull } from "./safe-url";
+import { normalizeLineEndings } from "./normalize-line-endings";
 
 export interface UrlCapturePayload {
   title?: string;
@@ -89,7 +90,9 @@ export function readNoteCapture(urlString: string): NoteCapturePayload | null {
     return null;
   }
 
-  return { note: clampLength(note, CAPTURE_TEXT_MAX) };
+  // `?note=` can be pasted out of a native Windows app, so normalise the
+  // line endings before the body is stored — see `normalizeLineEndings`.
+  return { note: normalizeLineEndings(clampLength(note, CAPTURE_TEXT_MAX)) };
 }
 
 export function clearCaptureParamsFromLocation(urlString: string): string {
@@ -136,7 +139,11 @@ export function extractHtmlTitle(html: string): string | null {
 
 export function extractHtmlLang(html: string): string | null {
   const match = html.match(/<html[^>]*\blang=["']?([^"'\s>]+)["']?[^>]*>/iu);
-  const lang = match?.[1]?.trim();
+  // No `?.trim()` on the capture: the group's character class excludes
+  // whitespace, so there is nothing to trim, and the group is not optional so
+  // `match[1]` is always a string when `match` is non-null. Both defences
+  // were dead and each donated an equivalent mutant.
+  const lang = match?.[1];
   return lang || null;
 }
 

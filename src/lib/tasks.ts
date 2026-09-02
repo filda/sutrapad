@@ -24,7 +24,17 @@ const TASK_LINE_REGEX = /^(\s*(?:-\s+)?\[([ xX]?)\])\s?(.*)$/u;
 
 export function parseTasksFromNote(note: SutraPadDocument): SutraPadTaskEntry[] {
   const tasks: SutraPadTaskEntry[] = [];
-  const lines = note.body.split("\n");
+  // Split on CRLF as well as LF. Bodies are normalised on the way in (see
+  // `lib/normalize-line-endings.ts`), so this only matters for notes already
+  // stored from a Windows-authored import — but for those it is the
+  // difference between seeing their tasks and seeing none of them:
+  // `TASK_LINE_REGEX` ends `(.*)$` and `.` does not match `\r`, so a line
+  // left with a trailing `\r` fails the match entirely. Read-only, so
+  // tolerating both here costs nothing; `toggleTaskInBody` deliberately does
+  // NOT (it round-trips the body, so being tolerant there would mean deciding
+  // which line endings to write back — see the open finding in
+  // docs/mutation-survivor-triage.md).
+  const lines = note.body.split(/\r?\n/u);
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const match = TASK_LINE_REGEX.exec(lines[lineIndex]);
     if (!match) continue;

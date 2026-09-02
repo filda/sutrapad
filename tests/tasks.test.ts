@@ -482,16 +482,16 @@ describe("buildTaskFacetByNoteId", () => {
 });
 
 describe("task parsing and CRLF line endings", () => {
-  // `TASK_LINE_REGEX` ends `(.*)$`, and `.` does not match `\r`. On a body
-  // with Windows line endings the split on "\n" leaves a trailing `\r` on
-  // every line, `(.*)` stops before it, and `$` then fails the whole match —
-  // so a CRLF note yields NO tasks at all. Every existing fixture is authored
-  // with "\n", which is why the anchor could be dropped unnoticed.
+  // Bodies are normalised to LF on the way in (`lib/normalize-line-endings`),
+  // so a CRLF body only reaches the parser when it was stored BEFORE that
+  // normalisation existed. `parseTasksFromNote` splits on `/\r?\n/` for
+  // exactly those notes: `TASK_LINE_REGEX` ends `(.*)$` and `.` does not
+  // match `\r`, so a line left carrying a trailing `\r` fails the match
+  // entirely and its checkbox disappears.
   //
-  // This test pins the CURRENT behaviour, not the desired one. See the source
-  // finding in docs/mutation-survivor-triage.md: `drop-import` does not
-  // normalise line endings, so a Windows-authored export reaches this parser
-  // as-is and its checkboxes go missing.
+  // Source finding 11 in docs/mutation-survivor-triage.md. Found by a
+  // surviving mutant on the `$` anchor — the only input that distinguishes
+  // `(.*)$` from `(.*)` is a line ending in `\r`.
   it("parses tasks from a body with LF line endings", () => {
     const note = makeNote({
       id: "lf",
@@ -501,13 +501,36 @@ describe("task parsing and CRLF line endings", () => {
     expect(countTasksInNote(note)).toEqual({ open: 1, done: 1 });
   });
 
-  it("finds no tasks in the same body with CRLF line endings", () => {
+  it("parses the same tasks from a body with CRLF line endings", () => {
     const note = makeNote({
       id: "crlf",
       updatedAt: "2026-04-20T10:00:00.000Z",
       body: "- [ ] buy milk\r\n- [x] call Jan",
     });
-    // The last line has no trailing \r, so only it survives the anchor.
-    expect(countTasksInNote(note)).toEqual({ open: 0, done: 1 });
+    expect(countTasksInNote(note)).toEqual({ open: 1, done: 1 });
+  });
+
+  it("parses tasks from a body with lone-CR line endings", () => {
+    const note = makeNote({
+      id: "cr",
+      updatedAt: "2026-04-20T10:00:00.000Z",
+      body: "- [ ] buy milk\r- [x] call Jan",
+    });
+    // A lone `\r` is not a line break to `split(/\r?\n/)`, so this body is
+    // one line — and one line that does not match. Normalisation at ingest is
+    // what covers this shape; the parser deliberately only tolerates CRLF.
+    expect(countTasksInNote(note)).toEqual({ open: 0, done: 0 });
+  });
+
+  it("keeps the task text free of the carriage return", () => {
+    const note = makeNote({
+      id: "crlf-text",
+      updatedAt: "2026-04-20T10:00:00.000Z",
+      body: "- [ ] buy milk\r\n- [x] call Jan",
+    });
+    expect(buildTaskIndex(makeWorkspace([note])).tasks.map((t) => t.text)).toEqual([
+      "buy milk",
+      "call Jan",
+    ]);
   });
 });
