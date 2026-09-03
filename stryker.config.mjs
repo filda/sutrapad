@@ -16,9 +16,19 @@ const config = {
     // Services. The facade re-exports from `drive/client` and
     // `drive/workspace-store`; tests import via the facade and
     // vitest's related-test resolver picks both up transitively.
-    // `drive/lexicon-store.ts` has no dedicated test yet, so it
-    // stays out — mutants there would all be coverage-free
-    // survivors and would tank the score artificially.
+    //
+    // 2026-08-31: `drive/lexicon-store.ts` PROMOTED — the last
+    // `DEFERRED_FROM_MUTATION` entry that had a real test as its condition
+    // ("lexicon-page.test.ts imports only its *type*, so mutants would be
+    // coverage-free"). `tests/drive-lexicon-store.test.ts` stubs `fetch` and
+    // asserts on the wire, because the Drive query strings and the
+    // `lexicon-state` / `lexicon-runtime` appProperties ARE this module's
+    // contract. Covers the two-step artifact lookup (in-folder, then
+    // by-name), create-vs-PATCH, folder provisioning, the `ensureFileInFolder`
+    // re-parent after each upload, and the `#workspaceFolderPromise`
+    // memoisation — including three concurrent saves sharing one folder
+    // creation.
+    "src/services/drive/lexicon-store.ts",
     "src/services/google-auth.ts",
     "src/services/drive-store.ts",
     "src/services/drive/client.ts",
@@ -99,9 +109,10 @@ const config = {
     // contributed nothing to the overall score. Files whose only coverage is
     // `create-app-smoke.test.ts` (notably `src/app.ts`, `render-app.ts`,
     // `render-callbacks.ts`, `state-store.ts`, `silent-capture-runner.ts`)
-    // stay out until they get focused tests, and `src/services/drive/
-    // lexicon-store.ts` stays out because `lexicon-page.test.ts` only
-    // imports its *type*.
+    // stayed out until they got focused tests — all of them have since been
+    // promoted, as has `src/services/drive/lexicon-store.ts` (see the
+    // services block above). `src/app.ts` is the only one still out, and for
+    // a different reason: it is the composition root.
     // 2026-08-31: `src/app/view/palette.ts` PROMOTED, and it was the worst
     //   hole this config ever had. `lifecycle-palette.test.ts` imports it but
     //   `vi.mock`s the whole module, so the real code never ran: a 2026-08-17

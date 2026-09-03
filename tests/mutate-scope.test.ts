@@ -29,6 +29,17 @@ const SRC_ROOT = "src";
  * Modules deliberately left outside the mutate scope, each with the reason.
  * Anything here is a promise, not a parking lot: the entry should disappear
  * once the module gets a focused test.
+ *
+ * **2026-08-31: both promises discharged.** The two entries whose condition
+ * was "no focused test yet" are gone — `view/palette.ts` (0.00 % → 99.00 %,
+ * `tests/view-palette.test.ts`) and `services/drive/lexicon-store.ts`
+ * (unmeasured → 100.00 %, `tests/drive-lexicon-store.test.ts`).
+ *
+ * What is left is permanent by nature rather than deferred: composition
+ * roots, a bootstrap entry, type declarations, and icon path data. **A new
+ * entry here should be treated as a promise again, not as company for these
+ * six** — if it names a missing test, it is a to-do with a deadline of "the
+ * next time someone reads this list".
  */
 const DEFERRED_FROM_MUTATION: Readonly<Record<string, string>> = {
   "src/app.ts": "composition root; only the smoke test touches it",
@@ -37,8 +48,6 @@ const DEFERRED_FROM_MUTATION: Readonly<Record<string, string>> = {
   "src/fonts.ts": "static font registration",
   "src/app/view/palette-types.ts": "type declarations only",
   "src/app/view/shared/icons.ts": "icon path data; asserted indirectly by its consumers",
-  "src/services/drive/lexicon-store.ts":
-    "lexicon-page.test.ts imports only its type, so mutants would be coverage-free",
 };
 
 function walk(dir: string, acc: string[] = []): string[] {
