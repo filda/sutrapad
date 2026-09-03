@@ -43,7 +43,7 @@
 // assertions are all "which class / which element", so the suite reads the
 // same way the router does.
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderAppPage } from "../src/app/view/render-app";
 import { buildLinkIndex } from "../src/lib/notebook";
 import { buildNoteSummary } from "../src/lib/note-card-meta";
@@ -180,8 +180,25 @@ const paperOf = (root: HTMLElement): string =>
     .querySelector<HTMLElement>(".notes-list .note-list-item")
     ?.style.getPropertyValue("--nc-bg") ?? "";
 
+// happy-dom auto-fetches `<img src=…>`, and the Links page stamps a
+// `link-favicon` per row (`view/pages/links-page.ts`). Without this stub the
+// favicon URLs surface as real network attempts to `s2/favicons`, cannot
+// resolve, and happy-dom prints `AbortError` noise from `teardownWindow`
+// long after the test that caused it has passed. Returning an empty Response
+// lets each promise settle so teardown has nothing pending to abort.
+//
+// Same stub, same reason, as `tests/links-page.test.ts` — which had it first
+// and is where the wording comes from.
 beforeEach(() => {
   document.body.innerHTML = "";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.resolve(new Response(null, { status: 204 }))),
+  );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("renderAppPage frame", () => {
