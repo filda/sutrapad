@@ -35,7 +35,6 @@ const DEFERRED_FROM_MUTATION: Readonly<Record<string, string>> = {
   "src/main.ts": "bootstrap entry point; no seams to assert against yet",
   "src/types.ts": "type declarations only",
   "src/fonts.ts": "static font registration",
-  "src/app/view/palette.ts": "lifecycle-palette.test.ts vi.mocks it — zero real coverage",
   "src/app/view/palette-types.ts": "type declarations only",
   "src/app/view/shared/icons.ts": "icon path data; asserted indirectly by its consumers",
   "src/services/drive/lexicon-store.ts":

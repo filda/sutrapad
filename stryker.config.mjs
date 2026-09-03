@@ -102,11 +102,18 @@ const config = {
     // stay out until they get focused tests, and `src/services/drive/
     // lexicon-store.ts` stays out because `lexicon-page.test.ts` only
     // imports its *type*.
-    // `src/app/view/palette.ts` — NOT in scope. `lifecycle-palette.test.ts`
-    //   imports it but `vi.mock`s the whole module, so the real code never
-    //   runs: a 2026-08-17 measurement put it at 0.00 % with all 166 mutants
-    //   NoCoverage. "A test imports it" is not the promotion bar — check for
-    //   `vi.mock` first.
+    // 2026-08-31: `src/app/view/palette.ts` PROMOTED, and it was the worst
+    //   hole this config ever had. `lifecycle-palette.test.ts` imports it but
+    //   `vi.mock`s the whole module, so the real code never ran: a 2026-08-17
+    //   measurement put it at 0.00 % with all 166 mutants NoCoverage. "A test
+    //   imports it" is not the promotion bar — check for `vi.mock` first.
+    //   `tests/view-palette.test.ts` now drives the real overlay against a
+    //   real DOM: mount shape, both empty-state messages, the per-row chip
+    //   that tells the user whether Enter adds or removes a tag filter,
+    //   keyboard nav across the group boundary, both teardown routes, and the
+    //   hint strip cross-checked against `reduceShortcut` (the source comment
+    //   promises the strip mirrors it and warns that drift would be silent).
+    "src/app/view/palette.ts",
     // 2026-08-28, last one in: `render-app.ts` (939). The config note used to
     // say "decision-heavy logic should move out first". Having read it: it is
     // a *router*, not a god function — twelve branches on `activeMenuItem`,
