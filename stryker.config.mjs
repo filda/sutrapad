@@ -17,7 +17,7 @@ const config = {
     // `drive/workspace-store`; tests import via the facade and
     // vitest's related-test resolver picks both up transitively.
     //
-    // 2026-08-31: `drive/lexicon-store.ts` PROMOTED — the last
+    // 2026-09-03: `drive/lexicon-store.ts` PROMOTED — the last
     // `DEFERRED_FROM_MUTATION` entry that had a real test as its condition
     // ("lexicon-page.test.ts imports only its *type*, so mutants would be
     // coverage-free"). `tests/drive-lexicon-store.test.ts` stubs `fetch` and
@@ -113,7 +113,7 @@ const config = {
     // promoted, as has `src/services/drive/lexicon-store.ts` (see the
     // services block above). `src/app.ts` is the only one still out, and for
     // a different reason: it is the composition root.
-    // 2026-08-31: `src/app/view/palette.ts` PROMOTED, and it was the worst
+    // 2026-09-03: `src/app/view/palette.ts` PROMOTED, and it was the worst
     //   hole this config ever had. `lifecycle-palette.test.ts` imports it but
     //   `vi.mock`s the whole module, so the real code never ran: a 2026-08-17
     //   measurement put it at 0.00 % with all 166 mutants NoCoverage. "A test
