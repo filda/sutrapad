@@ -7,7 +7,7 @@
 // happens to hit and asserts nothing about it.
 //
 // What is worth pinning:
-//   - the **copy table**. `EMPTY_COPY` is the reason these screens feel warm
+//   - the **copy table**. `emptyCopy` is the reason these screens feel warm
 //     rather than like an error message, and its `_filtered` / `_done`
 //     variants have to keep pointing at the same illustration as their base
 //     key (a filter miss on Links must not suddenly show the quill).
@@ -29,7 +29,9 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  EMPTY_COPY,
+  EMPTY_STATE_KINDS,
+  emptyCopy,
+  type EmptyStatePreset,
   buildEmptyInk,
   buildEmptyScene,
   buildEmptyState,
@@ -265,9 +267,9 @@ describe("buildEmptyInk", () => {
   });
 });
 
-describe("EMPTY_COPY", () => {
+describe("empty-state presets", () => {
   it("offers the ten handoff presets", () => {
-    expect(Object.keys(EMPTY_COPY)).toEqual([
+    expect(Object.keys(EMPTY_STATE_KINDS)).toEqual([
       "today",
       "add_intro",
       "notes",
@@ -284,27 +286,27 @@ describe("EMPTY_COPY", () => {
   it("keeps each filter-miss variant on its base key's illustration", () => {
     // `notes_filtered` showing the links glyph would read as a different
     // feature failing.
-    expect(EMPTY_COPY.notes_filtered.kind).toBe(EMPTY_COPY.notes.kind);
-    expect(EMPTY_COPY.links_filtered.kind).toBe(EMPTY_COPY.links.kind);
-    expect(EMPTY_COPY.tasks_done.kind).toBe(EMPTY_COPY.tasks.kind);
+    expect(EMPTY_STATE_KINDS.notes_filtered).toBe(EMPTY_STATE_KINDS.notes);
+    expect(EMPTY_STATE_KINDS.links_filtered).toBe(EMPTY_STATE_KINDS.links);
+    expect(EMPTY_STATE_KINDS.tasks_done).toBe(EMPTY_STATE_KINDS.tasks);
   });
 
   it("offers a way out of a filter miss, and nothing to do on a first run without one", () => {
     // The filter-miss variants carry a secondary "Clear filter" and no CTA;
     // the passive first-run states carry neither.
-    expect(EMPTY_COPY.notes_filtered.secondary).toBe("Clear filter");
-    expect(EMPTY_COPY.links_filtered.secondary).toBe("Clear filter");
-    expect(EMPTY_COPY.notes_filtered).not.toHaveProperty("cta");
-    expect(EMPTY_COPY.tags).not.toHaveProperty("cta");
-    expect(EMPTY_COPY.tasks_done).not.toHaveProperty("cta");
+    expect(emptyCopy("notes_filtered").secondary).toBe("Clear filter");
+    expect(emptyCopy("links_filtered").secondary).toBe("Clear filter");
+    expect(emptyCopy("notes_filtered")).not.toHaveProperty("cta");
+    expect(emptyCopy("tags")).not.toHaveProperty("cta");
+    expect(emptyCopy("tasks_done")).not.toHaveProperty("cta");
   });
 
   it("asks for the one action that actually helps, where there is one", () => {
-    expect(EMPTY_COPY.notes.cta).toBe("Write your first note");
-    expect(EMPTY_COPY.links.cta).toBe("Set up bookmarklet");
-    expect(EMPTY_COPY.capture.cta).toBe("Browse sources");
-    expect(EMPTY_COPY.today.cta).toBe("Write something");
-    expect(EMPTY_COPY.today.secondary).toBe("Browse captures");
+    expect(emptyCopy("notes").cta).toBe("Write your first note");
+    expect(emptyCopy("links").cta).toBe("Set up bookmarklet");
+    expect(emptyCopy("capture").cta).toBe("Browse sources");
+    expect(emptyCopy("today").cta).toBe("Write something");
+    expect(emptyCopy("today").secondary).toBe("Browse captures");
   });
 
   it("gives every preset a title and a kind that has an illustration", () => {
@@ -312,20 +314,19 @@ describe("EMPTY_COPY", () => {
     // needing a per-assertion message (which this lint config disallows).
     // Every title is a full sentence — that period is what keeps these
     // screens reading as prose rather than as UI labels.
+    const presets = Object.keys(EMPTY_STATE_KINDS) as EmptyStatePreset[];
     expect(
-      Object.entries(EMPTY_COPY)
-        .filter(([, copy]) => !copy.title.trim().endsWith("."))
-        .map(([key]) => key),
+      presets.filter((key) => !emptyCopy(key).title.trim().endsWith(".")),
     ).toEqual([]);
     expect(
-      Object.entries(EMPTY_COPY)
-        .filter(([, copy]) => buildEmptyInk(copy.kind).children.length === 0)
-        .map(([key]) => key),
+      presets.filter(
+        (key) => buildEmptyInk(emptyCopy(key).kind).children.length === 0,
+      ),
     ).toEqual([]);
   });
 
   it("explains the task syntax in the tasks copy", () => {
     // The only place in the app that tells the user how a task is written.
-    expect(EMPTY_COPY.tasks.sub).toContain("[ ]");
+    expect(emptyCopy("tasks").sub).toContain("[ ]");
   });
 });

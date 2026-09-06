@@ -29,7 +29,7 @@ import {
   buildCardTitle,
   buildLocationLine,
 } from "../shared/card-header";
-import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
+import { buildEmptyScene, buildEmptyState, emptyCopy } from "../shared/empty-state";
 import { buildLinkThumb } from "../shared/link-thumb";
 import {
   applyPersonaStyles,
@@ -181,7 +181,7 @@ export function buildTasksPage(options: TasksPageOptions): HTMLElement {
   );
 
   if (allEnriched.length === 0) {
-    section.append(buildEmptyScene({ ...EMPTY_COPY.tasks }));
+    section.append(buildEmptyScene(emptyCopy("tasks")));
     return section;
   }
 

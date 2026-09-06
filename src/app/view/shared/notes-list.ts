@@ -23,7 +23,7 @@ import {
   buildLocationLine,
   buildTagChipsRow,
 } from "./card-header";
-import { EMPTY_COPY, buildEmptyState } from "./empty-state";
+import { buildEmptyState, emptyCopy } from "./empty-state";
 import { buildIcon } from "./icons";
 import { buildLinkThumb } from "./link-thumb";
 import { applyPersonaStyles, appendPersonaStickers } from "./persona-decor";
@@ -68,7 +68,7 @@ export function buildNotesList(
     // avoids a second "Clear filter" button competing for attention.
     notesList.append(
       buildEmptyState({
-        ...EMPTY_COPY.notes_filtered,
+        ...emptyCopy("notes_filtered"),
       }),
     );
     return notesList;

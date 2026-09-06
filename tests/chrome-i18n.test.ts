@@ -16,6 +16,11 @@ import {
 import { buildSiteFooter } from "../src/app/view/chrome/site-footer";
 import { syncPillLabel } from "../src/app/view/chrome/topbar";
 import { getMenuItemLabel, NAV_MENU_ITEM_IDS } from "../src/app/logic/menu";
+import {
+  buildEmptyScene,
+  EMPTY_STATE_KINDS,
+  emptyCopy,
+} from "../src/app/view/shared/empty-state";
 import { DEFAULT_LOCALE, setActiveLocale } from "../src/lib/i18n";
 
 beforeEach(() => setActiveLocale("cs"));
@@ -138,5 +143,46 @@ describe("site footer in Czech", () => {
     expect(footer.querySelector(".site-footer-copy")?.textContent).toBe(
       `© ${year} SutraPad · Licence MIT`,
     );
+  });
+});
+
+describe("empty states in Czech", () => {
+  it("translates the copy but keeps the illustration key", () => {
+    const copy = emptyCopy("notes");
+
+    expect(copy.title).toBe("Zatím žádné zápisníky.");
+    expect(copy.cta).toBe("Napiš první poznámku");
+    // `kind` picks the SVG. It is a key, so it must read the same in every
+    // language — a translated one would silently fall through to no drawing.
+    expect(copy.kind).toBe("notes");
+    expect(copy.kind).toBe(EMPTY_STATE_KINDS.notes);
+  });
+
+  it("keeps the filter-miss variants on their base illustration", () => {
+    expect(emptyCopy("notes_filtered").kind).toBe(emptyCopy("notes").kind);
+    expect(emptyCopy("links_filtered").kind).toBe(emptyCopy("links").kind);
+  });
+
+  it("renders a Czech scene with its illustration intact", () => {
+    const scene = buildEmptyScene(emptyCopy("tasks"));
+
+    expect(scene.querySelector(".empty-scene-title")?.textContent).toBe("Nic na práci.");
+    expect(scene.querySelector("svg")?.children.length).toBeGreaterThan(0);
+  });
+
+  it("still explains the task syntax in Czech", () => {
+    // The only place in the app that tells the user how a task is written —
+    // and `[ ]` is syntax, so it must survive translation verbatim.
+    expect(emptyCopy("tasks").sub).toContain("[ ]");
+  });
+});
+
+describe("command palette in Czech", () => {
+  it("reuses the nav labels in the shortcut strip", () => {
+    // "G N Poznámky" has to match what the Notes tab says, or the hint
+    // names a destination the user cannot find.
+    expect(getMenuItemLabel("notes")).toBe("Poznámky");
+    expect(getMenuItemLabel("links")).toBe("Odkazy");
+    expect(getMenuItemLabel("tasks")).toBe("Úkoly");
   });
 });

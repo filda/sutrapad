@@ -5,7 +5,7 @@ import type {
   SutraPadNoteSummary,
   SutraPadTagFilterMode,
 } from "../../../types";
-import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
+import { buildEmptyScene, emptyCopy } from "../shared/empty-state";
 import {
   buildNotesList,
   type NotesListPersonaOptions,
@@ -131,7 +131,7 @@ export function buildNotesPanel({
     // filter and the toolbar's view-toggle would be moot.
     notesPanel.append(
       buildEmptyScene({
-        ...EMPTY_COPY.notes,
+        ...emptyCopy("notes"),
         onCta: onNewNote,
       }),
     );

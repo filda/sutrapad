@@ -21,9 +21,10 @@
  * we preserve that so the accent dot stays warm even in the dark Ink
  * theme.
  */
+import { messages, type Messages } from "../../../lib/i18n";
 
 /**
- * Kinds correspond 1:1 to handoff `EMPTY_COPY` keys. Each is tied to a
+ * Kinds correspond 1:1 to the `EMPTY_STATE_KINDS` presets. Each is tied to a
  * specific SVG in {@link buildEmptyInk}; extra kinds should add both an
  * entry here and a branch in that function so the illustration set
  * stays exhaustive.
@@ -64,80 +65,47 @@ const INK_ACCENT = "#c46a3a";
 const INK_MUTED = "#8a7c6c";
 
 /**
- * Canonical copy presets mirrored from the handoff. Callers should prefer
- * picking one of these keys and composing actions on top rather than
- * hand-rolling strings — the poetic tone is what makes the empty states
- * feel warm, and drifts easily when each caller writes its own.
+ * Which illustration each copy preset pairs with.
+ *
+ * The preset names are keys, not copy: callers pick one and the catalog
+ * supplies the words. Keeping the kind here rather than in the catalog is
+ * the same boundary as everywhere else — a translator must not be able to
+ * change which drawing appears, and two presets deliberately share a glyph
+ * (`notes` and `notes_filtered` both get the quill-on-page).
  *
  * Keys with a `_filtered` / `_done` suffix are variants for the same
- * surface; `notes` is the first-run copy, `notes_filtered` is shown when
- * a tag filter kills the list. Callers pick by context.
+ * surface; `notes` is the first-run copy, `notes_filtered` is shown when a
+ * tag filter kills the list.
  */
-export const EMPTY_COPY = {
-  today: {
-    kind: "today",
-    title: "A blank morning.",
-    sub: "Nothing captured yet. The day is still yours to write on.",
-    cta: "Write something",
-    secondary: "Browse captures",
-  },
-  add_intro: {
-    kind: "add",
-    title: "Say something.",
-    sub:
-      "Paste a link, drop in a quote, jot a task list, or just start writing. The editor will adapt.",
-  },
-  notes: {
-    kind: "notes",
-    title: "No notebooks yet.",
-    sub:
-      "Notebooks are derived from tags and time — they'll appear on their own once you've captured a handful of notes.",
-    cta: "Write your first note",
-  },
-  notes_filtered: {
-    kind: "notes",
-    title: "Nothing here under this filter.",
-    sub: "Try another tag, or clear the filter to see everything.",
-    secondary: "Clear filter",
-  },
-  links: {
-    kind: "links",
-    title: "No links saved.",
-    sub:
-      "Every URL you paste into Sutrapad becomes a link. Or install the bookmarklet to save from any page.",
-    cta: "Set up bookmarklet",
-  },
-  links_filtered: {
-    kind: "links",
-    title: "No links match.",
-    sub: "The filter's too tight. Loosen a tag, or browse all.",
-    secondary: "Clear filter",
-  },
-  tasks: {
-    kind: "tasks",
-    title: "Nothing to do.",
-    sub:
-      "Write a note with [ ] in front of a line and it becomes a task. Or just enjoy the silence.",
-  },
-  tasks_done: {
-    kind: "tasks",
-    title: "All done.",
-    sub: "Every task you've captured is checked off. Breathe.",
-  },
-  tags: {
-    kind: "tags",
-    title: "No tags yet.",
-    sub:
-      "Tags come from what you write — places, times, topics. They'll show up as you go.",
-  },
-  capture: {
-    kind: "capture",
-    title: "No sources configured.",
-    sub:
-      "Sutrapad can capture from the web, your phone, your voice, or your inbox. Pick one to start.",
-    cta: "Browse sources",
-  },
-} as const satisfies Record<string, EmptyStateCopy>;
+export const EMPTY_STATE_KINDS = {
+  today: "today",
+  add_intro: "add",
+  notes: "notes",
+  notes_filtered: "notes",
+  links: "links",
+  links_filtered: "links",
+  tasks: "tasks",
+  tasks_done: "tasks",
+  tags: "tags",
+  capture: "capture",
+} as const satisfies Record<string, EmptyStateKind>;
+
+export type EmptyStatePreset = keyof typeof EMPTY_STATE_KINDS;
+
+/**
+ * Copy + illustration for one preset, in the active language.
+ *
+ * Callers should prefer a preset over hand-rolled strings — the poetic tone
+ * is what makes the empty states feel warm, and it drifts the moment each
+ * caller writes its own. Compose actions on top:
+ * `buildEmptyScene({ ...emptyCopy("notes"), onCta })`.
+ */
+export function emptyCopy(
+  preset: EmptyStatePreset,
+  catalog: Messages = messages(),
+): EmptyStateCopy {
+  return { kind: EMPTY_STATE_KINDS[preset], ...catalog.empty[preset] };
+}
 
 /**
  * Full-bleed empty scene with a large illustration, serif title, and

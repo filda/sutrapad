@@ -37,7 +37,7 @@ export const MOBILE_TABBAR_ITEM_IDS: readonly MenuItemId[] = [
  * arrive — so the divergence is one branch rather than a duplicated table.
  */
 export function getMobileTabLabel(id: MenuItemId): string {
-  return id === "home" ? messages().nav.mobileHome : getMenuItemLabel(id);
+  return id === "home" ? messages().nav.today : getMenuItemLabel(id);
 }
 
 /**

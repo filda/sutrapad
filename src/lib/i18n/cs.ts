@@ -101,7 +101,7 @@ export const CS: Messages = {
   nav: {
     primaryLabel: "Hlavní navigace",
     mobileLabel: "Hlavní navigace (mobil)",
-    mobileHome: "Dnes",
+    today: "Dnes",
     brandHome: "Přejít na úvodní stránku SutraPadu",
     addNote: "Přidat novou poznámku",
   },
@@ -134,6 +134,71 @@ export const CS: Messages = {
       nominatim: "Nominatim",
     },
     copyright: (year: number) => `© ${year} SutraPad · Licence MIT`,
+  },
+
+  palette: {
+    label: "Příkazová paleta",
+    placeholder: "Hledat poznámky a štítky…",
+    searchLabel: "Hledat poznámky a štítky",
+    noMatches: "Nic nenalezeno.",
+    emptyNotebook: "Tenhle zápisník je prázdný. Začni poznámku nebo přidej štítek.",
+    groupNotes: "Poznámky",
+    groupTags: "Štítky",
+    noteChip: "Poznámka",
+    addFilter: "Přidat",
+    removeFilter: "Odebrat",
+    newNote: "Nová poznámka",
+    close: "Zavřít",
+  },
+
+  empty: {
+    today: {
+      title: "Prázdné ráno.",
+      sub: "Zatím nic zachyceného. Den je pořád tvůj, můžeš na něj psát.",
+      cta: "Něco napiš",
+      secondary: "Procházet záznamy",
+    },
+    add_intro: {
+      title: "Řekni něco.",
+      sub: "Vlož odkaz, hoď sem citát, načrtni seznam úkolů, nebo prostě začni psát. Editor se přizpůsobí.",
+    },
+    notes: {
+      title: "Zatím žádné zápisníky.",
+      sub: "Zápisníky vznikají ze štítků a času — objeví se samy, jakmile nasbíráš pár poznámek.",
+      cta: "Napiš první poznámku",
+    },
+    notes_filtered: {
+      title: "Pod tímhle filtrem tu nic není.",
+      sub: "Zkus jiný štítek, nebo filtr zruš a uvidíš všechno.",
+      secondary: "Zrušit filtr",
+    },
+    links: {
+      title: "Žádné uložené odkazy.",
+      sub: "Každá URL, kterou do SutraPadu vložíš, se stane odkazem. Nebo si nainstaluj bookmarklet a ukládej z jakékoli stránky.",
+      cta: "Nastavit bookmarklet",
+    },
+    links_filtered: {
+      title: "Žádný odkaz neodpovídá.",
+      sub: "Filtr je moc těsný. Povol nějaký štítek, nebo si projdi všechno.",
+      secondary: "Zrušit filtr",
+    },
+    tasks: {
+      title: "Nic na práci.",
+      sub: "Napiš poznámku s [ ] na začátku řádku a stane se z toho úkol. Nebo si prostě užij ticho.",
+    },
+    tasks_done: {
+      title: "Hotovo.",
+      sub: "Všechny úkoly, co jsi zachytil, jsou odškrtnuté. Vydechni.",
+    },
+    tags: {
+      title: "Zatím žádné štítky.",
+      sub: "Štítky vznikají z toho, co píšeš — místa, časy, témata. Objeví se samy.",
+    },
+    capture: {
+      title: "Žádné nastavené zdroje.",
+      sub: "SutraPad umí zachytávat z webu, z telefonu, z hlasu nebo z e-mailu. Vyber si, čím začneš.",
+      cta: "Procházet zdroje",
+    },
   },
 
   settings: {

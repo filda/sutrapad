@@ -19,7 +19,7 @@ import type {
   SutraPadTaskIndex,
   SutraPadWorkspace,
 } from "../../../types";
-import { EMPTY_COPY, buildEmptyScene } from "../shared/empty-state";
+import { buildEmptyScene, emptyCopy } from "../shared/empty-state";
 import {
   buildNotesList,
   type NotesListPersonaOptions,
@@ -529,7 +529,7 @@ export function buildTagsPage({
     // First-run full-bleed scene. No CTA — the sub-copy already promises
     // that tags appear on their own, so asking the user to do something
     // here would contradict the message.
-    section.append(buildEmptyScene({ ...EMPTY_COPY.tags }));
+    section.append(buildEmptyScene(emptyCopy("tags")));
     return section;
   }
 

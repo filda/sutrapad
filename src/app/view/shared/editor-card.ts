@@ -2,7 +2,7 @@ import { buildNoteMetadata } from "../../logic/note-metadata";
 import { detectKind } from "../../../lib/detect-kind";
 import { deriveNotebookPersona } from "../../../lib/notebook-persona";
 import type { SutraPadDocument } from "../../../types";
-import { EMPTY_COPY, buildEmptyState } from "./empty-state";
+import { buildEmptyState, emptyCopy } from "./empty-state";
 import { buildKindChipForNote } from "./kind-chip";
 import { applyPersonaStyles } from "./persona-decor";
 
@@ -128,7 +128,7 @@ export function buildEditorCard({
     // `.empty-state` shell so the look matches the notes-list miss on
     // the same screen — two empty cards side-by-side would otherwise
     // feel inconsistent.
-    const emptyEditor = buildEmptyState({ ...EMPTY_COPY.notes_filtered });
+    const emptyEditor = buildEmptyState(emptyCopy("notes_filtered"));
     emptyEditor.classList.add("empty-editor-state");
     editor.append(emptyEditor);
     return editor;

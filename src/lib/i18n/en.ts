@@ -125,8 +125,12 @@ export const EN = {
   nav: {
     primaryLabel: "Primary",
     mobileLabel: "Mobile primary navigation",
-    /** The mobile bar calls Home "Today", matching that page's own title. */
-    mobileHome: "Today",
+    /**
+     * Home's day-view name. The mobile tab bar and the palette's shortcut
+     * strip both call it "Today" rather than "Home", matching the page's
+     * own title.
+     */
+    today: "Today",
     brandHome: "Go to SutraPad home",
     addNote: "Add a new note",
   },
@@ -160,6 +164,78 @@ export const EN = {
       nominatim: "Nominatim",
     },
     copyright: (year: number) => `© ${year} SutraPad · MIT license`,
+  },
+
+  /**
+   * Empty-state copy, keyed by preset. The `kind` that picks the
+   * illustration is *not* here — it is a key, and it lives beside the
+   * presets in `view/shared/empty-state.ts`.
+   */
+  palette: {
+    label: "Command palette",
+    placeholder: "Search notes and tags…",
+    searchLabel: "Search notes and tags",
+    noMatches: "No matches.",
+    emptyNotebook: "This notebook is empty. Start a note or add a tag.",
+    groupNotes: "Notes",
+    groupTags: "Tags",
+    /** Row chip: what the row *is*, for a note. */
+    noteChip: "Note",
+    /** Row chip: what Enter will *do*, for a tag. */
+    addFilter: "Add",
+    removeFilter: "Remove",
+    newNote: "New note",
+    close: "Close",
+  },
+
+  empty: {
+    today: {
+      title: "A blank morning.",
+      sub: "Nothing captured yet. The day is still yours to write on.",
+      cta: "Write something",
+      secondary: "Browse captures",
+    },
+    add_intro: {
+      title: "Say something.",
+      sub: "Paste a link, drop in a quote, jot a task list, or just start writing. The editor will adapt.",
+    },
+    notes: {
+      title: "No notebooks yet.",
+      sub: "Notebooks are derived from tags and time — they'll appear on their own once you've captured a handful of notes.",
+      cta: "Write your first note",
+    },
+    notes_filtered: {
+      title: "Nothing here under this filter.",
+      sub: "Try another tag, or clear the filter to see everything.",
+      secondary: "Clear filter",
+    },
+    links: {
+      title: "No links saved.",
+      sub: "Every URL you paste into SutraPad becomes a link. Or install the bookmarklet to save from any page.",
+      cta: "Set up bookmarklet",
+    },
+    links_filtered: {
+      title: "No links match.",
+      sub: "The filter's too tight. Loosen a tag, or browse all.",
+      secondary: "Clear filter",
+    },
+    tasks: {
+      title: "Nothing to do.",
+      sub: "Write a note with [ ] in front of a line and it becomes a task. Or just enjoy the silence.",
+    },
+    tasks_done: {
+      title: "All done.",
+      sub: "Every task you've captured is checked off. Breathe.",
+    },
+    tags: {
+      title: "No tags yet.",
+      sub: "Tags come from what you write — places, times, topics. They'll show up as you go.",
+    },
+    capture: {
+      title: "No sources configured.",
+      sub: "SutraPad can capture from the web, your phone, your voice, or your inbox. Pick one to start.",
+      cta: "Browse sources",
+    },
   },
 
   settings: {

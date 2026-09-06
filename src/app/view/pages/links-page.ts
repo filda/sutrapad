@@ -33,7 +33,7 @@ import type {
   SutraPadLinkIndex,
   SutraPadNoteSummary,
 } from "../../../types";
-import { EMPTY_COPY, buildEmptyScene, buildEmptyState } from "../shared/empty-state";
+import { buildEmptyScene, buildEmptyState, emptyCopy } from "../shared/empty-state";
 import { buildPageHeader } from "../shared/page-header";
 
 export interface LinksPageOptions {
@@ -168,7 +168,7 @@ export function buildLinksPage({
     // start saving links.
     section.append(
       buildEmptyScene({
-        ...EMPTY_COPY.links,
+        ...emptyCopy("links"),
         onCta: onOpenCapture,
       }),
     );
@@ -182,7 +182,7 @@ export function buildLinksPage({
     section.append(buildLinksToolbar(linksViewMode, onChangeLinksView, filterCount));
     section.append(
       buildEmptyState({
-        ...EMPTY_COPY.links_filtered,
+        ...emptyCopy("links_filtered"),
         onSecondary: onClearTagFilters,
       }),
     );

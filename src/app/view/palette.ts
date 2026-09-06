@@ -1,3 +1,5 @@
+import { getMenuItemLabel } from "../logic/menu";
+import { messages } from "../../lib/i18n";
 import {
   filterPaletteEntries,
   flattenPaletteGroups,
@@ -64,7 +66,9 @@ export function mountPalette(options: PaletteMountOptions): PaletteHandle {
   backdrop.className = "palette-backdrop";
   backdrop.setAttribute("role", "dialog");
   backdrop.setAttribute("aria-modal", "true");
-  backdrop.setAttribute("aria-label", "Command palette");
+  const copy = messages().palette;
+
+  backdrop.setAttribute("aria-label", copy.label);
 
   const palette = document.createElement("div");
   palette.className = "palette";
@@ -73,10 +77,10 @@ export function mountPalette(options: PaletteMountOptions): PaletteHandle {
   const input = document.createElement("input");
   input.type = "text";
   input.className = "palette-input";
-  input.placeholder = "Search notes and tags…";
+  input.placeholder = copy.placeholder;
   input.autocomplete = "off";
   input.spellcheck = false;
-  input.setAttribute("aria-label", "Search notes and tags");
+  input.setAttribute("aria-label", copy.searchLabel);
   palette.append(input);
 
   const results = document.createElement("div");
@@ -101,21 +105,21 @@ export function mountPalette(options: PaletteMountOptions): PaletteHandle {
       const empty = document.createElement("p");
       empty.className = "palette-empty";
       empty.textContent = currentQuery.trim()
-        ? "No matches."
-        : "This notebook is empty. Start a note or add a tag.";
+        ? copy.noMatches
+        : copy.emptyNotebook;
       results.append(empty);
       return;
     }
 
     if (filtered.notes.length > 0) {
-      results.append(renderGroupHeader("Notes"));
+      results.append(renderGroupHeader(copy.groupNotes));
       for (const entry of filtered.notes) {
         results.append(buildResultItem(entry));
       }
     }
 
     if (filtered.tags.length > 0) {
-      results.append(renderGroupHeader("Tags"));
+      results.append(renderGroupHeader(copy.groupTags));
       for (const entry of filtered.tags) {
         results.append(buildResultItem(entry));
       }
@@ -158,10 +162,10 @@ export function mountPalette(options: PaletteMountOptions): PaletteHandle {
     const chip = document.createElement("span");
     chip.className = "pr-item-kind";
     if (entry.payload.kind === "note") {
-      chip.textContent = "Note";
+      chip.textContent = copy.noteChip;
     } else {
       const isActiveFilter = currentSelectedTagFilters.includes(entry.payload.tag);
-      chip.textContent = isActiveFilter ? "Remove" : "Add";
+      chip.textContent = isActiveFilter ? copy.removeFilter : copy.addFilter;
       chip.classList.add(isActiveFilter ? "is-remove" : "is-add");
     }
     row.append(chip);
@@ -300,13 +304,14 @@ function buildPaletteShortcutHints(): HTMLElement {
   // create flow; the `G …` pairs are the goto sequences — shown
   // with a joining character rather than two separate keycaps to
   // reinforce the "press them in order" feel.
+  const catalog = messages();
   const HINTS: readonly { keys: readonly string[]; label: string }[] = [
-    { keys: ["N"], label: "New note" },
-    { keys: ["G", "T"], label: "Today" },
-    { keys: ["G", "N"], label: "Notes" },
-    { keys: ["G", "L"], label: "Links" },
-    { keys: ["G", "K"], label: "Tasks" },
-    { keys: ["Esc"], label: "Close" },
+    { keys: ["N"], label: catalog.palette.newNote },
+    { keys: ["G", "T"], label: catalog.nav.today },
+    { keys: ["G", "N"], label: getMenuItemLabel("notes", catalog) },
+    { keys: ["G", "L"], label: getMenuItemLabel("links", catalog) },
+    { keys: ["G", "K"], label: getMenuItemLabel("tasks", catalog) },
+    { keys: ["Esc"], label: catalog.palette.close },
   ];
 
   for (const hint of HINTS) {
