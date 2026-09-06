@@ -24,7 +24,8 @@
  * stays: a single grep over `innerHTML` should keep showing zero hits.
  */
 
-import type { MenuItemId } from "../../logic/menu";
+import { getMenuItemLabel, type MenuItemId } from "../../logic/menu";
+import { messages, type Messages } from "../../../lib/i18n";
 
 export interface SiteFooterOptions {
   /**
@@ -59,46 +60,69 @@ interface FooterColumn {
   links: readonly FooterLink[];
 }
 
-const COLUMNS: readonly FooterColumn[] = [
-  {
-    head: "Sutrapad",
-    links: [{ kind: "internal", label: "About", page: "about" }],
-  },
-  {
-    head: "Use",
-    links: [
-      { kind: "internal", label: "Capture setup", page: "capture" },
-      { kind: "internal", label: "Shortcuts", page: "shortcuts" },
-    ],
-  },
-  {
-    head: "Sources",
-    links: [
-      {
-        kind: "external",
-        label: "GitHub repository",
-        href: "https://github.com/filda/sutrapad",
-      },
-      {
-        kind: "external",
-        label: "OpenStreetMap",
-        href: "https://www.openstreetmap.org/",
-      },
-      {
-        kind: "external",
-        label: "Nominatim",
-        href: "https://nominatim.openstreetmap.org/",
-      },
-    ],
-  },
-  {
-    head: "Legal",
-    links: [
-      { kind: "internal", label: "Privacy", page: "privacy" },
-      { kind: "internal", label: "Terms", page: "terms" },
-    ],
-  },
-];
+/**
+ * The four columns, resolved against `catalog`.
+ *
+ * A function rather than a top-level table because the labels are now
+ * language-dependent: a module-level constant would freeze whatever locale
+ * happened to be active when this module was first evaluated. Most link
+ * labels come straight from `getMenuItemLabel`, so the footer and the nav
+ * cannot drift apart — "Capture setup" is the one entry that deliberately
+ * reads differently here than in the nav.
+ */
+function footerColumns(catalog: Messages): readonly FooterColumn[] {
+  const copy = catalog.footer;
+  return [
+    {
+      head: copy.columns.product,
+      links: [
+        { kind: "internal", label: getMenuItemLabel("about", catalog), page: "about" },
+      ],
+    },
+    {
+      head: copy.columns.use,
+      links: [
+        { kind: "internal", label: copy.links.captureSetup, page: "capture" },
+        {
+          kind: "internal",
+          label: getMenuItemLabel("shortcuts", catalog),
+          page: "shortcuts",
+        },
+      ],
+    },
+    {
+      head: copy.columns.sources,
+      links: [
+        {
+          kind: "external",
+          label: copy.links.github,
+          href: "https://github.com/filda/sutrapad",
+        },
+        {
+          kind: "external",
+          label: copy.links.openStreetMap,
+          href: "https://www.openstreetmap.org/",
+        },
+        {
+          kind: "external",
+          label: copy.links.nominatim,
+          href: "https://nominatim.openstreetmap.org/",
+        },
+      ],
+    },
+    {
+      head: copy.columns.legal,
+      links: [
+        {
+          kind: "internal",
+          label: getMenuItemLabel("privacy", catalog),
+          page: "privacy",
+        },
+        { kind: "internal", label: getMenuItemLabel("terms", catalog), page: "terms" },
+      ],
+    },
+  ];
+}
 
 export function buildSiteFooter({
   buildStamp,
@@ -110,8 +134,10 @@ export function buildSiteFooter({
   const inner = document.createElement("div");
   inner.className = "site-footer-inner";
 
-  inner.append(buildBrandBlock());
-  for (const column of COLUMNS) {
+  const catalog = messages();
+
+  inner.append(buildBrandBlock(catalog));
+  for (const column of footerColumns(catalog)) {
     inner.append(buildColumn(column, onSelectMenuItem));
   }
 
@@ -127,19 +153,20 @@ export function buildSiteFooter({
   return footer;
 }
 
-function buildBrandBlock(): HTMLElement {
+function buildBrandBlock(catalog: Messages): HTMLElement {
   const block = document.createElement("div");
   block.className = "site-footer-brand";
 
+  // The wordmark is the product name, not copy — it stays identical in every
+  // locale, so it lives in the catalog only so the spelling has one home.
   const wordmark = document.createElement("p");
   wordmark.className = "site-footer-wordmark";
-  wordmark.textContent = "Sutrapad";
+  wordmark.textContent = catalog.footer.columns.product;
   block.append(wordmark);
 
   const tagline = document.createElement("p");
   tagline.className = "site-footer-tagline";
-  tagline.textContent =
-    "A notebook for the way you already think — by hand, by place, by mood. Save everything to your own drive. Never the system of record.";
+  tagline.textContent = catalog.footer.tagline;
   block.append(tagline);
 
   return block;
@@ -201,7 +228,7 @@ function buildBaseRow(buildStamp: string): HTMLElement {
   // construction per render, which is negligible alongside the rest of
   // the page rebuild.
   const year = new Date().getFullYear();
-  copyright.textContent = `© ${year} Sutrapad · MIT license`;
+  copyright.textContent = messages().footer.copyright(year);
   base.append(copyright);
 
   const stamp = document.createElement("p");

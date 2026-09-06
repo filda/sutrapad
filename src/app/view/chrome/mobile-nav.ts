@@ -1,9 +1,5 @@
-import type { MenuItemId } from "../../logic/menu";
-
-export interface MobileTabbarItem {
-  id: MenuItemId;
-  label: string;
-}
+import { getMenuItemLabel, type MenuItemId } from "../../logic/menu";
+import { messages } from "../../../lib/i18n";
 
 /**
  * Ids that appear as pinned tabs in the mobile bottom bar, in render order.
@@ -27,13 +23,22 @@ export interface MobileTabbarItem {
  * Today prepended so the bottom-bar's first slot is the dashboard, the
  * pattern Twitter/Instagram/LinkedIn use.
  */
-export const MOBILE_TABBAR_ITEMS: readonly MobileTabbarItem[] = [
-  { id: "home", label: "Today" },
-  { id: "notes", label: "Notes" },
-  { id: "links", label: "Links" },
-  { id: "tasks", label: "Tasks" },
-  { id: "tags", label: "Tags" },
+export const MOBILE_TABBAR_ITEM_IDS: readonly MenuItemId[] = [
+  "home",
+  "notes",
+  "links",
+  "tasks",
+  "tags",
 ];
+
+/**
+ * Label for a bottom-bar tab. Everything reuses the primary-nav label except
+ * Home, which reads "Today" down here to match the page's own title once you
+ * arrive — so the divergence is one branch rather than a duplicated table.
+ */
+export function getMobileTabLabel(id: MenuItemId): string {
+  return id === "home" ? messages().nav.mobileHome : getMenuItemLabel(id);
+}
 
 /**
  * Returns true iff `activeMenuItem` matches one of the tabbar entries. The
@@ -41,10 +46,10 @@ export const MOBILE_TABBAR_ITEMS: readonly MobileTabbarItem[] = [
  * because none of its own tabs represent "where you are" in that case.
  */
 export function isMobileTabActive(
-  item: MobileTabbarItem,
+  id: MenuItemId,
   activeMenuItem: MenuItemId,
 ): boolean {
-  return item.id === activeMenuItem;
+  return id === activeMenuItem;
 }
 
 export interface MobileTabbarOptions {
@@ -64,16 +69,16 @@ export function buildMobileTabbar({
 }: MobileTabbarOptions): HTMLElement {
   const nav = document.createElement("nav");
   nav.className = "mobile-tabbar";
-  nav.setAttribute("aria-label", "Mobile primary navigation");
+  nav.setAttribute("aria-label", messages().nav.mobileLabel);
 
-  for (const item of MOBILE_TABBAR_ITEMS) {
-    const active = isMobileTabActive(item, activeMenuItem);
+  for (const id of MOBILE_TABBAR_ITEM_IDS) {
+    const active = isMobileTabActive(id, activeMenuItem);
     const button = document.createElement("button");
     button.type = "button";
     button.className = `mobile-tab${active ? " is-active" : ""}`;
-    button.textContent = item.label;
+    button.textContent = getMobileTabLabel(id);
     button.setAttribute("aria-current", active ? "page" : "false");
-    button.addEventListener("click", () => onSelectMenuItem(item.id));
+    button.addEventListener("click", () => onSelectMenuItem(id));
     nav.append(button);
   }
 

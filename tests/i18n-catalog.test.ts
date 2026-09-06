@@ -58,20 +58,26 @@ describe("catalog completeness", () => {
     }
   });
 
-  it("translates every message except the four that are the same word", () => {
+  it("translates every message except the handful that are the same word", () => {
     // A value left identical is the one failure mode `CS: Messages` cannot
-    // catch — a copy-pasted English sentence type-checks perfectly. Four are
-    // legitimately identical, so the guard is an exact set rather than a
-    // count: a fifth means someone forgot to translate.
+    // catch — a copy-pasted English sentence type-checks perfectly. A few are
+    // legitimately identical (names), so the guard is an exact set rather
+    // than a count: one more means someone forgot to translate.
     const czech = new Map(stringLeaves(CS));
     const identical = stringLeaves(EN)
       .filter(([path, value]) => czech.get(path) === value)
       .map(([path]) => path);
 
+    // In English-catalog key order.
     expect(identical).toEqual([
       // Language names are written in their own language, in both catalogs.
       "localeName.en",
       "localeName.cs",
+      // Product and project names. The footer wordmark lives in the catalog
+      // so the spelling has exactly one home, not because it translates.
+      "footer.columns.product",
+      "footer.links.openStreetMap",
+      "footer.links.nominatim",
       // Loanword, and a product name.
       "settings.persona.title",
       "settings.backup.title",

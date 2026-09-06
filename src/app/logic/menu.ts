@@ -1,3 +1,5 @@
+import { messages, type Messages } from "../../lib/i18n";
+
 export type MenuItemId =
   | "home"
   | "add"
@@ -13,31 +15,30 @@ export type MenuItemId =
   | "shortcuts"
   | "lexicon";
 
-export interface MenuItem {
-  id: MenuItemId;
-  label: string;
-}
-
 /**
- * Items rendered in the primary navigation pill. The "home" view is reachable
- * via the clickable SutraPad eyebrow in the top row, so it is intentionally
- * left out of this list.
+ * Ids rendered in the primary navigation pill, in render order. The "home"
+ * view is reachable via the clickable SutraPad eyebrow in the top row, so it
+ * is intentionally left out of this list.
  *
  * Per handoff v2: Capture + Settings are *not* nav tabs. Settings sits in
  * the right-actions cluster as a gear icon; Capture is reached from the
  * site footer (`Use → Capture setup`) and the command palette. Both are
  * still valid `MenuItemId`s and therefore still reachable via
  * `onSelectMenuItem`; they're just not rendered here.
+ *
+ * Ids only — the labels live in the message catalog. A menu id is a routing
+ * key: it appears in the URL path and in the persisted last-page, so
+ * translating one would break every deep link. See `getMenuItemLabel`.
  */
-export const MENU_ITEMS: readonly MenuItem[] = [
-  { id: "add", label: "Add" },
-  { id: "notes", label: "Notes" },
-  { id: "links", label: "Links" },
-  { id: "tasks", label: "Tasks" },
-  { id: "tags", label: "Tags" },
+export const NAV_MENU_ITEM_IDS: readonly MenuItemId[] = [
+  "add",
+  "notes",
+  "links",
+  "tasks",
+  "tags",
 ];
 
-export const HOME_MENU_ITEM: MenuItem = { id: "home", label: "Home" };
+export const HOME_MENU_ITEM_ID: MenuItemId = "home";
 
 export const DEFAULT_MENU_ITEM: MenuItemId = "notes";
 
@@ -62,8 +63,8 @@ const OFF_NAV_MENU_ITEM_IDS: readonly MenuItemId[] = [
 ];
 
 const ALL_MENU_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>([
-  HOME_MENU_ITEM.id,
-  ...MENU_ITEMS.map((item) => item.id),
+  HOME_MENU_ITEM_ID,
+  ...NAV_MENU_ITEM_IDS,
   ...OFF_NAV_MENU_ITEM_IDS,
 ]);
 
@@ -75,10 +76,11 @@ const ALL_MENU_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>([
 const MENU_ACTION_ITEM_IDS: ReadonlySet<MenuItemId> = new Set<MenuItemId>(["add"]);
 
 export function isMenuItemId(value: unknown): value is MenuItemId {
-  return (
-    typeof value === "string" &&
-    ALL_MENU_ITEM_IDS.has(value as MenuItemId)
-  );
+  // `Set.has` returns false for any non-string value (null, numbers,
+  // objects), so a separate `typeof value === "string"` guard is dead
+  // weight — an unkillable mutant rather than a safety net. Same call
+  // `isThemeChoice` in `theme.ts` already makes.
+  return ALL_MENU_ITEM_IDS.has(value as MenuItemId);
 }
 
 /**
@@ -91,46 +93,17 @@ export function isMenuActionItemId(id: MenuItemId): boolean {
 }
 
 /**
- * Labels for ids that exist but aren't rendered in the primary nav
- * (Capture, Settings, Privacy, About, Terms, Shortcuts, Lexicon). Keeps
- * `getMenuItemLabel` lookup-complete so placeholder pages and aria-
- * labels don't fall through to the raw id string.
+ * Display label for a menu id in the active language.
+ *
+ * Indexing `catalog.menu` by `MenuItemId` is what keeps the two in step: a
+ * new id without a catalog entry is a compile error here, and the Czech
+ * catalog then fails to satisfy `Messages` until it is translated. That
+ * replaces the old hand-maintained off-nav label table and the `if` chain
+ * that had to enumerate its keys a second time.
  */
-const OFF_NAV_MENU_ITEM_LABELS: Readonly<
-  Record<
-    | "capture"
-    | "settings"
-    | "privacy"
-    | "about"
-    | "terms"
-    | "shortcuts"
-    | "lexicon",
-    string
-  >
-> = {
-  capture: "Capture",
-  settings: "Settings",
-  privacy: "Privacy",
-  about: "About",
-  terms: "Terms",
-  shortcuts: "Shortcuts",
-  lexicon: "Lexicon Builder",
-};
-
-export function getMenuItemLabel(id: MenuItemId): string {
-  if (id === HOME_MENU_ITEM.id) return HOME_MENU_ITEM.label;
-  const match = MENU_ITEMS.find((item) => item.id === id);
-  if (match) return match.label;
-  if (
-    id === "capture" ||
-    id === "settings" ||
-    id === "privacy" ||
-    id === "about" ||
-    id === "terms" ||
-    id === "shortcuts" ||
-    id === "lexicon"
-  ) {
-    return OFF_NAV_MENU_ITEM_LABELS[id];
-  }
-  return id;
+export function getMenuItemLabel(
+  id: MenuItemId,
+  catalog: Messages = messages(),
+): string {
+  return catalog.menu[id];
 }

@@ -101,6 +101,67 @@ export const EN = {
     },
   },
 
+  /**
+   * Navigation labels, keyed by `MenuItemId`. The ids are routing keys —
+   * they appear in the URL path and in the persisted last-page — so only
+   * these labels localize.
+   */
+  menu: {
+    home: "Home",
+    add: "Add",
+    notes: "Notes",
+    links: "Links",
+    tags: "Tags",
+    tasks: "Tasks",
+    capture: "Capture",
+    settings: "Settings",
+    privacy: "Privacy",
+    about: "About",
+    terms: "Terms",
+    shortcuts: "Shortcuts",
+    lexicon: "Lexicon Builder",
+  },
+
+  nav: {
+    primaryLabel: "Primary",
+    mobileLabel: "Mobile primary navigation",
+    /** The mobile bar calls Home "Today", matching that page's own title. */
+    mobileHome: "Today",
+    brandHome: "Go to SutraPad home",
+    addNote: "Add a new note",
+  },
+
+  /** Visible label on the topbar sync pill. */
+  sync: {
+    loading: "Loading",
+    saving: "Saving",
+    error: "Error",
+    synced: "Synced",
+  },
+
+  pageHeader: {
+    expandIntro: "Expand intro",
+    collapseIntro: "Collapse intro",
+  },
+
+  footer: {
+    tagline:
+      "A notebook for the way you already think — by hand, by place, by mood. Save everything to your own drive. Never the system of record.",
+    columns: {
+      product: "SutraPad",
+      use: "Use",
+      sources: "Sources",
+      legal: "Legal",
+    },
+    links: {
+      captureSetup: "Capture setup",
+      github: "GitHub repository",
+      openStreetMap: "OpenStreetMap",
+      nominatim: "Nominatim",
+    },
+    copyright: (year: number) => `© ${year} SutraPad · MIT license`,
+  },
+
   settings: {
     appearance: {
       eyebrow: "Appearance",

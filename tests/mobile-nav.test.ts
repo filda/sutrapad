@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import {
-  MOBILE_TABBAR_ITEMS,
+  MOBILE_TABBAR_ITEM_IDS,
   buildMobileTabbar,
+  getMobileTabLabel,
   isMobileTabActive,
 } from "../src/app/view/chrome/mobile-nav";
 import type { MenuItemId } from "../src/app/logic/menu";
@@ -17,48 +18,39 @@ import type { MenuItemId } from "../src/app/logic/menu";
  * (`app-fab.test.ts`) since it ships on every viewport, not just mobile.
  */
 
-describe("MOBILE_TABBAR_ITEMS", () => {
+describe("MOBILE_TABBAR_ITEM_IDS", () => {
   it("exposes exactly five destinations in bottom-bar order", () => {
-    expect(MOBILE_TABBAR_ITEMS.map((i) => i.id)).toEqual([
-      "home",
-      "notes",
-      "links",
-      "tasks",
-      "tags",
-    ]);
+    expect(MOBILE_TABBAR_ITEM_IDS).toEqual(["home", "notes", "links", "tasks", "tags"]);
   });
 
   it("relabels home as Today to match the page's own title", () => {
-    const home = MOBILE_TABBAR_ITEMS.find((i) => i.id === "home");
-    expect(home?.label).toBe("Today");
+    expect(getMobileTabLabel("home")).toBe("Today");
   });
 
   it("uses the canonical page titles for the other four tabs", () => {
     // The labels are user-facing — pinning them protects against silent
     // string drift (renamings, typos) that the id-only assertion above
     // wouldn't catch.
-    const labels = Object.fromEntries(
-      MOBILE_TABBAR_ITEMS.map((i) => [i.id, i.label]),
-    );
-    expect(labels.notes).toBe("Notes");
-    expect(labels.links).toBe("Links");
-    expect(labels.tasks).toBe("Tasks");
-    expect(labels.tags).toBe("Tags");
+    expect(getMobileTabLabel("notes")).toBe("Notes");
+    expect(getMobileTabLabel("links")).toBe("Links");
+    expect(getMobileTabLabel("tasks")).toBe("Tasks");
+    expect(getMobileTabLabel("tags")).toBe("Tags");
   });
 
-  it("keeps each label short (<= 6 chars) so five fit on a narrow viewport", () => {
-    for (const item of MOBILE_TABBAR_ITEMS) {
-      expect(item.label.length).toBeLessThanOrEqual(6);
+  it("keeps every English label short (<= 6 chars) so five fit on a narrow viewport", () => {
+    // English only. Czech "Poznámky" is eight characters and the bar has to
+    // cope — that is a CSS problem, not a reason to pick a worse word.
+    for (const id of MOBILE_TABBAR_ITEM_IDS) {
+      expect(getMobileTabLabel(id).length).toBeLessThanOrEqual(6);
     }
   });
 
   it("never duplicates an id — route → tab is 1:1", () => {
-    const ids = MOBILE_TABBAR_ITEMS.map((i) => i.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expect(new Set(MOBILE_TABBAR_ITEM_IDS).size).toBe(MOBILE_TABBAR_ITEM_IDS.length);
   });
 
   it("omits Add — the FAB owns that route on mobile", () => {
-    expect(MOBILE_TABBAR_ITEMS.find((i) => i.id === "add")).toBeUndefined();
+    expect(MOBILE_TABBAR_ITEM_IDS).not.toContain<MenuItemId>("add");
   });
 
   it("stays within Apple HIG / Material's 5-tab bottom-nav max", () => {
@@ -67,28 +59,24 @@ describe("MOBILE_TABBAR_ITEMS", () => {
     // deliberate decision rather than a quiet drift past the limit
     // beyond which bottom navigation ceases to work as a primary
     // destination affordance.
-    expect(MOBILE_TABBAR_ITEMS.length).toBeLessThanOrEqual(5);
+    expect(MOBILE_TABBAR_ITEM_IDS.length).toBeLessThanOrEqual(5);
   });
 });
 
 describe("isMobileTabActive", () => {
   it("matches when the active menu id equals the tab's id", () => {
-    const notes = MOBILE_TABBAR_ITEMS.find((i) => i.id === "notes");
-    if (!notes) throw new Error("notes tab missing from MOBILE_TABBAR_ITEMS");
-    expect(isMobileTabActive(notes, "notes")).toBe(true);
+    expect(isMobileTabActive("notes", "notes")).toBe(true);
   });
 
   it("does not match for siblings", () => {
-    const tags = MOBILE_TABBAR_ITEMS.find((i) => i.id === "tags");
-    if (!tags) throw new Error("tags tab missing from MOBILE_TABBAR_ITEMS");
-    expect(isMobileTabActive(tags, "notes")).toBe(false);
-    expect(isMobileTabActive(tags, "home")).toBe(false);
+    expect(isMobileTabActive("tags", "notes")).toBe(false);
+    expect(isMobileTabActive("tags", "home")).toBe(false);
   });
 
   it("returns false for every tab when active is off-bar (capture, settings)", () => {
-    for (const item of MOBILE_TABBAR_ITEMS) {
-      expect(isMobileTabActive(item, "capture")).toBe(false);
-      expect(isMobileTabActive(item, "settings")).toBe(false);
+    for (const id of MOBILE_TABBAR_ITEM_IDS) {
+      expect(isMobileTabActive(id, "capture")).toBe(false);
+      expect(isMobileTabActive(id, "settings")).toBe(false);
     }
   });
 });

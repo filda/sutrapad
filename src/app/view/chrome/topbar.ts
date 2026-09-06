@@ -1,6 +1,11 @@
 import type { SyncState } from "../../session/workspace-sync";
 import type { SutraPadTagEntry, UserProfile } from "../../../types";
-import { MENU_ITEMS, type MenuItemId } from "../../logic/menu";
+import {
+  getMenuItemLabel,
+  NAV_MENU_ITEM_IDS,
+  type MenuItemId,
+} from "../../logic/menu";
+import { messages } from "../../../lib/i18n";
 import { buildAccountBar } from "./account-bar";
 import { buildTagFilterBar } from "./tag-filter-bar";
 import { buildIcon, type IconName } from "../shared/icons";
@@ -118,7 +123,7 @@ function buildBrand(
   const brand = document.createElement("button");
   brand.type = "button";
   brand.className = `brand is-link${activeMenuItem === "home" ? " is-active" : ""}`;
-  brand.setAttribute("aria-label", "Go to SutraPad home");
+  brand.setAttribute("aria-label", messages().nav.brandHome);
   brand.setAttribute(
     "aria-current",
     activeMenuItem === "home" ? "page" : "false",
@@ -145,7 +150,7 @@ function buildAddPill(
   const button = document.createElement("button");
   button.type = "button";
   button.className = `nav-tab-add${activeMenuItem === "add" ? " is-active" : ""}`;
-  button.setAttribute("aria-label", "Add a new note");
+  button.setAttribute("aria-label", messages().nav.addNote);
 
   // Handoff renders the plus as a stroked SVG (size 14) inline with the
   // "Add" label — no bubble. Keeping parity so the Add pill reads as a
@@ -153,7 +158,7 @@ function buildAddPill(
   button.append(buildIcon("plus", 14));
 
   const label = document.createElement("span");
-  label.textContent = "Add";
+  label.textContent = getMenuItemLabel("add");
   button.append(label);
 
   // Decorative `N` pill telegraphs the keyboard shortcut. The pill is not
@@ -176,25 +181,25 @@ function buildNavTabs(
 ): HTMLElement {
   const nav = document.createElement("nav");
   nav.className = "nav-tabs";
-  nav.setAttribute("aria-label", "Primary");
+  nav.setAttribute("aria-label", messages().nav.primaryLabel);
 
   // "add" is rendered as its own pill CTA, so skip it here to avoid duplicating
   // the control.
-  for (const item of MENU_ITEMS) {
-    if (item.id === "add") continue;
+  for (const id of NAV_MENU_ITEM_IDS) {
+    if (id === "add") continue;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `nav-tab${item.id === activeMenuItem ? " is-active" : ""}`;
+    button.className = `nav-tab${id === activeMenuItem ? " is-active" : ""}`;
     button.setAttribute(
       "aria-current",
-      item.id === activeMenuItem ? "page" : "false",
+      id === activeMenuItem ? "page" : "false",
     );
 
     // Icon-before-label pairing matches the handoff: `.nav-ico` wraps the
     // stroked SVG so the CSS can tune colour + opacity independently of the
     // text label. `.nav-tab` labels live inside their own `<span>` so the
     // mobile breakpoint can hide them without dropping the icon.
-    const iconName = NAV_TAB_ICONS[item.id];
+    const iconName = NAV_TAB_ICONS[id];
     if (iconName) {
       const iconWrap = document.createElement("span");
       iconWrap.className = "nav-ico";
@@ -204,10 +209,10 @@ function buildNavTabs(
 
     const label = document.createElement("span");
     label.className = "nav-tab-label";
-    label.textContent = item.label;
+    label.textContent = getMenuItemLabel(id);
     button.append(label);
 
-    button.addEventListener("click", () => onSelectMenuItem(item.id));
+    button.addEventListener("click", () => onSelectMenuItem(id));
     nav.append(button);
   }
 
@@ -226,8 +231,9 @@ function buildSettingsGear(onOpenSettings: () => void): HTMLElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "settings-gear";
-  button.setAttribute("aria-label", "Settings");
-  button.title = "Settings";
+  const settingsLabel = getMenuItemLabel("settings");
+  button.setAttribute("aria-label", settingsLabel);
+  button.title = settingsLabel;
   button.append(buildIcon("cog", 14));
   button.addEventListener("click", onOpenSettings);
   return button;
@@ -264,14 +270,15 @@ function buildSyncPill(syncState: SyncState, statusText: string): HTMLElement {
  * without having to rebuild the whole topbar.
  */
 export function syncPillLabel(syncState: SyncState): string {
+  const copy = messages().sync;
   switch (syncState) {
     case "loading":
-      return "Loading";
+      return copy.loading;
     case "saving":
-      return "Saving";
+      return copy.saving;
     case "error":
-      return "Error";
+      return copy.error;
     default:
-      return "Synced";
+      return copy.synced;
   }
 }

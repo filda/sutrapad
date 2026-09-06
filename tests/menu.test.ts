@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MENU_ITEM,
-  HOME_MENU_ITEM,
-  MENU_ITEMS,
+  HOME_MENU_ITEM_ID,
+  NAV_MENU_ITEM_IDS,
   getMenuItemLabel,
   isMenuActionItemId,
   isMenuItemId,
   type MenuItemId,
 } from "../src/app/logic/menu";
+import { CS } from "../src/lib/i18n";
 
 describe("menu items", () => {
   it("exposes the five primary-nav entries in the expected order", () => {
@@ -16,17 +17,14 @@ describe("menu items", () => {
     // cluster as a gear icon; Capture is reached from the site footer
     // (`Use → Capture setup`) and the command palette. Both are still
     // valid MenuItemIds and routable via onSelectMenuItem, just not here.
-    expect(MENU_ITEMS.map((item) => item.id)).toEqual([
-      "add",
-      "notes",
-      "links",
-      "tasks",
-      "tags",
-    ]);
+    expect(NAV_MENU_ITEM_IDS).toEqual(["add", "notes", "links", "tasks", "tags"]);
   });
 
-  it("uses title-cased labels for every menu entry", () => {
-    expect(MENU_ITEMS.map((item) => item.label)).toEqual([
+  it("uses title-cased English labels for every nav entry", () => {
+    // The ids above are routing keys; these are the copy. Asserted as
+    // literals so a drifted or emptied catalog entry fails here rather than
+    // shipping a blank tab.
+    expect(NAV_MENU_ITEM_IDS.map((id) => getMenuItemLabel(id))).toEqual([
       "Add",
       "Notes",
       "Links",
@@ -36,39 +34,38 @@ describe("menu items", () => {
   });
 
   it("has no duplicate ids", () => {
-    const ids = MENU_ITEMS.map((item) => item.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    expect(new Set(NAV_MENU_ITEM_IDS).size).toBe(NAV_MENU_ITEM_IDS.length);
   });
 
   it("defaults to the notes tab so the existing editor is visible on load", () => {
     expect(DEFAULT_MENU_ITEM).toBe<MenuItemId>("notes");
-    expect(MENU_ITEMS.some((item) => item.id === DEFAULT_MENU_ITEM)).toBe(true);
+    expect(NAV_MENU_ITEM_IDS).toContain(DEFAULT_MENU_ITEM);
   });
 
   it("keeps the home view out of the primary nav (reached via the clickable SutraPad eyebrow)", () => {
-    expect(MENU_ITEMS.some((item) => item.id === HOME_MENU_ITEM.id)).toBe(false);
-    expect(HOME_MENU_ITEM).toEqual({ id: "home", label: "Home" });
+    expect(NAV_MENU_ITEM_IDS).not.toContain(HOME_MENU_ITEM_ID);
+    expect(HOME_MENU_ITEM_ID).toBe<MenuItemId>("home");
   });
 
   it("keeps capture + settings out of the primary nav (settings is the topbar gear; capture lives in the footer / palette)", () => {
-    expect(MENU_ITEMS.some((item) => item.id === "capture")).toBe(false);
-    expect(MENU_ITEMS.some((item) => item.id === "settings")).toBe(false);
+    expect(NAV_MENU_ITEM_IDS).not.toContain<MenuItemId>("capture");
+    expect(NAV_MENU_ITEM_IDS).not.toContain<MenuItemId>("settings");
   });
 
   it("keeps privacy out of the primary nav (footer-link only — long-form static page, not a daily destination)", () => {
-    expect(MENU_ITEMS.some((item) => item.id === "privacy")).toBe(false);
+    expect(NAV_MENU_ITEM_IDS).not.toContain<MenuItemId>("privacy");
   });
 });
 
 describe("isMenuItemId", () => {
   it("accepts every known menu id", () => {
-    for (const item of MENU_ITEMS) {
-      expect(isMenuItemId(item.id)).toBe(true);
+    for (const id of NAV_MENU_ITEM_IDS) {
+      expect(isMenuItemId(id)).toBe(true);
     }
   });
 
   it("accepts the home id even though it is not rendered in the primary nav", () => {
-    expect(isMenuItemId(HOME_MENU_ITEM.id)).toBe(true);
+    expect(isMenuItemId(HOME_MENU_ITEM_ID)).toBe(true);
     expect(isMenuItemId("home")).toBe(true);
   });
 
@@ -113,6 +110,15 @@ describe("getMenuItemLabel", () => {
     expect(getMenuItemLabel("about")).toBe("About");
     expect(getMenuItemLabel("terms")).toBe("Terms");
     expect(getMenuItemLabel("shortcuts")).toBe("Shortcuts");
+    expect(getMenuItemLabel("lexicon")).toBe("Lexicon Builder");
+  });
+
+  it("follows the catalog it is given", () => {
+    // The id is a routing key and never changes; only the label does. This
+    // is the assertion that would fail if a future edit reached past the
+    // catalog and hard-coded English back into the lookup.
+    expect(getMenuItemLabel("notes", CS)).toBe("Poznámky");
+    expect(getMenuItemLabel("settings", CS)).toBe("Nastavení");
   });
 });
 

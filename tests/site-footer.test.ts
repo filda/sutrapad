@@ -84,7 +84,7 @@ describe("buildSiteFooter layout", () => {
   it("carries the wordmark and the tagline", () => {
     const { footer } = mount();
 
-    expect(footer.querySelector(".site-footer-wordmark")?.textContent).toBe("Sutrapad");
+    expect(footer.querySelector(".site-footer-wordmark")?.textContent).toBe("SutraPad");
     expect(footer.querySelector(".site-footer-tagline")?.textContent).toBe(
       "A notebook for the way you already think — by hand, by place, by mood. " +
         "Save everything to your own drive. Never the system of record.",
@@ -94,7 +94,7 @@ describe("buildSiteFooter layout", () => {
   it("names the four columns in order", () => {
     const { footer } = mount();
 
-    expect(columnHeads(footer)).toEqual(["Sutrapad", "Use", "Sources", "Legal"]);
+    expect(columnHeads(footer)).toEqual(["SutraPad", "Use", "Sources", "Legal"]);
   });
 
   it("lists every link as a list item under its column", () => {
@@ -180,7 +180,7 @@ describe("buildSiteFooter base row", () => {
     const { footer } = mount();
 
     expect(footer.querySelector(".site-footer-copy")?.textContent).toBe(
-      "© 2026 Sutrapad · MIT license",
+      "© 2026 SutraPad · MIT license",
     );
   });
 
@@ -190,7 +190,7 @@ describe("buildSiteFooter base row", () => {
     const { footer } = mount();
 
     expect(footer.querySelector(".site-footer-copy")?.textContent).toBe(
-      "© 2027 Sutrapad · MIT license",
+      "© 2027 SutraPad · MIT license",
     );
   });
 

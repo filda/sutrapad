@@ -26,6 +26,7 @@ import {
   toggleIntroCollapse,
 } from "../../logic/page-intro";
 import { appendPageTitle, type PageTitle } from "./page-title";
+import { messages } from "../../../lib/i18n";
 
 export interface PageHeaderOptions {
   /**
@@ -152,7 +153,8 @@ export function buildPageHeader({
   const applyCollapsedState = (collapsed: boolean): void => {
     header.classList.toggle("is-collapsed", collapsed);
     eyebrowButton.setAttribute("aria-expanded", collapsed ? "false" : "true");
-    eyebrowButton.title = collapsed ? "Expand intro" : "Collapse intro";
+    const copy = messages().pageHeader;
+    eyebrowButton.title = collapsed ? copy.expandIntro : copy.collapseIntro;
     title.hidden = collapsed;
     if (subtitleEl) subtitleEl.hidden = collapsed;
     if (actionsEl) actionsEl.hidden = collapsed;

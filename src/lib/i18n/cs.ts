@@ -82,6 +82,60 @@ export const CS: Messages = {
     },
   },
 
+  menu: {
+    home: "Domů",
+    add: "Přidat",
+    notes: "Poznámky",
+    links: "Odkazy",
+    tags: "Štítky",
+    tasks: "Úkoly",
+    capture: "Zachytávání",
+    settings: "Nastavení",
+    privacy: "Soukromí",
+    about: "O aplikaci",
+    terms: "Podmínky",
+    shortcuts: "Zkratky",
+    lexicon: "Tvůrce lexikonu",
+  },
+
+  nav: {
+    primaryLabel: "Hlavní navigace",
+    mobileLabel: "Hlavní navigace (mobil)",
+    mobileHome: "Dnes",
+    brandHome: "Přejít na úvodní stránku SutraPadu",
+    addNote: "Přidat novou poznámku",
+  },
+
+  sync: {
+    loading: "Načítám",
+    saving: "Ukládám",
+    error: "Chyba",
+    synced: "Synchronizováno",
+  },
+
+  pageHeader: {
+    expandIntro: "Rozbalit úvod",
+    collapseIntro: "Sbalit úvod",
+  },
+
+  footer: {
+    tagline:
+      "Zápisník pro to, jak stejně přemýšlíš — rukou, podle místa, podle nálady. Všechno se ukládá na tvůj vlastní disk. Nikdy ne jako systém záznamů.",
+    columns: {
+      product: "SutraPad",
+      use: "Použití",
+      sources: "Zdroje",
+      legal: "Právní",
+    },
+    links: {
+      captureSetup: "Nastavení zachytávání",
+      github: "Repozitář na GitHubu",
+      openStreetMap: "OpenStreetMap",
+      nominatim: "Nominatim",
+    },
+    copyright: (year: number) => `© ${year} SutraPad · Licence MIT`,
+  },
+
   settings: {
     appearance: {
       eyebrow: "Vzhled",
