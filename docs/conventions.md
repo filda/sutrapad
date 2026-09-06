@@ -2,7 +2,17 @@
 
 ## Language
 
-- Application UI text must be in English.
+- User-facing UI strings are authored in English and live in the message
+  catalog (`src/lib/i18n/en.ts`). Czech is a translation of that catalog
+  (`src/lib/i18n/cs.ts`), typed as `Messages` so a missing key is a compile
+  error. Do not add a new user-facing string as an inline literal in
+  `src/app/view/**` — add it to the catalog and read it from there. Values
+  that are persisted, compared, or round-tripped through the URL or
+  localStorage (theme ids, auto-tag facets like `date:today`, menu ids,
+  preference values) are keys, not copy: translate their labels, never the
+  keys themselves. Migration is page by page — see
+  [i18n-plan.md](i18n-plan.md) for what is done and what still
+  holds inline literals.
 - Source code, identifiers, and code comments must be in English.
 - Repository documentation must be in English.
 

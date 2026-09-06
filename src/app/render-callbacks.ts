@@ -38,6 +38,7 @@ import { isMenuActionItemId, type MenuItemId } from "./logic/menu";
 import type { NotesViewMode } from "./logic/notes-view";
 import type { LinksViewMode } from "./logic/links-view";
 import type { ThemeChoice } from "./logic/theme";
+import type { Locale } from "../lib/i18n";
 import type { PersonaPreference } from "./logic/persona";
 import type { CaptureLocationPreference } from "./logic/capture-location";
 import { resolveGeolocationPermissionState } from "../lib/geolocation-permission";
@@ -97,6 +98,7 @@ export interface RenderCallbackOptions {
   setDismissedTagAliases: (next: Set<string>) => void;
   getRecentTagFilters: () => readonly string[];
   setRecentTagFilters: (next: readonly string[]) => void;
+  setLocale: (locale: Locale) => void;
   setCurrentTheme: (theme: ThemeChoice) => void;
   setPersonaPreference: (preference: PersonaPreference) => void;
   setCaptureLocationPreference: (preference: CaptureLocationPreference) => void;
@@ -178,6 +180,7 @@ export function createRenderCallbacks({
   setDismissedTagAliases,
   getRecentTagFilters,
   setRecentTagFilters,
+  setLocale,
   setCurrentTheme,
   setPersonaPreference,
   setCaptureLocationPreference,
@@ -254,6 +257,7 @@ export function createRenderCallbacks({
         addDismissedTagAlias(getDismissedTagAliases(), canonical, alias),
       );
     },
+    onChangeLocale: (locale: Locale) => setLocale(locale),
     onChangeTheme: (choice: ThemeChoice) => setCurrentTheme(choice),
     onChangePersonaPreference: (preference: PersonaPreference) =>
       setPersonaPreference(preference),

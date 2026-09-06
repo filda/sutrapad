@@ -7,6 +7,8 @@
  * to either "sand" (light) or "dark" (dark) at apply time. The literal id
  * "auto" never appears as the rendered `data-theme` attribute.
  */
+import type { Messages } from "../../lib/i18n";
+
 export type ThemeId =
   | "sand"
   | "dark"
@@ -23,15 +25,31 @@ export type ThemeId =
  */
 export type ThemeChoice = ThemeId | "auto";
 
-export interface ThemeDescriptor {
+/**
+ * The palette preview dots the Settings page renders for a theme. Plain hex
+ * strings (no alpha) so a solid swatch can be painted straight from them;
+ * the full palette lives in styles.css keyed on `data-theme`.
+ */
+export interface ThemeSwatches {
+  primary: string;
+  accent: string;
+  background: string;
+}
+
+/**
+ * A pickable theme as *data*: the id that gets persisted and written to
+ * `data-theme`, plus its swatches. Deliberately carries no copy — the label
+ * and description are localized, the id is not (see `describeThemes`).
+ */
+export interface ThemeOption {
   id: ThemeChoice;
+  swatches: ThemeSwatches;
+}
+
+/** A theme with its copy resolved for one locale. What the UI renders. */
+export interface ThemeDescriptor extends ThemeOption {
   label: string;
   description: string;
-  swatches: {
-    primary: string;
-    accent: string;
-    background: string;
-  };
 }
 
 /**
@@ -44,15 +62,16 @@ export const DEFAULT_THEME_CHOICE: ThemeChoice = "auto";
 const STORAGE_KEY = "sutrapad-theme";
 
 /**
- * Catalogue of pickable themes. The swatch colours are plain hex strings (no
- * alpha) so the Settings page can render solid preview dots; the full palette
- * lives in styles.css keyed on `data-theme`.
+ * Catalogue of pickable themes, in the order the Settings grid renders them.
+ *
+ * Ids only — no labels. A theme id is a key: it is persisted to localStorage
+ * and set as the `data-theme` attribute, so translating one would orphan the
+ * user's stored choice and unstyle the app. `describeThemes` pairs each id
+ * with the copy for the active locale.
  */
-export const THEMES: readonly ThemeDescriptor[] = [
+export const THEMES: readonly ThemeOption[] = [
   {
     id: "auto",
-    label: "Auto",
-    description: "Follows your system light/dark preference.",
     swatches: {
       primary: "#1f2937",
       accent: "#c08457",
@@ -61,8 +80,6 @@ export const THEMES: readonly ThemeDescriptor[] = [
   },
   {
     id: "sand",
-    label: "Sand",
-    description: "The original warm cream and terracotta palette.",
     swatches: {
       primary: "#1f2937",
       accent: "#c08457",
@@ -71,8 +88,6 @@ export const THEMES: readonly ThemeDescriptor[] = [
   },
   {
     id: "paper",
-    label: "Paper",
-    description: "Bright neutral white with a cool slate accent.",
     swatches: {
       primary: "#111827",
       accent: "#2563eb",
@@ -81,8 +96,6 @@ export const THEMES: readonly ThemeDescriptor[] = [
   },
   {
     id: "forest",
-    label: "Forest",
-    description: "Deep pine and moss, easy on the eyes for long sessions.",
     swatches: {
       primary: "#1b3a2f",
       accent: "#2f7d5b",
@@ -91,8 +104,6 @@ export const THEMES: readonly ThemeDescriptor[] = [
   },
   {
     id: "midnight",
-    label: "Midnight",
-    description: "Cool indigo night sky with a violet accent.",
     swatches: {
       primary: "#e5e7ff",
       accent: "#a78bfa",
@@ -101,8 +112,6 @@ export const THEMES: readonly ThemeDescriptor[] = [
   },
   {
     id: "dark",
-    label: "Dark",
-    description: "Neutral dark surfaces with the warm terracotta accent.",
     swatches: {
       primary: "#f5efe6",
       accent: "#d49a6a",
@@ -111,9 +120,6 @@ export const THEMES: readonly ThemeDescriptor[] = [
   },
   {
     id: "parchment",
-    label: "Parchment",
-    description:
-      "Warm notebook paper with serif headings — the redesign palette.",
     swatches: {
       primary: "#1b1714",
       accent: "#c46a3a",
@@ -122,9 +128,6 @@ export const THEMES: readonly ThemeDescriptor[] = [
   },
   {
     id: "parchment-dark",
-    label: "Parchment Dark",
-    description:
-      "Parchment in deep-ink mode: candlelit paper tones on a warm black.",
     swatches: {
       primary: "#f1e8d7",
       accent: "#e89a5a",
@@ -132,6 +135,22 @@ export const THEMES: readonly ThemeDescriptor[] = [
     },
   },
 ];
+
+/**
+ * Pairs every theme with its label and description from `catalog`.
+ *
+ * Indexing `catalog.theme` by `ThemeChoice` is what keeps the two in step:
+ * adding a theme id without adding its copy to the English catalog is a
+ * compile error here, and the Czech catalog then fails to satisfy
+ * `Messages` until it is translated too.
+ */
+export function describeThemes(catalog: Messages): readonly ThemeDescriptor[] {
+  return THEMES.map((theme) => ({
+    ...theme,
+    label: catalog.theme[theme.id].label,
+    description: catalog.theme[theme.id].description,
+  }));
+}
 
 const ALL_CHOICES: ReadonlySet<ThemeChoice> = new Set<ThemeChoice>(
   THEMES.map((theme) => theme.id),

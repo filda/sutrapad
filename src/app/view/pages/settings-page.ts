@@ -5,7 +5,14 @@ import {
 import { type MenuItemId } from "../../logic/menu";
 import { type PersonaPreference } from "../../logic/persona";
 import type { AliasSuggestion } from "../../logic/tag-aliases";
-import { THEMES, type ThemeChoice } from "../../logic/theme";
+import { describeThemes, type ThemeChoice } from "../../logic/theme";
+import {
+  allLocales,
+  formatPlural,
+  getActiveLocale,
+  messages,
+  type Locale,
+} from "../../../lib/i18n";
 import { buildTagPill } from "../shared/tag-pill";
 import { buildMicrophoneConsentCard } from "../shared/microphone-consent-card";
 import {
@@ -32,6 +39,15 @@ function buildSettingsCardHeader(eyebrow: string, title: string): HTMLElement {
 }
 
 export interface SettingsPageOptions {
+  /**
+   * Active app language, for the picker's selected state — the same role
+   * `currentTheme` plays for the theme grid. It is not what decides the
+   * language of this page's text: that comes from the module-level catalog,
+   * which `applyLocale` has already pointed at this locale. A key, not copy
+   * — persisted verbatim and set as `<html lang>`; only its display name in
+   * the picker is translated.
+   */
+  locale: Locale;
   currentTheme: ThemeChoice;
   personaPreference: PersonaPreference;
   /**
@@ -49,6 +65,7 @@ export interface SettingsPageOptions {
    * the hygiene card into a one-liner "nothing to clean up" state.
    */
   tagAliasSuggestions: readonly AliasSuggestion[];
+  onChangeLocale: (locale: Locale) => void;
   onChangeTheme: (choice: ThemeChoice) => void;
   onChangePersonaPreference: (preference: PersonaPreference) => void;
   onChangeCaptureLocationPreference: (
@@ -78,17 +95,20 @@ export interface SettingsPageOptions {
 
 /**
  * Settings page. Each concern lives in its own card inside the page wrapper:
- * appearance (per-device theme), notebook persona (decorative card layer),
- * tag hygiene (alias / merge suggestions), and backup (manual Google Drive
- * load/save). Further device-local or account-level preferences slot in as
- * additional cards in the same container.
+ * language and appearance (per-device UI preferences), notebook persona
+ * (decorative card layer), tag hygiene (alias / merge suggestions), and
+ * backup (manual Google Drive load/save). Further device-local or
+ * account-level preferences slot in as additional cards in the same
+ * container.
  */
 export function buildSettingsPage({
+  locale,
   currentTheme,
   personaPreference,
   captureLocationPreference,
   profile,
   tagAliasSuggestions,
+  onChangeLocale,
   onChangeTheme,
   onChangePersonaPreference,
   onChangeCaptureLocationPreference,
@@ -104,6 +124,9 @@ export function buildSettingsPage({
   const page = document.createElement("section");
   page.className = "settings-page";
 
+  // Language leads: a reader who ended up in the wrong locale has to be able
+  // to find the way out without reading the rest of the page.
+  page.append(buildLanguageCard({ locale, onChangeLocale }));
   page.append(buildAppearanceCard({ currentTheme, onChangeTheme }));
   page.append(
     buildPersonaCard({ personaPreference, onChangePersonaPreference }),
@@ -156,18 +179,19 @@ function buildWorkbenchCard({
   const card = document.createElement("section");
   card.className = "settings-card settings-card-workbench";
 
-  card.append(buildSettingsCardHeader("Workbench", "Internal tooling"));
+  const copy = messages().settings.workbench;
+
+  card.append(buildSettingsCardHeader(copy.eyebrow, copy.title));
 
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
-  hint.textContent =
-    "Internal builders hosted inside SutraPad. They reuse the app shell and Google Drive sync, but are not part of the regular notebook flow.";
+  hint.textContent = copy.hint;
   card.append(hint);
 
   const link = document.createElement("button");
   link.type = "button";
   link.className = "is-link settings-card-workbench-link";
-  link.textContent = "Topic Lexicon Builder →";
+  link.textContent = copy.lexiconLink;
   link.addEventListener("click", () => onSelectMenuItem("lexicon"));
   card.append(link);
 
@@ -203,13 +227,14 @@ function buildPrivacyCard({
   const card = document.createElement("section");
   card.className = "settings-card settings-card-privacy";
 
+  const copy = messages().settings.privacy;
+
   const heading = document.createElement("h3");
-  heading.textContent = "Privacy";
+  heading.textContent = copy.title;
   card.append(heading);
 
   const summary = document.createElement("p");
-  summary.textContent =
-    "SutraPad runs in your browser and keeps your notes in your own Google Drive. The app talks to Google Identity, Google Drive, Nominatim (location labels) and Open-Meteo (weather context) directly from your browser when those features are used.";
+  summary.textContent = copy.summary;
   card.append(summary);
 
   card.append(
@@ -224,7 +249,7 @@ function buildPrivacyCard({
   const link = document.createElement("button");
   link.type = "button";
   link.className = "is-link settings-card-privacy-link";
-  link.textContent = "Read the full Privacy page →";
+  link.textContent = copy.readFullPolicy;
   link.addEventListener("click", () => onSelectMenuItem("privacy"));
   card.append(link);
 
@@ -254,37 +279,32 @@ function buildLocationCaptureToggle({
   const wrapper = document.createElement("div");
   wrapper.className = "settings-card-privacy-toggle";
 
+  const copy = messages().settings.privacy.captureLocation;
+
   const label = document.createElement("p");
   label.className = "settings-card-subheading";
-  label.textContent = "Capture location on new notes";
+  label.textContent = copy.label;
   wrapper.append(label);
 
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
-  hint.textContent =
-    "When on, creating a new note asks the browser for your current location and adds a place label. When off, the geolocation prompt is skipped and no coordinates are recorded for new notes. Existing notes keep whatever location they already have. First-run users see a consent card inside the editor before this toggle locks in.";
+  hint.textContent = copy.hint;
   wrapper.append(hint);
 
   const group = document.createElement("div");
   group.className = "persona-toggle";
   group.setAttribute("role", "radiogroup");
-  group.setAttribute("aria-label", "Capture location on new notes");
+  group.setAttribute("aria-label", copy.label);
 
+  // `value` is the persisted preference and stays untranslated; the label and
+  // description beside it are the only localized part of the row.
   const options: ReadonlyArray<{
     value: CaptureLocationPreference;
     label: string;
     description: string;
   }> = [
-    {
-      value: "off",
-      label: "Off",
-      description: "Don't ask for location.",
-    },
-    {
-      value: "on",
-      label: "On",
-      description: "Ask for location and add a place label.",
-    },
+    { value: "off", ...copy.off },
+    { value: "on", ...copy.on },
   ];
 
   for (const option of options) {
@@ -315,6 +335,72 @@ function buildLocationCaptureToggle({
   return wrapper;
 }
 
+interface LanguageCardOptions {
+  locale: Locale;
+  onChangeLocale: (locale: Locale) => void;
+}
+
+/**
+ * App language picker. Same two-button radio shape as the Persona and
+ * location toggles, so the three device-local preferences read alike.
+ *
+ * Each language is named in *its own* language rather than translated
+ * ("Čeština", not "Czech"): someone who has landed in a locale they can't
+ * read has to be able to find their way out, and a list of names they can't
+ * read doesn't help them. That is also why this card is first on the page.
+ *
+ * The `data-locale` attribute carries the raw locale id — the value that
+ * gets persisted and set as `<html lang>` — so a test can assert the key
+ * independently of whatever the button says.
+ */
+function buildLanguageCard({
+  locale,
+  onChangeLocale,
+}: LanguageCardOptions): HTMLElement {
+  const catalog = messages();
+  const copy = catalog.settings.language;
+
+  const card = document.createElement("section");
+  card.className = "settings-card";
+
+  card.append(buildSettingsCardHeader(copy.eyebrow, copy.title));
+
+  const hint = document.createElement("p");
+  hint.className = "settings-card-hint";
+  hint.textContent = copy.hint;
+  card.append(hint);
+
+  const group = document.createElement("div");
+  group.className = "persona-toggle";
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", copy.groupLabel);
+
+  for (const option of allLocales()) {
+    const isSelected = option === locale;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `persona-toggle-option${isSelected ? " is-active" : ""}`;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", isSelected ? "true" : "false");
+    button.dataset.locale = option;
+    // `lang` on the button itself: the option labels are each in a different
+    // language from the page, and without it a screen reader reads "Čeština"
+    // with English pronunciation rules.
+    button.lang = option;
+
+    const label = document.createElement("span");
+    label.className = "persona-toggle-label";
+    label.textContent = catalog.localeName[option];
+    button.append(label);
+
+    button.addEventListener("click", () => onChangeLocale(option));
+    group.append(button);
+  }
+
+  card.append(group);
+  return card;
+}
+
 interface AppearanceCardOptions {
   currentTheme: ThemeChoice;
   onChangeTheme: (choice: ThemeChoice) => void;
@@ -327,20 +413,22 @@ function buildAppearanceCard({
   const card = document.createElement("section");
   card.className = "settings-card";
 
-  card.append(buildSettingsCardHeader("Appearance", "Theme"));
+  const catalog = messages();
+  const copy = catalog.settings.appearance;
+
+  card.append(buildSettingsCardHeader(copy.eyebrow, copy.title));
 
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
-  hint.textContent =
-    "The theme is saved on this device only. Other devices keep their own choice.";
+  hint.textContent = copy.hint;
   card.append(hint);
 
   const grid = document.createElement("div");
   grid.className = "theme-grid";
   grid.setAttribute("role", "radiogroup");
-  grid.setAttribute("aria-label", "Theme");
+  grid.setAttribute("aria-label", copy.groupLabel);
 
-  for (const theme of THEMES) {
+  for (const theme of describeThemes(catalog)) {
     const isSelected = theme.id === currentTheme;
     const themeCard = document.createElement("button");
     themeCard.type = "button";
@@ -398,34 +486,27 @@ function buildPersonaCard({
   const card = document.createElement("section");
   card.className = "settings-card";
 
-  card.append(buildSettingsCardHeader("Notebook", "Persona"));
+  const copy = messages().settings.persona;
+
+  card.append(buildSettingsCardHeader(copy.eyebrow, copy.title));
 
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
-  hint.textContent =
-    "Paints each note card with a paper colour and a little rotation based on when you wrote it, plus small stickers for notes with open tasks or night-time capture. Saved per-device.";
+  hint.textContent = copy.hint;
   card.append(hint);
 
   const group = document.createElement("div");
   group.className = "persona-toggle";
   group.setAttribute("role", "radiogroup");
-  group.setAttribute("aria-label", "Notebook persona");
+  group.setAttribute("aria-label", copy.groupLabel);
 
   const options: ReadonlyArray<{
     value: PersonaPreference;
     label: string;
     description: string;
   }> = [
-    {
-      value: "off",
-      label: "Off",
-      description: "Keep notes as plain, flat cards.",
-    },
-    {
-      value: "on",
-      label: "On",
-      description: "Show paper colours, stickers, and subtle wear.",
-    },
+    { value: "off", ...copy.off },
+    { value: "on", ...copy.on },
   ];
 
   for (const option of options) {
@@ -494,18 +575,19 @@ function buildTagHygieneCard({
   const card = document.createElement("section");
   card.className = "settings-card tag-hygiene-card";
 
-  card.append(buildSettingsCardHeader("Notebook", "Tag hygiene"));
+  const copy = messages().settings.tagHygiene;
+
+  card.append(buildSettingsCardHeader(copy.eyebrow, copy.title));
 
   const hint = document.createElement("p");
   hint.className = "settings-card-hint";
-  hint.textContent =
-    "Tags that look like different spellings of the same thing. Merging keeps every note's history — the notes just get relabeled to the canonical tag.";
+  hint.textContent = copy.hint;
   card.append(hint);
 
   if (tagAliasSuggestions.length === 0) {
     const empty = document.createElement("p");
     empty.className = "settings-card-note";
-    empty.textContent = "Nothing to clean up right now.";
+    empty.textContent = copy.empty;
     card.append(empty);
     return card;
   }
@@ -561,8 +643,11 @@ function buildHygieneSuggestion({
 
   const count = document.createElement("span");
   count.className = "hygiene-candidate-count mono";
-  const plural = suggestion.aliases.length === 1 ? "" : "s";
-  count.textContent = `${suggestion.aliases.length} candidate${plural}`;
+  count.textContent = formatPlural(
+    getActiveLocale(),
+    suggestion.aliases.length,
+    messages().settings.tagHygiene.candidateCount,
+  );
   hed.append(count);
 
   row.append(hed);
@@ -611,25 +696,21 @@ function buildHygieneAliasRow({
   const actions = document.createElement("div");
   actions.className = "hygiene-alias-actions";
 
+  const copy = messages().settings.tagHygiene;
+
   const mergeBtn = document.createElement("button");
   mergeBtn.type = "button";
   mergeBtn.className = "button button-primary hygiene-action";
-  mergeBtn.textContent = "Merge";
-  mergeBtn.setAttribute(
-    "aria-label",
-    `Merge ${alias} into ${canonical}`,
-  );
+  mergeBtn.textContent = copy.merge;
+  mergeBtn.setAttribute("aria-label", copy.mergeLabel(alias, canonical));
   mergeBtn.addEventListener("click", () => onMergeTagAlias(alias, canonical));
   actions.append(mergeBtn);
 
   const dismissBtn = document.createElement("button");
   dismissBtn.type = "button";
   dismissBtn.className = "button hygiene-action";
-  dismissBtn.textContent = "Keep separate";
-  dismissBtn.setAttribute(
-    "aria-label",
-    `Keep ${canonical} and ${alias} separate`,
-  );
+  dismissBtn.textContent = copy.dismiss;
+  dismissBtn.setAttribute("aria-label", copy.dismissLabel(canonical, alias));
   dismissBtn.addEventListener("click", () =>
     onDismissTagAlias(canonical, alias),
   );
@@ -667,25 +748,25 @@ function buildBackupCard({
   const card = document.createElement("section");
   card.className = "settings-card";
 
-  card.append(buildSettingsCardHeader("Backup", "Google Drive"));
+  const copy = messages().settings.backup;
+
+  card.append(buildSettingsCardHeader(copy.eyebrow, copy.title));
 
   const intro = document.createElement("p");
   intro.className = "settings-card-hint";
-  intro.textContent =
-    "Your notebook is stored in this browser and, when you're signed in, synced automatically to Google Drive. You normally don't need the buttons below — they're here for the rare cases when you want to force a pull or push by hand.";
+  intro.textContent = copy.intro;
   card.append(intro);
 
   if (!profile) {
     const signedOutNote = document.createElement("p");
     signedOutNote.className = "settings-card-note";
-    signedOutNote.textContent =
-      "Sign in with Google to use manual load and save.";
+    signedOutNote.textContent = copy.signedOut;
     card.append(signedOutNote);
 
     const signInButton = document.createElement("button");
     signInButton.type = "button";
     signInButton.className = "button button-primary settings-backup-signin";
-    signInButton.textContent = "Sign in with Google";
+    signInButton.textContent = copy.signIn;
     signInButton.addEventListener("click", onSignIn);
     card.append(signInButton);
 
@@ -697,10 +778,9 @@ function buildBackupCard({
 
   list.append(
     buildBackupAction({
-      title: "Load from Drive",
-      description:
-        "Pull the notebook currently saved in Google Drive and replace what's in this browser. Useful if you've made changes on another device and want them here, or if something in this browser looks off and you want to reset to the last saved copy.",
-      buttonLabel: "Load",
+      title: copy.load.title,
+      description: copy.load.description,
+      buttonLabel: copy.load.button,
       buttonClass: "button",
       onClick: onLoadNotebook,
     }),
@@ -708,10 +788,9 @@ function buildBackupCard({
 
   list.append(
     buildBackupAction({
-      title: "Save to Drive",
-      description:
-        "Push the notebook in this browser up to Google Drive right now. Automatic sync usually handles this, so reach for it mostly if sync seems stuck or you want to confirm a snapshot was written before switching devices.",
-      buttonLabel: "Save",
+      title: copy.save.title,
+      description: copy.save.description,
+      buttonLabel: copy.save.button,
       buttonClass: "button button-primary",
       onClick: onSaveNotebook,
     }),
@@ -719,10 +798,9 @@ function buildBackupCard({
 
   list.append(
     buildBackupAction({
-      title: "Rebuild index",
-      description:
-        "Walks every note in Drive once and rewrites the tag, link, and task indexes from scratch. Use this if a note's tags, tasks, or links look out of date and a normal load/save doesn't fix it. This can take a few minutes for a large notebook.",
-      buttonLabel: "Rebuild",
+      title: copy.rebuild.title,
+      description: copy.rebuild.description,
+      buttonLabel: copy.rebuild.button,
       buttonClass: "button",
       onClick: onRebuildIndex,
       disabled: rebuildStatus.state === "running",

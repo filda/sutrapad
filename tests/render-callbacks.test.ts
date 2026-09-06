@@ -136,6 +136,7 @@ function harness(initial: Partial<HarnessState> = {}) {
     setRecentTagFilters: vi.fn((next: readonly string[]) => {
       state.recentTagFilters = next;
     }),
+    setLocale: vi.fn(),
     setCurrentTheme: vi.fn(),
     setPersonaPreference: vi.fn(),
     setCaptureLocationPreference: vi.fn(),
@@ -232,6 +233,7 @@ describe("createRenderCallbacks preference passthroughs", () => {
     h.callbacks.onChangeTasksFilter("stale");
     h.callbacks.onToggleTasksShowDone(true);
     h.callbacks.onSetOneThing("n-1:2");
+    h.callbacks.onChangeLocale("cs");
     h.callbacks.onChangeTheme("midnight");
     h.callbacks.onChangePersonaPreference("on");
     h.callbacks.onChangeCaptureLocationPreference("on");
@@ -241,6 +243,7 @@ describe("createRenderCallbacks preference passthroughs", () => {
     expect(h.spies.setTasksFilter).toHaveBeenCalledExactlyOnceWith("stale");
     expect(h.spies.setTasksShowDone).toHaveBeenCalledExactlyOnceWith(true);
     expect(h.spies.setTasksOneThingKey).toHaveBeenCalledExactlyOnceWith("n-1:2");
+    expect(h.spies.setLocale).toHaveBeenCalledExactlyOnceWith("cs");
     expect(h.spies.setCurrentTheme).toHaveBeenCalledExactlyOnceWith("midnight");
     expect(h.spies.setPersonaPreference).toHaveBeenCalledExactlyOnceWith("on");
     expect(h.spies.setCaptureLocationPreference).toHaveBeenCalledExactlyOnceWith("on");

@@ -36,10 +36,11 @@ describe("theme catalogue", () => {
     ]);
   });
 
-  it("gives every theme a non-empty label, description, and full swatch set", () => {
+  it("gives every theme a full swatch set and no copy of its own", () => {
     for (const theme of THEMES) {
-      expect(theme.label.length).toBeGreaterThan(0);
-      expect(theme.description.length).toBeGreaterThan(0);
+      // Ids and swatches are data; the label and description are copy and
+      // live in the message catalog, so the table must not carry them.
+      expect(theme).toStrictEqual({ id: theme.id, swatches: theme.swatches });
       expect(theme.swatches.primary).toMatch(/^#[0-9a-fA-F]{6}$/u);
       expect(theme.swatches.accent).toMatch(/^#[0-9a-fA-F]{6}$/u);
       expect(theme.swatches.background).toMatch(/^#[0-9a-fA-F]{6}$/u);

@@ -184,6 +184,7 @@ export function createApp(root: HTMLElement): void {
     detailNoteId$,
     notesViewMode$,
     linksViewMode$,
+    locale$,
     currentTheme$,
     personaPreference$,
     captureLocationPreference$,
@@ -209,6 +210,7 @@ export function createApp(root: HTMLElement): void {
   const setDetailNoteIdState = store.setDetailNoteId;
   const setNotesViewModeState = store.setNotesViewMode;
   const setLinksViewModeState = store.setLinksViewMode;
+  const setLocaleState = store.setLocale;
   const setCurrentThemeState = store.setCurrentTheme;
   const setPersonaPreferenceState = store.setPersonaPreference;
   const setCaptureLocationPreferenceState = store.setCaptureLocationPreference;
@@ -660,6 +662,7 @@ export function createApp(root: HTMLElement): void {
         setDismissedTagAliases: setDismissedTagAliasesState,
         getRecentTagFilters: () => recentTagFilters$.get(),
         setRecentTagFilters: setRecentTagFiltersState,
+        setLocale: setLocaleState,
         setCurrentTheme: setCurrentThemeState,
         setPersonaPreference: setPersonaPreferenceState,
         setCaptureLocationPreference: setCaptureLocationPreferenceState,
@@ -715,6 +718,7 @@ export function createApp(root: HTMLElement): void {
         dismissedTagAliases: dismissedTagAliases$.get(),
         recentTagFilters: recentTagFilters$.get(),
         rebuildStatus: rebuildStatus$.get(),
+        locale: locale$.get(),
         currentTheme: currentTheme$.get(),
         personaPreference: personaPreference$.get(),
         captureLocationPreference: captureLocationPreference$.get(),

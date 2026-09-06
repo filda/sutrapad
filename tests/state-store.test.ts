@@ -40,6 +40,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAppStateStore, type AppStateStore } from "../src/app/state-store";
 import { LOCAL_WORKSPACE_KEY } from "../src/app/storage/local-workspace";
 import { RECENT_TAG_FILTERS_STORAGE_KEY } from "../src/app/logic/tag-filter-typeahead";
+import { CS, DEFAULT_LOCALE, messages, setActiveLocale } from "../src/lib/i18n";
 import type {
   SutraPadDocument,
   SutraPadLinkIndex,
@@ -54,6 +55,7 @@ const KEYS = {
   workspace: LOCAL_WORKSPACE_KEY,
   notesView: "sutrapad-notes-view",
   linksView: "sutrapad-links-view",
+  locale: "sutrapad-locale",
   theme: "sutrapad-theme",
   persona: "sutrapad-persona-enabled",
   captureLocation: "sutrapad-capture-location-consent",
@@ -100,6 +102,10 @@ function createStoreAt(url: string, appBasePath = APP_BASE): AppStateStore {
 beforeEach(() => {
   localStorage.clear();
   delete document.documentElement.dataset.theme;
+  // The active locale is module state in `lib/i18n`, so a test that switches
+  // it would otherwise leak into every test after it in this file.
+  document.documentElement.lang = "";
+  setActiveLocale(DEFAULT_LOCALE);
   window.history.replaceState({}, "", "/");
 });
 
@@ -163,6 +169,7 @@ describe("createAppStateStore route and preference seeding", () => {
   it("restores view modes, theme and consent preferences from storage", () => {
     localStorage.setItem(KEYS.notesView, "list");
     localStorage.setItem(KEYS.linksView, "list");
+    localStorage.setItem(KEYS.locale, "cs");
     localStorage.setItem(KEYS.theme, "dark");
     localStorage.setItem(KEYS.persona, "on");
     localStorage.setItem(KEYS.captureLocation, "on");
@@ -174,6 +181,7 @@ describe("createAppStateStore route and preference seeding", () => {
 
     expect(store.notesViewMode$.get()).toBe("list");
     expect(store.linksViewMode$.get()).toBe("list");
+    expect(store.locale$.get()).toBe("cs");
     expect(store.currentTheme$.get()).toBe("dark");
     expect(store.personaPreference$.get()).toBe("on");
     expect(store.captureLocationPreference$.get()).toBe("on");
@@ -334,6 +342,20 @@ describe("createAppStateStore persist subscribers", () => {
 
     expect(localStorage.getItem(KEYS.theme)).toBe("midnight");
     expect(document.documentElement.dataset.theme).toBe("midnight");
+  });
+
+  it("both persists the locale and applies it to the document", () => {
+    // Same two-side-effect subscriber as the theme, and the same failure
+    // modes: losing the apply leaves the next render in the old language
+    // (the catalog accessor never moved) and leaves `<html lang>` lying to
+    // screen readers; losing the persist reverts the choice on reload.
+    const store = createStoreAt("/");
+
+    store.setLocale("cs");
+
+    expect(localStorage.getItem(KEYS.locale)).toBe("cs");
+    expect(document.documentElement.lang).toBe("cs");
+    expect(messages()).toBe(CS);
   });
 
   it("does not write again when a setter lands on the value already held", () => {
@@ -523,6 +545,7 @@ describe("createAppStateStore setters and render wiring", () => {
       store.tagsSearchQuery$,
       store.dismissedTagAliases$,
       store.recentTagFilters$,
+      store.locale$,
       store.currentTheme$,
       store.personaPreference$,
       store.captureLocationPreference$,

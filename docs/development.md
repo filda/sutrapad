@@ -211,8 +211,12 @@ actually configured), so it describes the *shape* instead:
   suite of their own.
 - **Explicitly excluded** with a `!` pattern: `*.d.ts`, and pure-data modules
   like `src/app/logic/lexicon/stoplist.ts` (a frozen Czech-stopword Set —
-  Stryker fires a StringLiteral mutant per word and no real test can pin them)
-  and `src/app/logic/lexicon/types.ts`.
+  Stryker fires a StringLiteral mutant per word and no real test can pin them),
+  `src/app/logic/lexicon/types.ts`, and the message catalogs
+  `src/lib/i18n/en.ts` / `src/lib/i18n/cs.ts` (several hundred sentences; the
+  shipped wording is asserted where it renders, not through these modules).
+  Note the exclusion is the *data*, never the logic beside it: `i18n/locales`,
+  `i18n/plural`, `i18n/index` and `app/logic/locale` all stay in scope.
 
 Adding a new source file:
 

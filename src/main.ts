@@ -8,6 +8,7 @@ import {
 } from "./app/session/sw-update";
 import { createUpdateNotification } from "./app/view/update-notification";
 import { applyThemeChoice, resolveInitialThemeChoice } from "./app/logic/theme";
+import { applyLocale, resolveInitialLocale } from "./app/logic/locale";
 import { isSilentCapture } from "./app/logic/silent-capture";
 import { runSilentCapture } from "./app/silent-capture-runner";
 
@@ -58,6 +59,11 @@ function bootstrapMainApp(): void {
   // synchronously against <html> so the correct palette is used from
   // the first paint.
   applyThemeChoice(resolveInitialThemeChoice());
+
+  // Same reason, one layer up: the message catalog has to be pointed at the
+  // stored language before the first render, or the cold load paints English
+  // and swaps it out. This also sets `<html lang>`.
+  applyLocale(resolveInitialLocale());
 
   const root = document.querySelector<HTMLDivElement>("#app");
 

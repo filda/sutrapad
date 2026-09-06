@@ -58,6 +58,12 @@ import {
   type LinksViewMode,
 } from "./logic/links-view";
 import {
+  applyLocale,
+  persistLocale,
+  resolveInitialLocale,
+} from "./logic/locale";
+import type { Locale } from "../lib/i18n";
+import {
   applyThemeChoice,
   persistThemeChoice,
   resolveInitialThemeChoice,
@@ -120,6 +126,11 @@ export interface AppStateStore {
   readonly detailNoteId$: Atom<string | null>;
   readonly notesViewMode$: Atom<NotesViewMode>;
   readonly linksViewMode$: Atom<LinksViewMode>;
+  /**
+   * Active app language. Device-local like the theme — persisted to
+   * localStorage, never synced to Drive, never in the URL.
+   */
+  readonly locale$: Atom<Locale>;
   readonly currentTheme$: Atom<ThemeChoice>;
   readonly personaPreference$: Atom<PersonaPreference>;
   readonly captureLocationPreference$: Atom<CaptureLocationPreference>;
@@ -168,6 +179,7 @@ export interface AppStateStore {
   setDetailNoteId(next: string | null): void;
   setNotesViewMode(next: NotesViewMode): void;
   setLinksViewMode(next: LinksViewMode): void;
+  setLocale(next: Locale): void;
   setCurrentTheme(next: ThemeChoice): void;
   setPersonaPreference(next: PersonaPreference): void;
   setCaptureLocationPreference(next: CaptureLocationPreference): void;
@@ -263,6 +275,7 @@ export function createAppStateStore({
   const linksViewMode$ = atom<LinksViewMode>(
     resolveInitialLinksView(window.location.href),
   );
+  const locale$ = atom<Locale>(resolveInitialLocale());
   const currentTheme$ = atom<ThemeChoice>(resolveInitialThemeChoice());
   const personaPreference$ = atom<PersonaPreference>(
     resolveInitialPersonaPreference(),
@@ -319,6 +332,13 @@ export function createAppStateStore({
       persistThemeChoice(choice);
       applyThemeChoice(choice);
     }),
+    // Same persist-and-apply shape as the theme: `applyLocale` points the
+    // message catalog at the new language *and* updates `<html lang>`, so the
+    // render that this atom also schedules already reads the new copy.
+    locale$.subscribe((locale) => {
+      persistLocale(locale);
+      applyLocale(locale);
+    }),
     personaPreference$.subscribe(persistPersonaPreference),
     captureLocationPreference$.subscribe(persistCaptureLocationPreference),
   ];
@@ -339,6 +359,7 @@ export function createAppStateStore({
     detailNoteId$,
     notesViewMode$,
     linksViewMode$,
+    locale$,
     currentTheme$,
     personaPreference$,
     captureLocationPreference$,
@@ -366,6 +387,7 @@ export function createAppStateStore({
     setDetailNoteId: (next) => detailNoteId$.set(next),
     setNotesViewMode: (next) => notesViewMode$.set(next),
     setLinksViewMode: (next) => linksViewMode$.set(next),
+    setLocale: (next) => locale$.set(next),
     setCurrentTheme: (next) => currentTheme$.set(next),
     setPersonaPreference: (next) => personaPreference$.set(next),
     setCaptureLocationPreference: (next) =>
@@ -401,6 +423,7 @@ export function createAppStateStore({
       tagsSearchQuery$,
       dismissedTagAliases$,
       recentTagFilters$,
+      locale$,
       currentTheme$,
       personaPreference$,
       captureLocationPreference$,

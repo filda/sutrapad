@@ -17,48 +17,41 @@ import {
   requestMicrophoneAccess,
   type MicrophonePermissionState,
 } from "../../logic/microphone-permission";
+import { messages } from "../../../lib/i18n";
 
 export interface MicrophoneConsentCardOptions {
   query?: () => Promise<MicrophonePermissionState>;
   request?: () => Promise<MicrophonePermissionState>;
 }
 
-export const STATUS_COPY: Record<MicrophonePermissionState, string> = {
-  granted:
-    "Microphone access is on. New notes can record an approximate ambient noise level. SutraPad never stores audio — only a single loudness number.",
-  prompt:
-    "Off. Turn this on to let new notes record an approximate ambient noise level. SutraPad never stores audio — only a single loudness number.",
-  denied:
-    "Your browser is blocking the microphone for this site. Open your browser's site settings to allow it, then reload SutraPad.",
-  unsupported: "This browser can't expose microphone access to SutraPad.",
-};
-
 export function buildMicrophoneConsentCard({
   query = queryMicrophonePermission,
   request = requestMicrophoneAccess,
 }: MicrophoneConsentCardOptions = {}): HTMLElement {
+  const copy = messages().microphone;
+
   const wrapper = document.createElement("div");
   wrapper.className = "settings-card-privacy-toggle settings-card-microphone";
 
   const label = document.createElement("p");
   label.className = "settings-card-subheading";
-  label.textContent = "Noise sensing on new notes";
+  label.textContent = copy.label;
   wrapper.append(label);
 
   const status = document.createElement("p");
   status.className = "settings-card-hint settings-card-microphone-status";
-  status.textContent = STATUS_COPY.prompt;
+  status.textContent = copy.status.prompt;
   wrapper.append(status);
 
   const button = document.createElement("button");
   button.type = "button";
   button.className = "button button-primary settings-card-microphone-enable";
-  button.textContent = "Enable microphone access";
+  button.textContent = copy.enable;
   wrapper.append(button);
 
   function applyState(state: MicrophonePermissionState): void {
     wrapper.dataset.microphonePermission = state;
-    status.textContent = STATUS_COPY[state];
+    status.textContent = copy.status[state];
     // The Enable button only makes sense while the prompt is still available.
     // Once granted/denied/unsupported, the next step is browser settings, not
     // another prompt, so the button is hidden.

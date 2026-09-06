@@ -10,7 +10,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { buildSettingsPage, type SettingsPageOptions } from "../src/app/view/pages/settings-page";
-import { THEMES } from "../src/app/logic/theme";
+import { describeThemes, THEMES } from "../src/app/logic/theme";
+import { EN } from "../src/lib/i18n";
 import type { UserProfile } from "../src/types";
 
 const PROFILE: UserProfile = { name: "Filip", email: "filip@example.com" };
@@ -19,11 +20,13 @@ function baseOptions(
   overrides: Partial<SettingsPageOptions> = {},
 ): SettingsPageOptions {
   return {
+    locale: "en",
     currentTheme: "auto",
     personaPreference: "off",
     captureLocationPreference: "unanswered",
     profile: PROFILE,
     tagAliasSuggestions: [],
+    onChangeLocale: vi.fn(),
     onChangeTheme: vi.fn(),
     onChangePersonaPreference: vi.fn(),
     onChangeCaptureLocationPreference: vi.fn(),
@@ -143,11 +146,12 @@ function toggleOptions(group: Element | null | undefined): HTMLButtonElement[] {
 }
 
 describe("buildSettingsPage — page shell", () => {
-  it("stacks the six cards in a stable order", () => {
+  it("stacks the seven cards in a stable order, language first", () => {
     const page = buildSettingsPage(baseOptions());
     expect(page.tagName).toBe("SECTION");
     expect(page.className).toBe("settings-page");
     expect(cardClasses(page)).toEqual([
+      "settings-card",
       "settings-card",
       "settings-card",
       "settings-card tag-hygiene-card",
@@ -164,6 +168,7 @@ describe("buildSettingsPage — page shell", () => {
       header.querySelector("h2")?.textContent,
     ]);
     expect(headers).toEqual([
+      ["Language", "App language"],
       ["Appearance", "Theme"],
       ["Notebook", "Persona"],
       ["Notebook", "Tag hygiene"],
@@ -189,11 +194,11 @@ describe("buildSettingsPage — Appearance card", () => {
       THEMES.map((theme) => theme.id),
     );
     expect(cards.map((card) => card.querySelector(".theme-card-label")?.textContent)).toEqual(
-      THEMES.map((theme) => theme.label),
+      describeThemes(EN).map((theme) => theme.label),
     );
     expect(
       cards.map((card) => card.querySelector(".theme-card-description")?.textContent),
-    ).toEqual(THEMES.map((theme) => theme.description));
+    ).toEqual(describeThemes(EN).map((theme) => theme.description));
 
     // Three decorative swatches per card, hidden from the a11y tree.
     const swatchRow = cards[0].querySelector(".theme-swatches");
@@ -531,8 +536,8 @@ describe("buildSettingsPage — radio semantics and wrapper structure", () => {
   it("gives every toggle option and theme card its own radio role", () => {
     const page = buildSettingsPage(baseOptions());
     const radios = [...page.querySelectorAll('[role="radio"]')];
-    // 2 location + 2 persona + one per theme.
-    expect(radios).toHaveLength(4 + THEMES.length);
+    // 2 language + 2 location + 2 persona + one per theme.
+    expect(radios).toHaveLength(6 + THEMES.length);
     expect(
       [...page.querySelectorAll(".theme-card")].every(
         (card) => card.getAttribute("role") === "radio",

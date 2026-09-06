@@ -11,6 +11,13 @@
  * wording ("this walks every note...") that doesn't belong in the pill's
  * fixed 4-state switch.
  */
+import {
+  catalogFor,
+  formatPlural,
+  getActiveLocale,
+  type Locale,
+} from "../../lib/i18n";
+
 export type RebuildStatus =
   | { state: "idle" }
   | { state: "running" }
@@ -23,16 +30,25 @@ export const IDLE_REBUILD_STATUS: RebuildStatus = { state: "idle" };
  * Human-readable status line for the Backup card, or `null` when there's
  * nothing to show (idle — the common case, before the button's ever been
  * clicked this session).
+ *
+ * Takes the locale rather than a catalog: the done line is a counted message
+ * and `Intl.PluralRules` needs the locale anyway, so deriving the catalog
+ * from it here makes a mismatch — Czech text with English plural rules —
+ * unrepresentable.
  */
-export function describeRebuildStatus(status: RebuildStatus): string | null {
+export function describeRebuildStatus(
+  status: RebuildStatus,
+  locale: Locale = getActiveLocale(),
+): string | null {
+  const copy = catalogFor(locale).rebuild;
   switch (status.state) {
     case "idle":
       return null;
     case "running":
-      return "Rebuilding… this reads every note and may take a few minutes. Feel free to keep using SutraPad while it runs.";
+      return copy.running;
     case "done":
-      return `Done — refreshed ${status.noteCount} note${status.noteCount === 1 ? "" : "s"}.`;
+      return formatPlural(locale, status.noteCount, copy.done);
     case "error":
-      return `Rebuild failed: ${status.message}`;
+      return copy.error(status.message);
   }
 }

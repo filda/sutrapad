@@ -239,6 +239,18 @@ const config = {
     //   See `project_sutrapad_mutation_gaps.md` (auto-memory): excluding
     //   this is expected to lift overall by ~+3.34 pp by removing noise.
     // `lexicon/types.ts` — type-only module, no runtime code.
+    // `i18n/en.ts` + `i18n/cs.ts` — the message catalogs. Pure copy: every
+    //   mutant is a StringLiteral swap inside a sentence nothing asserts
+    //   *through this module*, and there are several hundred of them. The
+    //   shipped English wording is asserted where it is rendered
+    //   (`tests/settings-page.test.ts` and friends, against literals), the
+    //   Czech wording likewise in `tests/settings-page-i18n.test.ts`, and
+    //   `tests/i18n-catalog.test.ts` covers what neither can see — an empty
+    //   value, a form missing its `{count}` token, or a Czech string left in
+    //   English. The *logic* around them (`locales`, `plural`, `index`,
+    //   `app/logic/locale`) stays in scope and should sit at or near 100 %.
+    "!src/lib/i18n/en.ts",
+    "!src/lib/i18n/cs.ts",
     "!src/**/*.d.ts",
     "!src/app/logic/lexicon/stoplist.ts",
     "!src/app/logic/lexicon/types.ts",

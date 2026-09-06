@@ -6,6 +6,7 @@ import {
   deriveTopbarNote,
 } from "../logic/render-derivations";
 import type { ThemeChoice } from "../logic/theme";
+import type { Locale } from "../../lib/i18n";
 import type { PersonaPreference } from "../logic/persona";
 import type { CaptureLocationPreference } from "../logic/capture-location";
 import type { TagClassId } from "../logic/tag-class";
@@ -119,6 +120,12 @@ interface RenderAppOptions
    */
   detailNoteId: string | null;
   /**
+   * Active app language (device-local). Rendered on the Settings page so the
+   * current selection is visible; the copy itself comes from the module-level
+   * catalog, which `applyLocale` has already pointed at this locale.
+   */
+  locale: Locale;
+  /**
    * Currently selected theme choice (device-local). Rendered on the Settings
    * page so the current selection is visible.
    */
@@ -158,6 +165,7 @@ interface RenderAppOptions
   onSignOut: () => void;
   onCopyBookmarklet: () => void;
   onToggleTask: (noteId: string, lineIndex: number) => void;
+  onChangeLocale: (locale: Locale) => void;
   onChangeTheme: (choice: ThemeChoice) => void;
   onChangePersonaPreference: (preference: PersonaPreference) => void;
   onChangeCaptureLocationPreference: (
@@ -324,12 +332,14 @@ export function renderAppPage({
   onBackToNotes,
   activeMenuItem,
   detailNoteId,
+  locale,
   currentTheme,
   personaPreference,
   captureLocationPreference,
   locationConsentBlocked,
   onSelectMenuItem,
   onToggleTask,
+  onChangeLocale,
   onChangeTheme,
   onChangePersonaPreference,
   onChangeCaptureLocationPreference,
@@ -550,11 +560,13 @@ export function renderAppPage({
       });
       page.append(
         buildSettingsPage({
+          locale,
           currentTheme,
           personaPreference,
           captureLocationPreference,
           profile,
           tagAliasSuggestions,
+          onChangeLocale,
           onChangeTheme,
           onChangePersonaPreference,
           onChangeCaptureLocationPreference,
