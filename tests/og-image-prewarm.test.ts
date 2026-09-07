@@ -4,6 +4,7 @@ import type { CachedOgImageEntry } from "../src/app/logic/og-image";
 import type { OgImageCache } from "../src/app/logic/og-image-cache";
 import {
   DEFAULT_PREWARM_CONCURRENCY,
+  DEFAULT_PREWARM_LIMIT,
   planOgImagePrewarm,
   runOgImagePrewarm,
 } from "../src/app/logic/og-image-prewarm";
@@ -130,6 +131,77 @@ describe("planOgImagePrewarm", () => {
     expect(plan.map((t) => t.url).toSorted()).toEqual([urlA, urlB].toSorted());
     const targetA = plan.find((t) => t.url === urlA);
     expect(targetA?.notes).toHaveLength(2);
+  });
+});
+
+describe("planOgImagePrewarm — workspace-scale cap", () => {
+  it("pins the default limit so a future tweak is a deliberate code change", () => {
+    expect(DEFAULT_PREWARM_LIMIT).toBe(48);
+  });
+
+  it("caps the plan at `limit` distinct URLs, newest note first", () => {
+    // Regression for the 2026-09-07 allorigins 429 storm: a ~6500-note
+    // workspace has >1000 distinct URLs and the prewarm used to resolve
+    // every one of them on every load.
+    const notes = Array.from({ length: 10 }, (_, i) =>
+      makeNote({
+        id: `n${i}`,
+        urls: [`https://site.test/${i}`],
+        updatedAt: `2026-09-0${(i % 9) + 1}T00:00:00.000Z`,
+      }),
+    );
+    const plan = planOgImagePrewarm(notes, {}, { limit: 3 });
+    // n8 (09-09), then n7 (09-08), then n6 (09-07) — n0 and n9 share 09-01
+    // and sit at the tail, well outside the cap.
+    expect(plan.map((t) => t.url)).toEqual([
+      "https://site.test/8",
+      "https://site.test/7",
+      "https://site.test/6",
+    ]);
+  });
+
+  it("applies the default limit when none is given", () => {
+    const notes = Array.from({ length: DEFAULT_PREWARM_LIMIT + 5 }, (_, i) =>
+      makeNote({ id: `n${i}`, urls: [`https://site.test/${i}`] }),
+    );
+    expect(planOgImagePrewarm(notes, {})).toHaveLength(DEFAULT_PREWARM_LIMIT);
+  });
+
+  it("does not let cached URLs consume the cap", () => {
+    const cached = "https://cached.test";
+    const notes = [
+      makeNote({ id: "newest", urls: [cached], updatedAt: "2026-09-09T00:00:00.000Z" }),
+      makeNote({ id: "older", urls: ["https://fresh.test"], updatedAt: "2026-09-01T00:00:00.000Z" }),
+    ];
+    const plan = planOgImagePrewarm(notes, { [cached]: SAMPLE_HIT }, { limit: 1 });
+    expect(plan.map((t) => t.url)).toEqual(["https://fresh.test"]);
+  });
+
+  it("still folds an older note into a URL that made the cut", () => {
+    const url = "https://shared.test";
+    const notes = [
+      makeNote({ id: "old", urls: [url], updatedAt: "2026-01-01T00:00:00.000Z" }),
+      makeNote({ id: "other", urls: ["https://other.test"], updatedAt: "2026-06-01T00:00:00.000Z" }),
+      makeNote({ id: "new", urls: [url], updatedAt: "2026-09-01T00:00:00.000Z" }),
+    ];
+    const plan = planOgImagePrewarm(notes, {}, { limit: 1 });
+    expect(plan).toHaveLength(1);
+    expect(plan[0].url).toBe(url);
+    expect(plan[0].notes.map((n) => n.id)).toEqual(["new", "old"]);
+  });
+
+  it("skips an expired transient negative — the prewarm never retries proxy failures", () => {
+    const url = "https://proxy-failed.test";
+    const cache: OgImageCache = {
+      [url]: { imageUrl: null, resolvedAt: "2000-01-01T00:00:00.000Z", transient: true },
+    };
+    expect(planOgImagePrewarm([makeNote({ id: "a", urls: [url] })], cache)).toEqual([]);
+  });
+
+  it("treats a zero or negative limit as an empty plan", () => {
+    const notes = [makeNote({ id: "a", urls: ["https://a.test"] })];
+    expect(planOgImagePrewarm(notes, {}, { limit: 0 })).toEqual([]);
+    expect(planOgImagePrewarm(notes, {}, { limit: -3 })).toEqual([]);
   });
 });
 
@@ -330,6 +402,57 @@ describe("runOgImagePrewarm", () => {
     }
     await runPromise;
     expect(peak).toBe(2);
+  });
+
+  it("stops draining the queue at the first 429 and leaves the rest uncached", async () => {
+    // allorigins answering 429 means every further request only extends
+    // the penalty. The run must abandon the remaining targets — they
+    // stay absent from the cache so a later load can pick them up.
+    const urls = ["https://a.test", "https://b.test", "https://c.test", "https://d.test"];
+    const fetched: string[] = [];
+    const cache = createMemoryCache();
+    await runOgImagePrewarm(
+      urls.map((u) => ({ url: u, notes: [] })),
+      {
+        concurrency: 1,
+        fetchImpl: (input) => {
+          const url = decodeURIComponent(String(input).split("url=")[1]);
+          fetched.push(url);
+          return Promise.resolve(
+            url === "https://b.test"
+              ? new Response("", { status: 429 })
+              : new Response("", { status: 200 }),
+          );
+        },
+        loadCache: cache.loadCache,
+        persistCache: cache.persistCache,
+      },
+    );
+    expect(fetched).toEqual(["https://a.test", "https://b.test"]);
+    const snapshot = cache.snapshot();
+    expect(snapshot["https://a.test"]?.imageUrl).toBeNull();
+    expect(snapshot["https://b.test"]).toMatchObject({ imageUrl: null, transient: true });
+    expect(snapshot["https://c.test"]).toBeUndefined();
+    expect(snapshot["https://d.test"]).toBeUndefined();
+  });
+
+  it("keeps draining on a non-429 proxy failure", async () => {
+    const urls = ["https://a.test", "https://b.test"];
+    const fetched: string[] = [];
+    const cache = createMemoryCache();
+    await runOgImagePrewarm(
+      urls.map((u) => ({ url: u, notes: [] })),
+      {
+        concurrency: 1,
+        fetchImpl: (input) => {
+          fetched.push(String(input));
+          return Promise.resolve(new Response("", { status: 500 }));
+        },
+        loadCache: cache.loadCache,
+        persistCache: cache.persistCache,
+      },
+    );
+    expect(fetched).toHaveLength(2);
   });
 
   it("respects concurrency = 1 (sequential)", async () => {

@@ -8,12 +8,22 @@
  * notes, the first visit to a card grid spends 1–2 seconds showing a
  * sea of dull gradient bands before the images replace them.
  *
- * The prewarm walks every URL note right after workspace load and runs
- * the same resolver pipeline (`og-image.ts` → `resolveOgImageForUrl`)
- * in parallel with a small concurrency cap. Every hit (or cached
- * negative) lands in localStorage before the user navigates to a card
- * grid, so the first paint already has the image. Lazy resolution stays
- * in place as a fallback for URLs the user types in *after* load.
+ * The prewarm looks at the most recently updated URL notes right after
+ * workspace load and runs the same resolver pipeline (`og-image.ts` →
+ * `resolveOgImageForUrl`) in parallel with a small concurrency cap.
+ * Every hit (or cached negative) lands in localStorage before the user
+ * navigates to a card grid, so the first paint already has the image.
+ * Lazy resolution stays in place for everything else — URLs further
+ * down the grid, and URLs the user types in *after* load.
+ *
+ * It deliberately does **not** walk the whole workspace. A ~6500-note
+ * workspace holds well over a thousand distinct URLs; resolving them
+ * all on every load blew through allorigins' rate limit (HTTP 429 on
+ * every card, 2026-09-07) and, because the cache is capped, evicted the
+ * entries it had just written so the next load started over. The plan
+ * is capped at `DEFAULT_PREWARM_LIMIT` newest URLs and the runner stops
+ * at the first 429 — the proxy has told us to back off, and every
+ * further request only lengthens the penalty.
  *
  * The module is split into a pure planner and an async runner so:
  *   - `planOgImagePrewarm` can be unit-tested without faking fetch
@@ -54,30 +64,54 @@ export interface OgImagePrewarmTarget {
 export const DEFAULT_PREWARM_CONCURRENCY = 4;
 
 /**
- * Walks `notes`, picks up each note's primary URL, and returns the set
- * of URLs that aren't already in `cache` (positive or negative). Pure:
+ * Default ceiling on how many distinct URLs one prewarm resolves —
+ * roughly two screens of URL cards on the Notes / Links grids, which is
+ * the only region the prewarm can make visibly faster. Everything past
+ * it resolves lazily when (and if) its card scrolls into view.
+ */
+export const DEFAULT_PREWARM_LIMIT = 48;
+
+/** HTTP status the proxy answers with once it starts rate limiting us. */
+const TOO_MANY_REQUESTS = 429;
+
+export interface PlanOgImagePrewarmOptions {
+  /** Override `DEFAULT_PREWARM_LIMIT` (tests, or a future preference). */
+  readonly limit?: number;
+}
+
+/**
+ * Walks `notes` newest-first, picks up each note's primary URL, and
+ * returns up to `limit` distinct URLs that aren't already in `cache`
+ * (positive or negative — an expired transient negative counts as
+ * cached too: the prewarm never retries a proxy failure, the lazy
+ * per-card resolver does once the card is actually on screen). Pure:
  * given the same inputs it returns the same plan, which keeps the
  * planning step trivially testable.
  *
  * Notes pointing at the same URL are folded — the resolver only needs
  * to run once per URL, but every donor note's `captureContext` is
  * forwarded so a Stage 1 capture-time hit can come from any of them.
+ * Folding happens before the cap, so a URL that made the cut brings
+ * every one of its notes along, including older ones.
  */
 export function planOgImagePrewarm(
   notes: readonly SutraPadDocument[],
   cache: OgImageCache,
+  options: PlanOgImagePrewarmOptions = {},
 ): OgImagePrewarmTarget[] {
+  const limit = Math.max(0, options.limit ?? DEFAULT_PREWARM_LIMIT);
   const byUrl = new Map<string, SutraPadDocument[]>();
-  for (const note of notes) {
+  const newestFirst = notes.toSorted((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt),
+  );
+  for (const note of newestFirst) {
     const url = deriveNotePrimaryUrl(note);
     if (url === null) continue;
-    // Cached hits AND cached misses both short-circuit — the resolver
-    // would do the same on its own, but skipping them here keeps the
-    // worker pool focused on URLs that actually need a round-trip.
     if (cache[url] !== undefined) continue;
 
     const existing = byUrl.get(url);
     if (existing === undefined) {
+      if (byUrl.size >= limit) continue;
       byUrl.set(url, [note]);
     } else {
       existing.push(note);
@@ -115,9 +149,12 @@ export interface RunOgImagePrewarmOptions {
  * negative) into the cache as soon as it lands so a card render
  * happening mid-prewarm picks up the freshest snapshot.
  *
- * Returns a Promise that resolves once every worker has drained. Per-URL
- * failures are absorbed: `resolveOgImageForUrl` already caches a negative
- * on network errors, and a defence-in-depth `try/catch` here keeps a
+ * Returns a Promise that resolves once every worker has drained, or
+ * once the proxy answers 429 — at that point the remaining targets are
+ * abandoned for this run (they stay uncached, so a later load or the
+ * lazy per-card resolver picks them up). Other per-URL failures are
+ * absorbed: `resolveOgImageForUrl` caches a transient negative on
+ * network errors, and a defence-in-depth `try/catch` here keeps a
  * single buggy resolution from killing the rest of the pool.
  */
 export async function runOgImagePrewarm(
@@ -138,9 +175,12 @@ export async function runOgImagePrewarm(
   // value", which is the intent).
   const cacheRef = { current: loadCache() };
   let cursor = 0;
+  // Same ref-box pattern as `cacheRef`: the 429 flag is flipped from
+  // inside a callback and read by every lane's loop condition.
+  const halt = { rateLimited: false };
 
   const worker = async (): Promise<void> => {
-    while (cursor < targets.length) {
+    while (cursor < targets.length && !halt.rateLimited) {
       const target = targets[cursor];
       cursor += 1;
       try {
@@ -159,6 +199,9 @@ export async function runOgImagePrewarm(
             persistCache(cacheRef.current);
           },
           fetchImpl: options.fetchImpl,
+          onTransientFailure: (status) => {
+            if (status === TOO_MANY_REQUESTS) halt.rateLimited = true;
+          },
         });
       } catch {
         // resolveOgImageForUrl already swallows network errors and

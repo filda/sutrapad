@@ -9,10 +9,11 @@
  *      so every note captured via the bookmarklet ships its og:image
  *      on disk. No runtime network needed in the happy path.
  *   2. A previously-resolved entry in the localStorage cache (see
- *      `og-image-cache.ts`). The cache is permanent: once a URL has
- *      been resolved (hit *or* miss), we don't ask again. Most sites
- *      change their og:image rarely; the occasional stale thumb is a
- *      much better trade than a proxy call on every render.
+ *      `og-image-cache.ts`). Hits and real misses are permanent: once a
+ *      URL has been resolved we don't ask again. Most sites change their
+ *      og:image rarely; the occasional stale thumb is a much better
+ *      trade than a proxy call on every render. A proxy failure (rate
+ *      limit, network) is cached as a *transient* negative that expires.
  *   3. A CORS-proxy fetch of the target URL's HTML via allorigins,
  *      parsed locally with `extractOgImageFromHtml`. Free, no API key,
  *      but each call sends the URL to api.allorigins.win.
@@ -240,6 +241,15 @@ export interface ResolveOgImageOptions {
    * production callers pass `fetch`.
    */
   fetchImpl?: typeof fetch;
+  /**
+   * Called when the proxy round-trip failed for a reason unrelated to
+   * the page itself — a non-OK proxy status or a network error. The
+   * argument is the HTTP status, or null when the fetch threw. Callers
+   * that fan out over many URLs use a 429 here as the signal to stop.
+   */
+  onTransientFailure?: (status: number | null) => void;
+  /** Clock injection for the transient-negative expiry check. */
+  now?: () => number;
 }
 
 export interface CachedOgImageEntry {
@@ -249,11 +259,39 @@ export interface CachedOgImageEntry {
    */
   readonly imageUrl: string | null;
   /**
-   * ISO timestamp of when the resolution happened. Used as a signal
-   * that the entry is present; there's no TTL today — most site
-   * og:images don't churn enough to justify one.
+   * ISO timestamp of when the resolution happened. A permanent entry
+   * never expires — most site og:images don't churn enough to justify
+   * a TTL. A `transient` negative expires after
+   * `TRANSIENT_NEGATIVE_TTL_MS`.
    */
   readonly resolvedAt: string;
+  /**
+   * Marks a negative that means "we could not check" rather than "the
+   * page has no og:image": the proxy answered non-OK (rate limit, 5xx)
+   * or the fetch threw. Permanently caching those turned one 429 storm
+   * into a thumb that never appears; instead the entry is honoured only
+   * for `TRANSIENT_NEGATIVE_TTL_MS` and then treated as absent.
+   */
+  readonly transient?: true;
+}
+
+/**
+ * How long a transient negative keeps the resolver away from the
+ * proxy. Long enough that a rate-limited session doesn't hammer the
+ * same URL on every card render, short enough that the thumb shows
+ * up on the next day's visit without any manual cache clearing.
+ */
+export const TRANSIENT_NEGATIVE_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Whether a cache entry should still be honoured. Permanent entries
+ * always are; a transient negative only while its TTL holds.
+ */
+export function isCachedEntryFresh(entry: CachedOgImageEntry, now: number): boolean {
+  if (entry.transient !== true) return true;
+  const resolvedAt = Date.parse(entry.resolvedAt);
+  if (Number.isNaN(resolvedAt)) return false;
+  return now - resolvedAt < TRANSIENT_NEGATIVE_TTL_MS;
 }
 
 /**
@@ -270,9 +308,11 @@ export async function resolveOgImageForUrl(
   if (captureHit !== null) return captureHit;
 
   // Stage 2 — localStorage cache. A cached null is a "we tried, give
-  // up" marker; don't call the network again.
+  // up" marker; don't call the network again — unless it's an expired
+  // transient negative, which only ever meant "the proxy was down".
+  const now = options.now ?? Date.now;
   const cached = options.getCachedEntry(options.url);
-  if (cached !== null) return cached.imageUrl;
+  if (cached !== null && isCachedEntryFresh(cached, now())) return cached.imageUrl;
 
   // Stage 3 — runtime fetch through the CORS proxy. Production wraps
   // the network call in `safeFetch` so a stalled allorigins endpoint
@@ -280,22 +320,28 @@ export async function resolveOgImageForUrl(
   // via `fetchImpl` and bypass the timeout layer.
   const fetchImpl = options.fetchImpl ?? safeFetch;
   let resolved: string | null = null;
+  let transientStatus: number | null | undefined;
   try {
     const response = await fetchImpl(buildAllOriginsUrl(options.url));
     if (response.ok) {
       const html = await response.text();
       resolved = extractOgImageFromHtml(html, options.url);
+    } else {
+      transientStatus = response.status;
     }
   } catch {
     // Network error, DNS failure, allorigins down, timeout — all
-    // silent. Cache the negative so we don't hammer the proxy on every
-    // render with the same failing URL.
-    resolved = null;
+    // silent. Cache a transient negative so we don't hammer the proxy
+    // on every render with the same failing URL, but do ask again once
+    // the TTL has passed.
+    transientStatus = null;
   }
 
-  options.putCachedEntry(options.url, {
-    imageUrl: resolved,
-    resolvedAt: new Date().toISOString(),
-  });
+  const entry: CachedOgImageEntry =
+    transientStatus === undefined
+      ? { imageUrl: resolved, resolvedAt: new Date(now()).toISOString() }
+      : { imageUrl: null, resolvedAt: new Date(now()).toISOString(), transient: true };
+  options.putCachedEntry(options.url, entry);
+  if (transientStatus !== undefined) options.onTransientFailure?.(transientStatus);
   return resolved;
 }

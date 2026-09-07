@@ -156,6 +156,35 @@ describe("loadOgImageCache", () => {
   });
 });
 
+describe("loadOgImageCache — transient negatives", () => {
+  it("preserves a transient negative marker", () => {
+    const transient: CachedOgImageEntry = {
+      imageUrl: null,
+      resolvedAt: "2026-09-07T10:00:00.000Z",
+      transient: true,
+    };
+    const storage = createStorage({
+      [OG_IMAGE_CACHE_STORAGE_KEY]: JSON.stringify({ "https://proxy-down": transient }),
+    });
+    expect(loadOgImageCache(storage)).toEqual({ "https://proxy-down": transient });
+  });
+
+  it("drops entries whose transient flag is malformed or sits on a hit", () => {
+    const storage = createStorage({
+      [OG_IMAGE_CACHE_STORAGE_KEY]: JSON.stringify({
+        "https://flag-false": { imageUrl: null, resolvedAt: "t", transient: false },
+        "https://flag-string": { imageUrl: null, resolvedAt: "t", transient: "yes" },
+        "https://transient-hit": {
+          imageUrl: "https://cdn/og.jpg",
+          resolvedAt: "t",
+          transient: true,
+        },
+      }),
+    });
+    expect(loadOgImageCache(storage)).toEqual({});
+  });
+});
+
 describe("persistOgImageCache", () => {
   it("writes the cache as JSON under the storage key", () => {
     const writes: Record<string, string> = {};

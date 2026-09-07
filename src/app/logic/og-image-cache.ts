@@ -55,7 +55,7 @@ export function loadOgImageCache(
 
 function isValidCachedEntry(value: unknown): value is CachedOgImageEntry {
   if (value === null || typeof value !== "object") return false;
-  const candidate = value as { imageUrl?: unknown; resolvedAt?: unknown };
+  const candidate = value as { imageUrl?: unknown; resolvedAt?: unknown; transient?: unknown };
   // `imageUrl` is either an explicit null (negative cache) or a valid
   // http(s) URL (hit). The cache lives in localStorage, which another
   // signed-in device or a hand edit can poison, so a hit must clear the
@@ -65,7 +65,12 @@ function isValidCachedEntry(value: unknown): value is CachedOgImageEntry {
   const imageOk =
     candidate.imageUrl === null || httpUrlOrNull(candidate.imageUrl) !== null;
   const tsOk = typeof candidate.resolvedAt === "string";
-  return imageOk && tsOk;
+  // `transient` is optional and, when present, only ever `true` on a
+  // negative — anything else is a malformed entry.
+  const transientOk =
+    candidate.transient === undefined ||
+    (candidate.transient === true && candidate.imageUrl === null);
+  return imageOk && tsOk && transientOk;
 }
 
 /**

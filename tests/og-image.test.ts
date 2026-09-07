@@ -9,6 +9,8 @@ import {
   findCaptureTimeOgImage,
   resolveOgImageForUrl,
   type CachedOgImageEntry,
+  isCachedEntryFresh,
+  TRANSIENT_NEGATIVE_TTL_MS,
 } from "../src/app/logic/og-image";
 import type { SutraPadCaptureContext, SutraPadDocument } from "../src/types";
 
@@ -397,23 +399,31 @@ describe("resolveOgImageForUrl", () => {
     expect(cache.store[url]?.imageUrl).toBeNull();
   });
 
-  it("caches a negative when the proxy response is not OK", async () => {
+  it("caches a transient negative and reports the status when the proxy response is not OK", async () => {
+    // A non-OK proxy answer says nothing about the page — it's the
+    // proxy (rate limit, outage) that failed. The negative must be
+    // marked transient so it expires instead of hiding the thumb forever.
     const cache = setupCache();
+    const failures: Array<number | null> = [];
     const result = await resolveOgImageForUrl({
       url,
       notes: [],
       getCachedEntry: cache.getCachedEntry,
       putCachedEntry: cache.putCachedEntry,
-      fetchImpl: () => Promise.resolve(new Response("", { status: 500 })),
+      fetchImpl: () => Promise.resolve(new Response("", { status: 429 })),
+      onTransientFailure: (status) => failures.push(status),
     });
     expect(result).toBeNull();
-    expect(cache.store[url]?.imageUrl).toBeNull();
+    expect(cache.store[url]).toMatchObject({ imageUrl: null, transient: true });
+    expect(failures).toEqual([429]);
   });
 
-  it("caches a negative when fetch itself throws", async () => {
+  it("caches a transient negative and reports null status when fetch itself throws", async () => {
     // Network down, DNS failure, allorigins.win offline — all silent,
-    // all cached as a miss so we don't retry on every render.
+    // all cached as a transient miss so we don't retry on every render
+    // but do retry once the TTL passes.
     const cache = setupCache();
+    const failures: Array<number | null> = [];
     const result = await resolveOgImageForUrl({
       url,
       notes: [],
@@ -422,9 +432,81 @@ describe("resolveOgImageForUrl", () => {
       fetchImpl: () => {
         throw new Error("ECONNREFUSED");
       },
+      onTransientFailure: (status) => failures.push(status),
     });
     expect(result).toBeNull();
-    expect(cache.store[url]?.imageUrl).toBeNull();
+    expect(cache.store[url]).toMatchObject({ imageUrl: null, transient: true });
+    expect(failures).toEqual([null]);
+  });
+
+  it("does not mark a real miss (OK response, no og:image) as transient or report a failure", async () => {
+    const cache = setupCache();
+    let reported = false;
+    await resolveOgImageForUrl({
+      url,
+      notes: [],
+      getCachedEntry: cache.getCachedEntry,
+      putCachedEntry: cache.putCachedEntry,
+      fetchImpl: () => Promise.resolve(new Response("<html></html>", { status: 200 })),
+      onTransientFailure: () => {
+        reported = true;
+      },
+    });
+    expect(cache.store[url]).toEqual({
+      imageUrl: null,
+      resolvedAt: expect.any(String) as string,
+    });
+    expect(cache.store[url]?.transient).toBeUndefined();
+    expect(reported).toBe(false);
+  });
+
+  it("honours a fresh transient negative but refetches once it has expired", async () => {
+    const resolvedAt = "2026-09-07T10:00:00.000Z";
+    const cache = setupCache({
+      [url]: { imageUrl: null, resolvedAt, transient: true },
+    });
+    let fetchCalls = 0;
+    const fetchImpl = (): Promise<Response> => {
+      fetchCalls += 1;
+      return Promise.resolve(
+        new Response(`<meta property="og:image" content="https://cdn/late.jpg">`, { status: 200 }),
+      );
+    };
+    const base = Date.parse(resolvedAt);
+
+    const fresh = await resolveOgImageForUrl({
+      url,
+      notes: [],
+      getCachedEntry: cache.getCachedEntry,
+      putCachedEntry: cache.putCachedEntry,
+      fetchImpl,
+      now: () => base + TRANSIENT_NEGATIVE_TTL_MS - 1,
+    });
+    expect(fresh).toBeNull();
+    expect(fetchCalls).toBe(0);
+
+    const expired = await resolveOgImageForUrl({
+      url,
+      notes: [],
+      getCachedEntry: cache.getCachedEntry,
+      putCachedEntry: cache.putCachedEntry,
+      fetchImpl,
+      now: () => base + TRANSIENT_NEGATIVE_TTL_MS,
+    });
+    expect(expired).toBe("https://cdn/late.jpg");
+    expect(fetchCalls).toBe(1);
+    // The successful resolution replaces the transient marker with a permanent hit.
+    expect(cache.store[url]).toEqual({
+      imageUrl: "https://cdn/late.jpg",
+      resolvedAt: new Date(base + TRANSIENT_NEGATIVE_TTL_MS).toISOString(),
+    });
+  });
+
+  it("never expires a permanent entry, and treats an unparseable transient timestamp as expired", () => {
+    const permanent: CachedOgImageEntry = { imageUrl: null, resolvedAt: "garbage" };
+    expect(isCachedEntryFresh(permanent, Number.MAX_SAFE_INTEGER)).toBe(true);
+    const broken: CachedOgImageEntry = { imageUrl: null, resolvedAt: "garbage", transient: true };
+    expect(isCachedEntryFresh(broken, 0)).toBe(false);
   });
 });
 
