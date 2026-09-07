@@ -22,8 +22,8 @@ import type {
 import {
   buildLinkIndex,
   buildTagIndex,
-  buildTaskIndex,
   extractUrlsFromText,
+  reconcileTaskIndexForWorkspace,
 } from "../../lib/notebook";
 import { httpUrlOrNull } from "../../lib/safe-url";
 import { buildNoteSummary, buildPlaceholderNote } from "../../lib/note-card-meta";
@@ -64,6 +64,47 @@ const MAX_WORKSPACE_NOTE_FILES = 50_000;
  * hydrate everything up front at all.)
  */
 const NOTE_HYDRATION_CONCURRENCY = 24;
+
+/**
+ * Max concurrent note-file writes during `saveWorkspace`. Same failure
+ * mode as `NOTE_HYDRATION_CONCURRENCY`, on the upload side: when the
+ * index has drifted from the folder (or was rebuilt), thousands of notes
+ * miss the `updatedAt` short-circuit at once and a whole-workspace
+ * `Promise.all` fans out one multipart upload per note — the browser
+ * gives up with `net::ERR_INSUFFICIENT_RESOURCES` and Drive answers the
+ * rest with 403 rate limits, so the save fails and the next autosave
+ * repeats the storm. Lower than the read-side cap because writes are
+ * also what Drive's per-user quota meters most aggressively.
+ */
+const NOTE_UPLOAD_CONCURRENCY = 8;
+
+/**
+ * Maps `items` through `worker` in sequential chunks of `concurrency`,
+ * preserving order. The shared bounded fan-out for every per-note Drive
+ * round-trip in this store.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let start = 0; start < items.length; start += concurrency) {
+    const chunk = items.slice(start, start + concurrency);
+    // oxlint-disable-next-line no-await-in-loop -- chunks are sequential on purpose to cap concurrent Drive requests
+    results.push(...(await Promise.all(chunk.map((item) => worker(item)))));
+  }
+  return results;
+}
+
+/** Drive handles for the derived-state files a save rewrites. */
+interface DerivedIndexFiles {
+  tagIndexFile: DriveFileRecord | null;
+  linkIndexFile: DriveFileRecord | null;
+  taskIndexFile: DriveFileRecord | null;
+  taskIndex: SutraPadTaskIndex;
+  headFile: DriveFileRecord | null;
+}
 
 /**
  * In-place backfills for fields that older note documents on Drive
@@ -163,8 +204,8 @@ function createEmptyWorkspace(): SutraPadWorkspace {
 /**
  * Builds the index envelope — everything except `notes`.
  *
- * **The caller owns `notes`.** `saveWorkspace` finishes with
- * `{ ...nextIndex, notes: savedNotes }`, so any `notes` array built here
+ * **The caller owns `notes`.** `writeDerivedIndexes` finishes with
+ * `{ ...createIndex(...), notes: summaries }`, so any `notes` array built here
  * would be computed and thrown away. It used to build one: a
  * `previousById` map over `existingIndex.notes` plus a per-note projection
  * to recover each `fileId` — O(n) over the whole workspace, on every save,
@@ -175,8 +216,8 @@ function createEmptyWorkspace(): SutraPadWorkspace {
  *
  * Two maps meaning the same thing, one of them dead. Removed 2026-08-31
  * (mutation-testing source finding 8) — the `Omit` in the return type is
- * what keeps it removed, since `nextIndex.notes` is now a type error rather
- * than a silently-ignored value.
+ * what keeps it removed, since reading `.notes` off the envelope is now a
+ * type error rather than a silently-ignored value.
  */
 function createIndex(
   workspace: SutraPadWorkspace,
@@ -342,9 +383,9 @@ export class GoogleDriveStore {
   /**
    * Maintenance rebuild (Phase 2 notes-scaling): fetches every note's real
    * body from Drive once and rewrites the persisted index + tag/link/task
-   * indexes from scratch by delegating to `saveWorkspace` — the same write
-   * path an interactive save already uses, so there's no second index-
-   * writing implementation to keep in sync. This is the one deliberate,
+   * indexes from scratch through `writeDerivedIndexes` — the same second
+   * half an interactive save uses, so there's no second index-writing
+   * implementation to keep in sync. This is the one deliberate,
    * user-triggered escape hatch that reads every body; everything else
    * (`loadWorkspace`, filters, Links, Tasks) is built to avoid exactly this
    * cost. Call sparingly — for a multi-thousand-note workspace this is
@@ -357,10 +398,11 @@ export class GoogleDriveStore {
    * rebuild only touches Drive-side derived state, never the app's live
    * `workspace$`, so there's no in-session "active note" to disturb.
    *
-   * Existing `updatedAt`s are unchanged (we're re-saving each note's
-   * current content, not editing it), so `saveWorkspace`'s
-   * unchanged-note skip means the bulk of the cost here is the body
-   * reads, not re-uploading every note file.
+   * No note file is written: each hydrated note is a verbatim copy of
+   * its Drive file, so the new index simply points at the file ids the
+   * folder query returned. That makes this the recovery tool for an
+   * index that has lost entries — a plain save would treat every lost
+   * note as new and re-upload it.
    */
   async rebuildIndexes(): Promise<{ noteCount: number }> {
     const workspaceFolder = await this.findWorkspaceFolder();
@@ -380,7 +422,21 @@ export class GoogleDriveStore {
       hydrated.toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
     );
 
-    await this.saveWorkspace({ notes, activeNoteId: notes[0].id });
+    // Every note here is a verbatim copy of what's on Drive, so the
+    // index can point straight at the files it was read from. No
+    // `saveNoteFile` pass: re-uploading thousands of unchanged bodies
+    // is exactly the storm this rebuild exists to recover from.
+    const [existingIndexFile, derived] = await Promise.all([
+      this.resolveActiveIndexFile(workspaceFolder.id),
+      this.findDerivedIndexFiles(workspaceFolder.id),
+    ]);
+    await this.writeDerivedIndexes({
+      workspace: { notes, activeNoteId: notes[0].id },
+      summaries: notes.map((note) => ({ ...buildNoteSummary(note), fileId: note.fileId })),
+      workspaceFolder,
+      previousIndexId: existingIndexFile?.id,
+      derived,
+    });
     return { noteCount: notes.length };
   }
 
@@ -437,35 +493,24 @@ export class GoogleDriveStore {
   private async hydrateNoteFiles(
     noteFiles: DriveFileRecord[],
   ): Promise<SutraPadDocument[]> {
-    const hydrated: SutraPadDocument[] = [];
     // Fetch bodies in bounded-concurrency chunks rather than all at once —
     // see NOTE_HYDRATION_CONCURRENCY for why a full-folder Promise.all trips
     // net::ERR_INSUFFICIENT_RESOURCES on large workspaces.
-    for (
-      let start = 0;
-      start < noteFiles.length;
-      start += NOTE_HYDRATION_CONCURRENCY
-    ) {
-      const chunk = noteFiles.slice(start, start + NOTE_HYDRATION_CONCURRENCY);
-      // oxlint-disable-next-line no-await-in-loop -- chunks are sequential on purpose to cap concurrent Drive fetches
-      const settled = await Promise.all(
-        chunk.map(async (file) => {
-          try {
-            const document =
-              await this.#client.fetchJsonFile<SutraPadDocument>(file.id);
-            return isValidNoteDocument(document)
-              ? normalizeNoteDocument(document)
-              : null;
-          } catch {
-            return null;
-          }
-        }),
-      );
-      for (const note of settled) {
-        if (note !== null) hydrated.push(note);
-      }
-    }
-    return hydrated;
+    const settled = await mapWithConcurrency(
+      noteFiles,
+      NOTE_HYDRATION_CONCURRENCY,
+      async (file) => {
+        try {
+          const document = await this.#client.fetchJsonFile<SutraPadDocument>(file.id);
+          return isValidNoteDocument(document)
+            ? { ...normalizeNoteDocument(document), fileId: file.id }
+            : null;
+        } catch {
+          return null;
+        }
+      },
+    );
+    return settled.filter((note) => note !== null);
   }
 
   /**
@@ -709,14 +754,113 @@ export class GoogleDriveStore {
     await this.#client.ensureFileInFolder(file.id, workspaceFolder.id);
   }
 
+  /**
+   * Locates the task index on Drive and reads it, so `saveWorkspace` can
+   * carry a placeholder's task entries forward. A missing or unreadable
+   * file degrades to an empty previous index — hydrated notes are
+   * reparsed from their bodies regardless, so nothing is lost for them.
+   */
+  private async resolveExistingTaskIndex(
+    folderId: string,
+  ): Promise<{ file: DriveFileRecord | null; index: SutraPadTaskIndex }> {
+    const empty: SutraPadTaskIndex = { version: 1, savedAt: "", tasks: [] };
+    const file = await this.findTaskIndexFile(folderId);
+    if (!file) return { file, index: empty };
+    try {
+      const index = await this.#client.fetchJsonFile<SutraPadTaskIndex>(file.id);
+      return { file, index: Array.isArray(index?.tasks) ? index : empty };
+    } catch {
+      return { file, index: empty };
+    }
+  }
+
+  /**
+   * Per-note leg of `saveWorkspace`: decides whether the note's JSON
+   * needs a Drive write and returns the index summary that describes
+   * the file afterwards.
+   *
+   * **A placeholder is never uploaded.** A `hydrated: false` note has an
+   * empty `body` because it hasn't been fetched, not because the user
+   * emptied it; writing it would overwrite the real note file with a
+   * blank one — the one unrecoverable failure mode of Phase 2. Its
+   * summary is carried forward from the existing index unchanged (the
+   * placeholder was built from that very entry). When the index has
+   * lost the entry (the 2026-09-07 incident) we still know the file id
+   * the folder query handed us, so the summary is rebuilt from the
+   * placeholder's metadata and re-pinned to that file — headline and
+   * excerpt stay blank until the note is opened or the index rebuilt.
+   * With no file id at all there is nothing safe to point the index at;
+   * returning `null` leaves the note out of the index, and the next
+   * load picks its file up again as an orphan and hydrates it.
+   *
+   * For a hydrated note the existing `updatedAt` short-circuit still
+   * applies: an unchanged note keeps its file id without a round-trip.
+   */
+  private async saveNoteFile(
+    note: SutraPadDocument,
+    existingSummary: SutraPadNoteSummary | undefined,
+    folderId: string,
+  ): Promise<SutraPadNoteSummary | null> {
+    const existingFileId = existingSummary?.fileId;
+
+    if (note.hydrated === false) {
+      // Trust the folder for the live fileId — the placeholder's came
+      // from the folder query, the index can lag a re-upload.
+      const fileId = note.fileId ?? existingFileId;
+      if (existingSummary) return fileId ? { ...existingSummary, fileId } : existingSummary;
+      if (!fileId) return null;
+      return { ...buildNoteSummary(note), fileId } satisfies SutraPadNoteSummary;
+    }
+
+    // Full card metadata (headline/excerpt/tags/location/tasks + urls/
+    // captureContext/autoTags) written into the index summary so the
+    // Notes / Links / Tasks surfaces can render + filter from the index
+    // without hydrating bodies (Phase 2). `buildNoteSummary` is the one
+    // projection, shared with the resident model, so the persisted index
+    // and the in-memory summaries can never drift in shape.
+    if (existingFileId && existingSummary?.updatedAt === note.updatedAt) {
+      return {
+        ...buildNoteSummary(note),
+        fileId: existingFileId,
+      } satisfies SutraPadNoteSummary;
+    }
+
+    const existingNoteFile: DriveFileRecord | null = existingFileId
+      ? await this.#client.fetchFileMetadata(existingFileId).catch(
+          () =>
+            ({
+              id: existingFileId,
+              name: noteFileName(note.id),
+            }) as DriveFileRecord,
+        )
+      : await this.findNoteFileById(note.id, folderId);
+
+    const file = await this.#client.uploadJsonFile({
+      fileId: existingNoteFile?.id,
+      fileName: noteFileName(note.id),
+      data: note,
+      folderId,
+      appProperties: {
+        sutrapad: "true",
+        kind: "note",
+        noteId: note.id,
+      },
+    });
+
+    await this.#client.ensureFileInFolder(file.id, folderId);
+
+    return {
+      ...buildNoteSummary(note),
+      fileId: file.id,
+    } satisfies SutraPadNoteSummary;
+  }
+
   async saveWorkspace(workspace: SutraPadWorkspace): Promise<void> {
     const workspaceFolder = await this.getWorkspaceFolder();
     const existingIndexFile = await this.resolveActiveIndexFile(workspaceFolder.id);
     const existingIndex = existingIndexFile
       ? await this.#client.fetchJsonFile<SutraPadIndex>(existingIndexFile.id)
       : null;
-
-    const nextIndex = createIndex(workspace, existingIndexFile?.id);
 
     // Same lookup table as `createIndex` builds internally — the
     // savedNotes loop below also needs id → existing summary
@@ -736,74 +880,82 @@ export class GoogleDriveStore {
     // five sequential round-trips. On a typical capture this drops
     // ~4×RTT off the in-flight time before we even get to the
     // index uploads.
-    const [
-      savedNotes,
-      existingTagIndexFile,
-      existingLinkIndexFile,
-      existingTaskIndexFile,
-      existingHeadFile,
-    ] = await Promise.all([
-      Promise.all(
-        workspace.notes.map(async (note) => {
-          // Full card metadata (headline/excerpt/tags/location/tasks + urls/
-          // captureContext/autoTags) written into the index summary so the
-          // Notes / Links / Tasks surfaces can render + filter from the index
-          // without hydrating bodies (Phase 2). `buildNoteSummary` is the one
-          // projection, shared with the resident model, so the persisted index
-          // and the in-memory summaries can never drift in shape.
-          const existingSummary = existingSummaryById.get(note.id);
-          const existingFileId = existingSummary?.fileId;
-
-          if (existingFileId && existingSummary?.updatedAt === note.updatedAt) {
-            return {
-              ...buildNoteSummary(note),
-              fileId: existingFileId,
-            } satisfies SutraPadNoteSummary;
-          }
-
-          const existingNoteFile: DriveFileRecord | null = existingFileId
-            ? await this.#client.fetchFileMetadata(existingFileId).catch(
-                () =>
-                  ({
-                    id: existingFileId,
-                    name: noteFileName(note.id),
-                  }) as DriveFileRecord,
-              )
-            : await this.findNoteFileById(note.id, workspaceFolder.id);
-
-          const file = await this.#client.uploadJsonFile({
-            fileId: existingNoteFile?.id,
-            fileName: noteFileName(note.id),
-            data: note,
-            folderId: workspaceFolder.id,
-            appProperties: {
-              sutrapad: "true",
-              kind: "note",
-              noteId: note.id,
-            },
-          });
-
-          await this.#client.ensureFileInFolder(file.id, workspaceFolder.id);
-
-          return {
-            ...buildNoteSummary(note),
-            fileId: file.id,
-          } satisfies SutraPadNoteSummary;
-        }),
+    const [savedNotes, derived] = await Promise.all([
+      mapWithConcurrency(workspace.notes, NOTE_UPLOAD_CONCURRENCY, (note) =>
+        this.saveNoteFile(note, existingSummaryById.get(note.id), workspaceFolder.id),
       ),
-      this.findTagIndexFile(workspaceFolder.id),
-      this.findLinkIndexFile(workspaceFolder.id),
-      this.findTaskIndexFile(workspaceFolder.id),
-      this.findHeadFile(workspaceFolder.id),
+      this.findDerivedIndexFiles(workspaceFolder.id),
     ]);
 
+    await this.writeDerivedIndexes({
+      workspace,
+      summaries: savedNotes.filter((summary) => summary !== null),
+      workspaceFolder,
+      previousIndexId: existingIndexFile?.id,
+      derived,
+    });
+  }
+
+  /**
+   * The four derived-state files a save rewrites (tags / links / tasks /
+   * head), looked up in one concurrent batch. The task index is also
+   * read, not just located — see `resolveExistingTaskIndex`.
+   */
+  private async findDerivedIndexFiles(folderId: string): Promise<DerivedIndexFiles> {
+    const [tagIndexFile, linkIndexFile, taskIndex, headFile] = await Promise.all([
+      this.findTagIndexFile(folderId),
+      this.findLinkIndexFile(folderId),
+      this.resolveExistingTaskIndex(folderId),
+      this.findHeadFile(folderId),
+    ]);
+    return {
+      tagIndexFile,
+      linkIndexFile,
+      taskIndexFile: taskIndex.file,
+      taskIndex: taskIndex.index,
+      headFile,
+    };
+  }
+
+  /**
+   * Second half of every save: writes a fresh index snapshot from the
+   * given per-note summaries, rebuilds the tag/link/task indexes from
+   * the workspace, flips the head to the new snapshot and prunes stale
+   * snapshots. Shared by `saveWorkspace` (summaries come from
+   * `saveNoteFile`) and `rebuildIndexes` (summaries come straight from
+   * freshly hydrated notes — no note upload involved).
+   */
+  private async writeDerivedIndexes(input: {
+    workspace: SutraPadWorkspace;
+    summaries: SutraPadNoteSummary[];
+    workspaceFolder: DriveFileRecord;
+    previousIndexId: string | undefined;
+    derived: DerivedIndexFiles;
+  }): Promise<void> {
+    const { workspace, summaries, workspaceFolder, previousIndexId, derived } = input;
+    const {
+      tagIndexFile: existingTagIndexFile,
+      linkIndexFile: existingLinkIndexFile,
+      taskIndexFile: existingTaskIndexFile,
+      taskIndex: existingTaskIndex,
+      headFile: existingHeadFile,
+    } = derived;
+
     const finalIndex: SutraPadIndex = {
-      ...nextIndex,
-      notes: savedNotes,
+      ...createIndex(workspace, previousIndexId),
+      notes: summaries,
     };
     const tagIndex = buildTagIndex(workspace, finalIndex.savedAt);
     const linkIndex = buildLinkIndex(workspace, finalIndex.savedAt);
-    const taskIndex = buildTaskIndex(workspace, finalIndex.savedAt);
+    // Placeholders have no body to parse tasks from; their entries are
+    // carried over from the task index already on Drive (the same rule
+    // the resident model applies), otherwise every save would silently
+    // drop the tasks of every note not opened this session.
+    const taskIndex = reconcileTaskIndexForWorkspace(
+      workspace,
+      existingTaskIndex,
+      finalIndex.savedAt,
+    );
 
     // Each of the four index uploads is followed by an
     // `ensureFileInFolder` to guarantee the new revision is parented

@@ -72,6 +72,45 @@ function driveFile(
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+/**
+ * Records the multipart uploads a save/rebuild performs. `handle` answers
+ * an upload request (and the `?fields=` metadata probe that follows it)
+ * or returns `null` for anything else so the caller's responder can take
+ * over.
+ */
+function uploadRecorder(): {
+  noteUploads: string[];
+  indexBodies: SutraPadIndex[];
+  handle: (url: string, init: RequestInit | undefined) => Promise<Response | null>;
+} {
+  const noteUploads: string[] = [];
+  const indexBodies: SutraPadIndex[] = [];
+  const folder = driveFile("folder-1", "SutraPad", {
+    mimeType: "application/vnd.google-apps.folder",
+  });
+  return {
+    noteUploads,
+    indexBodies,
+    handle: async (url, init) => {
+      if (url.includes("upload/drive/v3/files") && init?.body instanceof FormData) {
+        const meta = JSON.parse(await (init.body.get("metadata") as Blob).text()) as {
+          name: string;
+          appProperties: Record<string, string>;
+        };
+        if (meta.appProperties.kind === "note") noteUploads.push(meta.appProperties.noteId);
+        if (meta.appProperties.kind === "index") {
+          indexBodies.push(
+            JSON.parse(await (init.body.get("file") as Blob).text()) as SutraPadIndex,
+          );
+        }
+        return jsonResponse(driveFile(`up-${meta.appProperties.kind}`, meta.name));
+      }
+      if (url.includes("?fields=")) return jsonResponse({ ...folder, parents: ["folder-1"] });
+      return null;
+    },
+  };
+}
+
 
 describe("GoogleDriveStore.appendNoteToWorkspace (silent-capture fast path)", () => {
   it("uploads a single note JSON, attaches it to the workspace folder via the multipart endpoint, then ensures it's parented", async () => {
@@ -690,6 +729,329 @@ describe("GoogleDriveStore.saveWorkspace upload payload contracts", () => {
       activeNoteId: "a",
     });
     expect(noteUploadCount).toBe(0);
+  });
+});
+
+describe("GoogleDriveStore.saveWorkspace never uploads a placeholder (Phase 2 data-loss guard)", () => {
+  const folder = driveFile("folder-1", "SutraPad", {
+    mimeType: "application/vnd.google-apps.folder",
+  });
+  const headFile = driveFile("hf", "sutrapad-head.json");
+  const indexFile = driveFile("if", "index-old.json");
+  const head: SutraPadHead = {
+    version: 1,
+    activeIndexId: "if",
+    savedAt: "2026-04-30T11:00:00.000Z",
+  };
+
+  /**
+   * Stubs a workspace whose head → index already knows note `a`, and
+   * records every note upload + the index body that gets written.
+   */
+  function stubDrive(oldIndex: SutraPadIndex): {
+    noteUploads: string[];
+    indexBodies: SutraPadIndex[];
+  } {
+    const noteUploads: string[] = [];
+    const indexBodies: SutraPadIndex[] = [];
+    captureFetch(async (url, init) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'head'") && url.includes("q=")) return fileList([headFile]);
+      if (url.includes("/hf?alt=media")) return jsonResponse(head);
+      if (url.includes("/if?fields=")) return jsonResponse(indexFile);
+      if (url.includes("/if?alt=media")) return jsonResponse(oldIndex);
+      if (url.includes("upload/drive/v3/files") && init?.body instanceof FormData) {
+        const meta = JSON.parse(await (init.body.get("metadata") as Blob).text()) as {
+          name: string;
+          appProperties: Record<string, string>;
+        };
+        if (meta.appProperties.kind === "note") noteUploads.push(meta.appProperties.noteId);
+        if (meta.appProperties.kind === "index") {
+          indexBodies.push(
+            JSON.parse(await (init.body.get("file") as Blob).text()) as SutraPadIndex,
+          );
+        }
+        return jsonResponse(driveFile(`up-${meta.appProperties.kind}`, meta.name));
+      }
+      if (url.includes("?fields=")) return jsonResponse({ ...folder, parents: ["folder-1"] });
+      return fileList([]);
+    });
+    return { noteUploads, indexBodies };
+  }
+
+  const knownSummary = {
+    id: "a",
+    title: "A",
+    headline: "A headline",
+    excerpt: "from the index",
+    createdAt: "2026-04-30T11:00:00.000Z",
+    updatedAt: "2026-04-30T11:00:00.000Z",
+    fileId: "nf-existing",
+  };
+
+  it("skips the upload and carries the existing summary forward even when the placeholder's updatedAt differs from the index", async () => {
+    // The `updatedAt` short-circuit alone is not a safe guard: another
+    // device can bump the note after this device built its placeholder,
+    // and the mismatch would have pushed `body: ""` over the real file.
+    const { noteUploads, indexBodies } = stubDrive({
+      version: 1,
+      updatedAt: "2026-04-30T11:00:00.000Z",
+      savedAt: "2026-04-30T11:00:00.000Z",
+      activeNoteId: "a",
+      notes: [{ ...knownSummary, updatedAt: "2026-05-01T09:00:00.000Z" }],
+    });
+
+    const store = new GoogleDriveStore("token");
+    await store.saveWorkspace({
+      notes: [
+        {
+          id: "a",
+          title: "A",
+          body: "",
+          tags: [],
+          urls: [],
+          createdAt: "2026-04-30T11:00:00.000Z",
+          updatedAt: "2026-04-30T11:00:00.000Z",
+          fileId: "nf-existing",
+          hydrated: false,
+        },
+      ],
+      activeNoteId: "a",
+    });
+
+    expect(noteUploads).toEqual([]);
+    expect(indexBodies).toHaveLength(1);
+    expect(indexBodies[0].notes).toEqual([
+      { ...knownSummary, updatedAt: "2026-05-01T09:00:00.000Z" },
+    ]);
+  });
+
+  it("re-pins a placeholder the index has lost to its folder file id instead of uploading it", async () => {
+    // Recovery path for an index that dropped entries: the placeholder
+    // still carries the fileId the folder query handed `loadWorkspace`,
+    // so the index can point at the real file without a write.
+    const { noteUploads, indexBodies } = stubDrive({
+      version: 1,
+      updatedAt: "2026-04-30T11:00:00.000Z",
+      savedAt: "2026-04-30T11:00:00.000Z",
+      activeNoteId: null,
+      notes: [],
+    });
+
+    const store = new GoogleDriveStore("token");
+    await store.saveWorkspace({
+      notes: [
+        {
+          id: "lost",
+          title: "Lost from index",
+          body: "",
+          tags: ["kept"],
+          urls: [],
+          createdAt: "2026-04-30T11:00:00.000Z",
+          updatedAt: "2026-04-30T11:00:00.000Z",
+          fileId: "nf-from-folder",
+          hydrated: false,
+        },
+        {
+          id: "no-file",
+          title: "Placeholder with no file id",
+          body: "",
+          tags: [],
+          urls: [],
+          createdAt: "2026-04-30T11:00:00.000Z",
+          updatedAt: "2026-04-30T11:00:00.000Z",
+          hydrated: false,
+        },
+      ],
+      activeNoteId: "lost",
+    });
+
+    expect(noteUploads).toEqual([]);
+    expect(indexBodies).toHaveLength(1);
+    const summaries = indexBodies[0].notes;
+    expect(summaries.map((summary) => summary.id)).toEqual(["lost"]);
+    expect(summaries[0].fileId).toBe("nf-from-folder");
+    expect(summaries[0].title).toBe("Lost from index");
+    expect(summaries[0].tags).toEqual(["kept"]);
+  });
+
+  it("still uploads a hydrated note whose updatedAt changed", async () => {
+    // Sanity check that the guard is keyed on `hydrated`, not on the
+    // empty body — an actually emptied, hydrated note is a real edit.
+    const { noteUploads } = stubDrive({
+      version: 1,
+      updatedAt: "2026-04-30T11:00:00.000Z",
+      savedAt: "2026-04-30T11:00:00.000Z",
+      activeNoteId: "a",
+      notes: [knownSummary],
+    });
+
+    const store = new GoogleDriveStore("token");
+    await store.saveWorkspace({
+      notes: [
+        {
+          id: "a",
+          title: "A",
+          body: "",
+          tags: [],
+          urls: [],
+          createdAt: "2026-04-30T11:00:00.000Z",
+          updatedAt: "2026-05-02T11:00:00.000Z",
+          fileId: "nf-existing",
+          hydrated: true,
+        },
+      ],
+      activeNoteId: "a",
+    });
+
+    expect(noteUploads).toEqual(["a"]);
+  });
+});
+
+describe("GoogleDriveStore.saveWorkspace task index with placeholders", () => {
+  it("carries a placeholder's task entries over from the Drive task index and reparses hydrated notes", async () => {
+    // `buildTaskIndex` scans bodies, and a placeholder has none — so the
+    // persisted task index used to lose every task of every note not
+    // opened this session, on every save. Same carry-forward rule as
+    // the resident model (`reconcileTaskIndexForWorkspace`).
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const taskFile = driveFile("tf", "sutrapad-tasks.json", {
+      appProperties: { sutrapad: "true", kind: "tasks" },
+    });
+    const existingTaskIndex: SutraPadTaskIndex = {
+      version: 1,
+      savedAt: "2026-04-30T11:00:00.000Z",
+      tasks: [
+        {
+          noteId: "p",
+          lineIndex: 0,
+          text: "carried over",
+          done: false,
+          noteUpdatedAt: "2026-04-30T11:00:00.000Z",
+        },
+        {
+          noteId: "h",
+          lineIndex: 0,
+          text: "stale, must be reparsed",
+          done: false,
+          noteUpdatedAt: "2026-04-30T11:00:00.000Z",
+        },
+      ],
+    };
+    const taskBodies: SutraPadTaskIndex[] = [];
+
+    captureFetch(async (url, init) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'tasks'") && url.includes("q=")) return fileList([taskFile]);
+      if (url.includes("/tf?alt=media")) return jsonResponse(existingTaskIndex);
+      if (url.includes("upload/drive/v3/files") && init?.body instanceof FormData) {
+        const meta = JSON.parse(await (init.body.get("metadata") as Blob).text()) as {
+          name: string;
+          appProperties: Record<string, string>;
+        };
+        if (meta.appProperties.kind === "tasks") {
+          taskBodies.push(
+            JSON.parse(await (init.body.get("file") as Blob).text()) as SutraPadTaskIndex,
+          );
+        }
+        return jsonResponse(driveFile(`up-${meta.appProperties.kind}`, meta.name));
+      }
+      if (url.includes("?fields=")) return jsonResponse({ ...folder, parents: ["folder-1"] });
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    await store.saveWorkspace({
+      notes: [
+        {
+          id: "p",
+          title: "Placeholder",
+          body: "",
+          tags: [],
+          urls: [],
+          createdAt: "2026-04-30T11:00:00.000Z",
+          updatedAt: "2026-04-30T11:00:00.000Z",
+          fileId: "nf-p",
+          hydrated: false,
+        },
+        {
+          id: "h",
+          title: "Hydrated",
+          body: "- [x] freshly parsed",
+          tags: [],
+          urls: [],
+          createdAt: "2026-04-30T11:00:00.000Z",
+          updatedAt: "2026-05-02T11:00:00.000Z",
+        },
+      ],
+      activeNoteId: "h",
+    });
+
+    expect(taskBodies).toHaveLength(1);
+    const byNote = new Map(taskBodies[0].tasks.map((task) => [task.noteId, task]));
+    expect(byNote.get("p")).toMatchObject({ text: "carried over", done: false });
+    expect(byNote.get("h")).toMatchObject({ text: "freshly parsed", done: true });
+    expect(taskBodies[0].tasks).toHaveLength(2);
+  });
+});
+
+describe("GoogleDriveStore.saveWorkspace bounded-concurrency note uploads", () => {
+  it("never has more than NOTE_UPLOAD_CONCURRENCY note uploads in flight and still writes every note", async () => {
+    // Regression for the 2026-09-07 storm: with an index that knows none
+    // of the notes, every note misses the updatedAt short-circuit and
+    // the old whole-workspace Promise.all fired one multipart upload per
+    // note at once (net::ERR_INSUFFICIENT_RESOURCES, then 403s).
+    const folder = driveFile("folder-1", "SutraPad", {
+      mimeType: "application/vnd.google-apps.folder",
+    });
+    const count = 30;
+    let inFlight = 0;
+    let peakInFlight = 0;
+    const uploaded: string[] = [];
+
+    captureFetch(async (url, init) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("upload/drive/v3/files") && init?.body instanceof FormData) {
+        const meta = JSON.parse(await (init.body.get("metadata") as Blob).text()) as {
+          name: string;
+          appProperties: Record<string, string>;
+        };
+        if (meta.appProperties.kind === "note") {
+          inFlight += 1;
+          peakInFlight = Math.max(peakInFlight, inFlight);
+          // Yield so the whole chunk is in flight before any upload resolves.
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 0);
+          });
+          inFlight -= 1;
+          uploaded.push(meta.appProperties.noteId);
+        }
+        return jsonResponse(driveFile(`up-${meta.name}`, meta.name));
+      }
+      if (url.includes("?fields=")) return jsonResponse({ ...folder, parents: ["folder-1"] });
+      return fileList([]);
+    });
+
+    const store = new GoogleDriveStore("token");
+    await store.saveWorkspace({
+      notes: Array.from({ length: count }, (_, i) => ({
+        id: `n${i}`,
+        title: `Note ${i}`,
+        body: `body ${i}`,
+        tags: [],
+        urls: [],
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: `2026-05-01T00:00:00.${String(i).padStart(3, "0")}Z`,
+      })),
+      activeNoteId: "n0",
+    });
+
+    expect(uploaded).toHaveLength(count);
+    expect(new Set(uploaded).size).toBe(count);
+    expect(peakInFlight).toBeGreaterThan(1);
+    expect(peakInFlight).toBeLessThanOrEqual(8);
   });
 });
 
@@ -1643,29 +2005,32 @@ describe("GoogleDriveStore.rebuildIndexes (Phase 2 maintenance rebuild)", () => 
       },
     };
 
-    captureFetch((url) => {
+    const uploads = uploadRecorder();
+    captureFetch(async (url, init) => {
       if (url.includes("google-apps.folder")) return fileList([folder]);
       if (url.includes("'note'") && url.includes("q=")) return fileList(noteFiles);
       const media = /\/(file-[ab])\?alt=media/u.exec(url);
       if (media) return jsonResponse(docs[media[1]]);
-      return fileList([]);
+      return (await uploads.handle(url, init)) ?? fileList([]);
     });
 
     const store = new GoogleDriveStore("token");
-    const saveWorkspaceSpy = vi
-      .spyOn(store, "saveWorkspace")
-      .mockResolvedValue(undefined);
-
     const result = await store.rebuildIndexes();
 
     expect(result).toEqual({ noteCount: 2 });
-    expect(saveWorkspaceSpy).toHaveBeenCalledTimes(1);
-    const savedWorkspace = saveWorkspaceSpy.mock.calls[0][0];
-    expect(savedWorkspace.notes.map((n) => n.id).toSorted()).toEqual(["a", "b"]);
-    // Every note's real body was fetched — not left as a placeholder.
-    expect(savedWorkspace.notes.every((n) => n.body.length > 0)).toBe(true);
+    expect(uploads.indexBodies).toHaveLength(1);
+    const [index] = uploads.indexBodies;
+    expect(index.notes.map((n) => n.id).toSorted()).toEqual(["a", "b"]);
+    // Every summary was built from the real body — not from a placeholder —
+    // and points at the file it was read from.
+    expect(index.notes.map((n) => [n.id, n.fileId, n.excerpt]).toSorted()).toEqual([
+      ["a", "file-a", "body a"],
+      ["b", "file-b", "body b"],
+    ]);
     // Most recently updated note wins the (otherwise inconsequential) activeNoteId slot.
-    expect(savedWorkspace.activeNoteId).toBe("b");
+    expect(index.activeNoteId).toBe("b");
+    // The rebuild is index-only: the note files themselves are never re-uploaded.
+    expect(uploads.noteUploads).toEqual([]);
   });
 
   it("dedupes two files resolving to the same note id, keeping the most recently updated", async () => {
@@ -1689,59 +2054,48 @@ describe("GoogleDriveStore.rebuildIndexes (Phase 2 maintenance rebuild)", () => 
       updatedAt: "2026-05-02T00:00:00.000Z",
     };
 
-    captureFetch((url) => {
+    const uploads = uploadRecorder();
+    captureFetch(async (url, init) => {
       if (url.includes("google-apps.folder")) return fileList([folder]);
       if (url.includes("'note'") && url.includes("q=")) return fileList([older, newer]);
       if (url.includes("/nf-old?alt=media")) return jsonResponse(olderDoc);
       if (url.includes("/nf-new?alt=media")) return jsonResponse(newerDoc);
-      return fileList([]);
+      return (await uploads.handle(url, init)) ?? fileList([]);
     });
 
     const store = new GoogleDriveStore("token");
-    const saveWorkspaceSpy = vi
-      .spyOn(store, "saveWorkspace")
-      .mockResolvedValue(undefined);
-
     const result = await store.rebuildIndexes();
 
     expect(result).toEqual({ noteCount: 1 });
-    const savedWorkspace = saveWorkspaceSpy.mock.calls[0][0];
-    expect(savedWorkspace.notes).toHaveLength(1);
-    expect(savedWorkspace.notes[0].body).toBe("fresh copy");
+    const [index] = uploads.indexBodies;
+    expect(index.notes).toHaveLength(1);
+    expect(index.notes[0]).toMatchObject({ id: "a", fileId: "nf-new", excerpt: "fresh copy" });
   });
 
-  it("returns noteCount 0 and never calls saveWorkspace when there is no workspace folder yet", async () => {
-    captureFetch(() => fileList([]));
+  it("returns noteCount 0 and writes nothing when there is no workspace folder yet", async () => {
+    const { calls } = captureFetch(() => fileList([]));
 
     const store = new GoogleDriveStore("token");
-    const saveWorkspaceSpy = vi
-      .spyOn(store, "saveWorkspace")
-      .mockResolvedValue(undefined);
-
     const result = await store.rebuildIndexes();
 
     expect(result).toEqual({ noteCount: 0 });
-    expect(saveWorkspaceSpy).not.toHaveBeenCalled();
+    expect(calls.some((call) => call.url.includes("upload/drive/v3"))).toBe(false);
   });
 
-  it("returns noteCount 0 and never calls saveWorkspace when the folder has no note files", async () => {
+  it("returns noteCount 0 and writes nothing when the folder has no note files", async () => {
     const folder = driveFile("folder-1", "SutraPad", {
       mimeType: "application/vnd.google-apps.folder",
     });
-    captureFetch((url) => {
+    const { calls } = captureFetch((url) => {
       if (url.includes("google-apps.folder")) return fileList([folder]);
       return fileList([]);
     });
 
     const store = new GoogleDriveStore("token");
-    const saveWorkspaceSpy = vi
-      .spyOn(store, "saveWorkspace")
-      .mockResolvedValue(undefined);
-
     const result = await store.rebuildIndexes();
 
     expect(result).toEqual({ noteCount: 0 });
-    expect(saveWorkspaceSpy).not.toHaveBeenCalled();
+    expect(calls.some((call) => call.url.includes("upload/drive/v3"))).toBe(false);
   });
 });
 
@@ -1967,11 +2321,12 @@ describe("isNoteFileRecord candidate filtering (observable through rebuildIndexe
     bodies: Record<string, unknown>,
   ): Promise<{
     result: { noteCount: number };
-    saved: ReturnType<typeof vi.spyOn>;
+    indexedIds: string[];
     fetched: string[];
   }> {
     const fetched: string[] = [];
-    captureFetch((url) => {
+    const uploads = uploadRecorder();
+    captureFetch(async (url, init) => {
       if (url.includes("google-apps.folder")) return fileList([folder()]);
       if (url.includes("'note'") && url.includes("q=")) return fileList(candidates);
       const media = /\/([^/?]+)\?alt=media/u.exec(url);
@@ -1979,20 +2334,20 @@ describe("isNoteFileRecord candidate filtering (observable through rebuildIndexe
         fetched.push(media[1]);
         return jsonResponse(bodies[media[1]]);
       }
-      return fileList([]);
+      return (await uploads.handle(url, init)) ?? fileList([]);
     });
 
     const store = new GoogleDriveStore("token");
-    const saved = vi.spyOn(store, "saveWorkspace").mockResolvedValue(undefined);
     const result = await store.rebuildIndexes();
-    return { result, saved, fetched };
+    const indexedIds = uploads.indexBodies.flatMap((index) => index.notes.map((note) => note.id));
+    return { result, indexedIds, fetched };
   }
 
   it("rebuilds from a canonical note file while never hydrating a footnote-*.json false positive", async () => {
     // `footnote-1.json` matches Drive's `name contains 'note-'` but is not a
     // note. Its body here is a perfectly valid note document, so only the
     // filename check can keep it out.
-    const { result, saved, fetched } = await rebuildWith(
+    const { result, indexedIds, fetched } = await rebuildWith(
       [
         driveFile("nf-real", "note-real.json", { appProperties: {} }),
         driveFile("nf-foot", "footnote-1.json", { appProperties: {} }),
@@ -2002,8 +2357,7 @@ describe("isNoteFileRecord candidate filtering (observable through rebuildIndexe
 
     expect(result).toEqual({ noteCount: 1 });
     expect(fetched).toEqual(["nf-real"]);
-    const workspace = saved.mock.calls[0][0] as { notes: { id: string }[] };
-    expect(workspace.notes.map((note) => note.id)).toEqual(["real"]);
+    expect(indexedIds).toEqual(["real"]);
   });
 
   it("accepts a non-canonical filename that carries the sutrapad + kind=note markers", async () => {

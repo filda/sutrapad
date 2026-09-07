@@ -1542,6 +1542,25 @@ describe("isEmptyDraftNote", () => {
     expect(isEmptyDraftNote(note)).toBe(true);
   });
 
+  it("never classifies a body-less placeholder as an empty draft", () => {
+    // Regression for the 2026-09-07 incident. A Phase 2 placeholder
+    // (`hydrated: false`) has `body: ""` because the body hasn't been
+    // fetched yet, not because the user emptied it. Treating it as an
+    // empty draft made `stripEmptyDraftNotes` drop every untagged
+    // placeholder from each Drive save (index collapsed to 879 of ~6470
+    // notes) and from the local workspace on every navigation.
+    const placeholder = makeNote({
+      id: "p",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: "",
+      hydrated: false,
+    });
+    expect(isEmptyDraftNote(placeholder)).toBe(false);
+    // Same shape, but hydrated (or with the flag absent) is still a draft.
+    expect(isEmptyDraftNote({ ...placeholder, hydrated: true })).toBe(true);
+    expect(isEmptyDraftNote({ ...placeholder, hydrated: undefined })).toBe(true);
+  });
+
   it("ignores location/coordinates/captureContext when judging emptiness", () => {
     // Metadata fields are auto-populated by the async
     // `generateFreshNoteDetails` path after a note is spawned. If they
@@ -1571,6 +1590,27 @@ describe("stripEmptyDraftNotes", () => {
     });
     const workspace = { notes: [note], activeNoteId: note.id };
     expect(stripEmptyDraftNotes(workspace)).toBe(workspace);
+  });
+
+  it("keeps body-less placeholders while stripping a real empty draft", () => {
+    // The pre-Drive-push sweep must see a placeholder as "content not
+    // loaded", never as "nothing typed" — otherwise every save shrinks
+    // the index to the notes that happen to be hydrated or tagged.
+    const placeholder = makeNote({
+      id: "placeholder",
+      updatedAt: "2026-04-24T08:00:00.000Z",
+      title: "",
+      hydrated: false,
+    });
+    const draft = makeNote({
+      id: "draft",
+      updatedAt: "2026-04-24T10:00:00.000Z",
+      title: DEFAULT_NOTE_TITLE,
+    });
+    const workspace = { notes: [draft, placeholder], activeNoteId: placeholder.id };
+    const result = stripEmptyDraftNotes(workspace);
+    expect(result.notes.map((n) => n.id)).toEqual(["placeholder"]);
+    expect(result.activeNoteId).toBe("placeholder");
   });
 
   it("removes a single empty draft from notes", () => {

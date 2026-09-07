@@ -928,6 +928,14 @@ export function createNewNoteWorkspace(
  * nothing about whether the user typed anything.
  */
 export function isEmptyDraftNote(note: SutraPadDocument): boolean {
+  // A body-less placeholder (Phase 2 notes-scaling, `hydrated: false`)
+  // has an empty `body` because it hasn't been fetched yet, not because
+  // the user never typed anything. Classifying it as an empty draft
+  // stripped every untagged placeholder out of each Drive save (the
+  // index collapsed to a fraction of the workspace) and out of the
+  // local workspace on navigation (`purgeEmptyDraftNotes`) — the
+  // 2026-09-07 incident. Unknown content is never "empty".
+  if (note.hydrated === false) return false;
   if (note.body.trim() !== "") return false;
   if (note.tags.length > 0) return false;
   return true;
