@@ -3,16 +3,17 @@
  * workspace shaped like the real one. Counts and invariants only — see
  * `docs/nfr-testing-plan.md`. Excluded from Stryker (`vitest.config.ts`).
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SutraPadTaskIndex, SutraPadWorkspace } from "../../../src/types";
 import {
   DRIVE_FETCH_CONCURRENCY,
   DRIVE_UPLOAD_CONCURRENCY,
   LOAD_MAX_REQUESTS,
 } from "../../../src/lib/budgets";
-import { stripEmptyDraftNotes } from "../../../src/lib/notebook";
+import { areWorkspacesEqual, stripEmptyDraftNotes } from "../../../src/lib/notebook";
 import { GoogleDriveStore } from "../../../src/services/drive/workspace-store";
 import { runWorkspaceRefresh } from "../../../src/app/session/workspace-refresh";
+import { runWorkspaceRestoreAfterSignIn } from "../../../src/app/session/workspace-sync";
 import {
   WorkspaceSaveRefusedError,
   type BudgetOverrun,
@@ -272,5 +273,52 @@ describe("focus refresh on a real-shaped workspace", () => {
     const refreshed = live.notes.find((note) => note.id === edited.id);
     expect(refreshed).toMatchObject({ hydrated: false, updatedAt: edited.updatedAt, body: "" });
     expect(live.notes).toHaveLength(loaded.notes.length);
+  });
+});
+
+describe("sign-in restore on a real-shaped workspace", () => {
+  it("does not push when the local copy is a fully hydrated twin of what Drive holds", async () => {
+    // The 2026-09-08 restore: a localStorage workspace with every body (left
+    // behind by the old refresh) merged against Drive's placeholders was
+    // judged different on `body` alone → an 18-request, 24 s save of all
+    // 6 470 notes on every sign-in.
+    const { drive, workspace, store } = await indexedDrive(REAL_SHAPE);
+    let live: SutraPadWorkspace = workspace; // hydrated twin
+    drive.resetStats();
+    const saveRemoteWorkspace = vi.fn(async (ws: SutraPadWorkspace) => {
+      await store.saveWorkspace(ws);
+    });
+    await runWorkspaceRestoreAfterSignIn({
+      loadRemoteWorkspace: () => store.loadWorkspace(),
+      saveRemoteWorkspace,
+      getWorkspace: () => live,
+      setWorkspace: (next) => {
+        live = next;
+      },
+      persistLocalWorkspace: () => {},
+      setSyncState: () => {},
+      setLastError: () => {},
+      render: () => {},
+    });
+    expect(saveRemoteWorkspace).not.toHaveBeenCalled();
+    expect(drive.stats.total).toBeLessThanOrEqual(LOAD_MAX_REQUESTS);
+    expect(live.notes).toHaveLength(workspace.notes.length);
+    // …and the resident model is back to Phase 2 shape: only the active
+    // note keeps a body, everything else is a placeholder again.
+    const resident = live.notes.filter((note) => note.hydrated !== false);
+    expect(resident.map((note) => note.id)).toEqual([live.activeNoteId]);
+    expect(JSON.stringify(live).length / live.notes.length).toBeLessThan(600);
+  });
+
+  it("opening a note does not make the workspace dirty against the loaded snapshot", async () => {
+    const { store } = await indexedDrive(SMALL_SHAPE);
+    const loaded = await store.loadWorkspace();
+    const opened = loaded.notes[3];
+    const body = await store.fetchNoteByFileId(opened.fileId ?? "");
+    const hydrated = {
+      ...loaded,
+      notes: loaded.notes.map((note) => (note.id === opened.id ? { ...body, hydrated: true } : note)),
+    };
+    expect(areWorkspacesEqual(loaded, hydrated)).toBe(true);
   });
 });

@@ -49,3 +49,36 @@ export function applyHydratedNote(
     ),
   };
 }
+
+/**
+ * Swaps hydrated local notes back to Drive's placeholders wherever Drive
+ * holds the same version (`updatedAt` matches) — the inverse of
+ * `applyHydratedNote`, for the sign-in merge.
+ *
+ * `mergeWorkspaces` lets the local copy win a tie so an unsynced edit is
+ * never lost; but a tie also means the body on disk *is* the body on
+ * Drive, and keeping thousands of them resident defeats the lazy-body
+ * model: every workspace change re-derives their summaries and every
+ * persist serialises them. A localStorage workspace left fully hydrated
+ * (the pre-2026-09-08 refresh did exactly that) would otherwise stay
+ * fully hydrated for every later session. Notes in `keepHydrated` — the
+ * active one, so the editor doesn't flash "Loading…" — keep their body.
+ * Notes with no remote twin, or with a different stamp (a local edit not
+ * yet pushed), are untouched.
+ */
+export function adoptRemotePlaceholders(
+  workspace: SutraPadWorkspace,
+  remote: SutraPadWorkspace,
+  keepHydrated: ReadonlySet<string>,
+): SutraPadWorkspace {
+  const remoteById = new Map(remote.notes.map((note) => [note.id, note]));
+  let changed = false;
+  const notes = workspace.notes.map((note) => {
+    if (note.hydrated === false || keepHydrated.has(note.id)) return note;
+    const twin = remoteById.get(note.id);
+    if (!twin || twin.hydrated !== false || twin.updatedAt !== note.updatedAt) return note;
+    changed = true;
+    return twin;
+  });
+  return changed ? { ...workspace, notes } : workspace;
+}

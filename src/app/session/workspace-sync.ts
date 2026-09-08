@@ -1,5 +1,6 @@
 import type { SutraPadWorkspace } from "../../types";
 import { areWorkspacesEqual, mergeWorkspaces } from "../../lib/notebook";
+import { adoptRemotePlaceholders } from "../logic/note-hydration";
 
 export type SyncState = "idle" | "loading" | "saving" | "error";
 export type SaveMode = "interactive" | "background";
@@ -114,7 +115,14 @@ export async function runWorkspaceRestoreAfterSignIn(effects: {
     effects.render();
 
     const remoteWorkspace = await effects.loadRemoteWorkspace();
-    const mergedWorkspace = mergeWorkspaces(effects.getWorkspace(), remoteWorkspace);
+    const merged = mergeWorkspaces(effects.getWorkspace(), remoteWorkspace);
+    // Keep only the active note's body resident; everything Drive holds the
+    // same version of goes back to a placeholder (see `adoptRemotePlaceholders`).
+    const mergedWorkspace = adoptRemotePlaceholders(
+      merged,
+      remoteWorkspace,
+      new Set(merged.activeNoteId === null ? [] : [merged.activeNoteId]),
+    );
     const needsRemoteSave = !areWorkspacesEqual(mergedWorkspace, remoteWorkspace);
 
     effects.setWorkspace(mergedWorkspace);

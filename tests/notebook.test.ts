@@ -1105,6 +1105,36 @@ describe("extractUrlsFromText and canonicalizeUrl", () => {
 });
 
 describe("areWorkspacesEqual", () => {
+    it("treats a placeholder and a hydrated copy with the same updatedAt as the same note", () => {
+      // Regression for the 2026-09-08 sign-in restore: local (hydrated, from
+      // localStorage) vs remote (placeholders) compared unequal on `body`,
+      // so every sign-in pushed the whole workspace and opening one note
+      // made `isWorkspaceDirty` true for the rest of the session.
+      const hydrated = makeNote({
+        id: "a",
+        title: "Alpha",
+        body: "real body",
+        tags: ["x"],
+        updatedAt: "2026-09-08T10:00:00.000Z",
+        coordinates: { latitude: 50, longitude: 14 },
+      });
+      const placeholder = { ...hydrated, body: "", coordinates: undefined, hydrated: false as const };
+      const left = { activeNoteId: "a", notes: [hydrated] };
+      const right = { activeNoteId: "a", notes: [placeholder] };
+      expect(areWorkspacesEqual(left, right)).toBe(true);
+      expect(areWorkspacesEqual(right, left)).toBe(true);
+      // Two placeholders: still keyed on the stamp.
+      expect(areWorkspacesEqual(right, right)).toBe(true);
+    });
+
+    it("still tells a placeholder apart from a hydrated copy with a different updatedAt or id", () => {
+      const hydrated = makeNote({ id: "a", body: "edited", updatedAt: "2026-09-08T11:00:00.000Z" });
+      const stale = { ...makeNote({ id: "a", updatedAt: "2026-09-08T10:00:00.000Z" }), hydrated: false as const };
+      const otherId = { ...stale, id: "b", updatedAt: hydrated.updatedAt };
+      expect(areWorkspacesEqual({ activeNoteId: "a", notes: [hydrated] }, { activeNoteId: "a", notes: [stale] })).toBe(false);
+      expect(areWorkspacesEqual({ activeNoteId: "a", notes: [hydrated] }, { activeNoteId: "a", notes: [otherId] })).toBe(false);
+    });
+
     it("detects when two workspaces are equivalent", () => {
       const leftWorkspace = {
         activeNoteId: "1",

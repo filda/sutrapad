@@ -818,6 +818,19 @@ export function applyDriveRefresh(
   };
 }
 
+/**
+ * "Would saving `left` change what `right` already is?" — the question
+ * behind the sign-in merge's push decision, the autosave clean-snapshot
+ * guard and `isWorkspaceDirty`.
+ *
+ * A body-less placeholder (`hydrated: false`) and a hydrated copy of the
+ * same note are the same note when their `updatedAt` matches: every edit
+ * bumps that stamp, and the placeholder's other fields were projected from
+ * the very summary the hydrated copy would produce. Comparing bodies there
+ * made "opened one note" read as "workspace is dirty" (focus refresh never
+ * ran again) and made every sign-in re-save the whole workspace — the
+ * 24-second failed restore the Diagnostics card showed on 2026-09-08.
+ */
 export function areWorkspacesEqual(
   leftWorkspace: SutraPadWorkspace,
   rightWorkspace: SutraPadWorkspace,
@@ -835,6 +848,9 @@ export function areWorkspacesEqual(
 
   return leftNotes.every((note, index) => {
     const other = rightNotes[index];
+    if (note.hydrated === false || other.hydrated === false) {
+      return note.id === other.id && note.updatedAt === other.updatedAt;
+    }
     const tagsEqual =
       note.tags.length === other.tags.length &&
       note.tags.every((tag, i) => tag === other.tags[i]);
