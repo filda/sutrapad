@@ -567,6 +567,7 @@ describe("createAppStateStore setters and render wiring", () => {
       store.taskIndex$,
       store.linkIndex$,
       store.rebuildStatus$,
+      store.diagnostics$,
     ]) {
       expect(store.renderingAtoms).not.toContain(internal);
     }

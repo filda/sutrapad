@@ -390,6 +390,8 @@ Compatibility notes:
 
 The whole `tests/nfr/` tree runs in `npm test` (a few seconds; `npm run test:nfr` runs it alone, and CI runs it as its own "Non-functional budgets" step so a red there reads as "something scales with the note count" rather than "a unit test broke") and is excluded under Stryker (`vitest.config.ts`): a broad property test kills no mutant a targeted unit test shouldn't already kill, and would mask the missing assertion the mutation score exists to expose. Logic the NFR layer exercises still needs its own unit test under mutation pressure.
 
+At runtime the same budgets are observed, not just tested: `GoogleDriveStore` reports soft-budget overruns through `onBudgetOverrun`, every Drive operation is metered (`src/services/drive/drive-meter.ts`, one meter per load / save / refresh / rebuild via `createWorkspaceIO`'s `measured()`), and `src/app/session/main-thread-observers.ts` listens for long tasks, slow interactions and a heap sample. All of it lands in the `diagnostics$` snapshot (`src/app/logic/diagnostics.ts`) and is shown on Settings → Diagnostics; overruns, failed operations and interactions over 200 ms also reach the console as `[budget]`, `[drive]` and `[main-thread]` lines.
+
 Two guard tests keep codebase-level invariants from drifting the way `tests/mutate-scope.test.ts` does for the mutate scope: `tests/body-reader-scope.test.ts` fails when a `src/` module reads a note's `body` without being classified as placeholder-aware (`guarded`) or placeholder-safe (`harmless`) — the class of bug behind the 2026-09-07 incident.
 
 ## Structure

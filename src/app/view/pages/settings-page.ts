@@ -19,6 +19,7 @@ import {
   describeRebuildStatus,
   type RebuildStatus,
 } from "../../logic/rebuild-status";
+import { describeDiagnostics, type DiagnosticsSnapshot } from "../../logic/diagnostics";
 
 /**
  * Builds a settings card's `<header>` — an eyebrow `<p>` + an `<h2>` title.
@@ -80,6 +81,8 @@ export interface SettingsPageOptions {
   rebuildStatus: RebuildStatus;
   /** Fires the manual "Rebuild index" action. */
   onRebuildIndex: () => void;
+  /** Runtime diagnostics for the Diagnostics card (`describeDiagnostics`). */
+  diagnostics: DiagnosticsSnapshot;
   onSignIn: () => void;
   /** Collapses a suggestion into `canonical` across every note that carries an alias. */
   onMergeTagAlias: (from: string, to: string) => void;
@@ -116,6 +119,7 @@ export function buildSettingsPage({
   onSaveNotebook,
   rebuildStatus,
   onRebuildIndex,
+  diagnostics,
   onSignIn,
   onMergeTagAlias,
   onDismissTagAlias,
@@ -148,6 +152,7 @@ export function buildSettingsPage({
       onSignIn,
     }),
   );
+  page.append(buildDiagnosticsCard(diagnostics));
   page.append(
     buildPrivacyCard({
       captureLocationPreference,
@@ -808,6 +813,38 @@ function buildBackupCard({
     }),
   );
 
+  card.append(list);
+  return card;
+}
+
+/**
+ * Diagnostics card: the runtime side of the non-functional budgets
+ * (`docs/nfr-testing-plan.md`). Read-only rows from `describeDiagnostics`;
+ * the snapshot is whatever `diagnostics$` held at render time — it is not
+ * in `renderingAtoms`, so the card refreshes with the next render rather
+ * than on every Drive call.
+ */
+function buildDiagnosticsCard(snapshot: DiagnosticsSnapshot): HTMLElement {
+  const card = document.createElement("section");
+  card.className = "settings-card settings-diagnostics";
+  const copy = messages().settings.diagnostics;
+  card.append(buildSettingsCardHeader(copy.eyebrow, copy.title));
+
+  const intro = document.createElement("p");
+  intro.className = "settings-card-hint";
+  intro.textContent = copy.intro;
+  card.append(intro);
+
+  const list = document.createElement("dl");
+  list.className = "settings-diagnostics-rows";
+  for (const row of describeDiagnostics(snapshot)) {
+    const term = document.createElement("dt");
+    term.textContent = row.label;
+    const detail = document.createElement("dd");
+    detail.textContent = row.value;
+    detail.dataset.row = row.id;
+    list.append(term, detail);
+  }
   card.append(list);
   return card;
 }

@@ -10,6 +10,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { buildSettingsPage, type SettingsPageOptions } from "../src/app/view/pages/settings-page";
+import { createEmptyDiagnostics, recordOperation } from "../src/app/logic/diagnostics";
+import { emptyDriveCounts } from "../src/services/drive/drive-meter";
 import { describeThemes, THEMES } from "../src/app/logic/theme";
 import { EN } from "../src/lib/i18n";
 import type { UserProfile } from "../src/types";
@@ -33,6 +35,7 @@ function baseOptions(
     onLoadNotebook: vi.fn(),
     onSaveNotebook: vi.fn(),
     rebuildStatus: { state: "idle" },
+    diagnostics: createEmptyDiagnostics(),
     onRebuildIndex: vi.fn(),
     onSignIn: vi.fn(),
     onMergeTagAlias: vi.fn(),
@@ -146,7 +149,7 @@ function toggleOptions(group: Element | null | undefined): HTMLButtonElement[] {
 }
 
 describe("buildSettingsPage — page shell", () => {
-  it("stacks the seven cards in a stable order, language first", () => {
+  it("stacks the eight cards in a stable order, language first", () => {
     const page = buildSettingsPage(baseOptions());
     expect(page.tagName).toBe("SECTION");
     expect(page.className).toBe("settings-page");
@@ -156,6 +159,7 @@ describe("buildSettingsPage — page shell", () => {
       "settings-card",
       "settings-card tag-hygiene-card",
       "settings-card",
+      "settings-card settings-diagnostics",
       "settings-card settings-card-privacy",
       "settings-card settings-card-workbench",
     ]);
@@ -173,6 +177,7 @@ describe("buildSettingsPage — page shell", () => {
       ["Notebook", "Persona"],
       ["Notebook", "Tag hygiene"],
       ["Backup", "Google Drive"],
+      ["Diagnostics", "Sync and performance"],
       ["Workbench", "Internal tooling"],
     ]);
   });
@@ -641,5 +646,50 @@ describe("buildSettingsPage: appends nobody was counting", () => {
     const row = page.querySelector<HTMLElement>(".hygiene-alias-row");
     if (row === null) throw new Error("expected .hygiene-alias-row");
     expect(row.querySelector(".tag-pill")?.textContent).toContain("prahaa");
+  });
+});
+
+describe("buildSettingsPage — Diagnostics card", () => {
+  it("renders one dt/dd pair per diagnostics row with the row id on the value", () => {
+    const page = buildSettingsPage(baseOptions());
+    const card = page.querySelector(".settings-diagnostics");
+    expect(card).not.toBeNull();
+    const terms = [...(card?.querySelectorAll("dt") ?? [])].map((el) => el.textContent);
+    const values = [...(card?.querySelectorAll("dd") ?? [])].map((el) => [el.dataset.row, el.textContent]);
+    expect(terms).toEqual([
+      "Last load",
+      "Last save",
+      "Last refresh",
+      "Last rebuild",
+      "This session",
+      "Budget overruns",
+      "Main thread",
+      "JavaScript heap",
+    ]);
+    expect(values).toEqual([
+      ["lastLoad", "—"],
+      ["lastSave", "—"],
+      ["lastRefresh", "—"],
+      ["lastRebuild", "—"],
+      ["session", "—"],
+      ["overruns", "None"],
+      ["mainThread", "—"],
+      ["memory", "Not available in this browser"],
+    ]);
+  });
+
+  it("shows the recorded numbers from the snapshot it is given", () => {
+    const counts = { ...emptyDriveCounts(), total: 4, noteUploads: 1 };
+    const snapshot = recordOperation(createEmptyDiagnostics(), {
+      kind: "save",
+      at: "2026-09-08T10:00:00.000Z",
+      durationMs: 640,
+      ok: true,
+      counts,
+    });
+    const page = buildSettingsPage(baseOptions({ diagnostics: snapshot }));
+    expect(page.querySelector<HTMLElement>('dd[data-row="lastSave"]')?.textContent).toBe(
+      "4 requests · 1 note uploaded · 640 ms",
+    );
   });
 });

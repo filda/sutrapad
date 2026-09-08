@@ -13,6 +13,7 @@
   2. Refactor candidates — if implementation revealed duplication or awkward abstractions, address them while the context is fresh.
   3. Code coverage — check the report for the touched area and cover meaningful gaps.
   4. Mutation testing — check Stryker results; a surviving mutant means a missing assertion, so add it.
+  5. Non-functional review — ask whether the feature changed anything that scales with the workspace (a new fan-out over `workspace.notes`, a new Drive or proxy call path, a new reader of note bodies, new resident state) or added a limit worth pinning. If so, add or extend a property in `tests/nfr/**` and, where a new number appears, a budget in `src/lib/budgets.ts`. If not, say so explicitly; the answer is a sentence, not a shrug. See [docs/nfr-testing-plan.md](docs/nfr-testing-plan.md).
 
 ## Commit Messages
 

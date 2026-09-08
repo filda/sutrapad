@@ -272,6 +272,52 @@ export const CS: Messages = {
         button: "Přestavět",
       },
     },
+    diagnostics: {
+      eyebrow: "Diagnostika",
+      title: "Synchronizace a výkon",
+      intro:
+        "Živá čísla za tuhle relaci: kolik požadavků na Google Drive udělala každá synchronizační operace, jestli některé uložení překročilo bezpečnostní rozpočet a jak se daří hlavnímu vláknu stránky. Nic z toho se neukládá ani nikam neposílá.",
+      rows: {
+        lastLoad: "Poslední načtení",
+        lastSave: "Poslední uložení",
+        lastRefresh: "Poslední obnovení",
+        lastRebuild: "Poslední přestavba",
+        session: "Tahle relace",
+        overruns: "Překročení rozpočtu",
+        mainThread: "Hlavní vlákno",
+        memory: "Paměť JavaScriptu",
+      },
+      none: "—",
+      requests: {
+        one: "{count} požadavek",
+        few: "{count} požadavky",
+        many: "{count} požadavku",
+        other: "{count} požadavků",
+      },
+      noteUploads: {
+        one: "{count} poznámka nahrána",
+        few: "{count} poznámky nahrány",
+        many: "{count} poznámky nahráno",
+        other: "{count} poznámek nahráno",
+      },
+      operations: {
+        one: "{count} operace",
+        few: "{count} operace",
+        many: "{count} operace",
+        other: "{count} operací",
+      },
+      failed: "selhalo",
+      noOverruns: "Žádná",
+      overrunCount: {
+        one: "{count} překročení",
+        few: "{count} překročení",
+        many: "{count} překročení",
+        other: "{count} překročení",
+      },
+      longTasks: (count: number, max: string) => `${count} dlouhých úloh (nejdelší ${max})`,
+      interactions: (count: number, max: string) => `${count} interakcí (nejpomalejší ${max})`,
+      notAvailable: "V tomhle prohlížeči není k dispozici",
+    },
     privacy: {
       title: "Soukromí",
       summary:

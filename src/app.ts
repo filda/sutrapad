@@ -1,8 +1,22 @@
 import { GoogleAuthService } from "./services/google-auth";
 import {
+  GoogleDriveClient,
   GoogleDrivePreferencesStore,
   GoogleDriveStore,
 } from "./services/drive-store";
+import type { DriveMeter } from "./services/drive/drive-meter";
+import {
+  describeOperationForConsole,
+  formatDuration,
+  INTERACTION_WARN_MS,
+  LONG_TASK_WARN_MS,
+  recordHeapSample,
+  recordInteraction,
+  recordLongTask,
+  recordOperation,
+  recordOverrun,
+} from "./app/logic/diagnostics";
+import { startMainThreadObservers } from "./app/session/main-thread-observers";
 import { GoogleDriveLexiconStore } from "./services/drive/lexicon-store";
 import {
   buildCombinedTagIndex,
@@ -198,6 +212,7 @@ export function createApp(root: HTMLElement): void {
     recentTagFilters$,
     paletteAccess$,
     rebuildStatus$,
+    diagnostics$,
   } = store;
   const setProfileState = store.setProfile;
   const setWorkspaceState = store.setWorkspace;
@@ -223,6 +238,7 @@ export function createApp(root: HTMLElement): void {
   const setDismissedTagAliasesState = store.setDismissedTagAliases;
   const setRecentTagFiltersState = store.setRecentTagFilters;
   const setRebuildStatusState = store.setRebuildStatus;
+  const { updateDiagnostics } = store;
 
   // When the user picked "auto", the concrete palette depends on the OS
   // light/dark preference. Subscribe once so a system switch during a live
@@ -718,6 +734,7 @@ export function createApp(root: HTMLElement): void {
         dismissedTagAliases: dismissedTagAliases$.get(),
         recentTagFilters: recentTagFilters$.get(),
         rebuildStatus: rebuildStatus$.get(),
+        diagnostics: diagnostics$.get(),
         locale: locale$.get(),
         currentTheme: currentTheme$.get(),
         personaPreference: personaPreference$.get(),
@@ -774,18 +791,24 @@ export function createApp(root: HTMLElement): void {
     atom$.subscribe(scheduleRender),
   );
 
-  const getStore = (): GoogleDriveStore => {
+  const getStore = (meter?: DriveMeter): GoogleDriveStore => {
     const token = auth.getAccessToken();
     if (!token) {
       throw new Error("The user is not signed in.");
     }
 
+    const client = new GoogleDriveClient(token);
     return new GoogleDriveStore(token, {
+      // The workspace IO hands in one meter per operation so the
+      // Diagnostics card can show "last save: N requests" — see
+      // `createWorkspaceIO`'s `measured`.
+      client: meter ? meter.wrap(client) : client,
       // Soft-budget overruns (index shrink, upload fan-out) — see
-      // `save-policy.ts`. Console for now; the diagnostics card in
-      // Settings is the planned home (`docs/nfr-testing-plan.md`).
+      // `save-policy.ts`. Logged and kept for the Settings →
+      // Diagnostics card.
       onBudgetOverrun: (overrun) => {
         console.warn(`[budget] ${overrun.budget}: ${overrun.message}`);
+        updateDiagnostics((snapshot) => recordOverrun(snapshot, overrun));
       },
     });
   };
@@ -842,6 +865,34 @@ export function createApp(root: HTMLElement): void {
     render,
     refreshStatus,
     cancelAutoSave,
+    onOperation: (record) => {
+      // Every record lands in the Diagnostics card; only failures also go
+      // to the console (this codebase logs telemetry through `warn`, and a
+      // line per successful save would drown the signal).
+      if (!record.ok) console.warn(describeOperationForConsole(record));
+      updateDiagnostics((snapshot) => recordOperation(snapshot, record));
+    },
+  });
+
+  // Passive main-thread observers feeding the Diagnostics card. Slow
+  // interactions and long tasks over the warn thresholds also go to the
+  // console so a "the editor stalled" report can be matched to a number.
+  const stopMainThreadObservers = startMainThreadObservers({
+    onLongTask: (durationMs) => {
+      if (durationMs >= LONG_TASK_WARN_MS) {
+        console.warn(`[main-thread] long task ${formatDuration(durationMs)}`);
+      }
+      updateDiagnostics((snapshot) => recordLongTask(snapshot, durationMs));
+    },
+    onInteraction: (durationMs) => {
+      if (durationMs >= INTERACTION_WARN_MS) {
+        console.warn(`[main-thread] slow interaction ${formatDuration(durationMs)}`);
+      }
+      updateDiagnostics((snapshot) => recordInteraction(snapshot, durationMs));
+    },
+    onHeapSample: (usedBytes) => {
+      updateDiagnostics((snapshot) => recordHeapSample(snapshot, usedBytes));
+    },
   });
 
   // Fire-and-forget prewarm of the og:image cache. Walks every note
@@ -1030,6 +1081,7 @@ export function createApp(root: HTMLElement): void {
       disposeKeyboardShortcuts();
       disposeNotesEndlessScroll();
       focusRefresh.stop();
+      stopMainThreadObservers();
       disposePreferencesAutosave();
       cancelPreferencesSave();
       for (const dispose of disposeRenderSubscriptions) dispose();

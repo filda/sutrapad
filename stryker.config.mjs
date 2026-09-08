@@ -35,6 +35,7 @@ const config = {
     "src/services/drive/preferences-store.ts",
     "src/services/drive/workspace-store.ts",
     "src/services/drive/save-policy.ts",
+    "src/services/drive/drive-meter.ts",
 
     // App-level wiring with a dedicated test. `state-store.ts` got
     // `tests/state-store.test.ts` on 2026-08-19 — route/preference seeding,

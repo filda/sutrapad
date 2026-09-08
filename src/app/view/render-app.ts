@@ -42,6 +42,7 @@ import { buildNotesPanel, type NotesPanelOptions } from "./pages/notes-page";
 import { buildPagePlaceholder } from "./pages/placeholder-page";
 import { buildSettingsPage } from "./pages/settings-page";
 import type { RebuildStatus } from "../logic/rebuild-status";
+import type { DiagnosticsSnapshot } from "../logic/diagnostics";
 import { buildPrivacyPage } from "./pages/privacy-page";
 import { buildAboutPage } from "./pages/about-page";
 import { buildTermsPage } from "./pages/terms-page";
@@ -162,6 +163,8 @@ interface RenderAppOptions
   rebuildStatus: RebuildStatus;
   /** Fires the manual "Rebuild index" action from the Backup card. */
   onRebuildIndex: () => void;
+  /** Runtime diagnostics for Settings → Diagnostics. */
+  diagnostics: DiagnosticsSnapshot;
   onSignOut: () => void;
   onCopyBookmarklet: () => void;
   onToggleTask: (noteId: string, lineIndex: number) => void;
@@ -315,6 +318,7 @@ export function renderAppPage({
   onSaveNotebook,
   rebuildStatus,
   onRebuildIndex,
+  diagnostics,
   onSignOut,
   onCopyBookmarklet,
   onSelectNote,
@@ -574,6 +578,7 @@ export function renderAppPage({
           onSaveNotebook,
           rebuildStatus,
           onRebuildIndex,
+          diagnostics,
           onSignIn,
           onMergeTagAlias,
           onDismissTagAlias,

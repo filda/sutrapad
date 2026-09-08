@@ -27,6 +27,7 @@
  *     by ghost subscribers from the previous instance.
  */
 import { atom, type Atom, type Readable } from "../lib/store";
+import { createEmptyDiagnostics, type DiagnosticsSnapshot } from "./logic/diagnostics";
 import type {
   SutraPadLinkIndex,
   SutraPadNoteSummary,
@@ -161,6 +162,14 @@ export interface AppStateStore {
    * atom-driven scheduling.
    */
   readonly rebuildStatus$: Atom<RebuildStatus>;
+  /**
+   * Runtime diagnostics (Drive request counts per operation, budget
+   * overruns, main-thread observers) for the Settings → Diagnostics card.
+   * Not in `renderingAtoms`: it changes on every Drive call and every
+   * long task, and the card simply shows whatever the snapshot holds at
+   * the next render.
+   */
+  readonly diagnostics$: Atom<DiagnosticsSnapshot>;
   // Setter wrappers — used by render-callbacks and external lifecycle
   // pieces that don't see the atoms directly. `setRecentTagFilters`
   // deep-copies its input so the atom's stored value stays unaliased
@@ -192,6 +201,8 @@ export interface AppStateStore {
   setDismissedTagAliases(next: Set<string>): void;
   setRecentTagFilters(next: readonly string[]): void;
   setRebuildStatus(next: RebuildStatus): void;
+  /** Applies a `diagnostics.ts` reducer to the current snapshot. */
+  updateDiagnostics(update: (snapshot: DiagnosticsSnapshot) => DiagnosticsSnapshot): void;
   /**
    * Returns the list of atoms that contribute to the user-visible
    * UI (workspace, filters, route, view modes, …) — every one of
@@ -304,6 +315,7 @@ export function createAppStateStore({
   // returns the Backup card to idle, which is the right default (the
   // rebuild itself is not resumed across a reload).
   const rebuildStatus$ = atom<RebuildStatus>(IDLE_REBUILD_STATUS);
+  const diagnostics$ = atom<DiagnosticsSnapshot>(createEmptyDiagnostics());
 
   // Persist side-effect subscribers. Each one writes to localStorage
   // (or, in the theme case, applies a CSS-class change) on every
@@ -373,6 +385,7 @@ export function createAppStateStore({
     recentTagFilters$,
     paletteAccess$,
     rebuildStatus$,
+    diagnostics$,
     setProfile: (next) => profile$.set(next),
     setWorkspace: (next) => workspace$.set(next),
     setNoteSummaries: (next) => noteSummaries$.set(next),
@@ -404,6 +417,7 @@ export function createAppStateStore({
     // a snapshot they keep mutating.
     setRecentTagFilters: (next) => recentTagFilters$.set([...next]),
     setRebuildStatus: (next) => rebuildStatus$.set(next),
+    updateDiagnostics: (update) => diagnostics$.set(update(diagnostics$.get())),
     renderingAtoms: [
       workspace$,
       profile$,

@@ -1648,6 +1648,25 @@ button.tag-pill {
   gap: 14px;
 }
 
+.settings-diagnostics-rows {
+  display: grid;
+  grid-template-columns: minmax(140px, max-content) 1fr;
+  gap: 8px 18px;
+  margin: 0;
+}
+
+.settings-diagnostics-rows dt {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.settings-diagnostics-rows dd {
+  margin: 0;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
 .settings-backup-action {
   display: flex;
   align-items: center;

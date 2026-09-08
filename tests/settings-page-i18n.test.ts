@@ -23,6 +23,7 @@ import {
   buildSettingsPage,
   type SettingsPageOptions,
 } from "../src/app/view/pages/settings-page";
+import { createEmptyDiagnostics } from "../src/app/logic/diagnostics";
 import { THEMES } from "../src/app/logic/theme";
 import { CS, DEFAULT_LOCALE, setActiveLocale } from "../src/lib/i18n";
 import type { UserProfile } from "../src/types";
@@ -47,6 +48,7 @@ function czechPage(overrides: Partial<SettingsPageOptions> = {}): HTMLElement {
     onLoadNotebook: vi.fn(),
     onSaveNotebook: vi.fn(),
     rebuildStatus: { state: "idle" },
+    diagnostics: createEmptyDiagnostics(),
     onRebuildIndex: vi.fn(),
     onSignIn: vi.fn(),
     onMergeTagAlias: vi.fn(),
@@ -71,6 +73,7 @@ describe("Settings page in Czech — copy", () => {
       ["Zápisník", "Persona"],
       ["Zápisník", "Hygiena štítků"],
       ["Záloha", "Google Drive"],
+      ["Diagnostika", "Synchronizace a výkon"],
       ["Dílna", "Interní nástroje"],
     ]);
   });

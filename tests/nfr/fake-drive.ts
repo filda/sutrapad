@@ -12,16 +12,10 @@
 import type { DriveFileRecord } from "../../src/types";
 import type { DriveClient } from "../../src/services/drive/workspace-store";
 import { GoogleDriveApiError } from "../../src/services/drive/client";
+import { DRIVE_CALL_KINDS, type DriveCallKind } from "../../src/services/drive/drive-meter";
 import { compileDriveQuery } from "./drive-query";
 
-export type DriveCallKind =
-  | "findFiles"
-  | "fetchJsonFile"
-  | "fetchFileMetadata"
-  | "ensureFileInFolder"
-  | "deleteFile"
-  | "createFolder"
-  | "uploadJsonFile";
+export type { DriveCallKind };
 
 export interface FakeDriveFile {
   id: string;
@@ -279,15 +273,7 @@ export class FakeDrive implements DriveClient {
 }
 
 function emptyCalls(): Record<DriveCallKind, number> {
-  return {
-    findFiles: 0,
-    fetchJsonFile: 0,
-    fetchFileMetadata: 0,
-    ensureFileInFolder: 0,
-    deleteFile: 0,
-    createFolder: 0,
-    uploadJsonFile: 0,
-  };
+  return Object.fromEntries(DRIVE_CALL_KINDS.map((kind) => [kind, 0])) as Record<DriveCallKind, number>;
 }
 
 function toRecord(file: FakeDriveFile): DriveFileRecord {

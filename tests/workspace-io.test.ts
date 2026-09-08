@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { createWorkspaceIO } from "../src/app/session/workspace-io";
+import type { DriveOperationRecord } from "../src/app/logic/diagnostics";
+import type { DriveMeter } from "../src/services/drive/drive-meter";
 import type { GoogleDriveStore } from "../src/services/drive-store";
 import type { SutraPadWorkspace } from "../src/types";
 
@@ -967,5 +969,96 @@ describe("createWorkspaceIO: ids learned from Drive are remembered", () => {
 
     expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
     expect(lastCommittedIds(h)).toEqual([]);
+  });
+});
+
+describe("createWorkspaceIO — operation metering (diagnostics)", () => {
+  function meteredHarness(): IOHarness & {
+    records: DriveOperationRecord[];
+    meters: DriveMeter[];
+    deps: Parameters<typeof createWorkspaceIO>[0];
+  } {
+    const h = makeHarness();
+    const records: DriveOperationRecord[] = [];
+    const meters: DriveMeter[] = [];
+    let clock = 0;
+    const deps: Parameters<typeof createWorkspaceIO>[0] = {
+      getStore: (meter) => {
+        if (meter) meters.push(meter);
+        return h.getStore();
+      },
+      retryContext: { refreshSession: h.refreshSession, onProfileRefreshed: h.onProfileRefreshed },
+      getWorkspace: () => makeWorkspace([realNote("local")]),
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+      onOperation: (record) => records.push(record),
+      now: () => {
+        clock += 250;
+        return clock;
+      },
+    };
+    return { ...h, records, meters, deps };
+  }
+
+  it("reports one record per operation kind with wall time and the meter's counts", async () => {
+    const h = meteredHarness();
+    const io = createWorkspaceIO(h.deps);
+    await io.loadWorkspace();
+    await io.saveWorkspace();
+    await io.rebuildIndexes();
+    await io.refreshWorkspace();
+
+    expect(h.records.map((r) => r.kind)).toEqual(["load", "save", "rebuild", "refresh"]);
+    for (const record of h.records) {
+      expect(record.ok).toBe(true);
+      expect(record.durationMs).toBe(250); // one `now()` tick between start and end
+      expect(record.counts.total).toBe(0); // the harness store never touches a client
+      expect(Date.parse(record.at)).not.toBeNaN();
+    }
+    // Every metered operation asked the factory for a store bound to its own meter.
+    expect(h.meters).toHaveLength(4 + 0);
+    expect(new Set(h.meters).size).toBe(h.meters.length);
+  });
+
+  it("records a failed operation as ok: false and rethrows", async () => {
+    const h = meteredHarness();
+    h.store.rebuildIndexes.mockRejectedValueOnce(new Error("boom"));
+    const io = createWorkspaceIO(h.deps);
+    await expect(io.rebuildIndexes()).rejects.toThrow("boom");
+    expect(h.records).toEqual([expect.objectContaining({ kind: "rebuild", ok: false })]);
+  });
+
+  it("labels the sign-in restore's load as 'restore' and the hydrate-on-open fetch as 'hydrate'", async () => {
+    const h = meteredHarness();
+    h.store.fetchNoteByFileId.mockResolvedValue(realNote("hydrated"));
+    const io = createWorkspaceIO(h.deps);
+    await io.restoreWorkspaceAfterSignIn();
+    await io.fetchNoteBody("file-1");
+    // The local workspace holds a note the remote lacks, so restore runs
+    // both its legs (load, then the merge push) — each is its own record.
+    expect(h.records.map((r) => r.kind)).toEqual(["restore", "restore", "hydrate"]);
+    expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays silent when no onOperation hook is given", async () => {
+    const h = makeHarness();
+    const io = createWorkspaceIO({
+      getStore: h.getStore,
+      retryContext: { refreshSession: h.refreshSession, onProfileRefreshed: h.onProfileRefreshed },
+      getWorkspace: () => makeWorkspace([]),
+      setWorkspace: h.setWorkspace,
+      persistLocalWorkspace: h.persistLocalWorkspace,
+      setSyncState: h.setSyncState,
+      setLastError: h.setLastError,
+      render: h.render,
+      refreshStatus: h.refreshStatus,
+      cancelAutoSave: h.cancelAutoSave,
+    });
+    await expect(io.loadWorkspace()).resolves.toBeUndefined();
   });
 });

@@ -309,6 +309,53 @@ export const EN = {
         button: "Rebuild",
       },
     },
+    /** Settings → Diagnostics card (runtime non-functional numbers). */
+    diagnostics: {
+      eyebrow: "Diagnostics",
+      title: "Sync and performance",
+      intro:
+        "Live numbers for this session: how many Google Drive requests each sync operation made, whether any save crossed a safety budget, and how the page's main thread is doing. Nothing here is stored or sent anywhere.",
+      rows: {
+        lastLoad: "Last load",
+        lastSave: "Last save",
+        lastRefresh: "Last refresh",
+        lastRebuild: "Last rebuild",
+        session: "This session",
+        overruns: "Budget overruns",
+        mainThread: "Main thread",
+        memory: "JavaScript heap",
+      },
+      none: "—",
+      requests: {
+        one: "{count} request",
+        few: "{count} requests",
+        many: "{count} requests",
+        other: "{count} requests",
+      } satisfies PluralForms,
+      noteUploads: {
+        one: "{count} note uploaded",
+        few: "{count} notes uploaded",
+        many: "{count} notes uploaded",
+        other: "{count} notes uploaded",
+      } satisfies PluralForms,
+      operations: {
+        one: "{count} operation",
+        few: "{count} operations",
+        many: "{count} operations",
+        other: "{count} operations",
+      } satisfies PluralForms,
+      failed: "failed",
+      noOverruns: "None",
+      overrunCount: {
+        one: "{count} overrun",
+        few: "{count} overruns",
+        many: "{count} overruns",
+        other: "{count} overruns",
+      } satisfies PluralForms,
+      longTasks: (count: number, max: string) => `${count} long tasks (longest ${max})`,
+      interactions: (count: number, max: string) => `${count} interactions (slowest ${max})`,
+      notAvailable: "Not available in this browser",
+    },
     privacy: {
       title: "Privacy",
       summary:

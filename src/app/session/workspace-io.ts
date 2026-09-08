@@ -12,6 +12,8 @@
 
 import { areWorkspacesEqual, stripEmptyDraftNotes } from "../../lib/notebook";
 import type { GoogleDriveStore } from "../../services/drive-store";
+import { createDriveMeter, type DriveMeter } from "../../services/drive/drive-meter";
+import type { DriveOperationKind, DriveOperationRecord } from "../logic/diagnostics";
 import type { SutraPadDocument, SutraPadWorkspace } from "../../types";
 import { withAuthRetry, type AuthRetryContext } from "./auth-retry";
 import {
@@ -31,7 +33,13 @@ import {
 } from "../logic/import-batches";
 
 export interface WorkspaceIODeps {
-  getStore: () => GoogleDriveStore;
+  /**
+   * Store factory. When a `DriveMeter` is passed, the store's client must
+   * be wrapped in it so the operation that owns the meter sees its
+   * request counts (see `measured` below). Callers that don't meter
+   * ignore the argument.
+   */
+  getStore: (meter?: DriveMeter) => GoogleDriveStore;
   retryContext: AuthRetryContext;
   getWorkspace: () => SutraPadWorkspace;
   setWorkspace: (workspace: SutraPadWorkspace) => void;
@@ -41,6 +49,15 @@ export interface WorkspaceIODeps {
   render: () => void;
   refreshStatus: () => void;
   cancelAutoSave: () => void;
+  /**
+   * Receives one record per completed Drive operation (load / save /
+   * restore / refresh / rebuild / hydrate) with its request counts and
+   * wall time — the runtime side of the non-functional budgets. Optional;
+   * the app feeds it into the diagnostics snapshot.
+   */
+  onOperation?: (record: DriveOperationRecord) => void;
+  /** Clock for operation timing; defaults to `performance.now`. */
+  now?: () => number;
 }
 
 export interface WorkspaceIO {
@@ -107,7 +124,39 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     render,
     refreshStatus,
     cancelAutoSave,
+    onOperation,
   } = deps;
+  const now = deps.now ?? (() => performance.now());
+
+  /**
+   * Runs `operation` with a fresh `DriveMeter` and reports one
+   * `DriveOperationRecord` when it settles, success or failure. The
+   * closure receives a store factory bound to that meter, so every Drive
+   * call the operation makes — including `withAuthRetry`'s second attempt
+   * after a 401 — lands in the same counts. Operations that span several
+   * store calls (refresh, import) share one meter for the whole run.
+   */
+  const measured = async <R>(
+    kind: DriveOperationKind,
+    operation: (store: () => GoogleDriveStore) => Promise<R>,
+  ): Promise<R> => {
+    const meter = createDriveMeter();
+    const started = now();
+    let ok = false;
+    try {
+      const result = await operation(() => getStore(meter));
+      ok = true;
+      return result;
+    } finally {
+      onOperation?.({
+        kind,
+        at: new Date().toISOString(),
+        durationMs: now() - started,
+        ok,
+        counts: meter.snapshot(),
+      });
+    }
+  };
 
   // Snapshot of the workspace we last successfully synced with Drive
   // (either pushed via save or pulled via load / restoreAfterSignIn).
@@ -151,10 +200,11 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     for (const note of notes) knownDriveIds.add(note.id);
   };
 
-  const loadRemoteWorkspaceAndMarkClean = async (): Promise<SutraPadWorkspace> => {
-    const loaded = await withAuthRetry(
-      () => getStore().loadWorkspace(),
-      retryContext,
+  const loadRemoteWorkspaceAndMarkClean = async (
+    kind: DriveOperationKind = "load",
+  ): Promise<SutraPadWorkspace> => {
+    const loaded = await measured(kind, (store) =>
+      withAuthRetry(() => store().loadWorkspace(), retryContext),
     );
     lastSyncedWorkspace = loaded;
     rememberDriveIds(loaded.notes);
@@ -181,9 +231,8 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
   // `loadWorkspace` saw this note on Drive, so this isn't new information,
   // but keeping the bookkeeping uniform costs nothing.
   const fetchNoteBody = async (fileId: string): Promise<SutraPadDocument> => {
-    const note = await withAuthRetry(
-      () => getStore().fetchNoteByFileId(fileId),
-      retryContext,
+    const note = await measured("hydrate", (store) =>
+      withAuthRetry(() => store().fetchNoteByFileId(fileId), retryContext),
     );
     rememberDriveIds([note]);
     return note;
@@ -191,13 +240,15 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
 
   const restoreWorkspaceAfterSignIn = (): Promise<void> =>
     runWorkspaceRestoreAfterSignIn({
-      loadRemoteWorkspace: loadRemoteWorkspaceAndMarkClean,
+      loadRemoteWorkspace: () => loadRemoteWorkspaceAndMarkClean("restore"),
       // Note: `runWorkspaceRestoreAfterSignIn` only invokes
       // `saveRemoteWorkspace` when the merge produced changes versus
       // the just-loaded remote — so reaching this closure already
       // means we have new bytes to push.
       saveRemoteWorkspace: async (ws) => {
-        await withAuthRetry(() => getStore().saveWorkspace(ws), retryContext);
+        await measured("restore", (store) =>
+          withAuthRetry(() => store().saveWorkspace(ws), retryContext),
+        );
         lastSyncedWorkspace = ws;
         rememberDriveIds(ws.notes);
       },
@@ -243,12 +294,11 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     return runWorkspaceSave(mode, {
       persistLocalWorkspace: () => persistLocalWorkspace(getWorkspace()),
       saveRemoteWorkspace: async () => {
-        await withAuthRetry(
-          () => getStore().saveWorkspace(toSave),
-          {
+        await measured("save", (store) =>
+          withAuthRetry(() => store().saveWorkspace(toSave), {
             ...retryContext,
             mode,
-          },
+          }),
         );
         lastSyncedWorkspace = toSave;
         rememberDriveIds(toSave.notes);
@@ -262,44 +312,50 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
   };
 
   // Progressive refresh: Drive I/O is bound through `withAuthRetry`
+  // and the whole run shares one meter (`measured("refresh")`). Note the
+  // orchestrator catches its own failures and reports them through
+  // `setSyncState("error")`, so the refresh record's `ok` reflects the
+  // orchestrator settling, not whether every batch succeeded.
   // (interactive mode — focus is a user-driven trigger, so a 401 should
   // attempt the silent-refresh path) and the existing render / sync-state
   // hooks. The orchestrator owns batching + merge order.
   const refreshWorkspace = (
     options: WorkspaceRefreshOptions = {},
   ): Promise<void> =>
-    runWorkspaceRefresh(
-      {
-        loadInventory: async () => {
-          const inventory = await withAuthRetry(
-            () => getStore().loadNoteInventory(),
-            retryContext,
-          );
-          // Every id Drive currently lists is confirmed to exist on
-          // Drive. Folding them into the known-set widens the set
-          // we use to distinguish "deleted on another device" from
-          // "never pushed from this device" inside `applyDriveRefresh`.
-          rememberDriveIds(inventory.map((entry) => ({ id: entry.noteId })));
-          return inventory;
+    measured("refresh", (store) =>
+      runWorkspaceRefresh(
+        {
+          loadInventory: async () => {
+            const inventory = await withAuthRetry(
+              () => store().loadNoteInventory(),
+              retryContext,
+            );
+            // Every id Drive currently lists is confirmed to exist on
+            // Drive. Folding them into the known-set widens the set
+            // we use to distinguish "deleted on another device" from
+            // "never pushed from this device" inside `applyDriveRefresh`.
+            rememberDriveIds(inventory.map((entry) => ({ id: entry.noteId })));
+            return inventory;
+          },
+          fetchNoteByFileId: async (fileId) => {
+            const note = await withAuthRetry(
+              () => store().fetchNoteByFileId(fileId),
+              retryContext,
+            );
+            rememberDriveIds([note]);
+            return note;
+          },
+          getKnownDriveIds: () => knownDriveIds,
+          getWorkspace,
+          setWorkspace,
+          persistLocalWorkspace,
+          setSyncState,
+          setLastError,
+          render,
+          cancelAutoSave,
         },
-        fetchNoteByFileId: async (fileId) => {
-          const note = await withAuthRetry(
-            () => getStore().fetchNoteByFileId(fileId),
-            retryContext,
-          );
-          rememberDriveIds([note]);
-          return note;
-        },
-        getKnownDriveIds: () => knownDriveIds,
-        getWorkspace,
-        setWorkspace,
-        persistLocalWorkspace,
-        setSyncState,
-        setLastError,
-        render,
-        cancelAutoSave,
-      },
-      options,
+        options,
+      ),
     );
 
   const importNotes = async (
@@ -338,7 +394,9 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
   // user is actively waiting on, not a background/autosave path — so a
   // 401 mid-rebuild is fine to resolve via the normal silent-refresh retry.
   const rebuildIndexes = (): Promise<{ noteCount: number }> =>
-    withAuthRetry(() => getStore().rebuildIndexes(), retryContext);
+    measured("rebuild", (store) =>
+      withAuthRetry(() => store().rebuildIndexes(), retryContext),
+    );
 
   const isWorkspaceDirty = (): boolean => {
     if (lastSyncedWorkspace === null) return false;

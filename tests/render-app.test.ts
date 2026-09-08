@@ -50,6 +50,7 @@ import { buildNoteSummary } from "../src/lib/note-card-meta";
 import { buildTaskIndex } from "../src/lib/tasks";
 import type { MenuItemId } from "../src/app/logic/menu";
 import { addDismissedTagAlias } from "../src/app/logic/tag-aliases";
+import { createEmptyDiagnostics } from "../src/app/logic/diagnostics";
 import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 
 const note = (overrides: Partial<SutraPadDocument> = {}): SutraPadDocument => ({
@@ -160,6 +161,7 @@ function render(overrides: Partial<Options> = {}) {
     tagsSearchQuery: "",
     dismissedTagAliases: new Set<string>(),
     rebuildStatus: { kind: "idle" },
+    diagnostics: createEmptyDiagnostics(),
     getLexiconStore: () => null,
     ...spies,
     ...overrides,

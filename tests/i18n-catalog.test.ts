@@ -81,6 +81,8 @@ describe("catalog completeness", () => {
       // Loanword, and a product name.
       "settings.persona.title",
       "settings.backup.title",
+      // An em dash placeholder is punctuation, not copy.
+      "settings.diagnostics.none",
     ]);
   });
 
