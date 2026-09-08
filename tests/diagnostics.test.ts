@@ -132,16 +132,27 @@ describe("describeDiagnostics", () => {
     const rows = describeDiagnostics(createEmptyDiagnostics(), "en");
     expect(rows.map((row) => row.id)).toEqual([
       "lastLoad",
+      "lastRestore",
       "lastSave",
       "lastRefresh",
       "lastRebuild",
+      "lastHydrate",
       "session",
       "overruns",
       "mainThread",
       "memory",
     ]);
     const byId = new Map(rows.map((row) => [row.id, row.value]));
-    for (const id of ["lastLoad", "lastSave", "lastRefresh", "lastRebuild", "session", "mainThread"] as const) {
+    for (const id of [
+      "lastLoad",
+      "lastRestore",
+      "lastSave",
+      "lastRefresh",
+      "lastRebuild",
+      "lastHydrate",
+      "session",
+      "mainThread",
+    ] as const) {
       expect(byId.get(id)).toBe("—");
     }
     expect(byId.get("overruns")).toBe("None");

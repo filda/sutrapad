@@ -317,9 +317,11 @@ export const EN = {
         "Live numbers for this session: how many Google Drive requests each sync operation made, whether any save crossed a safety budget, and how the page's main thread is doing. Nothing here is stored or sent anywhere.",
       rows: {
         lastLoad: "Last load",
+        lastRestore: "Last sign-in restore",
         lastSave: "Last save",
         lastRefresh: "Last refresh",
         lastRebuild: "Last rebuild",
+        lastHydrate: "Last note open",
         session: "This session",
         overruns: "Budget overruns",
         mainThread: "Main thread",

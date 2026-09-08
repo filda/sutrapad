@@ -658,9 +658,11 @@ describe("buildSettingsPage — Diagnostics card", () => {
     const values = [...(card?.querySelectorAll("dd") ?? [])].map((el) => [el.dataset.row, el.textContent]);
     expect(terms).toEqual([
       "Last load",
+      "Last sign-in restore",
       "Last save",
       "Last refresh",
       "Last rebuild",
+      "Last note open",
       "This session",
       "Budget overruns",
       "Main thread",
@@ -668,9 +670,11 @@ describe("buildSettingsPage — Diagnostics card", () => {
     ]);
     expect(values).toEqual([
       ["lastLoad", "—"],
+      ["lastRestore", "—"],
       ["lastSave", "—"],
       ["lastRefresh", "—"],
       ["lastRebuild", "—"],
+      ["lastHydrate", "—"],
       ["session", "—"],
       ["overruns", "None"],
       ["mainThread", "—"],

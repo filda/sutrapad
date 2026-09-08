@@ -279,9 +279,11 @@ export const CS: Messages = {
         "Živá čísla za tuhle relaci: kolik požadavků na Google Drive udělala každá synchronizační operace, jestli některé uložení překročilo bezpečnostní rozpočet a jak se daří hlavnímu vláknu stránky. Nic z toho se neukládá ani nikam neposílá.",
       rows: {
         lastLoad: "Poslední načtení",
+        lastRestore: "Poslední obnova po přihlášení",
         lastSave: "Poslední uložení",
         lastRefresh: "Poslední obnovení",
         lastRebuild: "Poslední přestavba",
+        lastHydrate: "Poslední otevření poznámky",
         session: "Tahle relace",
         overruns: "Překročení rozpočtu",
         mainThread: "Hlavní vlákno",

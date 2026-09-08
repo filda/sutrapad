@@ -12,6 +12,7 @@ import {
 } from "../../../src/lib/budgets";
 import { stripEmptyDraftNotes } from "../../../src/lib/notebook";
 import { GoogleDriveStore } from "../../../src/services/drive/workspace-store";
+import { runWorkspaceRefresh } from "../../../src/app/session/workspace-refresh";
 import {
   WorkspaceSaveRefusedError,
   type BudgetOverrun,
@@ -229,5 +230,47 @@ describe("resident model shape", () => {
     const bytes = JSON.stringify(loaded).length;
     // Placeholders carry title/tags/urls/context only — well under 1 KB each.
     expect(bytes / loaded.notes.length).toBeLessThan(600);
+  });
+});
+
+describe("focus refresh on a real-shaped workspace", () => {
+  it("costs the same as a cold load and fetches no note bodies — even when another device changed a note", async () => {
+    // Regression for the 2026-09-08 "loading forever" report: the previous
+    // refresh fetched every body in the folder in batches of five and
+    // committed after each — ~1 300 multi-megabyte localStorage writes.
+    const { drive, store } = await indexedDrive(REAL_SHAPE);
+    const loaded = await store.loadWorkspace();
+    let live = loaded;
+    const effects = {
+      loadRemoteWorkspace: () => store.loadWorkspace(),
+      getKnownDriveIds: () => new Set(loaded.notes.map((note) => note.id)),
+      getWorkspace: () => live,
+      setWorkspace: (next: SutraPadWorkspace) => {
+        live = next;
+      },
+      persistLocalWorkspace: () => {},
+      setSyncState: () => {},
+      setLastError: () => {},
+      render: () => {},
+    };
+
+    drive.resetStats();
+    await expect(runWorkspaceRefresh(effects)).resolves.toEqual({ changed: false });
+    expect(drive.stats.total).toBeLessThanOrEqual(LOAD_MAX_REQUESTS);
+
+    // Another device edits one note and re-saves: the index now carries a
+    // newer updatedAt for it. The refresh must pick that up as a placeholder
+    // swap, still without fetching a single body.
+    const edited = { ...loaded.notes[10], hydrated: true, body: "edited elsewhere", updatedAt: "2026-09-09T00:00:00.000Z" };
+    const other = new GoogleDriveStore("token", { client: drive });
+    await other.saveWorkspace({ notes: loaded.notes.map((n) => (n.id === edited.id ? edited : n)), activeNoteId: edited.id });
+
+    drive.resetStats();
+    await expect(runWorkspaceRefresh(effects)).resolves.toEqual({ changed: true });
+    expect(drive.stats.total).toBeLessThanOrEqual(LOAD_MAX_REQUESTS);
+    expect(drive.stats.calls.fetchJsonFile).toBeLessThanOrEqual(2); // head + index only
+    const refreshed = live.notes.find((note) => note.id === edited.id);
+    expect(refreshed).toMatchObject({ hydrated: false, updatedAt: edited.updatedAt, body: "" });
+    expect(live.notes).toHaveLength(loaded.notes.length);
   });
 });

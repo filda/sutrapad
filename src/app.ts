@@ -1013,7 +1013,14 @@ export function createApp(root: HTMLElement): void {
   // The coordinator owns the throttle + in-flight guard so this stays
   // a pure predicate.
   const focusRefresh = createFocusRefreshCoordinator({
-    refresh: () => refreshWorkspace(),
+    // A refresh that replaced or added placeholders leaves the resident
+    // summary / task / link models describing the old copies (a
+    // placeholder carries no body to rebuild them from), so re-seed them
+    // from the Drive indexes — only when something actually changed.
+    refresh: async () => {
+      const { changed } = await refreshWorkspace();
+      if (changed) await reseedResidentIndexesFromDrive();
+    },
     canRefresh: () => {
       if (!profile$.get()) return false;
       if (syncState$.get() === "saving") return false;

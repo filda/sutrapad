@@ -25,7 +25,7 @@ import {
 } from "./workspace-sync";
 import {
   runWorkspaceRefresh,
-  type WorkspaceRefreshOptions,
+  type WorkspaceRefreshResult,
 } from "./workspace-refresh";
 import {
   runNoteImport,
@@ -71,13 +71,15 @@ export interface WorkspaceIO {
    */
   fetchNoteBody: (fileId: string) => Promise<SutraPadDocument>;
   /**
-   * Cross-device progressive refresh. Phase-1 inventory updates the
-   * count + drops deleted notes; subsequent phases stream the JSONs
-   * newest-first. Used by the focus / visibility-driven refresh
-   * trigger in `createApp`; manual "Load from Drive" still goes
-   * through `loadWorkspace` for the all-or-nothing replace semantics.
+   * Cross-device refresh: one cheap index-aware `loadWorkspace` merged into
+   * the live workspace (`workspace-refresh.ts`) — drops deleted notes,
+   * swaps in placeholders for notes changed elsewhere, keeps local edits.
+   * Used by the focus / visibility-driven trigger in `createApp`; manual
+   * "Load from Drive" still goes through `loadWorkspace` for the
+   * all-or-nothing replace semantics. Resolves with whether anything
+   * changed so the caller can re-seed the resident indexes only then.
    */
-  refreshWorkspace: (options?: WorkspaceRefreshOptions) => Promise<void>;
+  refreshWorkspace: () => Promise<WorkspaceRefreshResult>;
   /**
    * Batch-imports notes created elsewhere (the drag-and-drop import) by
    * uploading each through the app's own token so the files are app-owned
@@ -180,14 +182,14 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
   // Updated on: successful load, successful save, the initial load
   // leg of `restoreWorkspaceAfterSignIn`, and the post-merge save leg
   // of the same (when one was needed). Deliberately *not* updated on
-  // refresh — the progressive merge produces a workspace that's a mix
-  // of local edits and Drive-fetched notes, so it doesn't represent
+  // refresh — the merge produces a workspace that's a mix of local
+  // edits and Drive-fetched placeholders, so it doesn't represent
   // "what's on Drive" in a way the save path can use as a baseline.
   let lastSyncedWorkspace: SutraPadWorkspace | null = null;
 
   // Ids of every note this session has confirmed to exist on Drive at
-  // some point — populated from successful loads, saves, and the
-  // fetched-bodies legs of progressive refreshes. Consumed by
+  // some point — populated from successful loads, saves, and refresh
+  // reads. Consumed by
   // `applyDriveRefresh`: a local note whose id is absent here cannot
   // have been deleted on another device (Drive has never seen it), so
   // refresh preserves it instead of dropping. Bug fix for the
@@ -311,51 +313,34 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     });
   };
 
-  // Progressive refresh: Drive I/O is bound through `withAuthRetry`
-  // and the whole run shares one meter (`measured("refresh")`). Note the
-  // orchestrator catches its own failures and reports them through
-  // `setSyncState("error")`, so the refresh record's `ok` reflects the
-  // orchestrator settling, not whether every batch succeeded.
-  // (interactive mode — focus is a user-driven trigger, so a 401 should
-  // attempt the silent-refresh path) and the existing render / sync-state
-  // hooks. The orchestrator owns batching + merge order.
-  const refreshWorkspace = (
-    options: WorkspaceRefreshOptions = {},
-  ): Promise<void> =>
+  // Focus refresh (index-aware, see `workspace-refresh.ts`): one cheap
+  // `loadWorkspace` merged into the live workspace. Interactive auth mode
+  // — focus is a user-driven trigger, so a 401 should attempt the
+  // silent-refresh path. The whole run is one metered "refresh" operation.
+  // Note the orchestrator catches its own failures and reports them
+  // through `setSyncState("error")`, so the record's `ok` reflects the
+  // orchestrator settling, not whether the Drive read succeeded.
+  const refreshWorkspace = (): Promise<WorkspaceRefreshResult> =>
     measured("refresh", (store) =>
-      runWorkspaceRefresh(
-        {
-          loadInventory: async () => {
-            const inventory = await withAuthRetry(
-              () => store().loadNoteInventory(),
-              retryContext,
-            );
-            // Every id Drive currently lists is confirmed to exist on
-            // Drive. Folding them into the known-set widens the set
-            // we use to distinguish "deleted on another device" from
-            // "never pushed from this device" inside `applyDriveRefresh`.
-            rememberDriveIds(inventory.map((entry) => ({ id: entry.noteId })));
-            return inventory;
-          },
-          fetchNoteByFileId: async (fileId) => {
-            const note = await withAuthRetry(
-              () => store().fetchNoteByFileId(fileId),
-              retryContext,
-            );
-            rememberDriveIds([note]);
-            return note;
-          },
-          getKnownDriveIds: () => knownDriveIds,
-          getWorkspace,
-          setWorkspace,
-          persistLocalWorkspace,
-          setSyncState,
-          setLastError,
-          render,
-          cancelAutoSave,
+      runWorkspaceRefresh({
+        loadRemoteWorkspace: async () => {
+          const remote = await withAuthRetry(() => store().loadWorkspace(), retryContext);
+          // Every id Drive currently lists is confirmed to exist on Drive.
+          // Folding them into the known-set widens the set we use to
+          // distinguish "deleted on another device" from "never pushed
+          // from this device" inside `applyDriveRefresh`.
+          rememberDriveIds(remote.notes);
+          return remote;
         },
-        options,
-      ),
+        getKnownDriveIds: () => knownDriveIds,
+        getWorkspace,
+        setWorkspace,
+        persistLocalWorkspace,
+        setSyncState,
+        setLastError,
+        render,
+        cancelAutoSave,
+      }),
     );
 
   const importNotes = async (

@@ -188,7 +188,17 @@ export function describeOperationForConsole(record: DriveOperationRecord): strin
 // ---------------------------------------------------------------------------
 
 export interface DiagnosticsRow {
-  readonly id: "lastLoad" | "lastSave" | "lastRefresh" | "lastRebuild" | "session" | "overruns" | "mainThread" | "memory";
+  readonly id:
+    | "lastLoad"
+    | "lastRestore"
+    | "lastSave"
+    | "lastRefresh"
+    | "lastRebuild"
+    | "lastHydrate"
+    | "session"
+    | "overruns"
+    | "mainThread"
+    | "memory";
   readonly label: string;
   readonly value: string;
 }
@@ -239,9 +249,11 @@ export function describeDiagnostics(
 
   return [
     { id: "lastLoad", label: copy.rows.lastLoad, value: operation(snapshot.lastOperation.load) },
+    { id: "lastRestore", label: copy.rows.lastRestore, value: operation(snapshot.lastOperation.restore) },
     { id: "lastSave", label: copy.rows.lastSave, value: operation(snapshot.lastOperation.save) },
     { id: "lastRefresh", label: copy.rows.lastRefresh, value: operation(snapshot.lastOperation.refresh) },
     { id: "lastRebuild", label: copy.rows.lastRebuild, value: operation(snapshot.lastOperation.rebuild) },
+    { id: "lastHydrate", label: copy.rows.lastHydrate, value: operation(snapshot.lastOperation.hydrate) },
     { id: "session", label: copy.rows.session, value: session },
     { id: "overruns", label: copy.rows.overruns, value: overruns },
     { id: "mainThread", label: copy.rows.mainThread, value: mainThread },

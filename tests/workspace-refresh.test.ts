@@ -1,26 +1,25 @@
+/**
+ * Index-aware focus refresh (2026-09-08 rewrite). The orchestrator makes
+ * one cheap Drive read and merges it through `applyDriveRefresh`; these
+ * tests pin the merge outcomes, the sync-state / repaint choreography and
+ * — the regression the rewrite exists for — that no note body is ever
+ * fetched by a refresh.
+ */
 import { describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
-import { runWorkspaceRefresh } from "../src/app/session/workspace-refresh";
-import type {
-  DriveNoteInventoryEntry,
-  WorkspaceRefreshEffects,
+import {
+  runWorkspaceRefresh,
+  type WorkspaceRefreshEffects,
 } from "../src/app/session/workspace-refresh";
 import type { SutraPadDocument, SutraPadWorkspace } from "../src/types";
 
-function note(
-  id: string,
-  body: string,
-  updatedAt: string,
-): SutraPadDocument {
-  return {
-    id,
-    title: id,
-    body,
-    urls: [],
-    tags: [],
-    createdAt: updatedAt,
-    updatedAt,
-  };
+function note(id: string, body: string, updatedAt: string): SutraPadDocument {
+  return { id, title: id, body, urls: [], tags: [], createdAt: updatedAt, updatedAt };
+}
+
+/** What `loadWorkspace` hands back for an indexed note. */
+function placeholder(id: string, updatedAt: string): SutraPadDocument {
+  return { ...note(id, "", updatedAt), hydrated: false, fileId: `file-${id}` };
 }
 
 function workspace(
@@ -32,8 +31,7 @@ function workspace(
 
 interface RefreshHarness {
   state: { workspace: SutraPadWorkspace };
-  loadInventory: Mock;
-  fetchNoteByFileId: Mock;
+  loadRemoteWorkspace: Mock;
   setWorkspace: Mock;
   persistLocalWorkspace: Mock;
   setSyncState: Mock;
@@ -42,12 +40,11 @@ interface RefreshHarness {
   cancelAutoSave: Mock;
 }
 
-function makeHarness(initial: SutraPadWorkspace): RefreshHarness {
+function makeHarness(initial: SutraPadWorkspace, remote: SutraPadWorkspace = workspace([])): RefreshHarness {
   const state = { workspace: initial };
   return {
     state,
-    loadInventory: vi.fn().mockResolvedValue([]),
-    fetchNoteByFileId: vi.fn(),
+    loadRemoteWorkspace: vi.fn().mockResolvedValue(remote),
     setWorkspace: vi.fn((next: SutraPadWorkspace) => {
       state.workspace = next;
     }),
@@ -62,22 +59,13 @@ function makeHarness(initial: SutraPadWorkspace): RefreshHarness {
 function effects(
   h: RefreshHarness,
   knownDriveIds: ReadonlySet<string> | "every-local-note" = "every-local-note",
-) {
-  // Default mirrors the realistic production state by the time a
-  // refresh fires: every id currently visible locally was already
-  // confirmed on Drive (loaded at startup or saved during this
-  // session). Tests that exercise the local-only-never-pushed path
-  // pass an explicit narrower set so applyDriveRefresh preserves the
-  // unknown ids; tests that exercise cross-device deletion can rely
-  // on the default's "every local id is known to Drive" snapshot.
-  const resolvedKnown =
-    knownDriveIds === "every-local-note"
-      ? () => new Set(h.state.workspace.notes.map((n) => n.id))
-      : () => knownDriveIds;
+): WorkspaceRefreshEffects {
   return {
-    loadInventory: h.loadInventory,
-    fetchNoteByFileId: h.fetchNoteByFileId,
-    getKnownDriveIds: resolvedKnown,
+    loadRemoteWorkspace: h.loadRemoteWorkspace,
+    getKnownDriveIds:
+      knownDriveIds === "every-local-note"
+        ? () => new Set(h.state.workspace.notes.map((n) => n.id))
+        : () => knownDriveIds,
     getWorkspace: () => h.state.workspace,
     setWorkspace: h.setWorkspace,
     persistLocalWorkspace: h.persistLocalWorkspace,
@@ -88,456 +76,151 @@ function effects(
   };
 }
 
-function entry(
-  noteId: string,
-  fileId: string,
-  modifiedTime: string,
-): DriveNoteInventoryEntry {
-  return { noteId, fileId, modifiedTime };
-}
-
-describe("runWorkspaceRefresh", () => {
-  it("cancels pending autosave and signals sync state at the start and end", async () => {
-    // Mirror the contract `runWorkspaceLoad` already has: a refresh
-    // armed by a focus event must not race a 2 s autosave timer
-    // armed by the user's last keystroke. The pre-flight cancel is
-    // what removes the race.
-    const h = makeHarness(workspace([note("a", "alpha", "2026-05-01T10:00:00.000Z")]));
-    h.loadInventory.mockResolvedValue([
-      entry("a", "fa", "2026-05-01T10:00:00.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockImplementation((fileId: string) => {
-      if (fileId === "fa") return note("a", "alpha", "2026-05-01T10:00:00.000Z");
-      throw new Error("unexpected fileId");
-    });
-
-    await runWorkspaceRefresh(effects(h));
-
-    expect(h.cancelAutoSave).toHaveBeenCalledTimes(1);
-    expect(h.setSyncState).toHaveBeenCalledWith("loading");
-    expect(h.setSyncState).toHaveBeenLastCalledWith("idle");
-    expect(h.setLastError).toHaveBeenCalledWith("");
-  });
-
-  it("drops a note that vanished from the inventory before any JSON is fetched (Phase 1)", async () => {
-    // The headline win: the user opened Device B; another device
-    // deleted "gone" since the last load. The Phase 1 merge prunes
-    // it *before* a single note JSON has been fetched, so the count
-    // and list update on the very first render.
-    const h = makeHarness(
-      workspace([
-        note("a", "alpha", "2026-05-01T10:00:00.000Z"),
-        note("gone", "deleted elsewhere", "2026-04-30T10:00:00.000Z"),
-      ]),
-    );
-    h.loadInventory.mockResolvedValue([
-      entry("a", "fa", "2026-05-01T10:00:00.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockResolvedValue(
-      note("a", "alpha", "2026-05-01T10:00:00.000Z"),
-    );
-
-    // Capture the workspace as it was at the moment of the first
-    // post-inventory render — before any fetch happened.
-    const sawAfterPhase1: SutraPadWorkspace[] = [];
-    h.setWorkspace.mockImplementation((next: SutraPadWorkspace) => {
-      h.state.workspace = next;
-      if (h.fetchNoteByFileId.mock.calls.length === 0) {
-        sawAfterPhase1.push(next);
-      }
-    });
-
-    await runWorkspaceRefresh(effects(h));
-
-    expect(sawAfterPhase1).toHaveLength(1);
-    expect(sawAfterPhase1[0].notes.map((n) => n.id)).toEqual(["a"]);
-  });
-
-  it("fetches the priority batch newest-first by modifiedTime", async () => {
-    // The user sees their newly-captured note first. We don't promise
-    // anything about the order *within* a parallel batch (Promise.all
-    // resolves in fetch order, not call order), but the inventory
-    // ORDER we hand to fetchNoteByFileId must be newest-modifiedTime
-    // first.
-    const h = makeHarness(workspace([]));
-    h.loadInventory.mockResolvedValue([
-      entry("oldest", "f1", "2026-04-01T00:00:00.000Z"),
-      entry("newest", "f2", "2026-05-01T00:00:00.000Z"),
-      entry("middle", "f3", "2026-04-15T00:00:00.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockImplementation((fileId: string) => {
-      if (fileId === "f1") return note("oldest", "", "2026-04-01T00:00:00.000Z");
-      if (fileId === "f2") return note("newest", "", "2026-05-01T00:00:00.000Z");
-      if (fileId === "f3") return note("middle", "", "2026-04-15T00:00:00.000Z");
-      throw new Error("unknown");
-    });
-
-    await runWorkspaceRefresh(effects(h), { firstBatchSize: 1, batchSize: 1 });
-
-    const fetchOrder = h.fetchNoteByFileId.mock.calls.map(
-      (call) => call[0] as string,
-    );
-    expect(fetchOrder).toEqual(["f2", "f3", "f1"]);
-  });
-
-  it("preserves a local mid-edit when the fetched copy is older (strict-greater rule)", async () => {
-    // The user is typing on Device B; the refresh just landed
-    // mid-keystroke. local.updatedAt has been bumped past whatever
-    // Drive captured, so the merge keeps the in-flight body.
-    const inflight = note("a", "user typing right now", "2026-05-01T10:05:00.000Z");
-    const driveCopy = note("a", "older drive copy", "2026-05-01T10:00:00.000Z");
-
-    const h = makeHarness(workspace([inflight]));
-    h.loadInventory.mockResolvedValue([
-      entry("a", "fa", "2026-05-01T10:00:00.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockResolvedValue(driveCopy);
-
-    await runWorkspaceRefresh(effects(h));
-
-    expect(h.state.workspace.notes[0].body).toBe("user typing right now");
-  });
-
-  it("transitions to error sync state on a fetch failure and surfaces the message", async () => {
-    // Network blip mid-batch. We don't try to be heroic — flip to
-    // error, surface the message, leave the partial workspace state
-    // in place. Subsequent focus events will retry.
-    const h = makeHarness(workspace([]));
-    h.loadInventory.mockResolvedValue([
-      entry("a", "fa", "2026-05-01T10:00:00.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockRejectedValue(new Error("Network down"));
-
-    await runWorkspaceRefresh(effects(h));
-
-    expect(h.setSyncState).toHaveBeenLastCalledWith("error");
-    expect(h.setLastError).toHaveBeenCalledWith("Network down");
-  });
-
-  it("falls back to a generic message when the failure is not an Error instance", async () => {
-    // Drive client throws strings in some paths; the orchestrator
-    // must still produce a presentable message.
-    const h = makeHarness(workspace([]));
-    h.loadInventory.mockRejectedValue("not an Error");
-
-    await runWorkspaceRefresh(effects(h));
-
-    expect(h.setLastError).toHaveBeenLastCalledWith(
-      "Refreshing from Google Drive failed.",
-    );
-  });
-
-  it("does NOT call setWorkspace on a steady-state no-op refresh", async () => {
-    // Open tab, all notes already in sync, focus the window. The
-    // inventory matches local; no fetched note is strictly newer.
-    // We should commit zero workspace changes — render still fires
-    // for sync-state transitions, but nothing on the workspace side
-    // moves.
-    const stable = note("a", "alpha", "2026-05-01T10:00:00.000Z");
-    const h = makeHarness(workspace([stable]));
-    h.loadInventory.mockResolvedValue([
-      entry("a", "fa", "2026-05-01T10:00:00.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockResolvedValue(stable);
-
-    await runWorkspaceRefresh(effects(h));
-
-    expect(h.setWorkspace).not.toHaveBeenCalled();
-    expect(h.persistLocalWorkspace).not.toHaveBeenCalled();
-  });
-
-  it("uses firstBatchSize for the priority batch and batchSize for catch-up batches", async () => {
-    // Pins the size selector: the priority batch must use
-    // `firstBatchSize` slots and every subsequent batch must use
-    // `batchSize`. Without different values, the ternary selecting
-    // between them is indistinguishable from "always batchSize" or
-    // "always firstBatchSize" (both Stryker mutants).
-    const h = makeHarness(workspace([]));
-    h.loadInventory.mockResolvedValue([
-      entry("n1", "f1", "2026-05-01T00:00:05.000Z"),
-      entry("n2", "f2", "2026-05-01T00:00:04.000Z"),
-      entry("n3", "f3", "2026-05-01T00:00:03.000Z"),
-      entry("n4", "f4", "2026-05-01T00:00:02.000Z"),
-      entry("n5", "f5", "2026-05-01T00:00:01.000Z"),
-    ]);
-    // Map fileId → its matching noteId so the fetched JSON's id
-    // matches the inventory entry; the merge in applyDriveRefresh
-    // keys on `note.id`, not the Drive fileId.
-    const noteIdByFileId: Record<string, string> = {
-      f1: "n1",
-      f2: "n2",
-      f3: "n3",
-      f4: "n4",
-      f5: "n5",
-    };
-    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
-      note(noteIdByFileId[fileId], "", "2026-05-01T00:00:00.000Z"),
-    );
-
-    // Snapshot how many fetch calls had landed by the time the second
-    // batch started — captured by recording call counts at each
-    // `setWorkspace` boundary (each batch ends with applyAndCommit
-    // which calls setWorkspace).
-    const fetchedSoFar: number[] = [];
-    h.setWorkspace.mockImplementation((next: SutraPadWorkspace) => {
-      h.state.workspace = next;
-      fetchedSoFar.push(h.fetchNoteByFileId.mock.calls.length);
-    });
-
-    await runWorkspaceRefresh(effects(h), {
-      firstBatchSize: 3,
-      batchSize: 2,
-    });
-
-    // Phase 1 (inventory only, 0 fetches), then priority batch of 3
-    // (3 fetches), then a catch-up batch of 2 (5 fetches total).
-    // Phase 1 doesn't fire setWorkspace because inventory matched the
-    // empty local; only the two fetch batches commit.
-    expect(fetchedSoFar).toEqual([3, 5]);
-  });
-
-  it("works when the inventory is empty (brand-new workspace folder, nothing on Drive yet)", async () => {
-    // Local carries a real body so it represents a note that *was*
-    // synced before and is now being cleaned up — not a local-only
-    // empty draft, which `applyDriveRefresh` deliberately preserves
-    // through an empty-inventory refresh.
-    const h = makeHarness(workspace([note("a", "real body", "2026-05-01T10:00:00.000Z")]));
-    h.loadInventory.mockResolvedValue([]);
-
-    await runWorkspaceRefresh(effects(h));
-
-    expect(h.fetchNoteByFileId).not.toHaveBeenCalled();
-    // Local note was not in the empty inventory → dropped.
-    expect(h.state.workspace.notes).toHaveLength(0);
-    expect(h.setSyncState).toHaveBeenLastCalledWith("idle");
-  });
-
-  it("degrades gracefully when no `getKnownDriveIds` effect is wired (optional dependency)", async () => {
-    // `getKnownDriveIds` is an optional effect — `applyAndCommit` reads
-    // it through `effects.getKnownDriveIds?.() ?? new Set()`. A caller
-    // that hasn't adopted the known-set plumbing may omit it entirely,
-    // and the refresh must still run rather than throwing on an
-    // undefined call. With the empty-set fallback, `applyDriveRefresh`
-    // treats every not-in-inventory local note as "never pushed from
-    // this device" and preserves it instead of dropping it.
-    const h = makeHarness(
-      workspace([
-        note("a", "alpha", "2026-05-01T10:00:00.000Z"),
-        note("b", "local only", "2026-04-30T10:00:00.000Z"),
-      ]),
-    );
-    h.loadInventory.mockResolvedValue([
-      entry("a", "fa", "2026-05-01T10:00:00.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockResolvedValue(
-      note("a", "alpha", "2026-05-01T10:00:00.000Z"),
-    );
-
-    // Build the effects object WITHOUT `getKnownDriveIds` so the
-    // `?.() ?? new Set()` fallback is the only thing keeping the
-    // refresh from dereferencing an undefined effect.
-    const effectsWithoutKnown: WorkspaceRefreshEffects = {
-      loadInventory: h.loadInventory,
-      fetchNoteByFileId: h.fetchNoteByFileId,
-      getWorkspace: () => h.state.workspace,
-      setWorkspace: h.setWorkspace,
-      persistLocalWorkspace: h.persistLocalWorkspace,
-      setSyncState: h.setSyncState,
-      setLastError: h.setLastError,
-      render: h.render,
-      cancelAutoSave: h.cancelAutoSave,
-    };
-
-    await runWorkspaceRefresh(effectsWithoutKnown);
-
-    // "b" is absent from the inventory but, with the empty known-set
-    // fallback, is treated as never-synced and therefore preserved.
-    expect(h.state.workspace.notes.map((n) => n.id)).toContain("b");
-    expect(h.setSyncState).toHaveBeenLastCalledWith("idle");
-  });
-});
-
-// --- Gap-closing block, 2026-08-29 ------------------------------------------
-//
-// The same hole StrykerJS 10's statement-deletion mutator found in
-// `workspace-sync`: five calls here — the opening `render`, the closing one,
-// the error one, and `persistLocalWorkspace` + `render` inside
-// `applyAndCommit` — were removable with the suite above staying green,
-// because `render` was only ever a bare `vi.fn()` nobody looked at.
-//
-// Progressive refresh is *made of* its repaints — the whole reason this module
-// exists separately from `runWorkspaceLoad` is that the user sees the deletion
-// land before the bodies arrive. So the tests below record the filmstrip
-// (`syncState | note ids at that moment`) and assert it as one array. That is
-// also the only assertion shape that can tell "Phase 1 repainted" apart from
-// "Phase 2 repainted", since both are the same call on the same mock.
-
+/** `syncState | note ids` at every repaint — the user-visible filmstrip. */
 function filmstripOf(h: RefreshHarness): string[] {
   const frames: string[] = [];
   h.render.mockImplementation(() => {
     const syncState = h.setSyncState.mock.calls.at(-1)?.[0] ?? "idle";
-    const ids = h.state.workspace.notes.map((visible) => visible.id).join(",");
-    frames.push(`${syncState}|${ids}`);
+    frames.push(`${syncState}|${h.state.workspace.notes.map((n) => n.id).join(",")}`);
   });
   return frames;
 }
 
-describe("runWorkspaceRefresh repaints", () => {
-  it("repaints once per phase that changed something", async () => {
-    // Device A deleted "gone" and added "b"; this device wakes up. Four
-    // frames, and each one is a promise this module makes:
-    //   1. the spinner goes on over what the user already had;
-    //   2. Phase 1 removes the deleted note after a single folder query,
-    //      before any JSON has been fetched;
-    //   3. Phase 2 brings the new note's body in;
-    //   4. the spinner comes off.
-    // Collapse any of them and the refresh still ends in the right state — it
-    // just stops being progressive, which is the entire point of the module.
-    const h = makeHarness(
-      workspace([
-        note("a", "alpha-old", "2026-05-01T10:00:00.000Z"),
-        note("gone", "deleted elsewhere", "2026-04-30T10:00:00.000Z"),
-      ]),
-    );
-    h.loadInventory.mockResolvedValue([
-      entry("a", "fa", "2026-05-02T10:00:00.000Z"),
-      entry("b", "fb", "2026-05-03T10:00:00.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
-      fileId === "fb"
-        ? note("b", "beta", "2026-05-03T10:00:00.000Z")
-        : note("a", "alpha-new", "2026-05-02T10:00:00.000Z"),
-    );
-    const frames = filmstripOf(h);
+const T1 = "2026-05-01T10:00:00.000Z";
+const T2 = "2026-05-02T10:00:00.000Z";
 
-    await runWorkspaceRefresh(effects(h));
-
-    expect(frames).toEqual([
-      "loading|a,gone",
-      "loading|a",
-      "loading|b,a",
-      "idle|b,a",
-    ]);
+describe("runWorkspaceRefresh", () => {
+  it("cancels pending autosave and walks loading → idle, reading Drive exactly once", async () => {
+    const h = makeHarness(workspace([note("a", "alpha", T1)]), workspace([placeholder("a", T1)]));
+    const result = await runWorkspaceRefresh(effects(h));
+    expect(h.cancelAutoSave).toHaveBeenCalledTimes(1);
+    expect(h.setSyncState.mock.calls.map(([s]) => s)).toEqual(["loading", "idle"]);
+    expect(h.setLastError).toHaveBeenCalledWith("");
+    expect(h.loadRemoteWorkspace).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ changed: false });
   });
 
-  it("writes every committed workspace to local storage, and only those", async () => {
-    // `persistLocalWorkspace` is what makes a mid-refresh reload cheap. Delete
-    // it and each phase's merge lives in memory only, so closing the tab
-    // between Phase 2 and Phase 3 throws the refresh away.
+  it("drops a note that vanished from Drive", async () => {
     const h = makeHarness(
-      workspace([
-        note("a", "alpha-old", "2026-05-01T10:00:00.000Z"),
-        note("gone", "deleted elsewhere", "2026-04-30T10:00:00.000Z"),
-      ]),
+      workspace([note("a", "alpha", T1), note("gone", "deleted elsewhere", T1)]),
+      workspace([placeholder("a", T1)]),
     );
-    h.loadInventory.mockResolvedValue([
-      entry("a", "fa", "2026-05-02T10:00:00.000Z"),
-      entry("b", "fb", "2026-05-03T10:00:00.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
-      fileId === "fb"
-        ? note("b", "beta", "2026-05-03T10:00:00.000Z")
-        : note("a", "alpha-new", "2026-05-02T10:00:00.000Z"),
-    );
-
-    await runWorkspaceRefresh(effects(h));
-
-    const persisted = h.persistLocalWorkspace.mock.calls.map(([next]) => next);
-    const committed = h.setWorkspace.mock.calls.map(([next]) => next);
-    expect(persisted).toHaveLength(2);
-    // Identity, not shape: the workspace written to storage must be the one
-    // that went into the store, not a copy made somewhere along the way.
-    expect(persisted[0]).toBe(committed[0]);
-    expect(persisted[1]).toBe(committed[1]);
+    const result = await runWorkspaceRefresh(effects(h));
+    expect(h.state.workspace.notes.map((n) => n.id)).toEqual(["a"]);
+    expect(result.changed).toBe(true);
   });
 
-  it("repaints only for the two state transitions when nothing changed", async () => {
-    // Toggle away and back with everything already in sync. Two frames, and
-    // the notebook never re-renders in between — the no-op guard in
-    // `applyAndCommit` is what keeps a focus event from being expensive.
-    const stable = note("a", "alpha", "2026-05-01T10:00:00.000Z");
-    const h = makeHarness(workspace([stable]));
-    h.loadInventory.mockResolvedValue([entry("a", "fa", "2026-05-01T10:00:00.000Z")]);
-    h.fetchNoteByFileId.mockResolvedValue(stable);
-    const frames = filmstripOf(h);
-
+  it("replaces a note Drive holds a newer copy of with its placeholder (body re-hydrates on open)", async () => {
+    const h = makeHarness(
+      workspace([note("a", "old body", T1)]),
+      workspace([placeholder("a", T2)]),
+    );
     await runWorkspaceRefresh(effects(h));
+    expect(h.state.workspace.notes[0]).toMatchObject({ id: "a", updatedAt: T2, hydrated: false, body: "" });
+  });
 
+  it("keeps a local mid-edit whose updatedAt is newer or equal (strict-greater rule)", async () => {
+    const h = makeHarness(
+      workspace([note("a", "typing…", T2), note("b", "same stamp", T1)]),
+      workspace([placeholder("a", T1), placeholder("b", T1)]),
+    );
+    const result = await runWorkspaceRefresh(effects(h));
+    expect(h.state.workspace.notes.map((n) => n.body)).toEqual(["typing…", "same stamp"]);
+    expect(result.changed).toBe(false);
+  });
+
+  it("merges against the workspace as it is *after* the Drive read, not before", async () => {
+    // A keystroke landed while the load was in flight: the merge must see it.
+    const h = makeHarness(workspace([note("a", "before", T1)]));
+    h.loadRemoteWorkspace.mockImplementation(() => {
+      h.state.workspace = workspace([note("a", "typed during load", T2)]);
+      return Promise.resolve(workspace([placeholder("a", T1)]));
+    });
+    await runWorkspaceRefresh(effects(h));
+    expect(h.state.workspace.notes[0].body).toBe("typed during load");
+  });
+
+  it("appends notes that are new on Drive as placeholders", async () => {
+    const h = makeHarness(
+      workspace([note("a", "alpha", T1)]),
+      workspace([placeholder("a", T1), placeholder("new", T2)]),
+    );
+    await runWorkspaceRefresh(effects(h));
+    const byId = new Map(h.state.workspace.notes.map((n) => [n.id, n.hydrated]));
+    expect([...byId.entries()].toSorted()).toEqual([["a", undefined], ["new", false]]);
+  });
+
+  it("preserves a local-only note Drive has never seen, and an empty draft", async () => {
+    const h = makeHarness(
+      workspace([note("a", "alpha", T1), note("fresh", "not yet pushed", T2), note("draft", "", T2)]),
+      workspace([placeholder("a", T1)]),
+    );
+    await runWorkspaceRefresh(effects(h, new Set(["a"])));
+    expect(h.state.workspace.notes.map((n) => n.id).toSorted()).toEqual(["a", "draft", "fresh"]);
+  });
+
+  it("keeps every local-only note when no getKnownDriveIds effect is wired", async () => {
+    const h = makeHarness(
+      workspace([note("a", "alpha", T1), note("b", "local only", T1)]),
+      workspace([placeholder("a", T1)]),
+    );
+    const { getKnownDriveIds: _omitted, ...withoutKnown } = effects(h);
+    await runWorkspaceRefresh(withoutKnown);
+    expect(h.state.workspace.notes.map((n) => n.id)).toContain("b");
+  });
+
+  it("transitions to error and surfaces the message when the Drive read fails", async () => {
+    const h = makeHarness(workspace([note("a", "alpha", T1)]));
+    h.loadRemoteWorkspace.mockRejectedValue(new Error("Drive 503"));
+    const result = await runWorkspaceRefresh(effects(h));
+    expect(h.setSyncState).toHaveBeenLastCalledWith("error");
+    expect(h.setLastError).toHaveBeenLastCalledWith("Drive 503");
+    expect(h.setWorkspace).not.toHaveBeenCalled();
+    expect(result).toEqual({ changed: false });
+  });
+
+  it("falls back to a generic message when the failure is not an Error", async () => {
+    const h = makeHarness(workspace([]));
+    h.loadRemoteWorkspace.mockRejectedValue("nope");
+    await runWorkspaceRefresh(effects(h));
+    expect(h.setLastError).toHaveBeenLastCalledWith("Refreshing from Google Drive failed.");
+  });
+
+  it("works when Drive is empty (brand-new folder) and the local workspace is too", async () => {
+    const h = makeHarness(workspace([]), workspace([]));
+    await expect(runWorkspaceRefresh(effects(h))).resolves.toEqual({ changed: false });
+    expect(h.setSyncState).toHaveBeenLastCalledWith("idle");
+  });
+});
+
+describe("runWorkspaceRefresh repaints and persistence", () => {
+  it("repaints exactly twice and commits once when something changed", async () => {
+    const h = makeHarness(
+      workspace([note("a", "alpha", T1), note("gone", "x", T1)]),
+      workspace([placeholder("a", T1)]),
+    );
+    const frames = filmstripOf(h);
+    await runWorkspaceRefresh(effects(h));
+    expect(frames).toEqual(["loading|a,gone", "idle|a"]);
+    expect(h.setWorkspace).toHaveBeenCalledTimes(1);
+    expect(h.persistLocalWorkspace).toHaveBeenCalledTimes(1);
+    expect(h.persistLocalWorkspace).toHaveBeenCalledWith(h.state.workspace);
+  });
+
+  it("repaints twice and never commits or persists on a steady-state no-op", async () => {
+    const h = makeHarness(workspace([note("a", "alpha", T1)]), workspace([placeholder("a", T1)]));
+    const frames = filmstripOf(h);
+    await runWorkspaceRefresh(effects(h));
     expect(frames).toEqual(["loading|a", "idle|a"]);
+    expect(h.setWorkspace).not.toHaveBeenCalled();
+    expect(h.persistLocalWorkspace).not.toHaveBeenCalled();
   });
 
   it("repaints the error state over the notes the user still has", async () => {
-    // A refresh that never got its inventory must leave the local notebook
-    // alone and say so on screen; without the repaint the banner is set but
-    // never painted, so the spinner just spins forever.
-    const h = makeHarness(workspace([note("a", "alpha", "2026-05-01T10:00:00.000Z")]));
-    h.loadInventory.mockRejectedValue(new Error("folder query failed"));
+    const h = makeHarness(workspace([note("a", "alpha", T1)]));
+    h.loadRemoteWorkspace.mockRejectedValue(new Error("boom"));
     const frames = filmstripOf(h);
-
     await runWorkspaceRefresh(effects(h));
-
     expect(frames).toEqual(["loading|a", "error|a"]);
-    expect(h.setLastError).toHaveBeenLastCalledWith("folder query failed");
-  });
-
-  it("keeps using batchSize for every catch-up batch, not the priority size", async () => {
-    // The existing firstBatchSize/batchSize test stops after two batches, and
-    // with 5 entries a "the first batch never ends" mutant (`isFirstBatch`
-    // never flipping to false) produces the same fetch boundaries. Six entries
-    // at 3 + 2 + 1 separate them: the priority size is used once and only once.
-    const h = makeHarness(workspace([]));
-    h.loadInventory.mockResolvedValue([
-      entry("n1", "f1", "2026-05-01T00:00:06.000Z"),
-      entry("n2", "f2", "2026-05-01T00:00:05.000Z"),
-      entry("n3", "f3", "2026-05-01T00:00:04.000Z"),
-      entry("n4", "f4", "2026-05-01T00:00:03.000Z"),
-      entry("n5", "f5", "2026-05-01T00:00:02.000Z"),
-      entry("n6", "f6", "2026-05-01T00:00:01.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
-      note(`n${fileId.slice(1)}`, "", "2026-05-01T00:00:00.000Z"),
-    );
-    const fetchedSoFar: number[] = [];
-    h.setWorkspace.mockImplementation((next: SutraPadWorkspace) => {
-      h.state.workspace = next;
-      fetchedSoFar.push(h.fetchNoteByFileId.mock.calls.length);
-    });
-
-    await runWorkspaceRefresh(effects(h), { firstBatchSize: 3, batchSize: 2 });
-
-    expect(fetchedSoFar).toEqual([3, 5, 6]);
-  });
-
-  it("merges once per batch and never takes a trailing empty pass", async () => {
-    // `applyAndCommit` re-reads the whole notebook and re-runs the merge, so a
-    // loop that runs one iteration past the end (`cursor <= length`) is
-    // invisible on screen but costs a full extra merge over every note on
-    // every focus event. Counting the reads is what makes that visible.
-    //
-    // The sizes have to divide the inventory *exactly* for that to be
-    // reachable: `cursor` advances by the batch size rather than by how many
-    // entries the slice actually held, so 6 entries at 3 + 2 leaves it on 7 and
-    // the off-by-one never fires. 3 + 3 lands it on 6.
-    const h = makeHarness(workspace([]));
-    h.loadInventory.mockResolvedValue([
-      entry("n1", "f1", "2026-05-01T00:00:06.000Z"),
-      entry("n2", "f2", "2026-05-01T00:00:05.000Z"),
-      entry("n3", "f3", "2026-05-01T00:00:04.000Z"),
-      entry("n4", "f4", "2026-05-01T00:00:03.000Z"),
-      entry("n5", "f5", "2026-05-01T00:00:02.000Z"),
-      entry("n6", "f6", "2026-05-01T00:00:01.000Z"),
-    ]);
-    h.fetchNoteByFileId.mockImplementation((fileId: string) =>
-      note(`n${fileId.slice(1)}`, "", "2026-05-01T00:00:00.000Z"),
-    );
-    const getWorkspace = vi.fn(() => h.state.workspace);
-
-    await runWorkspaceRefresh(
-      { ...effects(h), getWorkspace },
-      { firstBatchSize: 3, batchSize: 3 },
-    );
-
-    // One read for the Phase 1 inventory commit, then one per batch (3, 3).
-    expect(getWorkspace).toHaveBeenCalledTimes(3);
   });
 });

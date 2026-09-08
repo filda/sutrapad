@@ -568,7 +568,9 @@ export class GoogleDriveStore {
    *     doc comment in `types.ts`).
    */
   /**
-   * Folder-query inventory for the progressive cross-device refresh.
+   * Folder-query inventory (used by the import flow to upsert by note id;
+   * the cross-device refresh used to consume it too, before it became
+   * index-aware and started going through `loadWorkspace`).
    *
    * Returns one record per `kind=note` file the workspace folder
    * holds, with the `noteId` lifted out of the file's appProperties
@@ -737,8 +739,8 @@ export class GoogleDriveStore {
   /**
    * Fetches a single note JSON by its Drive file id and normalises
    * the legacy-shape backfills (`createdAt`, `urls`, `tags`) the same
-   * way `loadWorkspace` does. The progressive refresh fans this out
-   * in `Promise.all` batches to fill in the JSONs phase-by-phase.
+   * way `loadWorkspace` does. One call per note opened in the detail
+   * view (`hydrateNoteOnOpen`); nothing fans it out any more.
    */
   async fetchNoteByFileId(fileId: string): Promise<SutraPadDocument> {
     const document = await this.#client.fetchJsonFile<SutraPadDocument>(fileId);

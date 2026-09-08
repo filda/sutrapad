@@ -667,12 +667,14 @@ export function mergeWorkspaces(
 }
 
 /**
- * Applies a partial Drive refresh against the local workspace.
+ * Applies a Drive refresh against the local workspace.
  *
- * Built for the progressive-refresh path: the caller hands in whatever
- * inventory the folder query returned (the canonical "what notes exist
- * on Drive right now") plus the subset of note JSONs it has fetched so
- * far, and the result is the workspace state implied by that snapshot.
+ * The caller hands in the inventory (the canonical "what notes exist on
+ * Drive right now") plus the notes it holds fresh copies of — since the
+ * 2026-09-08 index-aware refresh that is every note as a body-less
+ * placeholder from `loadWorkspace`, so `fetchedNotes` and `inventory`
+ * describe the same set — and the result is the workspace state implied
+ * by that snapshot.
  *
  *   - **Inventory is authoritative for existence, except for local-only
  *     notes whose id has never been confirmed on Drive.** Any local
@@ -696,9 +698,8 @@ export function mergeWorkspaces(
  *     from it has demonstrably never reached Drive — there is no
  *     remote state to interpret its absence against.
  *
- *     Ids present in `inventory` but not yet in `fetchedNotes` keep
- *     their current local copy as a placeholder — Phase 3 of the
- *     refresh will replace it when its JSON arrives.
+ *     Ids present in `inventory` but absent from `fetchedNotes` keep
+ *     their current local copy unchanged.
  *
  *   - **Per-id conflict rule:** when both `fetched` and `local` carry
  *     the same id, the version with the strictly larger `updatedAt`
@@ -714,7 +715,7 @@ export function mergeWorkspaces(
  *     another device doesn't strand the user on a phantom selection.
  *
  * Pure / DOM-free. Sibling of `mergeWorkspaces`; lives here so the
- * progressive-refresh orchestrator in `src/app/session/workspace-refresh.ts`
+ * refresh orchestrator in `src/app/session/workspace-refresh.ts`
  * can stay I/O-only and node-testable.
  */
 export function applyDriveRefresh(

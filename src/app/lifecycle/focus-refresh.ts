@@ -2,7 +2,7 @@
  * Cross-device refresh coordinator.
  *
  * Listens for "the tab just became visible / restored from bfcache"
- * and triggers a progressive workspace refresh. Without this, opening
+ * and triggers a workspace refresh. Without this, opening
  * SutraPad on a second device after a capture on the first leaves the
  * stale workspace on screen — count, list, body — until the user
  * reloads the page or hits Load manually.
@@ -57,7 +57,7 @@ export interface FocusRefreshEnvironment {
 }
 
 export interface FocusRefreshCoordinatorOptions {
-  /** Runs the actual progressive refresh. */
+  /** Runs the actual refresh (`workspaceIO.refreshWorkspace` + index re-seed). */
   refresh: () => Promise<void>;
   /**
    * Gate consulted before every trigger. Returning `false` skips the

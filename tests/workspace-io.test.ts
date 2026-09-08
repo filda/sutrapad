@@ -275,21 +275,14 @@ describe("createWorkspaceIO", () => {
     expect(h.cancelAutoSave).toHaveBeenCalledTimes(1);
   });
 
-  it("refreshWorkspace routes inventory and per-file fetches through withAuthRetry", async () => {
-    // The progressive cross-device refresh closes over the same
-    // getStore() + retryContext pair as load / save. A 401 mid-refresh
-    // therefore hits the same silent-refresh path. Pin the call
-    // routing here so a refactor that drops one of the two store
-    // methods from the orchestrator surfaces immediately.
+  it("refreshWorkspace routes its single Drive read through getStore() and never fetches bodies", async () => {
+    // The index-aware refresh closes over the same getStore() + retryContext
+    // pair as load / save, so a 401 mid-refresh hits the same silent-refresh
+    // path. It must use `loadWorkspace` (placeholders) and nothing per note —
+    // the 2026-09-08 rewrite exists because the previous version fetched
+    // every body in the folder on every tab switch.
     const h = makeHarness();
-    h.store.loadNoteInventory.mockResolvedValue([
-      {
-        noteId: "remote-1",
-        fileId: "drive-file-1",
-        modifiedTime: "2026-04-26T08:00:00.000Z",
-      },
-    ]);
-    h.store.fetchNoteByFileId.mockResolvedValue(realNote("remote-1"));
+    h.store.loadWorkspace.mockResolvedValue(makeWorkspace([realNote("remote-1")]));
 
     const io = createWorkspaceIO({
       getStore: h.getStore,
@@ -309,8 +302,9 @@ describe("createWorkspaceIO", () => {
 
     await io.refreshWorkspace();
 
-    expect(h.store.loadNoteInventory).toHaveBeenCalledTimes(1);
-    expect(h.store.fetchNoteByFileId).toHaveBeenCalledWith("drive-file-1");
+    expect(h.store.loadWorkspace).toHaveBeenCalledTimes(1);
+    expect(h.store.loadNoteInventory).not.toHaveBeenCalled();
+    expect(h.store.fetchNoteByFileId).not.toHaveBeenCalled();
     // The orchestrator's autosave cancel is the same race-prevention
     // guarantee `runWorkspaceLoad` makes — a focus refresh fires while
     // a 2 s-old keystroke timer is still armed.
@@ -783,9 +777,11 @@ describe("createWorkspaceIO known-Drive-id bookkeeping", () => {
     const h = makeHarness();
     const remote = realNote("remote-1");
     let local = makeWorkspace([remote]);
-    h.store.loadWorkspace.mockResolvedValue(makeWorkspace([remote]));
-    // Drive no longer lists the note: it was deleted on another device.
-    h.store.loadNoteInventory.mockResolvedValue([]);
+    // First read (the load) lists the note; the refresh's read no longer
+    // does: it was deleted on another device.
+    h.store.loadWorkspace
+      .mockResolvedValueOnce(makeWorkspace([remote]))
+      .mockResolvedValueOnce(makeWorkspace([]));
 
     const io = createWorkspaceIO({
       getStore: h.getStore,
@@ -818,7 +814,7 @@ describe("createWorkspaceIO known-Drive-id bookkeeping", () => {
     // mentioned `local-only`, so its absence means "not synced yet".
     const h = makeHarness();
     let local = makeWorkspace([realNote("local-only")]);
-    h.store.loadNoteInventory.mockResolvedValue([]);
+    h.store.loadWorkspace.mockResolvedValue(makeWorkspace([]));
 
     const io = createWorkspaceIO({
       getStore: h.getStore,
@@ -869,6 +865,7 @@ describe("createWorkspaceIO known-Drive-id bookkeeping", () => {
 function ioOver(
   h: IOHarness,
   getWorkspace: () => SutraPadWorkspace,
+  onSetWorkspace?: (next: SutraPadWorkspace) => void,
 ): ReturnType<typeof createWorkspaceIO> {
   return createWorkspaceIO({
     getStore: h.getStore,
@@ -877,7 +874,10 @@ function ioOver(
       onProfileRefreshed: h.onProfileRefreshed,
     },
     getWorkspace,
-    setWorkspace: h.setWorkspace,
+    setWorkspace: (next) => {
+      onSetWorkspace?.(next);
+      h.setWorkspace(next);
+    },
     persistLocalWorkspace: h.persistLocalWorkspace,
     setSyncState: h.setSyncState,
     setLastError: h.setLastError,
@@ -895,40 +895,27 @@ function lastCommittedIds(h: IOHarness): string[] | null {
 }
 
 describe("createWorkspaceIO: ids learned from Drive are remembered", () => {
-  it("remembers every id the inventory listed, even when the refresh then fails", async () => {
-    // Registering ids at *inventory* time rather than per fetched body is
-    // what makes a half-finished refresh still count as knowledge. Here the
-    // folder query lists n1 and n2; n1's body arrives, n2's fetch blows up and
-    // takes the pass down with it.
-    //
-    // A fixture where both fetches succeed proves nothing: the per-body
-    // `rememberDriveIds` inside `fetchNoteByFileId` registers the same two ids
-    // a moment later, so the inventory call looks redundant. It is only the
-    // failure path that separates them — and that is the path where getting it
-    // wrong resurrects a note the user deleted on another device.
+  it("remembers every id a refresh read listed, so the next refresh can drop it", async () => {
+    // The refresh's own Drive read is a knowledge source: ids it lists are
+    // confirmed to exist on Drive from that moment. Without registering them
+    // here, a note first seen by a refresh (created on another device) could
+    // never be dropped by a later one.
     const h = makeHarness();
-    const local = makeWorkspace([realNote("n1"), realNote("n2")]);
-    h.store.fetchNoteByFileId.mockImplementation((fileId: string) =>
-      fileId === "f1"
-        ? Promise.resolve(realNote("n1"))
-        : Promise.reject(new Error("drive said no")),
-    );
-    const io = ioOver(h, () => local);
+    let local = makeWorkspace([]);
+    const io = ioOver(h, () => local, (next) => {
+      local = next;
+    });
 
-    h.store.loadNoteInventory.mockResolvedValue([
-      { noteId: "n1", fileId: "f1", modifiedTime: "2026-04-26T08:00:00.000Z" },
-      { noteId: "n2", fileId: "f2", modifiedTime: "2026-04-26T09:00:00.000Z" },
-    ]);
-
+    h.store.loadWorkspace.mockResolvedValue(makeWorkspace([realNote("n1"), realNote("n2")]));
     await io.refreshWorkspace();
-    expect(h.setSyncState).toHaveBeenLastCalledWith("error");
+    expect(local.notes.map((note) => note.id).toSorted()).toEqual(["n1", "n2"]);
 
     h.setWorkspace.mockClear();
-    h.store.loadNoteInventory.mockResolvedValue([]);
+    h.store.loadWorkspace.mockResolvedValue(makeWorkspace([]));
     await io.refreshWorkspace();
 
-    // Both are known to have existed on Drive, so an inventory that lists
-    // neither means both were deleted elsewhere.
+    // Both are known to have existed on Drive, so a read that lists neither
+    // means both were deleted elsewhere.
     expect(lastCommittedIds(h)).toEqual([]);
   });
 
@@ -943,7 +930,7 @@ describe("createWorkspaceIO: ids learned from Drive are remembered", () => {
     await io.saveWorkspace("interactive");
 
     h.setWorkspace.mockClear();
-    h.store.loadNoteInventory.mockResolvedValue([]);
+    h.store.loadWorkspace.mockResolvedValue(makeWorkspace([]));
     await io.refreshWorkspace();
 
     expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
@@ -964,7 +951,7 @@ describe("createWorkspaceIO: ids learned from Drive are remembered", () => {
     await io.restoreWorkspaceAfterSignIn();
 
     h.setWorkspace.mockClear();
-    h.store.loadNoteInventory.mockResolvedValue([]);
+    h.store.loadWorkspace.mockResolvedValue(makeWorkspace([]));
     await io.refreshWorkspace();
 
     expect(h.store.saveWorkspace).toHaveBeenCalledTimes(1);
