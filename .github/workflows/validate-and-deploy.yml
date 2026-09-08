@@ -66,8 +66,12 @@ jobs:
       #                    (regressions here include the microtask-loop
       #                    bug class, which manifests as a job timeout
       #                    via vitest's per-test 3s timeout)
-      #   4. rest tests  — ~15s, the bulk unit suite
-      #   5. build       — ~3s, final shape we ship to GitHub Pages
+      #   4. nfr         — ~3s, non-functional budgets + invariants against a
+      #                    6 470-note fixture (tests/nfr/**); a red here means
+      #                    "something scales with the note count" or "a write
+      #                    guard fired", not "a unit test broke"
+      #   5. rest tests  — ~15s, the bulk unit suite
+      #   6. build       — ~3s, final shape we ship to GitHub Pages
       - name: Lint
         run: npm run lint
 
@@ -76,6 +80,11 @@ jobs:
 
       - name: Smoke test (createApp end-to-end)
         run: npm run test:smoke
+
+      # See docs/nfr-testing-plan.md. Own step so the failure reads as a
+      # budget / invariant break, not as "some unit test".
+      - name: Non-functional budgets
+        run: npm run test:nfr
 
       - name: Run unit suite
         run: npm run test:unit

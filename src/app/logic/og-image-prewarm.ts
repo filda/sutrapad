@@ -39,6 +39,7 @@
  * just the first one in document order.
  */
 import type { SutraPadDocument } from "../../types";
+import { PREWARM_CONCURRENCY, PREWARM_MAX_URLS } from "../../lib/budgets";
 import { deriveNotePrimaryUrl } from "./note-primary-url";
 import {
   loadOgImageCache,
@@ -55,21 +56,9 @@ export interface OgImagePrewarmTarget {
   readonly notes: readonly SutraPadDocument[];
 }
 
-/**
- * Default ceiling on simultaneous allorigins fetches during prewarm. Four
- * is small enough to stay polite on a free proxy and still drains a
- * couple-dozen URLs in well under a couple of seconds — the only window
- * that matters here is "before the user navigates to a card grid".
- */
-export const DEFAULT_PREWARM_CONCURRENCY = 4;
-
-/**
- * Default ceiling on how many distinct URLs one prewarm resolves —
- * roughly two screens of URL cards on the Notes / Links grids, which is
- * the only region the prewarm can make visibly faster. Everything past
- * it resolves lazily when (and if) its card scrolls into view.
- */
-export const DEFAULT_PREWARM_LIMIT = 48;
+/** Re-exported from `lib/budgets` so existing call sites and tests keep working. */
+export const DEFAULT_PREWARM_CONCURRENCY = PREWARM_CONCURRENCY;
+export const DEFAULT_PREWARM_LIMIT = PREWARM_MAX_URLS;
 
 /** HTTP status the proxy answers with once it starts rate limiting us. */
 const TOO_MANY_REQUESTS = 429;

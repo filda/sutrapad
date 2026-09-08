@@ -384,6 +384,14 @@ Compatibility notes:
 - Stryker mutates the pure-helper areas (`src/lib`, `src/app/{logic,storage,session,capture}`), the auth + Drive services, the `src/app/lifecycle` modules with focused tests, and the subset of `src/app/view/**` that has dedicated happy-dom tests. The full list lives in `stryker.config.mjs`; `tests/mutate-scope.test.ts` fails if a new module isn't classified, so the two can't drift apart silently.
 - View files without a dedicated test, the composition root in `src/app.ts`, and glue modules under `src/app/{render-callbacks,render-helpers,silent-capture-runner,state-store,sync-helpers}.ts` are intentionally not mutated yet — their only coverage is the smoke test, which is too coarse to discriminate mutants. Add a focused test before widening the mutate scope to one of these; each one is listed with its reason in `DEFERRED_FROM_MUTATION` (`tests/mutate-scope.test.ts`), so that list doubles as the backlog.
 
+### Non-functional tests
+
+`tests/nfr/**` asserts *properties* of the system rather than answers from functions: request counts, concurrency caps, round-trip idempotence of load → save → load, index drift recovery, and the resident-model shape — all against a workspace generated in the shape of the real one (`tests/nfr/workspace-fixture.ts`, ~6 470 notes) and an in-memory Drive (`tests/nfr/fake-drive.ts`, which evaluates the stores' real query strings through `tests/nfr/drive-query.ts` and counts every call). The numbers they assert come from `src/lib/budgets.ts`, the same module the app's runtime guards in `src/services/drive/save-policy.ts` read, so a budget is changed in one place and both sides move together. Counts and invariants only; no timing assertions — see `docs/nfr-testing-plan.md` for the rationale and the layers still to come.
+
+The whole `tests/nfr/` tree runs in `npm test` (a few seconds; `npm run test:nfr` runs it alone, and CI runs it as its own "Non-functional budgets" step so a red there reads as "something scales with the note count" rather than "a unit test broke") and is excluded under Stryker (`vitest.config.ts`): a broad property test kills no mutant a targeted unit test shouldn't already kill, and would mask the missing assertion the mutation score exists to expose. Logic the NFR layer exercises still needs its own unit test under mutation pressure.
+
+Two guard tests keep codebase-level invariants from drifting the way `tests/mutate-scope.test.ts` does for the mutate scope: `tests/body-reader-scope.test.ts` fails when a `src/` module reads a note's `body` without being classified as placeholder-aware (`guarded`) or placeholder-safe (`harmless`) — the class of bug behind the 2026-09-07 incident.
+
 ## Structure
 
 - `src/services/google-auth.ts` - browser OAuth token flow

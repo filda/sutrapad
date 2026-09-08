@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 /**
  * Vitest auto-enables its `github-actions` reporter whenever `GITHUB_ACTIONS`
@@ -35,6 +35,13 @@ export default defineConfig({
     ...(UNDER_STRYKER ? { reporters: ["default"] } : {}),
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // The NFR layer (`tests/nfr/**`) asserts properties of the system —
+    // request budgets, round-trip idempotence, concurrency caps — against a
+    // workspace-scale fixture. Under Stryker it would run for every mutant
+    // touching the store without adding kill power a targeted unit test
+    // doesn't already have, and would mask missing assertions. See
+    // `docs/nfr-testing-plan.md` → "Relationship to mutation testing".
+    exclude: UNDER_STRYKER ? [...configDefaults.exclude, "tests/nfr/**"] : configDefaults.exclude,
     typecheck: {
       tsconfig: "./tsconfig.vitest.json",
     },

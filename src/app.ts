@@ -780,7 +780,14 @@ export function createApp(root: HTMLElement): void {
       throw new Error("The user is not signed in.");
     }
 
-    return new GoogleDriveStore(token);
+    return new GoogleDriveStore(token, {
+      // Soft-budget overruns (index shrink, upload fan-out) — see
+      // `save-policy.ts`. Console for now; the diagnostics card in
+      // Settings is the planned home (`docs/nfr-testing-plan.md`).
+      onBudgetOverrun: (overrun) => {
+        console.warn(`[budget] ${overrun.budget}: ${overrun.message}`);
+      },
+    });
   };
 
   // Preferences store returns null instead of throwing when signed out

@@ -11,6 +11,7 @@
  * doesn't hit the CORS proxy on every page load.
  */
 import type { CachedOgImageEntry } from "./og-image";
+import { OG_IMAGE_CACHE_MAX_ENTRIES } from "../../lib/budgets";
 import { httpUrlOrNull } from "../../lib/safe-url";
 
 /**
@@ -86,18 +87,11 @@ export function persistOgImageCache(
 }
 
 /**
- * Maximum number of entries we keep in the OG-image cache. With
- * permanent (TTL-less) entries, an unbounded cache will eventually
- * tip over the 5–10 MiB localStorage quota and start throwing
- * `QuotaExceededError` on every write — silently breaking the OG
- * resolver for every URL the user encounters from then on.
- *
- * 500 entries is sized for the normal workspace shape (a few hundred
- * captured links per active user), and well below the byte ceiling
- * even with verbose negative-cache markers. The cap is exported so
- * tests can pin it without depending on the exact number.
+ * Maximum number of entries kept in the OG-image cache — defined with the
+ * other non-functional budgets in `lib/budgets`, re-exported here so the
+ * cache's callers and tests keep one import path.
  */
-export const OG_IMAGE_CACHE_MAX_ENTRIES = 500;
+export { OG_IMAGE_CACHE_MAX_ENTRIES };
 
 /**
  * Returns a new cache with `entry` added under `url`. Pure —

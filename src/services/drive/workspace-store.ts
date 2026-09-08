@@ -26,6 +26,18 @@ import {
   reconcileTaskIndexForWorkspace,
 } from "../../lib/notebook";
 import { httpUrlOrNull } from "../../lib/safe-url";
+import {
+  DRIVE_FETCH_CONCURRENCY,
+  DRIVE_UPLOAD_CONCURRENCY,
+  INDEX_MAX_SNAPSHOTS,
+} from "../../lib/budgets";
+import {
+  assertNotMassBlanking,
+  checkIndexShrink,
+  checkNoteUploadCount,
+  selectSnapshotsToDelete,
+  type BudgetOverrun,
+} from "./save-policy";
 import { buildNoteSummary, buildPlaceholderNote } from "../../lib/note-card-meta";
 import {
   isNoteFileName,
@@ -45,7 +57,6 @@ const TAG_INDEX_FILE_NAME = "sutrapad-tags.json";
 const LINK_INDEX_FILE_NAME = "sutrapad-links.json";
 const TASK_INDEX_FILE_NAME = "sutrapad-tasks.json";
 const WORKSPACE_FOLDER_NAME = "SutraPad";
-const MAX_INDEX_SNAPSHOTS = 10;
 /**
  * Safety ceiling on the folder-scoped note-file query that drives
  * `loadWorkspace`'s inventory. `findFiles` now paginates (Drive caps a
@@ -55,28 +66,6 @@ const MAX_INDEX_SNAPSHOTS = 10;
  */
 const MAX_WORKSPACE_NOTE_FILES = 50_000;
 
-/**
- * Max concurrent note-body fetches during a full `loadWorkspace` hydration.
- * Firing one request per note at once (Promise.all over the whole folder)
- * exhausts the browser's socket/memory budget on large workspaces — thousands
- * of parallel fetches surface as `net::ERR_INSUFFICIENT_RESOURCES`. Chunking
- * keeps the in-flight count sane. (Phase 2 / lazy bodies removes the need to
- * hydrate everything up front at all.)
- */
-const NOTE_HYDRATION_CONCURRENCY = 24;
-
-/**
- * Max concurrent note-file writes during `saveWorkspace`. Same failure
- * mode as `NOTE_HYDRATION_CONCURRENCY`, on the upload side: when the
- * index has drifted from the folder (or was rebuilt), thousands of notes
- * miss the `updatedAt` short-circuit at once and a whole-workspace
- * `Promise.all` fans out one multipart upload per note — the browser
- * gives up with `net::ERR_INSUFFICIENT_RESOURCES` and Drive answers the
- * rest with 403 rate limits, so the save fails and the next autosave
- * repeats the storm. Lower than the read-side cap because writes are
- * also what Drive's per-user quota meters most aggressively.
- */
-const NOTE_UPLOAD_CONCURRENCY = 8;
 
 /**
  * Maps `items` through `worker` in sequential chunks of `concurrency`,
@@ -267,12 +256,42 @@ export function reconcileLinkIndex(
   return { ...index, links };
 }
 
+/**
+ * The slice of `GoogleDriveClient` the store actually calls. Structural, so
+ * an in-memory implementation (`tests/nfr/fake-drive.ts`) can stand in for
+ * the real client without going through `fetch`.
+ */
+export type DriveClient = Pick<
+  GoogleDriveClient,
+  | "createFolder"
+  | "deleteFile"
+  | "ensureFileInFolder"
+  | "fetchFileMetadata"
+  | "fetchJsonFile"
+  | "findFiles"
+  | "findSingleFile"
+  | "uploadJsonFile"
+>;
+
+export interface GoogleDriveStoreOptions {
+  /** Replaces the `fetch`-backed client. Tests only. */
+  readonly client?: DriveClient;
+  /**
+   * Receives every soft-budget overrun `saveWorkspace` detects (see
+   * `save-policy.ts`). The app logs these; a diagnostics surface can
+   * subscribe later. Hard budgets throw instead and never reach this hook.
+   */
+  readonly onBudgetOverrun?: (overrun: BudgetOverrun) => void;
+}
+
 export class GoogleDriveStore {
-  readonly #client: GoogleDriveClient;
+  readonly #client: DriveClient;
+  readonly #onBudgetOverrun: (overrun: BudgetOverrun) => void;
   #workspaceFolderPromise: Promise<DriveFileRecord> | null = null;
 
-  constructor(accessToken: string) {
-    this.#client = new GoogleDriveClient(accessToken);
+  constructor(accessToken: string, options: GoogleDriveStoreOptions = {}) {
+    this.#client = options.client ?? new GoogleDriveClient(accessToken);
+    this.#onBudgetOverrun = options.onBudgetOverrun ?? (() => {});
   }
 
   /**
@@ -494,11 +513,11 @@ export class GoogleDriveStore {
     noteFiles: DriveFileRecord[],
   ): Promise<SutraPadDocument[]> {
     // Fetch bodies in bounded-concurrency chunks rather than all at once —
-    // see NOTE_HYDRATION_CONCURRENCY for why a full-folder Promise.all trips
+    // see DRIVE_FETCH_CONCURRENCY for why a full-folder Promise.all trips
     // net::ERR_INSUFFICIENT_RESOURCES on large workspaces.
     const settled = await mapWithConcurrency(
       noteFiles,
-      NOTE_HYDRATION_CONCURRENCY,
+      DRIVE_FETCH_CONCURRENCY,
       async (file) => {
         try {
           const document = await this.#client.fetchJsonFile<SutraPadDocument>(file.id);
@@ -800,16 +819,18 @@ export class GoogleDriveStore {
     note: SutraPadDocument,
     existingSummary: SutraPadNoteSummary | undefined,
     folderId: string,
-  ): Promise<SutraPadNoteSummary | null> {
+  ): Promise<{ summary: SutraPadNoteSummary | null; uploaded: boolean }> {
     const existingFileId = existingSummary?.fileId;
 
     if (note.hydrated === false) {
       // Trust the folder for the live fileId — the placeholder's came
       // from the folder query, the index can lag a re-upload.
       const fileId = note.fileId ?? existingFileId;
-      if (existingSummary) return fileId ? { ...existingSummary, fileId } : existingSummary;
-      if (!fileId) return null;
-      return { ...buildNoteSummary(note), fileId } satisfies SutraPadNoteSummary;
+      if (existingSummary) {
+        return { summary: fileId ? { ...existingSummary, fileId } : existingSummary, uploaded: false };
+      }
+      if (!fileId) return { summary: null, uploaded: false };
+      return { summary: { ...buildNoteSummary(note), fileId }, uploaded: false };
     }
 
     // Full card metadata (headline/excerpt/tags/location/tasks + urls/
@@ -820,9 +841,9 @@ export class GoogleDriveStore {
     // and the in-memory summaries can never drift in shape.
     if (existingFileId && existingSummary?.updatedAt === note.updatedAt) {
       return {
-        ...buildNoteSummary(note),
-        fileId: existingFileId,
-      } satisfies SutraPadNoteSummary;
+        summary: { ...buildNoteSummary(note), fileId: existingFileId },
+        uploaded: false,
+      };
     }
 
     const existingNoteFile: DriveFileRecord | null = existingFileId
@@ -850,9 +871,9 @@ export class GoogleDriveStore {
     await this.#client.ensureFileInFolder(file.id, folderId);
 
     return {
-      ...buildNoteSummary(note),
-      fileId: file.id,
-    } satisfies SutraPadNoteSummary;
+      summary: { ...buildNoteSummary(note), fileId: file.id },
+      uploaded: true,
+    };
   }
 
   async saveWorkspace(workspace: SutraPadWorkspace): Promise<void> {
@@ -874,6 +895,10 @@ export class GoogleDriveStore {
       }
     }
 
+    // Hard guard, before anything is written: a save that blanks many
+    // notes at once is a body-less copy about to overwrite real files.
+    assertNotMassBlanking(workspace.notes, existingSummaryById);
+
     // Notes upload + the four `find*IndexFile` lookups all need only
     // `workspaceFolder.id` and `existingIndex` (already resolved
     // above), so they run in a single concurrent batch instead of
@@ -881,15 +906,28 @@ export class GoogleDriveStore {
     // ~4×RTT off the in-flight time before we even get to the
     // index uploads.
     const [savedNotes, derived] = await Promise.all([
-      mapWithConcurrency(workspace.notes, NOTE_UPLOAD_CONCURRENCY, (note) =>
+      mapWithConcurrency(workspace.notes, DRIVE_UPLOAD_CONCURRENCY, (note) =>
         this.saveNoteFile(note, existingSummaryById.get(note.id), workspaceFolder.id),
       ),
       this.findDerivedIndexFiles(workspaceFolder.id),
     ]);
+    const summaries = savedNotes
+      .map((saved) => saved.summary)
+      .filter((summary) => summary !== null);
+
+    // Soft guards: the save goes through, but a shape that has only ever
+    // meant "the index drifted" or "a bug is deleting notes" is reported.
+    const uploads = savedNotes.filter((saved) => saved.uploaded).length;
+    for (const overrun of [
+      checkIndexShrink(existingIndex?.notes.length ?? 0, summaries.length),
+      checkNoteUploadCount(uploads),
+    ]) {
+      if (overrun !== null) this.#onBudgetOverrun(overrun);
+    }
 
     await this.writeDerivedIndexes({
       workspace,
-      summaries: savedNotes.filter((summary) => summary !== null),
+      summaries,
       workspaceFolder,
       previousIndexId: existingIndexFile?.id,
       derived,
@@ -1124,7 +1162,7 @@ export class GoogleDriveStore {
   private findIndexSnapshotFiles(folderId: string): Promise<DriveFileRecord[]> {
     return this.#client.findFiles(
       `${this.buildFolderQuery(folderId)} and appProperties has { key='sutrapad' and value='true' } and appProperties has { key='kind' and value='index' }`,
-      MAX_INDEX_SNAPSHOTS + 20,
+      INDEX_MAX_SNAPSHOTS + 20,
     );
   }
 
@@ -1188,11 +1226,7 @@ export class GoogleDriveStore {
 
   private async cleanupOldIndexSnapshots(folderId: string, activeIndexId: string): Promise<void> {
     const snapshotFiles = await this.findIndexSnapshotFiles(folderId);
-    const staleSnapshots = snapshotFiles
-      .filter((file) => file.id !== activeIndexId)
-      .toSorted((left, right) => right.name.localeCompare(left.name))
-      .slice(MAX_INDEX_SNAPSHOTS - 1);
-
+    const staleSnapshots = selectSnapshotsToDelete(snapshotFiles, activeIndexId, Date.now());
     await Promise.all(staleSnapshots.map((file) => this.#client.deleteFile(file.id)));
   }
 }

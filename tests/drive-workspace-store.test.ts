@@ -4,6 +4,10 @@ import {
   reconcileLinkIndex,
   reconcileTaskIndex,
 } from "../src/services/drive/workspace-store";
+import {
+  WorkspaceSaveRefusedError,
+  type BudgetOverrun,
+} from "../src/services/drive/save-policy";
 import type {
   SutraPadDocument,
   SutraPadHead,
@@ -994,6 +998,132 @@ describe("GoogleDriveStore.saveWorkspace task index with placeholders", () => {
     expect(byNote.get("p")).toMatchObject({ text: "carried over", done: false });
     expect(byNote.get("h")).toMatchObject({ text: "freshly parsed", done: true });
     expect(taskBodies[0].tasks).toHaveLength(2);
+  });
+});
+
+const contentSummary = (id: string): SutraPadIndex["notes"][number] => ({
+  id,
+  title: id,
+  excerpt: "real content",
+  createdAt: "2026-04-30T11:00:00.000Z",
+  updatedAt: "2026-04-30T11:00:00.000Z",
+  fileId: `nf-${id}`,
+});
+const blankedNote = (id: string): SutraPadDocument => ({
+  id,
+  title: id,
+  body: "",
+  tags: [],
+  urls: [],
+  createdAt: "2026-04-30T11:00:00.000Z",
+  updatedAt: "2026-05-01T11:00:00.000Z",
+});
+
+describe("GoogleDriveStore.saveWorkspace write-boundary budgets (save-policy wiring)", () => {
+  const folder = driveFile("folder-1", "SutraPad", {
+    mimeType: "application/vnd.google-apps.folder",
+  });
+  const head: SutraPadHead = { version: 1, activeIndexId: "if", savedAt: "2026-04-30T11:00:00.000Z" };
+
+  function stubIndexed(existingNotes: SutraPadIndex["notes"]): ReturnType<typeof uploadRecorder> {
+    const oldIndex: SutraPadIndex = {
+      version: 1,
+      updatedAt: "2026-04-30T11:00:00.000Z",
+      savedAt: "2026-04-30T11:00:00.000Z",
+      activeNoteId: existingNotes[0]?.id ?? null,
+      notes: existingNotes,
+    };
+    const uploads = uploadRecorder();
+    captureFetch(async (url, init) => {
+      if (url.includes("google-apps.folder")) return fileList([folder]);
+      if (url.includes("'head'") && url.includes("q=")) return fileList([driveFile("hf", "sutrapad-head.json")]);
+      if (url.includes("/hf?alt=media")) return jsonResponse(head);
+      if (url.includes("/if?fields=")) return jsonResponse(driveFile("if", "index-old.json"));
+      if (url.includes("/if?alt=media")) return jsonResponse(oldIndex);
+      return (await uploads.handle(url, init)) ?? fileList([]);
+    });
+    return uploads;
+  }
+
+  it("refuses a mass-blanking save before writing anything", async () => {
+    const ids = ["a", "b", "c", "d"];
+    const uploads = stubIndexed(ids.map((id) => contentSummary(id)));
+    const store = new GoogleDriveStore("token");
+
+    await expect(
+      store.saveWorkspace({ notes: ids.map((id) => blankedNote(id)), activeNoteId: "a" }),
+    ).rejects.toBeInstanceOf(WorkspaceSaveRefusedError);
+    expect(uploads.noteUploads).toEqual([]);
+    expect(uploads.indexBodies).toEqual([]);
+  });
+
+  it("lets a single emptied note through — the user can clear a note", async () => {
+    const uploads = stubIndexed([contentSummary("a"), contentSummary("b")]);
+    const store = new GoogleDriveStore("token");
+    await store.saveWorkspace({
+      notes: [blankedNote("a"), { ...blankedNote("b"), body: "still here", updatedAt: "2026-04-30T11:00:00.000Z" }],
+      activeNoteId: "a",
+    });
+    expect(uploads.noteUploads).toEqual(["a"]);
+  });
+
+  it("reports an index shrink through onBudgetOverrun and still writes the index", async () => {
+    const existing = Array.from({ length: 100 }, (_, i) => contentSummary(`n${i}`));
+    const uploads = stubIndexed(existing);
+    const overruns: BudgetOverrun[] = [];
+    const store = new GoogleDriveStore("token", { onBudgetOverrun: (o) => overruns.push(o) });
+
+    // Keep 80 of 100 as unchanged hydrated notes → 20 % shrink.
+    await store.saveWorkspace({
+      notes: existing.slice(0, 80).map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        body: "real content",
+        tags: [],
+        urls: [],
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
+      })),
+      activeNoteId: "n0",
+    });
+
+    expect(overruns.map((o) => o.budget)).toEqual(["index-shrink"]);
+    expect(overruns[0].message).toContain("100 to 80");
+    expect(uploads.indexBodies).toHaveLength(1);
+    expect(uploads.indexBodies[0].notes).toHaveLength(80);
+  });
+
+  it("reports an upload fan-out past the interactive budget", async () => {
+    const uploads = stubIndexed([]);
+    const overruns: BudgetOverrun[] = [];
+    const store = new GoogleDriveStore("token", { onBudgetOverrun: (o) => overruns.push(o) });
+    const count = 51;
+    await store.saveWorkspace({
+      notes: Array.from({ length: count }, (_, i) => ({
+        id: `n${i}`,
+        title: `n${i}`,
+        body: `body ${i}`,
+        tags: [],
+        urls: [],
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z",
+      })),
+      activeNoteId: "n0",
+    });
+    expect(uploads.noteUploads).toHaveLength(count);
+    expect(overruns.map((o) => o.budget)).toEqual(["note-uploads"]);
+    expect(overruns[0].observed).toBe(count);
+  });
+
+  it("stays silent on an ordinary save (no hook calls)", async () => {
+    stubIndexed([contentSummary("a")]);
+    const overruns: BudgetOverrun[] = [];
+    const store = new GoogleDriveStore("token", { onBudgetOverrun: (o) => overruns.push(o) });
+    await store.saveWorkspace({
+      notes: [{ ...blankedNote("a"), body: "edited" }],
+      activeNoteId: "a",
+    });
+    expect(overruns).toEqual([]);
   });
 });
 

@@ -34,6 +34,7 @@ const config = {
     "src/services/drive/client.ts",
     "src/services/drive/preferences-store.ts",
     "src/services/drive/workspace-store.ts",
+    "src/services/drive/save-policy.ts",
 
     // App-level wiring with a dedicated test. `state-store.ts` got
     // `tests/state-store.test.ts` on 2026-08-19 — route/preference seeding,
@@ -251,6 +252,11 @@ const config = {
     //   `app/logic/locale`) stays in scope and should sit at or near 100 %.
     "!src/lib/i18n/en.ts",
     "!src/lib/i18n/cs.ts",
+    // `lib/budgets.ts` — the non-functional budgets (request caps, concurrency,
+    //   integrity thresholds). Pure literals: a mutant turning 48 into 49 is
+    //   not a bug any assertion can name. The consumers of these values are
+    //   in scope and tested against them; see `docs/nfr-testing-plan.md`.
+    "!src/lib/budgets.ts",
     "!src/**/*.d.ts",
     "!src/app/logic/lexicon/stoplist.ts",
     "!src/app/logic/lexicon/types.ts",

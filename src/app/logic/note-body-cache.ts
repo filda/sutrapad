@@ -14,9 +14,10 @@
  * deleting + re-inserting on touch keeps the oldest key at `keys().next()`.
  */
 import type { SutraPadDocument } from "../../types";
+import { NOTE_BODY_CACHE_CAPACITY } from "../../lib/budgets";
 
-/** Default resident-body ceiling. Small: detail viewing is one-at-a-time. */
-export const DEFAULT_NOTE_BODY_CACHE_CAPACITY = 50;
+/** Default resident-body ceiling — `NOTE_BODY_CACHE_CAPACITY` in `lib/budgets`. */
+export const DEFAULT_NOTE_BODY_CACHE_CAPACITY = NOTE_BODY_CACHE_CAPACITY;
 
 export interface NoteBodyCache {
   /** Returns the cached body and marks it most-recently-used, else undefined. */
