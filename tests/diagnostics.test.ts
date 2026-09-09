@@ -14,6 +14,7 @@ import {
   recordLongTask,
   recordOperation,
   recordOverrun,
+  recordPhase,
   type DriveOperationRecord,
 } from "../src/app/logic/diagnostics";
 import { emptyDriveCounts } from "../src/services/drive/drive-meter";
@@ -26,7 +27,7 @@ function op(overrides: Partial<DriveOperationRecord> = {}): DriveOperationRecord
     at: "2026-09-08T10:00:00.000Z",
     durationMs: 1234,
     ok: true,
-    counts: { ...counts, calls: { ...counts.calls, findFiles: 3, uploadJsonFile: 2 }, total: 5, noteUploads: 1, peakInFlight: 2 },
+    counts: { ...counts, calls: { ...counts.calls, findFiles: 3, uploadJsonFile: 2 }, total: 5, noteUploads: 1, peakInFlight: 2, networkMs: 900 },
     ...overrides,
   };
 }
@@ -48,6 +49,10 @@ describe("diagnostics reducers", () => {
       longTasks: { count: 0, maxMs: 0 },
       interactions: { count: 0, maxMs: 0 },
       heapUsedBytes: null,
+      phases: {
+        render: { count: 0, maxMs: 0, totalMs: 0 },
+        persist: { count: 0, maxMs: 0, totalMs: 0 },
+      },
     });
   });
 
@@ -93,6 +98,15 @@ describe("diagnostics reducers", () => {
     expect(snapshot.operationCount).toBe(0);
   });
 
+  it("recordPhase counts, keeps the worst case and sums per phase", () => {
+    let snapshot = recordPhase(createEmptyDiagnostics(), "render", 120);
+    snapshot = recordPhase(snapshot, "render", 30);
+    snapshot = recordPhase(snapshot, "persist", 450);
+    expect(snapshot.mainThread.phases.render).toEqual({ count: 2, maxMs: 120, totalMs: 150 });
+    expect(snapshot.mainThread.phases.persist).toEqual({ count: 1, maxMs: 450, totalMs: 450 });
+    expect(snapshot.mainThread.longTasks.count).toBe(0);
+  });
+
   it("recordHeapSample replaces the sample", () => {
     let snapshot = recordHeapSample(createEmptyDiagnostics(), 10);
     snapshot = recordHeapSample(snapshot, 20);
@@ -120,7 +134,7 @@ describe("diagnostics formatting", () => {
 
   it("describeOperationForConsole names the kind, counts, peak, duration and a failure flag", () => {
     expect(describeOperationForConsole(op())).toBe(
-      "[drive] save · 5 requests · 1 note uploads · peak 2 · 1.2 s",
+      "[drive] save · 5 requests · 1 note uploads · peak 2 · 1.2 s · network 900 ms",
     );
     expect(describeOperationForConsole(op({ ok: false }))).toMatch(/ · FAILED$/u);
     expect(describeOperationForConsole(op())).not.toContain("FAILED");
@@ -137,9 +151,12 @@ describe("describeDiagnostics", () => {
       "lastRefresh",
       "lastRebuild",
       "lastHydrate",
+      "lastReseed",
       "session",
       "overruns",
       "mainThread",
+      "render",
+      "persist",
       "memory",
     ]);
     const byId = new Map(rows.map((row) => [row.id, row.value]));
@@ -150,8 +167,11 @@ describe("describeDiagnostics", () => {
       "lastRefresh",
       "lastRebuild",
       "lastHydrate",
+      "lastReseed",
       "session",
       "mainThread",
+      "render",
+      "persist",
     ] as const) {
       expect(byId.get(id)).toBe("—");
     }
@@ -160,11 +180,14 @@ describe("describeDiagnostics", () => {
   });
 
   it("describes an operation with requests, uploads (only when non-zero), duration and failure", () => {
-    let snapshot = recordOperation(createEmptyDiagnostics(), op({ kind: "load", durationMs: 480, counts: { ...emptyDriveCounts(), total: 6 } }));
+    let snapshot = recordOperation(createEmptyDiagnostics(), op({ kind: "load", durationMs: 480, counts: { ...emptyDriveCounts(), total: 6, networkMs: 310 } }));
     snapshot = recordOperation(snapshot, op({ kind: "save", ok: false }));
+    snapshot = recordPhase(snapshot, "render", 1500);
+    snapshot = recordPhase(snapshot, "render", 500);
     const byId = new Map(describeDiagnostics(snapshot, "en").map((row) => [row.id, row.value]));
-    expect(byId.get("lastLoad")).toBe("6 requests · 480 ms");
-    expect(byId.get("lastSave")).toBe("5 requests · 1 note uploaded · 1.2 s · failed");
+    expect(byId.get("lastLoad")).toBe("6 requests · 480 ms · network 310 ms");
+    expect(byId.get("lastSave")).toBe("5 requests · 1 note uploaded · 1.2 s · network 900 ms · failed");
+    expect(byId.get("render")).toBe("2 × · longest 1.5 s · total 2.0 s");
     expect(byId.get("session")).toBe("2 operations · 11 requests · 1 note uploaded");
   });
 
@@ -181,13 +204,13 @@ describe("describeDiagnostics", () => {
   });
 
   it("uses Czech plural forms and labels for the cs locale", () => {
-    const counts = { ...emptyDriveCounts(), total: 3, noteUploads: 2 };
+    const counts = { ...emptyDriveCounts(), total: 3, noteUploads: 2, networkMs: 40 };
     const snapshot = recordOperation(createEmptyDiagnostics(), op({ kind: "save", counts, durationMs: 90 }));
     const rows = describeDiagnostics(snapshot, "cs");
     expect(rows.find((row) => row.id === "lastSave")).toEqual({
       id: "lastSave",
       label: "Poslední uložení",
-      value: "3 požadavky · 2 poznámky nahrány · 90 ms",
+      value: "3 požadavky · 2 poznámky nahrány · 90 ms · síť 40 ms",
     });
     expect(rows.find((row) => row.id === "session")?.value).toBe("1 operace · 3 požadavky · 2 poznámky nahrány");
     expect(rows.find((row) => row.id === "overruns")?.value).toBe("Žádná");

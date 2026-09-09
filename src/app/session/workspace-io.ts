@@ -112,6 +112,16 @@ export interface WorkspaceIO {
    * edits — see `app.ts` for the wiring.
    */
   isWorkspaceDirty: () => boolean;
+  /**
+   * Runs `operation` as one metered Drive operation of `kind` (see
+   * `measured` inside). For app-level flows that talk to the store outside
+   * this module — the resident-index re-seed — so they show up on the
+   * Diagnostics card too.
+   */
+  measure: <R>(
+    kind: DriveOperationKind,
+    operation: (store: () => GoogleDriveStore) => Promise<R>,
+  ) => Promise<R>;
 }
 
 export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
@@ -400,5 +410,6 @@ export function createWorkspaceIO(deps: WorkspaceIODeps): WorkspaceIO {
     importNotes,
     rebuildIndexes,
     isWorkspaceDirty,
+    measure: measured,
   };
 }

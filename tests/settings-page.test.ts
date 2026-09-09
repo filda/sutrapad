@@ -663,9 +663,12 @@ describe("buildSettingsPage — Diagnostics card", () => {
       "Last refresh",
       "Last rebuild",
       "Last note open",
+      "Last index re-seed",
       "This session",
       "Budget overruns",
       "Main thread",
+      "Renders",
+      "Local saves",
       "JavaScript heap",
     ]);
     expect(values).toEqual([
@@ -675,9 +678,12 @@ describe("buildSettingsPage — Diagnostics card", () => {
       ["lastRefresh", "—"],
       ["lastRebuild", "—"],
       ["lastHydrate", "—"],
+      ["lastReseed", "—"],
       ["session", "—"],
       ["overruns", "None"],
       ["mainThread", "—"],
+      ["render", "—"],
+      ["persist", "—"],
       ["memory", "Not available in this browser"],
     ]);
   });
@@ -693,7 +699,7 @@ describe("buildSettingsPage — Diagnostics card", () => {
     });
     const page = buildSettingsPage(baseOptions({ diagnostics: snapshot }));
     expect(page.querySelector<HTMLElement>('dd[data-row="lastSave"]')?.textContent).toBe(
-      "4 requests · 1 note uploaded · 640 ms",
+      "4 requests · 1 note uploaded · 640 ms · network 0 ms",
     );
   });
 });

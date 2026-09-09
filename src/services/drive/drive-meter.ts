@@ -40,6 +40,12 @@ export interface DriveMeterCounts {
   readonly peakInFlight: number;
   /** Calls that rejected (after the client's own error mapping). */
   readonly failures: number;
+  /**
+   * Sum of the wall time of every call. With concurrent calls this exceeds
+   * the operation's elapsed time; compared against it, it still separates
+   * "waiting for Drive" from "busy on the main thread".
+   */
+  readonly networkMs: number;
 }
 
 export interface DriveMeter {
@@ -56,6 +62,7 @@ export function emptyDriveCounts(): DriveMeterCounts {
     noteUploads: 0,
     peakInFlight: 0,
     failures: 0,
+    networkMs: 0,
   };
 }
 
@@ -69,20 +76,24 @@ export function addDriveCounts(a: DriveMeterCounts, b: DriveMeterCounts): DriveM
     noteUploads: a.noteUploads + b.noteUploads,
     peakInFlight: Math.max(a.peakInFlight, b.peakInFlight),
     failures: a.failures + b.failures,
+    networkMs: a.networkMs + b.networkMs,
   };
 }
 
-export function createDriveMeter(): DriveMeter {
+export function createDriveMeter(config: { now?: () => number } = {}): DriveMeter {
+  const now = config.now ?? (() => performance.now());
   let calls = zeroByKind();
   let noteUploads = 0;
   let failures = 0;
   let inFlight = 0;
   let peakInFlight = 0;
+  let networkMs = 0;
 
   const measure = async <R>(kind: DriveCallKind, run: () => Promise<R>): Promise<R> => {
     calls[kind] += 1;
     inFlight += 1;
     peakInFlight = Math.max(peakInFlight, inFlight);
+    const started = now();
     try {
       return await run();
     } catch (error) {
@@ -90,6 +101,7 @@ export function createDriveMeter(): DriveMeter {
       throw error;
     } finally {
       inFlight -= 1;
+      networkMs += now() - started;
     }
   };
 
@@ -117,13 +129,14 @@ export function createDriveMeter(): DriveMeter {
     },
     snapshot() {
       const total = DRIVE_CALL_KINDS.reduce((sum, kind) => sum + calls[kind], 0);
-      return { calls: { ...calls }, total, noteUploads, peakInFlight, failures };
+      return { calls: { ...calls }, total, noteUploads, peakInFlight, failures, networkMs };
     },
     reset() {
       calls = zeroByKind();
       noteUploads = 0;
       failures = 0;
       peakInFlight = 0;
+      networkMs = 0;
     },
   };
 }

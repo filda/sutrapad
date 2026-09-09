@@ -15,6 +15,7 @@ import {
   recordLongTask,
   recordOperation,
   recordOverrun,
+  recordPhase,
 } from "./app/logic/diagnostics";
 import { startMainThreadObservers } from "./app/session/main-thread-observers";
 import { GoogleDriveLexiconStore } from "./services/drive/lexicon-store";
@@ -24,7 +25,7 @@ import {
   upsertNote,
 } from "./lib/notebook";
 import { buildTaskFacetByNoteId } from "./lib/tasks";
-import type { SutraPadDocument } from "./types";
+import type { SutraPadDocument, SutraPadWorkspace } from "./types";
 import { resolveDisplayedNote } from "./app/logic/displayed-note";
 import { formatBuildStamp } from "./app/logic/formatting";
 import { formatLastChange } from "./app/logic/editor-sync-crumb";
@@ -48,7 +49,7 @@ import { runAppBootstrap } from "./app/session/session";
 import { withAuthRetry, type AuthRetryContext } from "./app/session/auth-retry";
 import { createWorkspaceIO } from "./app/session/workspace-io";
 import { createPreferencesIO } from "./app/session/preferences-io";
-import { persistLocalWorkspace } from "./app/storage/local-workspace";
+import { persistLocalWorkspace as writeLocalWorkspace } from "./app/storage/local-workspace";
 import { renderAppPage } from "./app/view/render-app";
 import { syncPillLabel } from "./app/view/chrome/topbar";
 import { buildNotesPanel } from "./app/view/pages/notes-page";
@@ -537,7 +538,30 @@ export function createApp(root: HTMLElement): void {
   const noteBodyCache = createNoteBodyCache();
   const hydratingNoteIds = new Set<string>();
 
+  /**
+   * `persistLocalWorkspace` and `render` are the two synchronous phases
+   * that scale with the workspace and block the main thread; both are
+   * timed into the Diagnostics card so a long task can be attributed.
+   */
+  const persistLocalWorkspace = (workspace: SutraPadWorkspace): void => {
+    const started = performance.now();
+    try {
+      writeLocalWorkspace(workspace);
+    } finally {
+      updateDiagnostics((snapshot) => recordPhase(snapshot, "persist", performance.now() - started));
+    }
+  };
+
   const render = (): void => {
+    const started = performance.now();
+    try {
+      paintApp();
+    } finally {
+      updateDiagnostics((snapshot) => recordPhase(snapshot, "render", performance.now() - started));
+    }
+  };
+
+  const paintApp = (): void => {
     // Set the flag *true* for the entire body of render(): the
     // mutations below (`syncSelectedTagFilters` filters into a fresh
     // array, `workspace$.set(detailRoute.workspace)` etc. land new
@@ -930,11 +954,13 @@ export function createApp(root: HTMLElement): void {
   // setting them doesn't schedule a render on its own — the explicit
   // `render()` at the end is what actually surfaces the corrected data.
   const reseedResidentIndexesFromDrive = async (): Promise<void> => {
-    const [summaries, taskIndex, linkIndex] = await Promise.all([
-      withAuthRetry(() => getStore().loadNoteSummaries(), retryContext),
-      withAuthRetry(() => getStore().loadTaskIndex(), retryContext),
-      withAuthRetry(() => getStore().loadLinkIndex(), retryContext),
-    ]);
+    const [summaries, taskIndex, linkIndex] = await workspaceIO.measure("reseed", (driveStore) =>
+      Promise.all([
+        withAuthRetry(() => driveStore().loadNoteSummaries(), retryContext),
+        withAuthRetry(() => driveStore().loadTaskIndex(), retryContext),
+        withAuthRetry(() => driveStore().loadLinkIndex(), retryContext),
+      ]),
+    );
     noteSummaries$.set(summaries);
     taskIndex$.set(taskIndex);
     linkIndex$.set(linkIndex);

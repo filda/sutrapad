@@ -85,6 +85,24 @@ describe("createDriveMeter", () => {
     expect(meter.snapshot().calls.deleteFile).toBe(1);
   });
 
+  it("sums the wall time of every call into networkMs using the injected clock", async () => {
+    let clock = 0;
+    const meter = createDriveMeter({ now: () => clock });
+    const raw = slowClient();
+    const client = meter.wrap({
+      ...raw,
+      fetchJsonFile: <T>() => {
+        clock += 250;
+        return raw.fetchJsonFile<T>("a");
+      },
+    });
+    await client.fetchJsonFile("a");
+    await client.fetchJsonFile("a");
+    expect(meter.snapshot().networkMs).toBe(500);
+    meter.reset();
+    expect(meter.snapshot().networkMs).toBe(0);
+  });
+
   it("reset clears counts, uploads, failures and the peak", async () => {
     const meter = createDriveMeter();
     const raw = slowClient();
@@ -99,11 +117,11 @@ describe("createDriveMeter", () => {
 
 describe("addDriveCounts", () => {
   it("adds every field and takes the max of the peaks", () => {
-    const a = { ...emptyDriveCounts(), calls: { ...emptyDriveCounts().calls, findFiles: 2 }, total: 2, noteUploads: 1, peakInFlight: 3, failures: 1 };
-    const b = { ...emptyDriveCounts(), calls: { ...emptyDriveCounts().calls, findFiles: 1, uploadJsonFile: 4 }, total: 5, noteUploads: 4, peakInFlight: 8, failures: 0 };
+    const a = { ...emptyDriveCounts(), calls: { ...emptyDriveCounts().calls, findFiles: 2 }, total: 2, noteUploads: 1, peakInFlight: 3, failures: 1, networkMs: 100 };
+    const b = { ...emptyDriveCounts(), calls: { ...emptyDriveCounts().calls, findFiles: 1, uploadJsonFile: 4 }, total: 5, noteUploads: 4, peakInFlight: 8, failures: 0, networkMs: 250 };
     const sum = addDriveCounts(a, b);
     expect(sum.calls.findFiles).toBe(3);
     expect(sum.calls.uploadJsonFile).toBe(4);
-    expect(sum).toMatchObject({ total: 7, noteUploads: 5, peakInFlight: 8, failures: 1 });
+    expect(sum).toMatchObject({ total: 7, noteUploads: 5, peakInFlight: 8, failures: 1, networkMs: 350 });
   });
 });

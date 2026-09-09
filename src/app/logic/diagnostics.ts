@@ -24,7 +24,14 @@ import {
   type DriveMeterCounts,
 } from "../../services/drive/drive-meter";
 
-export type DriveOperationKind = "load" | "save" | "restore" | "refresh" | "rebuild" | "hydrate";
+export type DriveOperationKind =
+  | "load"
+  | "save"
+  | "restore"
+  | "refresh"
+  | "rebuild"
+  | "hydrate"
+  | "reseed";
 
 export const DRIVE_OPERATION_KINDS: readonly DriveOperationKind[] = [
   "load",
@@ -33,7 +40,17 @@ export const DRIVE_OPERATION_KINDS: readonly DriveOperationKind[] = [
   "refresh",
   "rebuild",
   "hydrate",
+  "reseed",
 ];
+
+/** Main-thread phases timed by hand (the Long Tasks API has no attribution). */
+export type MainThreadPhase = "render" | "persist";
+
+export interface PhaseTiming {
+  readonly count: number;
+  readonly maxMs: number;
+  readonly totalMs: number;
+}
 
 export interface DriveOperationRecord {
   readonly kind: DriveOperationKind;
@@ -51,6 +68,8 @@ export interface MainThreadStats {
   readonly interactions: { count: number; maxMs: number };
   /** `performance.memory.usedJSHeapSize` in bytes; null where unavailable. */
   readonly heapUsedBytes: number | null;
+  /** Hand-timed phases: every `render()` and every localStorage persist. */
+  readonly phases: Readonly<Record<MainThreadPhase, PhaseTiming>>;
 }
 
 export interface DiagnosticsSnapshot {
@@ -82,6 +101,7 @@ export function createEmptyDiagnostics(): DiagnosticsSnapshot {
       refresh: null,
       rebuild: null,
       hydrate: null,
+      reseed: null,
     },
     sessionCounts: emptyDriveCounts(),
     operationCount: 0,
@@ -90,6 +110,32 @@ export function createEmptyDiagnostics(): DiagnosticsSnapshot {
       longTasks: { count: 0, maxMs: 0 },
       interactions: { count: 0, maxMs: 0 },
       heapUsedBytes: null,
+      phases: {
+        render: { count: 0, maxMs: 0, totalMs: 0 },
+        persist: { count: 0, maxMs: 0, totalMs: 0 },
+      },
+    },
+  };
+}
+
+export function recordPhase(
+  snapshot: DiagnosticsSnapshot,
+  phase: MainThreadPhase,
+  durationMs: number,
+): DiagnosticsSnapshot {
+  const current = snapshot.mainThread.phases[phase];
+  return {
+    ...snapshot,
+    mainThread: {
+      ...snapshot.mainThread,
+      phases: {
+        ...snapshot.mainThread.phases,
+        [phase]: {
+          count: current.count + 1,
+          maxMs: Math.max(current.maxMs, durationMs),
+          totalMs: current.totalMs + durationMs,
+        },
+      },
     },
   };
 }
@@ -178,6 +224,7 @@ export function describeOperationForConsole(record: DriveOperationRecord): strin
     `${record.counts.noteUploads} note uploads`,
     `peak ${record.counts.peakInFlight}`,
     formatDuration(record.durationMs),
+    `network ${formatDuration(record.counts.networkMs)}`,
   ];
   if (!record.ok) parts.push("FAILED");
   return parts.join(" · ");
@@ -195,7 +242,10 @@ export interface DiagnosticsRow {
     | "lastRefresh"
     | "lastRebuild"
     | "lastHydrate"
+    | "lastReseed"
     | "session"
+    | "render"
+    | "persist"
     | "overruns"
     | "mainThread"
     | "memory";
@@ -220,9 +270,15 @@ export function describeDiagnostics(
     const parts = [plural(record.counts.total, copy.requests)];
     if (record.counts.noteUploads > 0) parts.push(plural(record.counts.noteUploads, copy.noteUploads));
     parts.push(formatDuration(record.durationMs));
+    parts.push(copy.network(formatDuration(record.counts.networkMs)));
     if (!record.ok) parts.push(copy.failed);
     return parts.join(" · ");
   };
+
+  const phase = (timing: PhaseTiming): string =>
+    timing.count === 0
+      ? copy.none
+      : copy.phase(timing.count, formatDuration(timing.maxMs), formatDuration(timing.totalMs));
 
   const session =
     snapshot.operationCount === 0
@@ -254,9 +310,12 @@ export function describeDiagnostics(
     { id: "lastRefresh", label: copy.rows.lastRefresh, value: operation(snapshot.lastOperation.refresh) },
     { id: "lastRebuild", label: copy.rows.lastRebuild, value: operation(snapshot.lastOperation.rebuild) },
     { id: "lastHydrate", label: copy.rows.lastHydrate, value: operation(snapshot.lastOperation.hydrate) },
+    { id: "lastReseed", label: copy.rows.lastReseed, value: operation(snapshot.lastOperation.reseed) },
     { id: "session", label: copy.rows.session, value: session },
     { id: "overruns", label: copy.rows.overruns, value: overruns },
     { id: "mainThread", label: copy.rows.mainThread, value: mainThread },
+    { id: "render", label: copy.rows.render, value: phase(snapshot.mainThread.phases.render) },
+    { id: "persist", label: copy.rows.persist, value: phase(snapshot.mainThread.phases.persist) },
     {
       id: "memory",
       label: copy.rows.memory,
