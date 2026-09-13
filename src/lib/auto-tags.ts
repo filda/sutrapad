@@ -17,7 +17,13 @@ import { countTasksInNote, type TaskFacet } from "./tasks";
  *     chip) and makes the source obvious in the UI.
  *   - **Pure + deterministic**. Given the same note (and the same "now"), the
  *     output is identical — which lets the tag index and the filter panel
- *     recompute freely on every render without memoisation.
+ *     recompute freely on every render without memoisation for a SINGLE
+ *     note. `deriveAutoTagsCached` below exists for the other shape: code
+ *     that derives this for every resident note on every render (the
+ *     notebook-persona "regular"/"first-of-kind" stickers, both on the
+ *     Notes list and — critically — on the note detail page, which used to
+ *     recompute this for all ~6 500 notes on *every keystroke* that
+ *     touched a tag; see its own doc comment, 2026-09-13).
  *   - **Lowercased + deduped**. Tags are lowercased and returned in a stable
  *     order (category-by-category below) with duplicates stripped.
  *   - **Graceful on missing data**. Every field inside `captureContext` is
@@ -342,4 +348,50 @@ function slugifyTagValue(value: string): string {
     .normalize("NFC")
     .replaceAll(/[^\p{L}\p{N}]+/gu, "-")
     .replaceAll(/^-+|-+$/gu, "");
+}
+
+// ---------------------------------------------------------------------------
+// Cached variant — every-note-on-every-render callers
+// ---------------------------------------------------------------------------
+
+/**
+ * `now`-bucket + result for one note, keyed by the note's own object
+ * reference. Safe because `SutraPadDocument`s are immutable in this
+ * codebase: editing a note always produces a *new* object (`upsertNote`,
+ * `applyHydratedNote`, …), so a cache hit here can only ever be the same
+ * note in the same state. The only time-dependent facet is `date:*`
+ * (`addDateTags`), which only changes at a UTC day boundary — every other
+ * facet reads `captureContext` / `location` / `createdAt` off the note
+ * itself, so bucketing by day loses no accuracy versus calling
+ * `deriveAutoTags` directly.
+ */
+const autoTagsCache = new WeakMap<SutraPadDocument, { dayKey: number; tags: string[] }>();
+
+/**
+ * Memoized `deriveAutoTags`, for callers that derive this for the WHOLE
+ * resident note population rather than the one note on screen —
+ * `notebook-persona.ts`'s `regularSticker` (walks `allNotes` to count place
+ * recurrence) and the Notes list's own precompute (`notes-list.ts`) are the
+ * two call sites. Both used to cost one `deriveAutoTags` per note per
+ * render: on a ~6 500-note workspace, every keystroke that changed a tag
+ * re-derived ~6 500 notes' worth of facets whether or not those notes had
+ * changed (2026-09-13 production incident — see
+ * `docs/nfr-testing-plan.md`'s fifth finding). Since only ~one note changes
+ * between renders, a plain per-note cache turns that back into O(changed
+ * notes) with no loss of correctness.
+ *
+ * Does not accept `taskFacet` — no current every-note caller needs the
+ * `tasks:*` facet, and threading it through would have to be part of the
+ * cache key (a task completing changes that facet without changing the
+ * note object). Callers that need it should call `deriveAutoTags` directly.
+ */
+export function deriveAutoTagsCached(note: SutraPadDocument, now: Date = new Date()): string[] {
+  const dayKey = startOfUtcDay(now).getTime();
+  const cached = autoTagsCache.get(note);
+  if (cached && cached.dayKey === dayKey) {
+    return cached.tags;
+  }
+  const tags = deriveAutoTags(note, now);
+  autoTagsCache.set(note, { dayKey, tags });
+  return tags;
 }

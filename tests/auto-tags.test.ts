@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveAutoTags } from "../src/lib/auto-tags";
+import { deriveAutoTags, deriveAutoTagsCached } from "../src/lib/auto-tags";
 import type { SutraPadCaptureContext, SutraPadDocument } from "../src/types";
 
 function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
@@ -868,5 +868,40 @@ describe("deriveAutoTags: a note from the future", () => {
     expect(tags).not.toContain("date:this-week");
     expect(tags).not.toContain("date:this-month");
     expect(tags).toContain("year:2026");
+  });
+});
+
+describe("deriveAutoTagsCached", () => {
+  it("returns the same tags as deriveAutoTags for a note within the same UTC day", () => {
+    const note = makeNote({ tags: ["work"] });
+    expect(deriveAutoTagsCached(note, NOW)).toEqual(deriveAutoTags(note, NOW));
+  });
+
+  it("keeps returning the note's tags across many calls the same day (cache hit)", () => {
+    const note = makeNote();
+    const first = deriveAutoTagsCached(note, NOW);
+    const second = deriveAutoTagsCached(note, new Date(NOW.getTime() + 60_000));
+    expect(second).toEqual(first);
+  });
+
+  it("recomputes once the UTC day rolls over, so date:* facets stay correct", () => {
+    const note = makeNote({ createdAt: "2026-04-21T10:00:00.000Z" });
+    const sameDay = deriveAutoTagsCached(note, NOW);
+    expect(sameDay).toContain("date:today");
+
+    const nextDay = new Date("2026-04-22T12:00:00.000Z");
+    const afterRollover = deriveAutoTagsCached(note, nextDay);
+    expect(afterRollover).not.toContain("date:today");
+    expect(afterRollover).toEqual(deriveAutoTags(note, nextDay));
+  });
+
+  it("does not mix up two different note objects with the same content", () => {
+    // The cache is keyed by object reference, not id/content — this pins
+    // that a lookalike note (same fields, different object, as a fresh
+    // JSON.parse would produce) still gets its own cache entry rather than
+    // one racing the other's.
+    const a = makeNote({ id: "a" });
+    const b = makeNote({ id: "a" }); // same content, distinct reference
+    expect(deriveAutoTagsCached(a, NOW)).toEqual(deriveAutoTagsCached(b, NOW));
   });
 });

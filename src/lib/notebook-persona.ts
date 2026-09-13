@@ -1,5 +1,5 @@
 import type { SutraPadDocument } from "../types";
-import { deriveAutoTags } from "./auto-tags";
+import { deriveAutoTags, deriveAutoTagsCached } from "./auto-tags";
 
 /**
  * Notebook persona — a deterministic "character" for each note derived from
@@ -369,7 +369,7 @@ function regularSticker(
   if (!facets.place || allNotes.length === 0) return null;
   let placeHits = 0;
   for (const [index, other] of allNotes.entries()) {
-    const autoTags = allNotesAutoTags?.[index] ?? deriveAutoTags(other, now);
+    const autoTags = allNotesAutoTags?.[index] ?? deriveAutoTagsCached(other, now);
     for (const autoTag of autoTags) {
       const { prefix, value } = splitNamespacedTag(autoTag);
       if (prefix === "location" && value === facets.place) {

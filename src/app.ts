@@ -352,6 +352,14 @@ export function createApp(root: HTMLElement): void {
     // silently dropped because `buildTagIndex` only knew about user tags.
     // `taskFacetByNoteId` corrects the `tasks:*` facet for placeholder notes
     // (Phase 2 notes-scaling) — see `buildTaskFacetByNoteId`'s doc.
+    //
+    // Nothing selected → nothing to prune. This runs on every render and
+    // on every body keystroke (`refreshNotesPanel`), and the combined
+    // index walks every resident note (~80 ms at 6 500 notes in Node,
+    // more in the browser) — paying that for an empty filter list is the
+    // single largest fixed cost of a keystroke.
+    const currentFilters = selectedTagFilters$.get();
+    if (currentFilters.length === 0) return;
     const availableTags = new Set(
       buildCombinedTagIndex(
         workspace$.get(),
@@ -360,7 +368,6 @@ export function createApp(root: HTMLElement): void {
         buildTaskFacetByNoteId(taskIndex$.get()),
       ).tags.map((entry) => entry.tag),
     );
-    const currentFilters = selectedTagFilters$.get();
     const nextFilters = currentFilters.filter((tag) => availableTags.has(tag));
     if (
       nextFilters.length === currentFilters.length &&

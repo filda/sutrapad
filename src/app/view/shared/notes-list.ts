@@ -1,5 +1,5 @@
 import { DEFAULT_NOTE_TITLE } from "../../../lib/notebook";
-import { deriveAutoTags } from "../../../lib/auto-tags";
+import { deriveAutoTagsCached } from "../../../lib/auto-tags";
 import {
   deriveNotebookPersona,
   type NotebookPersona,
@@ -86,7 +86,7 @@ export function buildNotesList(
   // regularSticker for every card — that nested walk was O(N²) across the list.
   const personaNow = new Date();
   const personaAllNotesAutoTags = personaOptions
-    ? personaOptions.allNotes.map((doc) => deriveAutoTags(doc, personaNow))
+    ? personaOptions.allNotes.map((doc) => deriveAutoTagsCached(doc, personaNow))
     : [];
 
   for (const note of notes) {

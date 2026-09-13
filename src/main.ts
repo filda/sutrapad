@@ -2,6 +2,7 @@ import { createApp } from "./app";
 import "./fonts";
 import "./styles.css";
 import { registerSW } from "virtual:pwa-register";
+import { SW_RELOAD_FALLBACK_MS } from "./lib/budgets";
 import {
   createBrowserUpdateEnvironment,
   createUpdateCoordinator,
@@ -163,9 +164,17 @@ function bootstrapMainApp(): void {
           at: new Date(clickAt).toISOString(),
         });
         // `updateSW(true)` tells the waiting worker to skipWaiting and then
-        // reloads the page once it takes control. If the browser fails to
-        // reload for any reason, the button stays in the busy state to avoid
-        // repeated clicks; the user can still refresh manually.
+        // reloads the page once it takes control (`controllerchange`). When
+        // no worker is waiting any more — DevTools "Update on reload", or
+        // another tab already activated it — that event never fires, so
+        // fall back to a plain reload after `SW_RELOAD_FALLBACK_MS`; the
+        // navigation itself cancels the timer.
+        window.setTimeout(() => {
+          console.warn("[sw-update] no controllerchange, reloading anyway", {
+            waited_ms: Date.now() - clickAt,
+          });
+          window.location.reload();
+        }, SW_RELOAD_FALLBACK_MS);
         void reloadApp?.(true);
       },
     });

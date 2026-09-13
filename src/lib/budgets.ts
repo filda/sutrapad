@@ -175,3 +175,13 @@ export const NOTE_BODY_CACHE_CAPACITY = 50;
  * left as a placeholder and one `[hydrate]` warning says why.
  */
 export const HYDRATE_MAX_ATTEMPTS_PER_NOTE = 3;
+
+/**
+ * How long the "Reloading…" state of the update banner waits for the new
+ * service worker to take control before the page reloads itself anyway.
+ * `updateSW(true)` posts SKIP_WAITING to `registration.waiting` and reloads
+ * on `controllerchange`; when there is no waiting worker any more (DevTools
+ * "Update on reload", a second tab that already activated it) that event
+ * never comes and the button used to stay busy forever (2026-09-13).
+ */
+export const SW_RELOAD_FALLBACK_MS = 8_000;
