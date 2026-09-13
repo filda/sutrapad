@@ -537,6 +537,7 @@ export function createApp(root: HTMLElement): void {
   // body-less placeholder.
   const noteBodyCache = createNoteBodyCache();
   const hydratingNoteIds = new Set<string>();
+  const hydrationAttempts = new Map<string, number>();
 
   /**
    * `persistLocalWorkspace` and `render` are the two synchronous phases
@@ -669,6 +670,7 @@ export function createApp(root: HTMLElement): void {
           note: displayedNote,
           bodyCache: noteBodyCache,
           inFlight: hydratingNoteIds,
+          attempts: hydrationAttempts,
           fetchNoteBody: workspaceIO.fetchNoteBody,
           getWorkspace: () => workspace$.get(),
           setWorkspace: setWorkspaceState,

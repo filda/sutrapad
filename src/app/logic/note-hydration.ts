@@ -30,7 +30,10 @@ import type { SutraPadDocument, SutraPadWorkspace } from "../../types";
  *
  * `activeNoteId` and every other note are left untouched; `updatedAt` is
  * whatever the fetched document already carries (hydrating never mints a
- * new one — it's not an edit).
+ * new one — it's not an edit). The note keeps `noteId` even when the
+ * fetched body carries a different `id`: the index is the source of
+ * identity, and a note that changed id mid-hydration would drop out from
+ * under `activeNoteId` / `detailNoteId`.
  */
 export function applyHydratedNote(
   workspace: SutraPadWorkspace,
@@ -45,7 +48,10 @@ export function applyHydratedNote(
   return {
     ...workspace,
     notes: workspace.notes.map((note) =>
-      note.id === noteId ? { ...hydratedNote, hydrated: true } : note,
+      // Keep the placeholder's identity: the id is the index's, and a
+      // body whose own `id` disagrees must not make the note vanish
+      // under the active/detail selection.
+      note.id === noteId ? { ...hydratedNote, id: noteId, hydrated: true } : note,
     ),
   };
 }

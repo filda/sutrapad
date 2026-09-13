@@ -36,6 +36,19 @@ describe("applyHydratedNote", () => {
     expect(updated.activeNoteId).toBe("1");
   });
 
+  it("keeps the placeholder's id when the fetched body carries a different one", () => {
+    // The index is the source of identity; a body that disagrees must not
+    // make the note drop out from under `activeNoteId` / `detailNoteId`.
+    const placeholder = buildPlaceholderNote(summary({ id: "1" }));
+    const workspace: SutraPadWorkspace = { activeNoteId: "1", notes: [placeholder] };
+
+    const updated = applyHydratedNote(workspace, "1", fullDoc({ id: "stale-copy" }));
+
+    expect(updated.notes.map((note) => note.id)).toEqual(["1"]);
+    expect(updated.notes[0].body).toBe("The real body from Drive");
+    expect(updated.notes[0].hydrated).toBe(true);
+  });
+
   it("leaves every other note untouched", () => {
     const placeholder = buildPlaceholderNote(summary({ id: "1" }));
     const sibling = buildPlaceholderNote(summary({ id: "2" }));

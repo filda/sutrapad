@@ -162,3 +162,16 @@ export const RENDER_MAX_ELEMENTS = 6000;
  * note count — is what bounds heap growth from bodies.
  */
 export const NOTE_BODY_CACHE_CAPACITY = 50;
+
+/**
+ * How many times one session may try to hydrate the same placeholder
+ * before `hydrateNoteOnOpen` gives up on it. Hydration is re-triggered by
+ * `render()` for as long as the displayed note is still a placeholder, so
+ * anything that keeps the body from landing — a fetch that fails every
+ * time (expired token, Drive 403), a body whose `id` does not match the
+ * index entry, a workspace commit that does not stick — turns into
+ * fetch → render → fetch with no console error and a page that never
+ * paints (2026-09-13, production). After this many attempts the note is
+ * left as a placeholder and one `[hydrate]` warning says why.
+ */
+export const HYDRATE_MAX_ATTEMPTS_PER_NOTE = 3;
