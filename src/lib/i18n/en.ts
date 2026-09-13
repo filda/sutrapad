@@ -359,6 +359,7 @@ export const EN = {
       } satisfies PluralForms,
       network: (duration: string) => `network ${duration}`,
       phase: (count: number, max: string, total: string) => `${count} × · longest ${max} · total ${total}`,
+      domShare: (total: string) => `DOM build ${total}`,
       longTasks: (count: number, max: string) => `${count} long tasks (longest ${max})`,
       interactions: (count: number, max: string) => `${count} interactions (slowest ${max})`,
       notAvailable: "Not available in this browser",

@@ -321,6 +321,7 @@ export const CS: Messages = {
       },
       network: (duration: string) => `síť ${duration}`,
       phase: (count: number, max: string, total: string) => `${count} × · nejdelší ${max} · celkem ${total}`,
+      domShare: (total: string) => `stavba DOM ${total}`,
       longTasks: (count: number, max: string) => `${count} dlouhých úloh (nejdelší ${max})`,
       interactions: (count: number, max: string) => `${count} interakcí (nejpomalejší ${max})`,
       notAvailable: "V tomhle prohlížeči není k dispozici",

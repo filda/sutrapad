@@ -43,8 +43,13 @@ export const DRIVE_OPERATION_KINDS: readonly DriveOperationKind[] = [
   "reseed",
 ];
 
-/** Main-thread phases timed by hand (the Long Tasks API has no attribution). */
-export type MainThreadPhase = "render" | "persist";
+/**
+ * Main-thread phases timed by hand (the Long Tasks API has no attribution).
+ * `render` is a whole `render()` pass; `dom` is only the `renderAppPage` DOM
+ * build inside it, so `render − dom` is the cost of the derivations around
+ * it. `render:<page>` attributes whole passes to the page that was active.
+ */
+export type MainThreadPhase = "render" | "dom" | "persist" | `render:${string}`;
 
 export interface PhaseTiming {
   readonly count: number;
@@ -68,8 +73,8 @@ export interface MainThreadStats {
   readonly interactions: { count: number; maxMs: number };
   /** `performance.memory.usedJSHeapSize` in bytes; null where unavailable. */
   readonly heapUsedBytes: number | null;
-  /** Hand-timed phases: every `render()` and every localStorage persist. */
-  readonly phases: Readonly<Record<MainThreadPhase, PhaseTiming>>;
+  /** Hand-timed phases: every `render()` (whole + DOM build + per page) and every localStorage persist. */
+  readonly phases: Readonly<Partial<Record<MainThreadPhase, PhaseTiming>>>;
 }
 
 export interface DiagnosticsSnapshot {
@@ -110,12 +115,15 @@ export function createEmptyDiagnostics(): DiagnosticsSnapshot {
       longTasks: { count: 0, maxMs: 0 },
       interactions: { count: 0, maxMs: 0 },
       heapUsedBytes: null,
-      phases: {
-        render: { count: 0, maxMs: 0, totalMs: 0 },
-        persist: { count: 0, maxMs: 0, totalMs: 0 },
-      },
+      phases: {},
     },
   };
+}
+
+const EMPTY_TIMING: PhaseTiming = { count: 0, maxMs: 0, totalMs: 0 };
+
+export function phaseTiming(snapshot: DiagnosticsSnapshot, phase: MainThreadPhase): PhaseTiming {
+  return snapshot.mainThread.phases[phase] ?? EMPTY_TIMING;
 }
 
 export function recordPhase(
@@ -123,7 +131,7 @@ export function recordPhase(
   phase: MainThreadPhase,
   durationMs: number,
 ): DiagnosticsSnapshot {
-  const current = snapshot.mainThread.phases[phase];
+  const current = phaseTiming(snapshot, phase);
   return {
     ...snapshot,
     mainThread: {
@@ -280,6 +288,25 @@ export function describeDiagnostics(
       ? copy.none
       : copy.phase(timing.count, formatDuration(timing.maxMs), formatDuration(timing.totalMs));
 
+  // Whole-render figure plus the DOM-build share and the three costliest
+  // pages, so a slow render names its page without a profiler.
+  const renderTiming = phaseTiming(snapshot, "render");
+  const domTiming = phaseTiming(snapshot, "dom");
+  const byPage = Object.entries(snapshot.mainThread.phases)
+    .filter((entry): entry is [`render:${string}`, PhaseTiming] => entry[0].startsWith("render:") && entry[1] !== undefined)
+    .map(([key, timing]) => [key.slice("render:".length), timing] as const)
+    .toSorted((a, b) => b[1].totalMs - a[1].totalMs)
+    .slice(0, 3)
+    .map(([page, timing]) => `${page} ${formatDuration(timing.totalMs)}`);
+  const renderValue =
+    renderTiming.count === 0
+      ? copy.none
+      : [
+          phase(renderTiming),
+          copy.domShare(formatDuration(domTiming.totalMs)),
+          ...(byPage.length > 0 ? [byPage.join(", ")] : []),
+        ].join(" · ");
+
   const session =
     snapshot.operationCount === 0
       ? copy.none
@@ -314,8 +341,8 @@ export function describeDiagnostics(
     { id: "session", label: copy.rows.session, value: session },
     { id: "overruns", label: copy.rows.overruns, value: overruns },
     { id: "mainThread", label: copy.rows.mainThread, value: mainThread },
-    { id: "render", label: copy.rows.render, value: phase(snapshot.mainThread.phases.render) },
-    { id: "persist", label: copy.rows.persist, value: phase(snapshot.mainThread.phases.persist) },
+    { id: "render", label: copy.rows.render, value: renderValue },
+    { id: "persist", label: copy.rows.persist, value: phase(phaseTiming(snapshot, "persist")) },
     {
       id: "memory",
       label: copy.rows.memory,

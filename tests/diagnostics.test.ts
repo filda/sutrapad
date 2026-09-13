@@ -15,6 +15,7 @@ import {
   recordOperation,
   recordOverrun,
   recordPhase,
+  phaseTiming,
   type DriveOperationRecord,
 } from "../src/app/logic/diagnostics";
 import { emptyDriveCounts } from "../src/services/drive/drive-meter";
@@ -49,11 +50,9 @@ describe("diagnostics reducers", () => {
       longTasks: { count: 0, maxMs: 0 },
       interactions: { count: 0, maxMs: 0 },
       heapUsedBytes: null,
-      phases: {
-        render: { count: 0, maxMs: 0, totalMs: 0 },
-        persist: { count: 0, maxMs: 0, totalMs: 0 },
-      },
+      phases: {},
     });
+    expect(phaseTiming(empty, "render")).toEqual({ count: 0, maxMs: 0, totalMs: 0 });
   });
 
   it("recordOperation keeps the latest record per kind and accumulates session totals", () => {
@@ -102,8 +101,8 @@ describe("diagnostics reducers", () => {
     let snapshot = recordPhase(createEmptyDiagnostics(), "render", 120);
     snapshot = recordPhase(snapshot, "render", 30);
     snapshot = recordPhase(snapshot, "persist", 450);
-    expect(snapshot.mainThread.phases.render).toEqual({ count: 2, maxMs: 120, totalMs: 150 });
-    expect(snapshot.mainThread.phases.persist).toEqual({ count: 1, maxMs: 450, totalMs: 450 });
+    expect(phaseTiming(snapshot, "render")).toEqual({ count: 2, maxMs: 120, totalMs: 150 });
+    expect(phaseTiming(snapshot, "persist")).toEqual({ count: 1, maxMs: 450, totalMs: 450 });
     expect(snapshot.mainThread.longTasks.count).toBe(0);
   });
 
@@ -184,10 +183,15 @@ describe("describeDiagnostics", () => {
     snapshot = recordOperation(snapshot, op({ kind: "save", ok: false }));
     snapshot = recordPhase(snapshot, "render", 1500);
     snapshot = recordPhase(snapshot, "render", 500);
+    snapshot = recordPhase(snapshot, "dom", 1200);
+    snapshot = recordPhase(snapshot, "render:home", 1500);
+    snapshot = recordPhase(snapshot, "render:notes", 500);
     const byId = new Map(describeDiagnostics(snapshot, "en").map((row) => [row.id, row.value]));
     expect(byId.get("lastLoad")).toBe("6 requests · 480 ms · network 310 ms");
     expect(byId.get("lastSave")).toBe("5 requests · 1 note uploaded · 1.2 s · network 900 ms · failed");
-    expect(byId.get("render")).toBe("2 × · longest 1.5 s · total 2.0 s");
+    expect(byId.get("render")).toBe(
+      "2 × · longest 1.5 s · total 2.0 s · DOM build 1.2 s · home 1.5 s, notes 500 ms",
+    );
     expect(byId.get("session")).toBe("2 operations · 11 requests · 1 note uploaded");
   });
 

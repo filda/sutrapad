@@ -554,10 +554,14 @@ export function createApp(root: HTMLElement): void {
 
   const render = (): void => {
     const started = performance.now();
+    const page = detailNoteId$.get() !== null ? "detail" : activeMenuItem$.get();
     try {
       paintApp();
     } finally {
-      updateDiagnostics((snapshot) => recordPhase(snapshot, "render", performance.now() - started));
+      const elapsed = performance.now() - started;
+      updateDiagnostics((snapshot) =>
+        recordPhase(recordPhase(snapshot, "render", elapsed), `render:${page}`, elapsed),
+      );
     }
   };
 
@@ -721,6 +725,7 @@ export function createApp(root: HTMLElement): void {
         refreshNotesPanel,
       });
       paletteAccess$.get()?.refresh(workspace, selectedTagFilters);
+      const domStarted = performance.now();
       renderAppPage({
         root,
         workspace,
@@ -775,6 +780,7 @@ export function createApp(root: HTMLElement): void {
         },
         ...callbacks,
       });
+      updateDiagnostics((snapshot) => recordPhase(snapshot, "dom", performance.now() - domStarted));
     } finally {
       // Releasing the guard outside the try means a thrown render() doesn't
       // leave the flag stuck `true` (which would silently kill all future
