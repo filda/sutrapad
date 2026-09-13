@@ -1,4 +1,5 @@
 import type { SutraPadNoteSummary } from "../../types";
+import { HOME_TIMELINE_MAX_ITEMS } from "../../lib/budgets";
 
 /**
  * Pure helpers for the Home / Today page. Splits the resident note
@@ -30,6 +31,7 @@ export interface HomeNoteGroups {
 export function groupNotesByRecency(
   notes: readonly SutraPadNoteSummary[],
   now: Date,
+  limit: number = HOME_TIMELINE_MAX_ITEMS,
 ): HomeNoteGroups {
   const todayKey = toLocalDateKey(now);
   const yesterdayKey = toLocalDateKey(previousDay(now));
@@ -37,9 +39,12 @@ export function groupNotesByRecency(
   // `toSorted` is non-mutating — important here because callers pass the
   // workspace's note array directly and must not see it reordered as a
   // side effect. `groupNotesByRecency` is unit-tested for this contract.
-  const sorted = notes.toSorted((a, b) =>
-    a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0,
-  );
+  // Only the newest `limit` notes make it onto the timeline (see
+  // `HOME_TIMELINE_MAX_ITEMS`); the buckets are cut from that slice, so
+  // "Earlier" is the tail of the recent window, not the whole archive.
+  const sorted = notes
+    .toSorted((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
+    .slice(0, Math.max(0, limit));
 
   const today: SutraPadNoteSummary[] = [];
   const yesterday: SutraPadNoteSummary[] = [];

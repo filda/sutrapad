@@ -6,6 +6,7 @@ import {
   groupNotesByRecency,
 } from "../src/app/logic/home-groups";
 import type { SutraPadDocument } from "../src/types";
+import { HOME_TIMELINE_MAX_ITEMS } from "../src/lib/budgets";
 
 function makeNote(overrides: Partial<SutraPadDocument> = {}): SutraPadDocument {
   return {
@@ -68,6 +69,26 @@ describe("groupNotesByRecency", () => {
     });
     const groups = groupNotesByRecency([newYearsEveNote], januaryFirst);
     expect(groups.yesterday).toEqual([newYearsEveNote]);
+  });
+
+  it("keeps only the newest `limit` notes across all buckets (Home is not the archive)", () => {
+    // Regression for the 2026-09-13 render cost: an unbounded timeline
+    // built every note in a 6 470-note workspace (~38 000 DOM elements).
+    const notes = Array.from({ length: HOME_TIMELINE_MAX_ITEMS + 25 }, (_, i) =>
+      makeNote({ id: `n${i}`, updatedAt: localIso(2026, 3, 1 + (i % 20), 8 + (i % 10)) }),
+    );
+    const groups = groupNotesByRecency(notes, now);
+    const total = groups.today.length + groups.yesterday.length + groups.earlier.length;
+    expect(total).toBe(HOME_TIMELINE_MAX_ITEMS);
+    // The cut keeps the newest: the oldest note in the window is newer than
+    // every note left out.
+    const kept = [...groups.today, ...groups.yesterday, ...groups.earlier].map((n) => n.updatedAt);
+    const dropped = notes.filter((n) => !kept.includes(n.updatedAt) || false).map((n) => n.updatedAt);
+    const oldestKept = kept.toSorted().at(0) ?? "";
+    expect(dropped.every((stamp) => stamp <= oldestKept)).toBe(true);
+    // An explicit limit overrides the budget; a non-positive one yields nothing.
+    expect(groupNotesByRecency(notes, now, 3).earlier.length + groupNotesByRecency(notes, now, 3).today.length + groupNotesByRecency(notes, now, 3).yesterday.length).toBe(3);
+    expect(groupNotesByRecency(notes, now, 0)).toEqual({ today: [], yesterday: [], earlier: [] });
   });
 
   it("does not mutate the input array", () => {

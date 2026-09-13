@@ -5,6 +5,7 @@ import {
 import { deriveNotebookPersona } from "../../../lib/notebook-persona";
 import { documentFromSummary } from "../../../lib/note-card-meta";
 import { formatDate } from "../../logic/formatting";
+import { syncListState } from "../../logic/endless-scroll";
 import { deriveLinkHostname } from "../../logic/link-card";
 import {
   buildCardDate,
@@ -195,6 +196,14 @@ export function buildLinksPage({
     noteSummaries.map((summary) => [summary.id, summary]),
   );
 
+  // Endless scroll, same mechanism as the Notes list: only the first
+  // `limit` links are built and the window scroll listener in app.ts grows
+  // the limit. Unbounded, the grid built every link in the workspace (and
+  // kicked off an og:image lookup per card) on every render.
+  const listKey = `links|${linksViewMode}|${selectedTagFilters.toSorted().join(",")}`;
+  const limit = syncListState(listKey, visibleLinks.length);
+  const pagedLinks = visibleLinks.slice(0, limit);
+
   if (linksViewMode === "cards") {
     // Async og:image resolver scoped to this render cycle. The cache
     // lives in localStorage across sessions, so in the steady state
@@ -205,7 +214,7 @@ export function buildLinksPage({
     const resolver = createOgImageResolver();
     section.append(
       buildLinksGrid(
-        visibleLinks,
+        pagedLinks,
         notesById,
         onOpenNote,
         resolver,
@@ -213,7 +222,7 @@ export function buildLinksPage({
       ),
     );
   } else {
-    section.append(buildLinksList(visibleLinks, notesById, onOpenNote));
+    section.append(buildLinksList(pagedLinks, notesById, onOpenNote));
   }
 
   return section;

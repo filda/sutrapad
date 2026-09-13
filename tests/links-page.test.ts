@@ -15,6 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildLinksPage } from "../src/app/view/pages/links-page";
+import { growVisible, hasMore, INITIAL_LIMIT, resetListState } from "../src/app/logic/endless-scroll";
 import { buildLinkIndex, DEFAULT_NOTE_TITLE } from "../src/lib/notebook";
 import { buildNoteSummary } from "../src/lib/note-card-meta";
 import type {
@@ -76,6 +77,24 @@ function buildPage(
     ...overrides,
   });
 }
+
+describe("buildLinksPage paging", () => {
+  it("renders only the first INITIAL_LIMIT links and lets the endless-scroll state grow the rest", () => {
+    // Regression for the 2026-09-13 render cost: the grid built every link
+    // in the workspace (and started an og:image lookup per card) on every
+    // render. Same `logic/endless-scroll` state the Notes list uses.
+    resetListState();
+    const notes = Array.from({ length: INITIAL_LIMIT + 15 }, (_, i) =>
+      makeNote({ id: `n${i}`, urls: [`https://example.com/${i}`] }),
+    );
+    const workspace = makeWorkspace(notes);
+    expect(buildPage(workspace).querySelectorAll(".link-url")).toHaveLength(INITIAL_LIMIT);
+    expect(hasMore()).toBe(true);
+    growVisible();
+    expect(buildPage(workspace).querySelectorAll(".link-url")).toHaveLength(INITIAL_LIMIT + 15);
+    resetListState();
+  });
+});
 
 describe("buildLinksPage tag filter", () => {
   it("renders every URL when no filter is active", () => {

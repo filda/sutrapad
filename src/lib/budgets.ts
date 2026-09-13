@@ -131,6 +131,28 @@ export const PREWARM_CONCURRENCY = 4;
 export const OG_IMAGE_CACHE_MAX_ENTRIES = 500;
 
 // ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Timeline entries the Home page renders. Home is "what happened lately",
+ * not the archive — the Notes page is. Unbounded, the timeline rendered
+ * every note in the workspace: ~38 000 DOM elements and 3–4 s per render at
+ * 6 470 notes (Diagnostics card, 2026-09-13), on every keystroke-driven
+ * repaint.
+ */
+export const HOME_TIMELINE_MAX_ITEMS = 40;
+
+/**
+ * DOM elements one full `renderAppPage` may produce for any page at
+ * workspace scale. Every list that can grow with the notebook must page
+ * (endless scroll) or cap; this is the number `tests/nfr` holds each page
+ * to. Sized from the paged Notes list (~1 200 elements at 60 cards) with
+ * headroom for the Tasks page, which renders every open task.
+ */
+export const RENDER_MAX_ELEMENTS = 6000;
+
+// ---------------------------------------------------------------------------
 // Resident memory
 // ---------------------------------------------------------------------------
 

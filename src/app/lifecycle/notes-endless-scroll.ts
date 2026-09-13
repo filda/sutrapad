@@ -11,6 +11,11 @@
 import { growVisible, shouldGrow } from "../logic/endless-scroll";
 import type { MenuItemId } from "../logic/menu";
 
+/** Pages whose main list pages through `logic/endless-scroll`. */
+function isPagedPage(item: MenuItemId): boolean {
+  return item === "notes" || item === "links";
+}
+
 export interface NotesEndlessScrollOptions {
   readonly getActiveMenuItem: () => MenuItemId;
   readonly render: () => void;
@@ -20,7 +25,7 @@ export function installNotesEndlessScroll(
   options: NotesEndlessScrollOptions,
 ): () => void {
   const onScroll = (): void => {
-    if (options.getActiveMenuItem() !== "notes") return;
+    if (!isPagedPage(options.getActiveMenuItem())) return;
     const documentHeight = document.documentElement.scrollHeight;
     if (!shouldGrow(window.scrollY, window.innerHeight, documentHeight)) return;
     if (growVisible()) options.render();

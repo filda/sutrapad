@@ -169,14 +169,24 @@ describe("installNotesEndlessScroll growth", () => {
 });
 
 describe("installNotesEndlessScroll page gate", () => {
-  it("ignores scrolling on any page other than Notes", () => {
-    // The listener is global; the Links page scrolls too.
-    const { render, dispose } = install("links");
+  it("ignores scrolling on a page whose list does not page (Tags)", () => {
+    // The listener is global; every page scrolls.
+    const { render, dispose } = install("tags");
 
     scrollToBottom();
 
     expect(render).not.toHaveBeenCalled();
     expect(currentLimit()).toBe(INITIAL_LIMIT);
+    dispose();
+  });
+
+  it("grows the Links list too — it pages through the same state since 2026-09-13", () => {
+    const { render, dispose } = install("links");
+
+    scrollToBottom();
+
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(currentLimit()).toBe(INITIAL_LIMIT + GROW_BATCH);
     dispose();
   });
 
