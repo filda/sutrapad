@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addDismissedTagAlias,
+  candidatePairs,
   dismissedPairKey,
   levenshtein,
   loadDismissedTagAliases,
@@ -9,6 +10,7 @@ import {
   persistDismissedTagAliases,
   resolveInitialDismissedTagAliases,
   suggestTagAliases,
+  suggestTagAliasesForWorkspace,
 } from "../src/app/logic/tag-aliases";
 import type {
   SutraPadDocument,
@@ -717,5 +719,252 @@ describe("suggestTagAliases: the shaped fixtures", () => {
 
     expect(suggestions).toHaveLength(1);
     expect(suggestions[0].reason).toContain("used together on at least one note");
+  });
+});
+
+/**
+ * The pair loop `suggestTagAliases` runs was all-pairs until 2026-09-14,
+ * when the quadratic cost showed up as ~3 s per Settings render. The
+ * replacement only *narrows* which pairs get compared, so this is the
+ * property that matters: the blocked generator must produce the same
+ * suggestions as comparing every pair. Randomized over an alphabet with
+ * near-duplicates, diacritics and whitespace so clusters actually form.
+ */
+function bruteForceSuggestions(
+  tagIndex: SutraPadTagIndex,
+  dismissed: ReadonlySet<string>,
+): Array<{ canonical: string; aliases: string[] }> {
+  const maxEdit = 2;
+  const maxRel = 0.34;
+  const candidates = tagIndex.tags.filter(
+    (candidate) =>
+      (candidate.kind === undefined || candidate.kind === "user") &&
+      candidate.count >= 2,
+  );
+  const parent = new Map<string, string>(
+    candidates.map((candidate) => [candidate.tag, candidate.tag]),
+  );
+  const root = (tag: string): string => {
+    let current = tag;
+    let next = parent.get(current);
+    while (next !== undefined && next !== current) {
+      current = next;
+      next = parent.get(current);
+    }
+    return current;
+  };
+  for (let i = 0; i < candidates.length; i += 1) {
+    for (let j = i + 1; j < candidates.length; j += 1) {
+      const a = candidates[i].tag;
+      const b = candidates[j].tag;
+      if (dismissed.has(dismissedPairKey(a, b))) continue;
+      const na = normalizeTag(a);
+      const nb = normalizeTag(b);
+      let matched = na === nb;
+      if (!matched) {
+        const distance = levenshtein(na, nb);
+        const longer = Math.max(na.length, nb.length);
+        matched =
+          distance <= maxEdit && longer > 0 && distance / longer <= maxRel;
+      }
+      if (!matched) continue;
+      const rootA = root(a);
+      const rootB = root(b);
+      if (rootA !== rootB) parent.set(rootA, rootB);
+    }
+  }
+
+  const byTag = new Map(candidates.map((candidate) => [candidate.tag, candidate]));
+  const clusters = new Map<string, string[]>();
+  for (const candidate of candidates) {
+    const key = root(candidate.tag);
+    const bucket = clusters.get(key);
+    if (bucket) bucket.push(candidate.tag);
+    else clusters.set(key, [candidate.tag]);
+  }
+
+  const out: Array<{ canonical: string; aliases: string[] }> = [];
+  for (const tags of clusters.values()) {
+    if (tags.length < 2) continue;
+    const sorted = tags.toSorted((left, right) => {
+      const leftEntry = byTag.get(left);
+      const rightEntry = byTag.get(right);
+      if (!leftEntry || !rightEntry) return 0;
+      return rightEntry.count - leftEntry.count || left.localeCompare(right);
+    });
+    const [canonical, ...rest] = sorted;
+    out.push({
+      canonical,
+      aliases: rest.filter(
+        (alias) => !dismissed.has(dismissedPairKey(canonical, alias)),
+      ),
+    });
+  }
+  out.sort((left, right) => left.canonical.localeCompare(right.canonical));
+  return out;
+}
+
+function seededRandom(seed: number): () => number {
+  let state = (seed >>> 0) || 1;
+  return () => {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+    return state / 4_294_967_296;
+  };
+}
+
+describe("suggestTagAliases pair selection", () => {
+  it("agrees with an all-pairs comparison over randomized tag sets", () => {
+    const alphabet = "abcdeé ";
+    for (let seed = 1; seed <= 40; seed += 1) {
+      const random = seededRandom(seed);
+      const tags = new Set<string>();
+      const target = 30 + Math.floor(random() * 40);
+      while (tags.size < target) {
+        const length = 1 + Math.floor(random() * 7);
+        let tag = "";
+        for (let i = 0; i < length; i += 1) {
+          tag += alphabet[Math.floor(random() * alphabet.length)];
+        }
+        if (tag.trim().length > 0) tags.add(tag);
+      }
+
+      const list = [...tags];
+      const tagIndex = index(
+        list.map((tag, i) => entry(tag, [`n${i}`, `m${i % 7}`])),
+      );
+      const dismissed =
+        seed % 3 === 0
+          ? new Set([dismissedPairKey(list[0], list[1])])
+          : new Set<string>();
+
+      const actual = suggestTagAliases(tagIndex, { dismissed }).map(
+        ({ canonical, aliases }) => ({ canonical, aliases: [...aliases] }),
+      );
+      expect(actual, `seed ${seed}`).toEqual(
+        bruteForceSuggestions(tagIndex, dismissed),
+      );
+    }
+  });
+
+  it("still pairs tags two edits apart when one of them is short", () => {
+    // Regression guard on the blocking width. "kolem" / "kolenem" are two
+    // edits apart with unequal lengths — the case where the two tags reach
+    // their shared bucket by deleting a *different* number of characters.
+    // Narrow the deletion neighbourhood and this suggestion is the first
+    // thing to disappear, silently: nothing throws, the card just empties.
+    const suggestions = suggestTagAliases(
+      index([
+        entry("kolenem", ["n1", "n2", "n3"]),
+        entry("kolem", ["n1", "n2"]),
+      ]),
+    );
+
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]).toMatchObject({
+      canonical: "kolenem",
+      aliases: ["kolem"],
+    });
+  });
+});
+
+describe("candidatePairs", () => {
+  // The fuzzy matcher only ever sees what this yields, so two properties
+  // decide whether the blocking is correct: nothing that could match is
+  // missing (the parity test above), and nothing is compared twice or
+  // against itself (here). The count is pinned because every way of
+  // widening the blocking — an extra deletion round, a variant set that
+  // stops de-duplicating — shows up as extra comparisons and nowhere else:
+  // the output stays identical and only the render gets slower, which is
+  // the exact regression this whole change was about.
+  const NEIGHBOURS = [
+    "cafe", "café", "cafee", "coffee",
+    "kolo", "kola", "kalo", "kolem", "kolenem",
+    "bicykl", "bicyklem",
+    "zahrada", "zahrádka",
+    "x", "xy",
+  ];
+
+  const entries = (tags: readonly string[]): SutraPadTagEntry[] =>
+    tags.map((tag, i) => entry(tag, [`n${i}`, `m${i}`]));
+
+  it("compares 13 of the 105 possible pairs in a dense neighbourhood", () => {
+    const pairs = [...candidatePairs(entries(NEIGHBOURS), 2, 0.34)];
+
+    expect(pairs).toHaveLength(13);
+    expect(pairs).toContainEqual(["cafe", "café"]);
+    expect(pairs).toContainEqual(["kolem", "kolenem"]);
+    expect(pairs).toContainEqual(["zahrada", "zahrádka"]);
+  });
+
+  it("yields each pair at most once and never pairs a tag with itself", () => {
+    const random = seededRandom(9);
+    const alphabet = "abcé ";
+    const tags = new Set<string>();
+    while (tags.size < 80) {
+      const length = 1 + Math.floor(random() * 5);
+      let tag = "";
+      for (let i = 0; i < length; i += 1) {
+        tag += alphabet[Math.floor(random() * alphabet.length)];
+      }
+      if (tag.trim().length > 0) tags.add(tag);
+    }
+
+    const seen = new Set<string>();
+    for (const [a, b] of candidatePairs(entries([...tags]), 2, 0.34)) {
+      expect(a).not.toBe(b);
+      const key = dismissedPairKey(a, b);
+      expect(seen.has(key), `${key} yielded twice`).toBe(false);
+      seen.add(key);
+    }
+
+    expect(seen.size).toBeGreaterThan(0);
+  });
+});
+
+describe("suggestTagAliasesForWorkspace", () => {
+  const workspace = (): SutraPadWorkspace => ({
+    notes: [
+      note({ id: "n1", tags: ["kolo", "kola"] }),
+      note({ id: "n2", tags: ["kolo", "kola"] }),
+    ],
+    activeNoteId: "n1",
+  });
+
+  it("returns the same result object while the workspace and dismissals hold", () => {
+    const ws = workspace();
+    const dismissed = new Set<string>();
+
+    const first = suggestTagAliasesForWorkspace(ws, dismissed);
+    const second = suggestTagAliasesForWorkspace(ws, dismissed);
+
+    expect(second).toBe(first);
+    expect(first).toHaveLength(1);
+  });
+
+  it("recomputes when the dismissed set is replaced", () => {
+    const ws = workspace();
+
+    const before = suggestTagAliasesForWorkspace(ws, new Set<string>());
+    const after = suggestTagAliasesForWorkspace(
+      ws,
+      new Set([dismissedPairKey("kolo", "kola")]),
+    );
+
+    expect(before).toHaveLength(1);
+    expect(after).toHaveLength(0);
+  });
+
+  it("recomputes when the workspace object is replaced", () => {
+    const dismissed = new Set<string>();
+
+    const before = suggestTagAliasesForWorkspace(workspace(), dismissed);
+    const next: SutraPadWorkspace = {
+      notes: [note({ id: "n1", tags: ["kolo"] }), note({ id: "n2", tags: ["kolo"] })],
+      activeNoteId: "n1",
+    };
+    const after = suggestTagAliasesForWorkspace(next, dismissed);
+
+    expect(before).toHaveLength(1);
+    expect(after).toHaveLength(0);
   });
 });

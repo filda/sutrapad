@@ -1,3 +1,4 @@
+import { buildTagIndexCached } from "../../lib/notebook";
 import type {
   SutraPadTagEntry,
   SutraPadTagIndex,
@@ -162,6 +163,107 @@ function isFuzzyMatch(
 }
 
 /**
+ * How many characters this tag may have to lose before it can meet a
+ * partner on common ground — see {@link candidatePairs}.
+ *
+ * Deliberately a conservative upper bound. The allowance belongs to a
+ * *pair* (`min(maxEdit, floor(maxRel × longerLen))`) and can't be known
+ * while indexing one tag alone, so we assume the most generous partner
+ * this tag could have: a pair's length difference is a lower bound on its
+ * edit distance, so no partner is ever more than `maxEdit` characters
+ * longer. Over-generating variants only costs a few buckets; under-
+ * generating would drop real suggestions, which is the one failure mode
+ * that must not happen here.
+ */
+function maxDeletions(length: number, maxEdit: number, maxRel: number): number {
+  return Math.min(maxEdit, Math.floor(maxRel * (length + maxEdit)));
+}
+
+/**
+ * Every string reachable from `value` by deleting at most `deletions`
+ * characters, including `value` itself. Deduplicated: "aab" loses either
+ * 'a' to the same "ab".
+ */
+function deletionVariants(value: string, deletions: number): Set<string> {
+  const variants = new Set<string>([value]);
+  let frontier: string[] = [value];
+  for (let round = 0; round < deletions; round += 1) {
+    const next: string[] = [];
+    for (const item of frontier) {
+      for (let at = 0; at < item.length; at += 1) {
+        const shorter = item.slice(0, at) + item.slice(at + 1);
+        if (variants.has(shorter)) continue;
+        variants.add(shorter);
+        next.push(shorter);
+      }
+    }
+    frontier = next;
+  }
+  return variants;
+}
+
+/**
+ * Yields every pair of candidate tags that could possibly fuzzy-match,
+ * each pair once, in candidate order. A *superset* of the real matches —
+ * the caller still runs {@link isFuzzyMatch} on what comes out, so the
+ * result is exactly what the naive all-pairs loop produced.
+ *
+ * Why this exists: the all-pairs loop it replaced ran `levenshtein` on
+ * every one of the `T × (T − 1) / 2` pairs, and Settings recomputes the
+ * suggestions on *every* render. Measured on 2026-09-14 against the
+ * shape of the real notebook: 200 tags → 42 ms, 1 000 → 0.9 s, 1 900 →
+ * 3.8 s, 3 500 → 11 s. That quadratic was the whole of the reported
+ * "Settings renders take 3 s" — the rest of the render is ~110 ms.
+ *
+ * The blocking key is the deletion neighbourhood (SymSpell's index, same
+ * idea as a BK-tree but cheaper to build): if `levenshtein(x, y) ≤ d`
+ * then deleting at most `d` characters from each yields the *same*
+ * string — every substitution drops its character on both sides, every
+ * insertion drops it on the longer side. So two tags that can match
+ * always share a bucket, and tags that share no bucket cannot match.
+ * Buckets are keyed on the normalized form, which also puts
+ * case/diacritic twins ("Café" / "cafe") in the same bucket for free.
+ *
+ * Exported for the NFR property in `tests/nfr/node/tag-hygiene-cost.test.ts`,
+ * which counts what comes out of it: comparisons made is the work this
+ * layer measures, since the plan keeps wall-clock out of CI.
+ */
+export function* candidatePairs(
+  candidates: readonly SutraPadTagEntry[],
+  maxEdit: number,
+  maxRel: number,
+): Generator<readonly [string, string]> {
+  const byVariant = new Map<string, number[]>();
+  for (let index = 0; index < candidates.length; index += 1) {
+    const normalized = normalizeTag(candidates[index].tag);
+    const variants = deletionVariants(
+      normalized,
+      maxDeletions(normalized.length, maxEdit, maxRel),
+    );
+    for (const variant of variants) {
+      const bucket = byVariant.get(variant);
+      if (bucket) bucket.push(index);
+      else byVariant.set(variant, [index]);
+    }
+  }
+
+  // A pair can share several variants ("cafe"/"café" meet under both
+  // "caf" and "cae"), so pairs are de-duplicated before they reach the
+  // caller — otherwise the same match would be recorded twice.
+  const seen = new Set<string>();
+  for (const bucket of byVariant.values()) {
+    for (let left = 0; left < bucket.length; left += 1) {
+      for (let right = left + 1; right < bucket.length; right += 1) {
+        const key = `${bucket[left]}:${bucket[right]}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        yield [candidates[bucket[left]].tag, candidates[bucket[right]].tag];
+      }
+    }
+  }
+}
+
+/**
  * Simple disjoint-set / union-find keyed by tag string. Used to cluster
  * fuzzy-match pairs into transitive groups — "cafe" ~ "café" ~ "coffee"
  * collapses into one cluster. Path compression + union-by-rank would be
@@ -228,16 +330,12 @@ export function suggestTagAliases(
   // once all unions have completed. Recording per final root during the
   // loop would be racy because the root changes under further unions.
   const pairs: Array<{ a: string; normalizedEqual: boolean }> = [];
-  for (let i = 0; i < candidates.length; i += 1) {
-    for (let j = i + 1; j < candidates.length; j += 1) {
-      const a = candidates[i].tag;
-      const b = candidates[j].tag;
-      if (dismissed.has(dismissedPairKey(a, b))) continue;
-      const match = isFuzzyMatch(a, b, maxEdit, maxRel);
-      if (!match.matched) continue;
-      pairs.push({ a, normalizedEqual: match.normalizedEqual });
-      union.union(a, b);
-    }
+  for (const [a, b] of candidatePairs(candidates, maxEdit, maxRel)) {
+    if (dismissed.has(dismissedPairKey(a, b))) continue;
+    const match = isFuzzyMatch(a, b, maxEdit, maxRel);
+    if (!match.matched) continue;
+    pairs.push({ a, normalizedEqual: match.normalizedEqual });
+    union.union(a, b);
   }
 
   const rootHasNormalized = new Map<string, boolean>();
@@ -311,6 +409,41 @@ export function suggestTagAliases(
   suggestions.sort((left, right) =>
     left.canonical.localeCompare(right.canonical),
   );
+  return suggestions;
+}
+
+interface CachedSuggestions {
+  readonly dismissed: ReadonlySet<string>;
+  readonly suggestions: readonly AliasSuggestion[];
+}
+
+const suggestionsByWorkspace = new WeakMap<
+  SutraPadWorkspace,
+  CachedSuggestions
+>();
+
+/**
+ * Alias suggestions for a whole workspace, memoized on the workspace and
+ * the dismissed set — both of which are replaced wholesale when they
+ * change, so a hit means nothing the suggestions depend on has moved.
+ *
+ * The render path needs this. Settings recomputes the hygiene card on
+ * every render and the home hint banner asks the same question for its
+ * "you have duplicate tags" candidate; without the memo, every keystroke
+ * and every tag chip click pays the full derivation again. Callers that
+ * hold an index rather than a workspace (tests, the merge round-trip)
+ * keep using {@link suggestTagAliases} directly.
+ */
+export function suggestTagAliasesForWorkspace(
+  workspace: SutraPadWorkspace,
+  dismissed: ReadonlySet<string>,
+): readonly AliasSuggestion[] {
+  const cached = suggestionsByWorkspace.get(workspace);
+  if (cached && cached.dismissed === dismissed) return cached.suggestions;
+  const suggestions = suggestTagAliases(buildTagIndexCached(workspace), {
+    dismissed,
+  });
+  suggestionsByWorkspace.set(workspace, { dismissed, suggestions });
   return suggestions;
 }
 

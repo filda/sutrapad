@@ -51,10 +51,15 @@ export function buildTagIndex(
 ): SutraPadTagIndex {
   const noteIdsByTag = new Map<string, string[]>();
 
+  // Append in place. Re-spreading the accumulated array per occurrence
+  // (which this did until 2026-09-14) makes the cost quadratic in a
+  // tag's frequency — and the real notebook has one import tag sitting
+  // on thousands of notes.
   for (const note of workspace.notes) {
     for (const tag of note.tags) {
-      const existingNoteIds = noteIdsByTag.get(tag) ?? [];
-      noteIdsByTag.set(tag, [...existingNoteIds, note.id]);
+      const existingNoteIds = noteIdsByTag.get(tag);
+      if (existingNoteIds) existingNoteIds.push(note.id);
+      else noteIdsByTag.set(tag, [note.id]);
     }
   }
 
@@ -70,6 +75,35 @@ export function buildTagIndex(
       }))
       .toSorted((left, right) => right.count - left.count || left.tag.localeCompare(right.tag)),
   };
+}
+
+/**
+ * Per-workspace memo of {@link buildTagIndex}. Keyed on the workspace
+ * object, which is replaced wholesale on every edit (every writer in
+ * `app.ts` produces a new object), so a stale entry is unreachable by
+ * construction and the map never needs invalidating.
+ */
+const tagIndexByWorkspace = new WeakMap<SutraPadWorkspace, SutraPadTagIndex>();
+
+/**
+ * {@link buildTagIndex} for **read-only, in-render** use: the topbar
+ * typeahead, the note editor's tag input, tag hygiene. One render pass
+ * asks for the index up to three times and nothing between those calls
+ * changes the workspace, so building it once per workspace object is
+ * both cheaper and more consistent.
+ *
+ * The persistence path must keep calling {@link buildTagIndex} directly:
+ * this variant freezes `savedAt` at the first build, which is exactly
+ * the field the saved index is expected to stamp fresh.
+ */
+export function buildTagIndexCached(
+  workspace: SutraPadWorkspace,
+): SutraPadTagIndex {
+  const cached = tagIndexByWorkspace.get(workspace);
+  if (cached) return cached;
+  const index = buildTagIndex(workspace);
+  tagIndexByWorkspace.set(workspace, index);
+  return index;
 }
 
 /**

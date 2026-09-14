@@ -152,6 +152,24 @@ export const HOME_TIMELINE_MAX_ITEMS = 40;
  */
 export const RENDER_MAX_ELEMENTS = 6000;
 
+/**
+ * Tag pairs `suggestTagAliases` may run the fuzzy matcher over, per
+ * distinct user tag. Tag hygiene runs inside the render pass (Settings
+ * card, home hint banner), so its cost is render cost — and it scales with
+ * the tag space, not the note count.
+ *
+ * The all-pairs loop this replaced compared `(T - 1) / 2` pairs per tag:
+ * 3.8 s at 1 900 tags, 11 s at 3 500, which was the whole of the 20.1 s of
+ * `settings` DOM build in the 2026-09-14 Diagnostics card. Blocking on the
+ * deletion neighbourhood brings it to ~5 per tag at 4 000. The budget is
+ * loose because the ratio drifts with how alike the tags are; what it
+ * catches is a return to comparing everything with everything.
+ */
+export const TAG_HYGIENE_MAX_PAIRS_PER_TAG = 25;
+
+/** Tag count {@link TAG_HYGIENE_MAX_PAIRS_PER_TAG} is measured at. */
+export const TAG_HYGIENE_REFERENCE_TAGS = 4000;
+
 // ---------------------------------------------------------------------------
 // Resident memory
 // ---------------------------------------------------------------------------

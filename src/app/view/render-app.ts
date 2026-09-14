@@ -10,7 +10,7 @@ import type { Locale } from "../../lib/i18n";
 import type { PersonaPreference } from "../logic/persona";
 import type { CaptureLocationPreference } from "../logic/capture-location";
 import type { TagClassId } from "../logic/tag-class";
-import { suggestTagAliases } from "../logic/tag-aliases";
+import { suggestTagAliasesForWorkspace } from "../logic/tag-aliases";
 import type { TasksFilterId } from "../logic/tasks-filter";
 import type {
   SutraPadDocument,
@@ -24,7 +24,7 @@ import {
   deriveNotebookPersona,
   type NotebookPersona,
 } from "../../lib/notebook-persona";
-import { buildTagIndex } from "../../lib/notebook";
+import { buildTagIndexCached } from "../../lib/notebook";
 import { createOgImageResolver } from "../logic/og-image-resolver";
 import type { LexiconStore } from "../../services/drive/lexicon-store";
 import { pickNoteThumbSeed } from "../logic/link-thumb-seed";
@@ -391,7 +391,7 @@ export function renderAppPage({
   // `buildTagIndex` — auto-tags don't need to appear in the filter dropdown
   // because they're always derived from metadata (filtering by `when:night`
   // happens via the Tags page / palette, not the typeahead).
-  const availableTagSuggestions = buildTagIndex(workspace).tags;
+  const availableTagSuggestions = buildTagIndexCached(workspace).tags;
 
   // Topbar lives as a direct child of #app (outside .page) so that
   // `position: sticky` pins against the viewport rather than the page column,
@@ -555,13 +555,15 @@ export function renderAppPage({
         }),
       );
     } else if (activeMenuItem === "settings") {
-      // Suggestions are recomputed from the live workspace on every
-      // Settings render. Cheap at our note counts and keeps the card
-      // honest after a merge: the pair that was just collapsed disappears
-      // without a separate "invalidate" step.
-      const tagAliasSuggestions = suggestTagAliases(buildTagIndex(workspace), {
-        dismissed: dismissedTagAliases,
-      });
+      // Derived from the live workspace, so the card stays honest after a
+      // merge: the pair that was just collapsed disappears without a
+      // separate "invalidate" step. Memoized on the workspace object —
+      // which a merge replaces — because recomputing it on *every*
+      // Settings render is what put ~3 s into each of them (2026-09-14).
+      const tagAliasSuggestions = suggestTagAliasesForWorkspace(
+        workspace,
+        dismissedTagAliases,
+      );
       page.append(
         buildSettingsPage({
           locale,
@@ -776,7 +778,7 @@ function appendNoteDetailPage(
     editorStage.append(
       buildEditorSidebar({
         currentNote: note ?? currentNote,
-        availableTagSuggestions: buildTagIndex(workspace).tags,
+        availableTagSuggestions: buildTagIndexCached(workspace).tags,
         onAddTag,
         onRemoveTag,
       }),

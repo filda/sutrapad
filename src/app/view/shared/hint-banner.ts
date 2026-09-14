@@ -36,8 +36,7 @@ import {
   type HintId,
 } from "../../logic/hints";
 import { DEFAULT_HINT_CANDIDATES } from "../../logic/hint-candidates";
-import { suggestTagAliases } from "../../logic/tag-aliases";
-import { buildTagIndex } from "../../../lib/notebook";
+import { suggestTagAliasesForWorkspace } from "../../logic/tag-aliases";
 import { countTasksInNote } from "../../../lib/tasks";
 import type { SutraPadWorkspace, UserProfile } from "../../../types";
 
@@ -73,9 +72,10 @@ export function buildHomeHintContext(
     tasksOneThingKey,
     callbacks,
   } = options;
-  const tagAliasSuggestions = suggestTagAliases(buildTagIndex(workspace), {
-    dismissed: dismissedTagAliases,
-  });
+  const tagAliasSuggestions = suggestTagAliasesForWorkspace(
+    workspace,
+    dismissedTagAliases,
+  );
   let openTaskCount = 0;
   for (const note of workspace.notes) {
     openTaskCount += countTasksInNote(note).open;
