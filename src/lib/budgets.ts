@@ -170,6 +170,16 @@ export const TAG_HYGIENE_MAX_PAIRS_PER_TAG = 25;
 /** Tag count {@link TAG_HYGIENE_MAX_PAIRS_PER_TAG} is measured at. */
 export const TAG_HYGIENE_REFERENCE_TAGS = 4000;
 
+/**
+ * Bytes the device-local copy of the task index may occupy before the write
+ * is skipped. It shares the origin's 5-10 MiB localStorage quota with a
+ * workspace that is already ~1.2 MB on the real notebook, and the failure
+ * mode of filling that quota is that *every* later write throws — including
+ * the workspace one, which is the copy that actually matters. Sized with
+ * room to spare: the same notebook's task index serializes to ~35 KB.
+ */
+export const LOCAL_TASK_INDEX_MAX_BYTES = 512 * 1024;
+
 // ---------------------------------------------------------------------------
 // Resident memory
 // ---------------------------------------------------------------------------

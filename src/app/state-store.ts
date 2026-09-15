@@ -93,6 +93,7 @@ import {
   loadRecentTagFilters,
   persistRecentTagFilters,
 } from "./logic/tag-filter-typeahead";
+import { loadLocalTaskIndex } from "./storage/local-task-index";
 import type { TasksFilterId } from "./logic/tasks-filter";
 import type { PaletteAccess } from "./view/palette-types";
 import type { SyncState } from "./session/workspace-sync";
@@ -251,8 +252,13 @@ export function createAppStateStore({
   const noteSummaries$ = atom<SutraPadNoteSummary[]>(
     reconcileNoteSummaries(workspace$.get(), []),
   );
+  // Seeded from the device-local copy rather than from nothing: a
+  // placeholder carries no body, so `reconcileTaskIndexForWorkspace` can only
+  // carry entries *forward* from a previous index — and with no previous
+  // index the Tasks page showed its "no tasks" empty state until the Drive
+  // re-seed landed ~18 s later. See `storage/local-task-index.ts`.
   const taskIndex$ = atom<SutraPadTaskIndex>(
-    reconcileTaskIndexForWorkspace(workspace$.get(), { version: 1, savedAt: "", tasks: [] }),
+    reconcileTaskIndexForWorkspace(workspace$.get(), loadLocalTaskIndex()),
   );
   // `buildLinkIndex` only reads `note.urls` / `updatedAt` / `id` — every one
   // of which a placeholder already carries over from its index summary

@@ -50,6 +50,7 @@ import { withAuthRetry, type AuthRetryContext } from "./app/session/auth-retry";
 import { createWorkspaceIO } from "./app/session/workspace-io";
 import { createPreferencesIO } from "./app/session/preferences-io";
 import { persistLocalWorkspace as writeLocalWorkspace } from "./app/storage/local-workspace";
+import { persistLocalTaskIndex as writeLocalTaskIndex } from "./app/storage/local-task-index";
 import { renderAppPage } from "./app/view/render-app";
 import { syncPillLabel } from "./app/view/chrome/topbar";
 import { buildNotesPanel } from "./app/view/pages/notes-page";
@@ -550,11 +551,17 @@ export function createApp(root: HTMLElement): void {
    * `persistLocalWorkspace` and `render` are the two synchronous phases
    * that scale with the workspace and block the main thread; both are
    * timed into the Diagnostics card so a long task can be attributed.
+   *
+   * The task index rides along here rather than on its own atom
+   * subscription: `taskIndex$` is re-set on every workspace change, so a
+   * subscriber would serialize it per keystroke, while this cadence is the
+   * one the "Local saves" metric already covers.
    */
   const persistLocalWorkspace = (workspace: SutraPadWorkspace): void => {
     const started = performance.now();
     try {
       writeLocalWorkspace(workspace);
+      writeLocalTaskIndex(taskIndex$.get());
     } finally {
       updateDiagnostics((snapshot) => recordPhase(snapshot, "persist", performance.now() - started));
     }

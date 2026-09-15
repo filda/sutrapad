@@ -28,6 +28,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCAL_WORKSPACE_KEY } from "../src/app/storage/local-workspace";
+import { LOCAL_TASK_INDEX_KEY } from "../src/app/storage/local-task-index";
 import { hashStringToHue } from "../src/app/logic/link-card";
 import { tick } from "./tick";
 
@@ -221,6 +222,19 @@ describe("editor input contracts", () => {
     expect(root.querySelector(".body-input")).toBe(textarea);
     expect(document.activeElement).toBe(textarea);
     expect(JSON.parse(localStorage.getItem(LOCAL_WORKSPACE_KEY) ?? "{}").notes[0].body).toBe("A");
+    // The resident task index rides the same local save. A placeholder has no
+    // body to re-derive tasks from on the next cold boot, so this copy is the
+    // only thing standing between "still loading" and a Tasks page that says
+    // the user has none. Typing a task line here proves the write happens on
+    // the ordinary edit path, not just on an explicit save.
+    textarea.value = "A\n- [ ] zalít kytky";
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    await Promise.resolve();
+
+    const storedTasks = JSON.parse(
+      localStorage.getItem(LOCAL_TASK_INDEX_KEY) ?? "{}",
+    ) as { tasks?: Array<{ text: string }> };
+    expect(storedTasks.tasks?.map((task) => task.text)).toEqual(["zalít kytky"]);
   });
 
   it("renders the detail-topbar sync crumb + right-rail tags card on the detail route", { timeout: 3000 }, async () => {

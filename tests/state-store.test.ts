@@ -27,10 +27,7 @@
 // happy-dom is required: the factory touches `window.location`,
 // `localStorage`, and (via `applyThemeChoice`) `document.documentElement`.
 //
-// Two survivors in the mutation report are equivalent, not gaps:
-//   - the `savedAt: ""` seed passed to `reconcileTaskIndexForWorkspace` — the
-//     helper always stamps its own `savedAt` and never reads the previous
-//     index's, so any string works;
+// One survivor in the mutation report is equivalent, not a gap:
 //   - `activeMenuItem$.get() === "notes"` → `true`, because
 //     `readNoteDetailIdFromLocation` already returns null unless the first
 //     path segment is `notes`. The guard is a readability shortcut, not a
@@ -38,6 +35,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAppStateStore, type AppStateStore } from "../src/app/state-store";
+import { LOCAL_TASK_INDEX_KEY } from "../src/app/storage/local-task-index";
 import { LOCAL_WORKSPACE_KEY } from "../src/app/storage/local-workspace";
 import { RECENT_TAG_FILTERS_STORAGE_KEY } from "../src/app/logic/tag-filter-typeahead";
 import { CS, DEFAULT_LOCALE, messages, setActiveLocale } from "../src/lib/i18n";
@@ -62,6 +60,7 @@ const KEYS = {
   visibleTagClasses: "sutrapad-visible-tag-classes",
   dismissedAliases: "sutrapad-dismissed-tag-aliases",
   recentFilters: RECENT_TAG_FILTERS_STORAGE_KEY,
+  taskIndex: LOCAL_TASK_INDEX_KEY,
 } as const;
 
 const makeNote = (overrides: Partial<SutraPadDocument> = {}): SutraPadDocument => ({
@@ -252,6 +251,45 @@ describe("createAppStateStore derived indexes", () => {
     expect(store.noteSummaries$.get().map((summary) => summary.id)).toEqual(["n-tasks"]);
     expect(store.taskIndex$.get().tasks).toHaveLength(2);
     expect(store.linkIndex$.get().links).toHaveLength(1);
+  });
+
+  it("seeds the task index from the device-local copy at construction", () => {
+    // The cold-boot case this exists for: every note comes back from Drive as
+    // a body-less placeholder, so tasks cannot be re-derived — they can only
+    // be carried forward. Without the stored copy there is nothing to carry,
+    // and the Tasks page renders "no tasks" until the Drive re-seed lands
+    // ~18 s later, which reads as data loss rather than as loading.
+    storeWorkspace(makeWorkspace([{ ...taskNote, body: "", urls: [], hydrated: false }]));
+    localStorage.setItem(
+      KEYS.taskIndex,
+      JSON.stringify({
+        version: 1,
+        savedAt: "2026-09-15T08:00:00.000Z",
+        tasks: [
+          {
+            noteId: "n-tasks",
+            lineIndex: 0,
+            text: "Koupit mléko",
+            done: false,
+            noteUpdatedAt: "2026-08-01T10:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    const store = createStoreAt("/");
+
+    expect(store.taskIndex$.get().tasks.map((task) => task.text)).toEqual([
+      "Koupit mléko",
+    ]);
+  });
+
+  it("starts with no tasks when nothing is stored locally", () => {
+    storeWorkspace(makeWorkspace([{ ...taskNote, body: "", urls: [], hydrated: false }]));
+
+    const store = createStoreAt("/");
+
+    expect(store.taskIndex$.get().tasks).toEqual([]);
   });
 
   it("carries a placeholder's summary and tasks forward instead of blanking them", () => {
