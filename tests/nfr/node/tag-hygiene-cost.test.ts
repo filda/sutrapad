@@ -76,8 +76,7 @@ describe("tag hygiene at tag-space scale", () => {
   it(`compares O(tags) pairs, not O(tags²), at ${TAG_HYGIENE_REFERENCE_TAGS} tags`, () => {
     const entries = entriesOf(tagSpace(TAG_HYGIENE_REFERENCE_TAGS));
 
-    let compared = 0;
-    for (const _pair of candidatePairs(entries, 2, 0.34)) compared += 1;
+    const compared = [...candidatePairs(entries, 2, 0.34)].length;
 
     const perTag = compared / entries.length;
     const allPairsPerTag = (entries.length - 1) / 2;
@@ -106,18 +105,21 @@ describe("tag hygiene at tag-space scale", () => {
     // Settings re-derives on every render, and a tag chip click, a keystroke
     // in the editor and a Drive status change are all renders. Identity is
     // the assertion: the same array back means no second derivation.
-    const tags = tagSpace(200);
-    const notes: SutraPadDocument[] = tags.flatMap((tag, i) =>
-      [0, 1].map((copy) => ({
-        id: `n${i}-${copy}`,
-        title: "",
-        body: "",
-        urls: [],
-        tags: [tag],
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-      })),
-    );
+    // Two notes per tag so every tag clears the `count >= 2` gate.
+    const notes: SutraPadDocument[] = [];
+    for (const [index, tag] of tagSpace(200).entries()) {
+      for (const copy of [0, 1]) {
+        notes.push({
+          id: `n${index}-${copy}`,
+          title: "",
+          body: "",
+          urls: [],
+          tags: [tag],
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        });
+      }
+    }
     const workspace: SutraPadWorkspace = { notes, activeNoteId: notes[0].id };
     const dismissed = new Set<string>();
 
