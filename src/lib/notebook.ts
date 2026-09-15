@@ -134,11 +134,17 @@ export function buildCombinedTagIndex(
 ): SutraPadTagIndex {
   const userEntries = buildTagIndex(workspace, savedAt).tags;
 
+  // Append in place, for the reason `buildTagIndex` above gives — and here
+  // it bites harder: the widest auto-tags are near-universal (`tasks:none`
+  // on all 6 470 notes of the real notebook, `edit:fresh` on 6 000), so
+  // re-spreading cost 76 ms per build against 16 ms, on a derivation every
+  // render pays through `buildAutoTagLookup` (2026-09-15).
   const autoNoteIdsByTag = new Map<string, string[]>();
   for (const note of workspace.notes) {
     for (const tag of deriveAutoTags(note, now, taskFacetByNoteId?.get(note.id))) {
-      const existingNoteIds = autoNoteIdsByTag.get(tag) ?? [];
-      autoNoteIdsByTag.set(tag, [...existingNoteIds, note.id]);
+      const existingNoteIds = autoNoteIdsByTag.get(tag);
+      if (existingNoteIds) existingNoteIds.push(note.id);
+      else autoNoteIdsByTag.set(tag, [note.id]);
     }
   }
 

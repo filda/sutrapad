@@ -412,20 +412,31 @@ export function suggestTagAliases(
   return suggestions;
 }
 
-interface CachedSuggestions {
-  readonly dismissed: ReadonlySet<string>;
-  readonly suggestions: readonly AliasSuggestion[];
+/**
+ * The only thing the suggestions depend on: which user tags exist and how
+ * often, in index order. Deliberately *not* the workspace object — editing
+ * a note's body, an autosave and a Drive refresh all replace the workspace
+ * while leaving the tag space untouched, and keying on the object would
+ * make every one of those pay the full derivation again on the next
+ * Settings render.
+ */
+function tagSpaceSignature(index: SutraPadTagIndex): string {
+  const parts: string[] = [];
+  for (const entry of index.tags) {
+    if (entry.kind !== undefined && entry.kind !== "user") continue;
+    if (entry.count < 2) continue;
+    parts.push(`${entry.tag}:${entry.count}`);
+  }
+  return parts.join(" ");
 }
 
-const suggestionsByWorkspace = new WeakMap<
-  SutraPadWorkspace,
-  CachedSuggestions
->();
+let cachedSignature: string | null = null;
+let cachedDismissed: ReadonlySet<string> | null = null;
+let cachedSuggestions: readonly AliasSuggestion[] = [];
 
 /**
- * Alias suggestions for a whole workspace, memoized on the workspace and
- * the dismissed set — both of which are replaced wholesale when they
- * change, so a hit means nothing the suggestions depend on has moved.
+ * Alias suggestions for a whole workspace, memoized on the tag space and
+ * the dismissed set.
  *
  * The render path needs this. Settings recomputes the hygiene card on
  * every render and the home hint banner asks the same question for its
@@ -433,18 +444,23 @@ const suggestionsByWorkspace = new WeakMap<
  * and every tag chip click pays the full derivation again. Callers that
  * hold an index rather than a workspace (tests, the merge round-trip)
  * keep using {@link suggestTagAliases} directly.
+ *
+ * One entry is enough: there is one live workspace, and the question is
+ * only ever asked about it.
  */
 export function suggestTagAliasesForWorkspace(
   workspace: SutraPadWorkspace,
   dismissed: ReadonlySet<string>,
 ): readonly AliasSuggestion[] {
-  const cached = suggestionsByWorkspace.get(workspace);
-  if (cached && cached.dismissed === dismissed) return cached.suggestions;
-  const suggestions = suggestTagAliases(buildTagIndexCached(workspace), {
-    dismissed,
-  });
-  suggestionsByWorkspace.set(workspace, { dismissed, suggestions });
-  return suggestions;
+  const index = buildTagIndexCached(workspace);
+  const signature = tagSpaceSignature(index);
+  if (signature === cachedSignature && dismissed === cachedDismissed) {
+    return cachedSuggestions;
+  }
+  cachedSuggestions = suggestTagAliases(index, { dismissed });
+  cachedSignature = signature;
+  cachedDismissed = dismissed;
+  return cachedSuggestions;
 }
 
 /**

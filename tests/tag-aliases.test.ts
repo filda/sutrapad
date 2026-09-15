@@ -954,7 +954,7 @@ describe("suggestTagAliasesForWorkspace", () => {
     expect(after).toHaveLength(0);
   });
 
-  it("recomputes when the workspace object is replaced", () => {
+  it("recomputes when the tag space changes", () => {
     const dismissed = new Set<string>();
 
     const before = suggestTagAliasesForWorkspace(workspace(), dismissed);
@@ -966,5 +966,25 @@ describe("suggestTagAliasesForWorkspace", () => {
 
     expect(before).toHaveLength(1);
     expect(after).toHaveLength(0);
+  });
+
+  it("reuses the result across a new workspace object with the same tags", () => {
+    // The case the memo exists for. An autosave, a Drive refresh and every
+    // body keystroke hand `render()` a *new* workspace object while leaving
+    // the tag space untouched; keying the memo on the object would make the
+    // next Settings render pay the full derivation for nothing.
+    const dismissed = new Set<string>();
+
+    const first = suggestTagAliasesForWorkspace(workspace(), dismissed);
+    const edited: SutraPadWorkspace = {
+      notes: [
+        note({ id: "n1", tags: ["kolo", "kola"], body: "typed a word" }),
+        note({ id: "n2", tags: ["kolo", "kola"] }),
+      ],
+      activeNoteId: "n1",
+    };
+    const second = suggestTagAliasesForWorkspace(edited, dismissed);
+
+    expect(second).toBe(first);
   });
 });
